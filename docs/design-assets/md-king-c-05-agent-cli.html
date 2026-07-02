@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Agent / CLI Center - md-king</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-highest": "#d3e4fe",
+                    "on-error-container": "#93000a",
+                    "surface-container-low": "#eff4ff",
+                    "inverse-on-surface": "#eaf1ff",
+                    "on-primary-container": "#dad7ff",
+                    "inverse-surface": "#213145",
+                    "secondary": "#006c49",
+                    "primary-fixed": "#e2dfff",
+                    "border-subtle": "#E2E8F0",
+                    "text-primary": "#0F172A",
+                    "primary-container": "#4f46e5",
+                    "on-secondary-fixed": "#002113",
+                    "on-tertiary": "#ffffff",
+                    "surface-bright": "#f8f9ff",
+                    "primary": "#3525cd",
+                    "secondary-fixed": "#6ffbbe",
+                    "text-weak": "#94A3B8",
+                    "on-secondary-fixed-variant": "#005236",
+                    "inverse-primary": "#c3c0ff",
+                    "tertiary-fixed-dim": "#ffb95f",
+                    "on-tertiary-fixed-variant": "#653e00",
+                    "on-surface-variant": "#464555",
+                    "card-white": "#FFFFFF",
+                    "error": "#ba1a1a",
+                    "bg-slate": "#F8FAFC",
+                    "surface-container": "#e5eeff",
+                    "on-surface": "#0b1c30",
+                    "secondary-container": "#6cf8bb",
+                    "tertiary-container": "#885500",
+                    "tertiary-fixed": "#ffddb8",
+                    "on-secondary": "#ffffff",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed-variant": "#3323cc",
+                    "background": "#f8f9ff",
+                    "on-primary": "#ffffff",
+                    "surface-tint": "#4d44e3",
+                    "surface-container-high": "#dce9ff",
+                    "info-blue": "#3B82F6",
+                    "error-container": "#ffdad6",
+                    "tertiary": "#684000",
+                    "surface-dim": "#cbdbf5",
+                    "on-tertiary-container": "#ffd4a4",
+                    "on-error": "#ffffff",
+                    "secondary-fixed-dim": "#4edea3",
+                    "error-red": "#EF4444",
+                    "on-primary-fixed": "#0f0069",
+                    "outline-variant": "#c7c4d8",
+                    "surface-variant": "#d3e4fe",
+                    "on-secondary-container": "#00714d",
+                    "surface": "#f8f9ff",
+                    "on-background": "#0b1c30",
+                    "on-tertiary-fixed": "#2a1700",
+                    "outline": "#777587",
+                    "primary-fixed-dim": "#c3c0ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin": "24px",
+                    "md": "16px",
+                    "gutter": "16px",
+                    "xs": "4px",
+                    "sm": "8px",
+                    "xl": "40px",
+                    "lg": "24px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-md": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "code-md": ["jetbrainsMono"]
+            },
+            "fontSize": {
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "headline-lg": ["28px", {"lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "code-md": ["13px", {"lineHeight": "20px", "fontWeight": "400"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 4px 6px -1px rgba(53, 37, 205, 0.05), 0 2px 4px -1px rgba(53, 37, 205, 0.03);
+        }
+        .code-block-glass {
+            background: rgba(11, 28, 48, 0.85); /* Dark surface for code */
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(203, 219, 245, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body-md text-on-surface antialiased flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full py-lg fixed left-0 top-0 w-64 border-r border-border-subtle bg-surface-container-lowest shadow-sm z-20">
+<!-- Brand Header -->
+<div class="px-lg pb-xl border-b border-border-subtle mb-md">
+<h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight flex items-center gap-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard_customize</span>
+                md-king
+            </h1>
+<p class="font-label-sm text-label-sm text-text-weak mt-xs">V2.4.0 Professional</p>
+</div>
+<!-- Navigation Tabs -->
+<ul class="flex-1 px-sm space-y-xs overflow-y-auto">
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">swap_horiz</span>
+<span class="font-label-md text-label-md">Convert</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-label-md text-label-md">Template Center</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+</li>
+<li>
+<!-- ACTIVE STATE -->
+<a class="text-primary font-bold flex items-center gap-md px-lg py-sm bg-surface-container-high rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-label-md text-label-md">CLI / Agent</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</li>
+</ul>
+<!-- Footer Tabs -->
+<div class="px-sm pt-md border-t border-border-subtle mt-auto">
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">article</span>
+<span class="font-label-md text-label-md">Documentation</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="hidden md:flex justify-between items-center px-lg w-full h-16 fixed top-0 right-0 left-64 border-b border-border-subtle bg-surface z-10">
+<div class="flex items-center gap-lg h-full">
+<span class="font-headline-md text-headline-md font-black text-on-surface">md-king</span>
+<nav class="hidden md:flex gap-lg h-full">
+<a class="text-on-surface-variant h-full flex items-center hover:text-primary transition-colors font-label-md text-label-md" href="#">Dashboard</a>
+<a class="text-primary border-b-2 border-primary pb-1 h-full flex items-center hover:text-primary transition-colors font-label-md text-label-md" href="#">Workflows</a>
+</nav>
+</div>
+<div class="flex items-center gap-md">
+<span class="font-label-sm text-label-sm px-2 py-1 bg-surface-container-high text-primary rounded-md border border-primary-fixed">Pandoc Ready</span>
+<button class="font-label-md text-label-md bg-primary text-on-primary px-4 py-2 rounded-lg hover:bg-surface-tint transition-colors">Local Conversion</button>
+<div class="flex gap-sm ml-sm">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container rounded-full transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container rounded-full transition-colors"><span class="material-symbols-outlined">account_circle</span></button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-0 md:ml-64 mt-16 p-margin overflow-y-auto relative h-[calc(100vh-64px)]">
+<!-- Decorative Background Element -->
+<div class="absolute top-0 right-0 -mr-32 -mt-32 w-[600px] h-[600px] bg-primary-container opacity-10 rounded-full blur-[100px] pointer-events-none"></div>
+<div class="max-w-6xl mx-auto space-y-xl relative z-10 pb-xl">
+<!-- Page Header -->
+<header>
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Agent 与命令行</h2>
+<p class="font-body-lg text-body-lg text-text-weak">让 Agent 直接把 Markdown 交给 MD King 输出 Word</p>
+</header>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-lg">
+<!-- 1. CLI Usage (Spans 8 cols) -->
+<section class="lg:col-span-8 glass-panel rounded-xl p-lg flex flex-col gap-md border border-surface-container-highest">
+<div class="flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined text-primary">terminal</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">CLI Usage</h3>
+</div>
+<div class="space-y-md">
+<div class="flex flex-col gap-xs">
+<span class="font-label-md text-label-md text-on-surface-variant">Standard Conversion</span>
+<div class="code-block-glass rounded-lg p-md overflow-x-auto">
+<code class="font-code-md text-code-md text-on-tertiary">
+<span class="text-secondary-fixed-dim">mdking</span> convert input.md --template weekly-report --output report.docx
+                                </code>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<span class="font-label-md text-label-md text-on-surface-variant">Piped Input (stdin)</span>
+<div class="code-block-glass rounded-lg p-md overflow-x-auto">
+<code class="font-code-md text-code-md text-on-tertiary">
+<span class="text-tertiary-fixed-dim">cat</span> content.md | <span class="text-secondary-fixed-dim">mdking</span> --stdin &gt; output.docx
+                                </code>
+</div>
+</div>
+</div>
+</section>
+<!-- 3. API & Service Status (Spans 4 cols) -->
+<section class="lg:col-span-4 glass-panel rounded-xl p-lg flex flex-col gap-md border border-surface-container-highest">
+<div class="flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined text-primary">dns</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Service Status</h3>
+</div>
+<div class="flex flex-col gap-lg h-full justify-between">
+<!-- Toggle -->
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface-variant">Local API Service</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Info items -->
+<div class="space-y-sm bg-surface-container p-md rounded-lg">
+<div class="flex justify-between items-center">
+<span class="font-label-sm text-label-sm text-text-weak">Port</span>
+<span class="font-code-md text-code-md text-on-surface bg-surface-container-highest px-2 py-1 rounded">127.0.0.1:8080</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label-sm text-label-sm text-text-weak">API Token</span>
+<div class="flex items-center gap-xs bg-surface-container-highest px-2 py-1 rounded">
+<span class="font-code-md text-code-md text-on-surface">mdk_••••••••</span>
+<button class="text-text-weak hover:text-primary transition-colors"><span class="material-symbols-outlined text-[16px]">content_copy</span></button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- 2. Agent Workflow (Spans 12 cols) -->
+<section class="lg:col-span-12 glass-panel rounded-xl p-lg flex flex-col gap-md border border-surface-container-highest">
+<div class="flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined text-primary">smart_toy</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Agent Workflow</h3>
+</div>
+<div class="flex flex-col md:flex-row items-center justify-center gap-md py-lg relative">
+<!-- Step 1 -->
+<div class="flex flex-col items-center gap-sm bg-surface-container p-lg rounded-lg border border-surface-container-highest w-full md:w-1/3 z-10 relative">
+<div class="w-12 h-12 bg-primary-fixed rounded-full flex items-center justify-center text-primary mb-xs">
+<span class="material-symbols-outlined">markdown</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">1. 生成 MD</span>
+<span class="font-body-md text-body-md text-text-weak text-center">Agent generates raw markdown content.</span>
+</div>
+<!-- Arrow 1 -->
+<div class="hidden md:block w-8 h-px bg-border-subtle relative">
+<span class="material-symbols-outlined absolute right-[-10px] top-[-11px] text-text-weak">arrow_right</span>
+</div>
+<!-- Step 2 -->
+<div class="flex flex-col items-center gap-sm bg-surface-container p-lg rounded-lg border border-primary-fixed w-full md:w-1/3 z-10 relative shadow-sm">
+<div class="w-12 h-12 bg-primary text-on-primary rounded-full flex items-center justify-center mb-xs">
+<span class="material-symbols-outlined">terminal</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">2. 调用 CLI</span>
+<span class="font-body-md text-body-md text-text-weak text-center">Pass to md-king via stdin or file.</span>
+</div>
+<!-- Arrow 2 -->
+<div class="hidden md:block w-8 h-px bg-border-subtle relative">
+<span class="material-symbols-outlined absolute right-[-10px] top-[-11px] text-text-weak">arrow_right</span>
+</div>
+<!-- Step 3 -->
+<div class="flex flex-col items-center gap-sm bg-surface-container p-lg rounded-lg border border-surface-container-highest w-full md:w-1/3 z-10 relative">
+<div class="w-12 h-12 bg-surface-container-highest rounded-full flex items-center justify-center text-primary mb-xs">
+<span class="material-symbols-outlined">description</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">3. 返回 DOCX 路径</span>
+<span class="font-body-md text-body-md text-text-weak text-center">Receive formatted Word document.</span>
+</div>
+</div>
+</section>
+<!-- 4. Error Code Reference (Spans 12 cols) -->
+<section class="lg:col-span-12 glass-panel rounded-xl p-lg flex flex-col gap-md border border-surface-container-highest">
+<div class="flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined text-primary">error</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Error Code Reference</h3>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-border-subtle text-text-weak font-label-sm text-label-sm">
+<th class="py-sm px-md font-medium">Code</th>
+<th class="py-sm px-md font-medium">Description</th>
+<th class="py-sm px-md font-medium">Resolution</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-body-md">
+<tr class="border-b border-surface-container-highest hover:bg-surface-container-low transition-colors">
+<td class="py-md px-md"><span class="font-code-md text-code-md text-error-red bg-error-container px-2 py-1 rounded">ERR_001</span></td>
+<td class="py-md px-md text-on-surface-variant">Template not found</td>
+<td class="py-md px-md text-text-weak">Verify template name in <code class="font-code-md text-code-md">--template</code> argument.</td>
+</tr>
+<tr class="border-b border-surface-container-highest hover:bg-surface-container-low transition-colors">
+<td class="py-md px-md"><span class="font-code-md text-code-md text-error-red bg-error-container px-2 py-1 rounded">ERR_002</span></td>
+<td class="py-md px-md text-on-surface-variant">Pandoc executable missing</td>
+<td class="py-md px-md text-text-weak">Ensure Pandoc is installed and in PATH.</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-md px-md"><span class="font-code-md text-code-md text-error-red bg-error-container px-2 py-1 rounded">ERR_AUTH</span></td>
+<td class="py-md px-md text-on-surface-variant">Invalid API Token</td>
+<td class="py-md px-md text-text-weak">Check token passed via header or env var.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+</div>
+</main>
+</body></html>

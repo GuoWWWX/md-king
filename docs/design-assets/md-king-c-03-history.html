@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>md-king - 转换历史</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#d3e4fe",
+                        "outline": "#777587",
+                        "primary-fixed": "#e2dfff",
+                        "surface-tint": "#4d44e3",
+                        "tertiary-container": "#885500",
+                        "inverse-on-surface": "#eaf1ff",
+                        "text-weak": "#94A3B8",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "outline-variant": "#c7c4d8",
+                        "on-secondary-fixed": "#002113",
+                        "secondary-fixed-dim": "#4edea3",
+                        "text-primary": "#0F172A",
+                        "border-subtle": "#E2E8F0",
+                        "on-secondary-container": "#00714d",
+                        "card-white": "#FFFFFF",
+                        "inverse-surface": "#213145",
+                        "surface-container-high": "#dce9ff",
+                        "secondary-container": "#6cf8bb",
+                        "primary-container": "#4f46e5",
+                        "on-tertiary-fixed": "#2a1700",
+                        "on-primary-fixed": "#0f0069",
+                        "info-blue": "#3B82F6",
+                        "surface": "#f8f9ff",
+                        "tertiary": "#684000",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "error": "#ba1a1a",
+                        "bg-slate": "#F8FAFC",
+                        "on-primary": "#ffffff",
+                        "surface-bright": "#f8f9ff",
+                        "background": "#f8f9ff",
+                        "surface-container-highest": "#d3e4fe",
+                        "error-container": "#ffdad6",
+                        "on-surface": "#0b1c30",
+                        "on-tertiary-container": "#ffd4a4",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "error-red": "#EF4444",
+                        "primary": "#3525cd",
+                        "secondary-fixed": "#6ffbbe",
+                        "surface-dim": "#cbdbf5",
+                        "on-error-container": "#93000a",
+                        "on-error": "#ffffff",
+                        "surface-container": "#e5eeff",
+                        "tertiary-fixed": "#ffddb8",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "on-primary-container": "#dad7ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#0b1c30",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#005236",
+                        "surface-container-low": "#eff4ff",
+                        "secondary": "#006c49",
+                        "tertiary-fixed-dim": "#ffb95f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "40px",
+                        "gutter": "16px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "sm": "8px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "code-md": ["jetbrainsMono"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "code-md": ["13px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .glass-blue {
+            background: rgba(229, 238, 255, 0.5); /* surface-container with opacity */
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body-md text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-screen w-64 border-r border-border-subtle bg-surface-container-lowest flex flex-col py-lg z-20">
+<!-- Brand Header -->
+<div class="px-lg pb-md flex items-center gap-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">md-king</h1>
+<p class="font-label-sm text-label-sm text-text-weak">V2.4.0 Professional</p>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex-1 flex flex-col gap-xs px-sm mt-md overflow-y-auto">
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-lg hover:bg-surface-container transition-colors duration-200 scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">swap_horiz</span>
+<span class="font-label-md text-label-md">Convert</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-lg hover:bg-surface-container transition-colors duration-200 scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-label-md text-label-md">Template Center</span>
+</a>
+<a aria-current="page" class="text-primary font-bold flex items-center gap-md px-lg py-sm bg-surface-container-high rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-lg hover:bg-surface-container transition-colors duration-200 scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-label-md text-label-md">CLI / Agent</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-lg hover:bg-surface-container transition-colors duration-200 scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</div>
+<!-- Footer Tabs -->
+<div class="mt-auto px-sm flex flex-col gap-xs border-t border-border-subtle pt-sm">
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-lg hover:bg-surface-container transition-colors duration-200 scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-lg hover:bg-surface-container transition-colors duration-200 scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">article</span>
+<span class="font-label-md text-label-md">Documentation</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar & Main Content Wrapper -->
+<div class="ml-64 flex-1 flex flex-col h-screen relative">
+<!-- Decorative Background -->
+<div class="absolute inset-0 z-0 pointer-events-none overflow-hidden">
+<div class="absolute -top-[20%] -right-[10%] w-[50%] h-[50%] rounded-full bg-surface-container-high blur-[100px] opacity-60"></div>
+<div class="absolute bottom-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-surface-variant blur-[120px] opacity-40"></div>
+</div>
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 left-64 h-16 border-b border-border-subtle bg-surface z-10 flex justify-between items-center px-lg glass-panel">
+<!-- Left: Status Chips -->
+<div class="flex items-center gap-sm">
+<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary-container/30 text-secondary border border-secondary-container">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label-sm text-[11px] font-medium">Local Conversion</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-container text-primary border border-surface-variant">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+<span class="font-label-sm text-[11px] font-medium">Pandoc Ready</span>
+</div>
+<div class="h-4 w-px bg-border-subtle mx-1"></div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-container-lowest text-on-surface-variant border border-border-subtle">
+<span class="material-symbols-outlined text-[14px]">description</span>
+<span class="font-label-sm text-[11px] font-medium">Default: 通用报告</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-container-lowest text-on-surface-variant border border-border-subtle">
+<span class="material-symbols-outlined text-[14px]">folder_open</span>
+<span class="font-label-sm text-[11px] font-medium">Output: Source Dir</span>
+</div>
+</div>
+<!-- Right: Actions -->
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:text-primary transition-colors Active: opacity-80 transition-opacity flex items-center justify-center w-8 h-8 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors Active: opacity-80 transition-opacity flex items-center justify-center w-8 h-8 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Workspace Area -->
+<main class="flex-1 mt-16 p-lg flex gap-lg relative z-10 overflow-hidden">
+<!-- Left Canvas: History List -->
+<div class="flex-1 flex flex-col overflow-hidden glass-blue rounded-xl shadow-sm">
+<!-- Header & Toolbar -->
+<div class="p-lg border-b border-white/40">
+<div class="mb-md">
+<h2 class="font-headline-lg text-headline-lg text-text-primary mb-1">转换历史</h2>
+<p class="font-body-md text-body-md text-text-weak">查看最近生成的 DOCX，快速打开、复制路径或重新转换</p>
+</div>
+<div class="flex flex-wrap items-center justify-between gap-md">
+<!-- Search -->
+<div class="relative w-72">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-weak text-[20px]">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-white/60 border border-white/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent font-body-md text-sm placeholder-text-weak backdrop-blur-sm transition-all shadow-sm" placeholder="Search filename, path, or error..." type="text"/>
+</div>
+<!-- Filters -->
+<div class="flex items-center gap-sm">
+<div class="flex bg-white/40 p-1 rounded-lg backdrop-blur-sm border border-white/40">
+<button class="px-3 py-1.5 rounded-md bg-white shadow-sm text-primary font-label-sm text-sm">全部</button>
+<button class="px-3 py-1.5 rounded-md text-on-surface-variant hover:bg-white/50 font-label-sm text-sm transition-colors">成功</button>
+<button class="px-3 py-1.5 rounded-md text-on-surface-variant hover:bg-white/50 font-label-sm text-sm transition-colors">失败</button>
+<button class="px-3 py-1.5 rounded-md text-on-surface-variant hover:bg-white/50 font-label-sm text-sm transition-colors">浏览器预览</button>
+</div>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/40 border border-white/40 text-on-surface-variant hover:bg-white/60 transition-colors backdrop-blur-sm shadow-sm">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span>
+<span class="font-label-sm text-sm">最近 7 天</span>
+</button>
+<button class="ml-2 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-subtle text-error hover:bg-error-container/30 transition-colors">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+<span class="font-label-sm text-sm">清空历史</span>
+</button>
+</div>
+</div>
+</div>
+<!-- List Content -->
+<div class="flex-1 overflow-y-auto p-4 space-y-3">
+<!-- Row: Success -->
+<div class="bg-white/60 backdrop-blur-md border border-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow group">
+<div class="flex items-center justify-between">
+<div class="flex items-start gap-4">
+<div class="mt-1 flex items-center justify-center w-8 h-8 rounded-full bg-secondary-container/30 text-secondary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-1">
+<h3 class="font-label-md text-text-primary text-[15px]">ai_report_v2.md</h3>
+<span class="material-symbols-outlined text-text-weak text-[16px]">arrow_right_alt</span>
+<span class="font-label-md text-primary text-[15px]">ai_report_v2.docx</span>
+</div>
+<p class="font-code-md text-code-md text-text-weak text-[12px] truncate max-w-[400px]">/Users/workspace/projects/q4_docs/</p>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">layers</span>
+<span class="font-label-sm text-[12px]">通用报告</span>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span class="font-label-sm text-[12px]">1.2s</span>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span class="font-label-sm text-[12px]">10:24 AM</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-2 rounded-md hover:bg-surface-container text-primary tooltip-trigger" title="打开 DOCX">
+<span class="material-symbols-outlined">open_in_new</span>
+</button>
+<button class="p-2 rounded-md hover:bg-surface-container text-on-surface-variant tooltip-trigger" title="打开目录">
+<span class="material-symbols-outlined">folder_open</span>
+</button>
+<button class="p-2 rounded-md hover:bg-surface-container text-on-surface-variant tooltip-trigger" title="复制路径">
+<span class="material-symbols-outlined">content_copy</span>
+</button>
+<button class="p-2 rounded-md hover:bg-surface-container text-on-surface-variant tooltip-trigger" title="重新转换">
+<span class="material-symbols-outlined">refresh</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Row: Failed -->
+<div class="bg-white/60 backdrop-blur-md border border-error/20 rounded-lg p-4 shadow-sm relative overflow-hidden group">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
+<div class="flex items-center justify-between">
+<div class="flex items-start gap-4">
+<div class="mt-1 flex items-center justify-center w-8 h-8 rounded-full bg-error-container/50 text-error">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">error</span>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-1">
+<h3 class="font-label-md text-text-primary text-[15px]">financial_data_raw.md</h3>
+</div>
+<p class="font-code-md text-code-md text-text-weak text-[12px] truncate max-w-[400px]">/Users/workspace/finance/2023/</p>
+<!-- Error Detail Panel -->
+<div class="mt-2 bg-error-container/30 border border-error/20 rounded-md p-2 flex items-start gap-2 max-w-[500px]">
+<span class="material-symbols-outlined text-error text-[16px] mt-0.5">warning</span>
+<div>
+<p class="font-label-sm text-error text-[12px] font-semibold">PANDOC_NOT_AVAILABLE</p>
+<p class="font-body-md text-on-surface-variant text-[12px] mt-0.5">Pandoc executable not found in PATH. Please verify installation or update settings.</p>
+</div>
+</div>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">layers</span>
+<span class="font-label-sm text-[12px]">财务报表 (缺失)</span>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span class="font-label-sm text-[12px]">09:15 AM</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-md bg-surface-container hover:bg-surface-container-high text-primary font-label-sm text-sm border border-surface-variant transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">refresh</span>
+                                    重试
+                                </button>
+<button class="p-2 rounded-md hover:bg-surface-container text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity tooltip-trigger" title="打开目录">
+<span class="material-symbols-outlined">folder_open</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Row: Success -->
+<div class="bg-white/60 backdrop-blur-md border border-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow group">
+<div class="flex items-center justify-between">
+<div class="flex items-start gap-4">
+<div class="mt-1 flex items-center justify-center w-8 h-8 rounded-full bg-secondary-container/30 text-secondary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-1">
+<h3 class="font-label-md text-text-primary text-[15px]">meeting_notes_nov.md</h3>
+<span class="material-symbols-outlined text-text-weak text-[16px]">arrow_right_alt</span>
+<span class="font-label-md text-primary text-[15px]">meeting_notes_nov.docx</span>
+</div>
+<p class="font-code-md text-code-md text-text-weak text-[12px] truncate max-w-[400px]">/Users/workspace/meetings/</p>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">layers</span>
+<span class="font-label-sm text-[12px]">极简会议记录</span>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span class="font-label-sm text-[12px]">0.8s</span>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span class="font-label-sm text-[12px]">Yesterday, 4:30 PM</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-2 rounded-md hover:bg-surface-container text-primary tooltip-trigger" title="打开 DOCX">
+<span class="material-symbols-outlined">open_in_new</span>
+</button>
+<button class="p-2 rounded-md hover:bg-surface-container text-on-surface-variant tooltip-trigger" title="打开目录">
+<span class="material-symbols-outlined">folder_open</span>
+</button>
+<button class="p-2 rounded-md hover:bg-surface-container text-on-surface-variant tooltip-trigger" title="复制路径">
+<span class="material-symbols-outlined">content_copy</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Panel: Summary -->
+<div class="w-72 flex flex-col gap-md">
+<!-- Stat Card 1 -->
+<div class="bg-white/70 backdrop-blur-lg border border-white rounded-xl p-5 shadow-sm">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-text-weak text-sm">今日转换</span>
+<span class="material-symbols-outlined text-primary/60 text-[20px]">analytics</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-[32px] font-bold text-text-primary">12</span>
+<span class="font-label-sm text-secondary flex items-center">
+<span class="material-symbols-outlined text-[14px]">trending_up</span>
+                            +3
+                        </span>
+</div>
+</div>
+<!-- Stat Card 2 -->
+<div class="bg-white/70 backdrop-blur-lg border border-white rounded-xl p-5 shadow-sm">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-text-weak text-sm">成功率</span>
+<span class="material-symbols-outlined text-secondary/60 text-[20px]">task_alt</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-[32px] font-bold text-text-primary">98%</span>
+</div>
+<!-- Progress bar -->
+<div class="w-full h-1.5 bg-border-subtle rounded-full mt-3 overflow-hidden">
+<div class="h-full bg-secondary w-[98%] rounded-full"></div>
+</div>
+</div>
+<!-- Info Card -->
+<div class="bg-white/70 backdrop-blur-lg border border-white rounded-xl p-5 shadow-sm flex-1">
+<h3 class="font-label-md text-text-primary mb-4">快捷信息</h3>
+<div class="space-y-4">
+<div>
+<span class="block font-label-sm text-text-weak mb-1 text-[11px] uppercase tracking-wider">常用模板</span>
+<div class="flex items-center gap-2 bg-surface-container/50 p-2 rounded-md border border-surface-variant">
+<span class="material-symbols-outlined text-primary text-[16px]">description</span>
+<span class="font-body-md text-sm text-text-primary">通用报告</span>
+</div>
+</div>
+<div>
+<span class="block font-label-sm text-text-weak mb-1 text-[11px] uppercase tracking-wider">最近输出目录</span>
+<button class="w-full text-left flex items-start gap-2 bg-surface-container/50 p-2 rounded-md border border-surface-variant hover:bg-surface-container transition-colors group">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px] mt-0.5">folder</span>
+<span class="font-code-md text-[11px] text-on-surface-variant break-all group-hover:text-primary transition-colors">/Users/workspace/projects/q4_docs/</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Floating Action Button -->
+<div class="fixed bottom-lg right-lg z-50 group">
+<!-- Tooltip -->
+<div class="absolute bottom-full right-1/2 translate-x-1/2 mb-2 px-3 py-1.5 bg-inverse-surface text-inverse-on-surface text-xs font-label-sm rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200">
+            拖入文件或粘贴内容
+        </div>
+<button class="w-14 h-14 rounded-full bg-primary/90 hover:bg-primary backdrop-blur-md shadow-lg flex items-center justify-center text-white transition-transform hover:scale-105 active:scale-95">
+<span class="material-symbols-outlined text-[28px]">post_add</span>
+</button>
+</div>
+</body></html>

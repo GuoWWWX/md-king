@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>About MD King - Status</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary": "#ffffff",
+                      "primary-container": "#4f46e5",
+                      "surface-bright": "#f8f9ff",
+                      "outline": "#777587",
+                      "secondary": "#006c49",
+                      "tertiary-fixed-dim": "#ffb95f",
+                      "on-primary": "#ffffff",
+                      "text-weak": "#94A3B8",
+                      "surface-variant": "#d3e4fe",
+                      "outline-variant": "#c7c4d8",
+                      "on-tertiary-fixed-variant": "#653e00",
+                      "error": "#ba1a1a",
+                      "on-error": "#ffffff",
+                      "surface-container-highest": "#d3e4fe",
+                      "primary-fixed": "#e2dfff",
+                      "secondary-container": "#6cf8bb",
+                      "tertiary-fixed": "#ffddb8",
+                      "text-primary": "#0F172A",
+                      "tertiary": "#684000",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "surface-container-lowest": "#ffffff",
+                      "on-surface-variant": "#464555",
+                      "inverse-surface": "#213145",
+                      "on-tertiary-container": "#ffd4a4",
+                      "surface-container": "#e5eeff",
+                      "on-primary-container": "#dad7ff",
+                      "card-white": "#FFFFFF",
+                      "background": "#f8f9ff",
+                      "surface-container-high": "#dce9ff",
+                      "surface-tint": "#4d44e3",
+                      "on-error-container": "#93000a",
+                      "tertiary-container": "#885500",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "on-secondary-container": "#00714d",
+                      "surface-dim": "#cbdbf5",
+                      "inverse-on-surface": "#eaf1ff",
+                      "on-background": "#0b1c30",
+                      "error-container": "#ffdad6",
+                      "bg-slate": "#F8FAFC",
+                      "on-secondary": "#ffffff",
+                      "border-subtle": "#E2E8F0",
+                      "primary": "#3525cd",
+                      "on-surface": "#0b1c30",
+                      "info-blue": "#3B82F6",
+                      "error-red": "#EF4444",
+                      "inverse-primary": "#c3c0ff",
+                      "surface-container-low": "#eff4ff",
+                      "surface": "#f8f9ff",
+                      "secondary-fixed": "#6ffbbe",
+                      "on-primary-fixed": "#0f0069",
+                      "on-secondary-fixed-variant": "#005236",
+                      "on-tertiary-fixed": "#2a1700",
+                      "on-secondary-fixed": "#002113",
+                      "secondary-fixed-dim": "#4edea3"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "sm": "8px",
+                      "gutter": "16px",
+                      "xl": "40px",
+                      "md": "16px",
+                      "margin": "24px",
+                      "xs": "4px",
+                      "lg": "24px"
+              },
+              "fontFamily": {
+                      "label-sm": [
+                              "Inter"
+                      ],
+                      "code-md": [
+                              "JetBrains Mono"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "headline-lg-mobile": [
+                              "Inter"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "label-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "code-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+            }
+          }
+        }
+      </script>
+</head>
+<body class="bg-bg-slate text-text-primary min-h-screen font-body-md overflow-x-hidden selection:bg-surface-container selection:text-primary">
+<!-- App Layout Shell -->
+<div class="flex h-screen w-full">
+<!-- Side Navigation (Shared Component Logic) -->
+<nav class="hidden md:flex fixed left-0 top-0 h-screen w-64 flex-col py-lg border-r border-border-subtle bg-surface-container-lowest z-30">
+<!-- Brand -->
+<div class="px-lg mb-8 flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">description</span>
+<span class="font-headline-md text-headline-md font-bold text-primary tracking-tight">md-king</span>
+</div>
+<span class="font-label-sm text-label-sm text-text-weak">V2.4.0 Professional</span>
+</div>
+<!-- Main Tabs -->
+<ul class="flex flex-col gap-1 px-md flex-1">
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined">swap_horiz</span>
+<span class="font-label-md text-label-md">Convert</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-label-md text-label-md">Template Center</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-label-md text-label-md">CLI / Agent</span>
+</a>
+</li>
+<!-- Settings is Active for "About/Status" -->
+<li>
+<a class="text-primary font-bold flex items-center gap-md px-md py-sm bg-surface-container-high rounded-lg scale-95 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</li>
+</ul>
+<!-- Footer Tabs -->
+<div class="px-md mt-auto pt-4 border-t border-border-subtle">
+<ul class="flex flex-col gap-1">
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined">article</span>
+<span class="font-label-md text-label-md">Documentation</span>
+</a>
+</li>
+</ul>
+</div>
+</nav>
+<!-- Top App Bar (Shared Component Logic) -->
+<header class="hidden md:flex fixed top-0 right-0 left-64 h-16 border-b border-border-subtle bg-surface justify-between items-center px-lg z-20">
+<!-- Left Side / Nav Links (Hidden/simplified for this internal page focus) -->
+<div class="flex items-center gap-6">
+<div class="font-headline-md text-headline-md font-black text-on-surface">md-king</div>
+<nav class="hidden lg:flex items-center gap-4">
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md py-1" href="#">Dashboard</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md py-1" href="#">Workflows</a>
+</nav>
+</div>
+<!-- Right Side Actions -->
+<div class="flex items-center gap-4">
+<div class="hidden lg:flex items-center gap-3">
+<span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+                        Pandoc Ready
+                    </span>
+<span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high text-primary font-label-sm text-label-sm border border-primary-fixed-dim">
+<span class="material-symbols-outlined text-[14px]">lock</span>
+                        Local Conversion
+                    </span>
+</div>
+<div class="h-6 w-px bg-border-subtle mx-2 hidden lg:block"></div>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-64 mt-0 md:mt-16 overflow-y-auto p-4 md:p-margin pb-24 relative w-full">
+<!-- Mobile Header (Visible only on mobile) -->
+<div class="md:hidden flex items-center justify-between mb-6 pb-4 border-b border-border-subtle">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-2xl">description</span>
+<span class="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary">md-king</span>
+</div>
+<button class="p-2 text-on-surface-variant rounded-lg bg-surface-container-lowest border border-border-subtle">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</div>
+<!-- Page Title Area -->
+<div class="mb-10 max-w-4xl mx-auto">
+<h1 class="font-headline-lg text-headline-lg md:text-3xl text-text-primary mb-2">关于 MD King</h1>
+<p class="font-body-lg text-body-lg text-text-weak">把 AI 对话里的 Markdown 变成可交付 Word 文档</p>
+</div>
+<div class="max-w-4xl mx-auto flex flex-col gap-8">
+<!-- 1. Brand Hero Section -->
+<div class="relative bg-card-white border border-border-subtle rounded-xl p-8 overflow-hidden">
+<!-- Soft Blue Glass Background Decor -->
+<div class="absolute -top-24 -right-24 w-64 h-64 bg-surface-container-high rounded-full mix-blend-multiply filter blur-3xl opacity-50 pointer-events-none"></div>
+<div class="absolute -bottom-24 -left-24 w-64 h-64 bg-primary-fixed rounded-full mix-blend-multiply filter blur-3xl opacity-30 pointer-events-none"></div>
+<div class="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-8">
+<div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-surface-container to-surface-container-high border border-primary-fixed-dim flex items-center justify-center flex-shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-[48px] text-primary" style="font-variation-settings: 'FILL' 1;">description</span>
+</div>
+<div class="flex-1">
+<div class="flex items-center gap-3 mb-2">
+<h2 class="font-headline-md text-headline-md text-text-primary">MD King Desktop</h2>
+<span class="px-2.5 py-1 rounded-md bg-surface-container text-primary font-code-md text-code-md border border-primary-fixed-dim">v2.4.0 Pro</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mb-4 leading-relaxed max-w-2xl">
+                                专为现代 AI 时代设计的文档转换引擎。将纯文本、Markdown 及代码块，安全、快速、本地化地转换为排版精良的专业级 Microsoft Word 及 PDF 交付物。
+                            </p>
+<div class="flex items-center gap-4">
+<span class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary">
+<span class="material-symbols-outlined text-[16px]">verified</span>
+                                    正版授权
+                                </span>
+<span class="flex items-center gap-1.5 font-label-sm text-label-sm text-text-weak">
+<span class="material-symbols-outlined text-[16px]">update</span>
+                                    上次更新: 2023.10.15
+                                </span>
+</div>
+</div>
+</div>
+</div>
+<!-- 2. Core Capabilities Grid -->
+<div>
+<h3 class="font-label-md text-label-md text-on-surface-variant mb-4 uppercase tracking-wider">核心能力 (Core Capabilities)</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+<!-- Card 1 -->
+<div class="bg-surface-bright border border-border-subtle rounded-xl p-5 hover:bg-surface transition-colors group cursor-default">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center mb-4 group-hover:bg-primary-container group-hover:text-white transition-colors text-primary">
+<span class="material-symbols-outlined">content_paste</span>
+</div>
+<h4 class="font-label-md text-label-md text-text-primary mb-1">粘贴转换 (Paste &amp; Convert)</h4>
+<p class="font-body-md text-body-md text-text-weak text-sm">一键捕获剪贴板中的多态 Markdown 并结构化重组。</p>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-bright border border-border-subtle rounded-xl p-5 hover:bg-surface transition-colors group cursor-default">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center mb-4 group-hover:bg-primary-container group-hover:text-white transition-colors text-primary">
+<span class="material-symbols-outlined">library_books</span>
+</div>
+<h4 class="font-label-md text-label-md text-text-primary mb-1">批量文件 (Batch Processing)</h4>
+<p class="font-body-md text-body-md text-text-weak text-sm">拖拽文件夹，支持高并发多线程后台静默转换。</p>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-bright border border-border-subtle rounded-xl p-5 hover:bg-surface transition-colors group cursor-default">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center mb-4 group-hover:bg-primary-container group-hover:text-white transition-colors text-primary">
+<span class="material-symbols-outlined">format_paint</span>
+</div>
+<h4 class="font-label-md text-label-md text-text-primary mb-1">模板样式 (Template Styles)</h4>
+<p class="font-body-md text-body-md text-text-weak text-sm">基于参考 .docx 文件，完美映射标题、正文及表格样式。</p>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-bright border border-border-subtle rounded-xl p-5 hover:bg-surface transition-colors group cursor-default">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center mb-4 group-hover:bg-primary-container group-hover:text-white transition-colors text-primary">
+<span class="material-symbols-outlined">edit_document</span>
+</div>
+<h4 class="font-label-md text-label-md text-text-primary mb-1">轻量编辑 (Lightweight Editing)</h4>
+<p class="font-body-md text-body-md text-text-weak text-sm">内置双栏所见即所得编辑器，转换前微调元数据。</p>
+</div>
+<!-- Card 5 -->
+<div class="bg-surface-bright border border-border-subtle rounded-xl p-5 hover:bg-surface transition-colors group cursor-default">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center mb-4 group-hover:bg-primary-container group-hover:text-white transition-colors text-primary">
+<span class="material-symbols-outlined">terminal</span>
+</div>
+<h4 class="font-label-md text-label-md text-text-primary mb-1">Agent/CLI (Developer Tools)</h4>
+<p class="font-body-md text-body-md text-text-weak text-sm">提供命令行接口及本地 API，便于集成至自动化流。</p>
+</div>
+</div>
+</div>
+<!-- 3. System Environment Status -->
+<div class="bg-card-white border border-border-subtle rounded-xl p-6">
+<h3 class="font-headline-md text-headline-md text-text-primary mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">speed</span>
+                        系统环境状态 (System Health)
+                    </h3>
+<div class="space-y-4">
+<!-- Status Item 1 -->
+<div class="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-text-primary">Pandoc Engine</div>
+<div class="font-body-md text-body-md text-text-weak text-sm">核心转换引擎状态</div>
+</div>
+</div>
+<div class="text-right">
+<div class="font-code-md text-code-md text-secondary">v3.1.2 Detected</div>
+<div class="font-label-sm text-label-sm text-text-weak">运行正常</div>
+</div>
+</div>
+<!-- Status Item 2 -->
+<div class="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-text-primary">Local Storage</div>
+<div class="font-body-md text-body-md text-text-weak text-sm">缓存与历史记录空间</div>
+</div>
+</div>
+<div class="text-right">
+<div class="font-code-md text-code-md text-text-primary">1.2GB Available</div>
+<div class="font-label-sm text-label-sm text-text-weak">~Data/Roaming/md-king</div>
+</div>
+</div>
+<!-- Status Item 3 -->
+<div class="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">integration_instructions</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-text-primary">System Integration</div>
+<div class="font-body-md text-body-md text-text-weak text-sm">系统级右键菜单扩展</div>
+</div>
+</div>
+<div class="text-right">
+<div class="font-label-md text-label-md text-primary">Active</div>
+<button class="font-label-sm text-label-sm text-info-blue hover:underline mt-0.5">配置</button>
+</div>
+</div>
+<!-- Status Item 4 -->
+<div class="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-text-primary">CLI Tool</div>
+<div class="font-body-md text-body-md text-text-weak text-sm">全局环境变量注册</div>
+</div>
+</div>
+<div class="text-right">
+<div class="font-label-md text-label-md text-text-primary">Linked to PATH</div>
+<div class="font-code-md text-code-md text-text-weak text-xs mt-0.5">mdk --version</div>
+</div>
+</div>
+</div>
+</div>
+<!-- 4. Privacy & Security -->
+<div class="bg-surface-low border border-border-subtle rounded-xl p-5 flex items-start gap-4">
+<span class="material-symbols-outlined text-info-blue text-2xl flex-shrink-0 mt-0.5">shield_locked</span>
+<div>
+<h4 class="font-label-md text-label-md text-text-primary mb-1">隐私安全承诺 (Local Execution Guarantee)</h4>
+<p class="font-body-md text-body-md text-on-surface-variant text-sm">
+                            MD King 采用 100% 本地离线执行架构。您的所有文本、提示词生成内容及转换后的文档，均在本地内存中处理并直接写入本地磁盘。应用不会向任何云端服务器上传、遥测或备份您的业务数据。
+                        </p>
+</div>
+</div>
+<!-- 5. Actions & Footer -->
+<div class="pt-6 border-t border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-4">
+<div class="flex items-center gap-3 w-full sm:w-auto">
+<button class="flex-1 sm:flex-none bg-primary text-white font-label-md text-label-md px-6 py-2.5 rounded-lg hover:bg-surface-tint transition-colors flex items-center justify-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">update</span>
+                            检查更新
+                        </button>
+<button class="flex-1 sm:flex-none bg-card-white border border-border-subtle text-text-primary font-label-md text-label-md px-6 py-2.5 rounded-lg hover:bg-surface-bright transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">chat_bubble_outline</span>
+                            反馈建议
+                        </button>
+</div>
+<a class="font-label-sm text-label-sm text-text-weak hover:text-primary transition-colors flex items-center gap-1" href="#">
+                        开源协议 <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</a>
+</div>
+</div>
+</main>
+</div>
+</body></html>

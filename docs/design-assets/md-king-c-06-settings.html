@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>md-king - 设置中心</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#6ffbbe",
+                        "error": "#ba1a1a",
+                        "surface-container-low": "#eff4ff",
+                        "primary-container": "#4f46e5",
+                        "text-primary": "#0F172A",
+                        "on-tertiary": "#ffffff",
+                        "background": "#f8f9ff",
+                        "inverse-surface": "#213145",
+                        "on-secondary-fixed-variant": "#005236",
+                        "text-weak": "#94A3B8",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed": "#2a1700",
+                        "surface-variant": "#d3e4fe",
+                        "outline-variant": "#c7c4d8",
+                        "on-error-container": "#93000a",
+                        "surface-tint": "#4d44e3",
+                        "info-blue": "#3B82F6",
+                        "surface-dim": "#cbdbf5",
+                        "tertiary-fixed": "#ffddb8",
+                        "secondary-container": "#6cf8bb",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface-bright": "#f8f9ff",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "surface-container-highest": "#d3e4fe",
+                        "outline": "#777587",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "tertiary-container": "#885500",
+                        "on-primary-container": "#dad7ff",
+                        "card-white": "#FFFFFF",
+                        "on-background": "#0b1c30",
+                        "on-tertiary-container": "#ffd4a4",
+                        "on-surface-variant": "#464555",
+                        "bg-slate": "#F8FAFC",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "inverse-primary": "#c3c0ff",
+                        "on-error": "#ffffff",
+                        "on-surface": "#0b1c30",
+                        "on-secondary-container": "#00714d",
+                        "surface": "#f8f9ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "error-red": "#EF4444",
+                        "surface-container": "#e5eeff",
+                        "on-secondary": "#ffffff",
+                        "primary": "#3525cd",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#684000",
+                        "on-primary-fixed": "#0f0069",
+                        "border-subtle": "#E2E8F0",
+                        "on-secondary-fixed": "#002113",
+                        "secondary": "#006c49",
+                        "primary-fixed": "#e2dfff",
+                        "surface-container-high": "#dce9ff",
+                        "secondary-fixed-dim": "#4edea3"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1.25rem",
+                        "3xl": "1.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "40px",
+                        "sm": "8px",
+                        "margin": "24px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "headline-lg-mobile": ["Inter", "sans-serif"],
+                        "code-md": ["JetBrains Mono", "monospace"],
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "label-sm": ["Inter", "sans-serif"],
+                        "label-md": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "code-md": ["13px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 24px -1px rgba(53, 37, 205, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 1);
+            box-shadow: 0 2px 12px rgba(53, 37, 205, 0.04), inset 0 1px 0 rgba(255,255,255,0.8);
+        }
+        /* Soft blue background gradient */
+        .bg-soft-glass-blue {
+            background: linear-gradient(135deg, #f0f4ff 0%, #e2ebfa 100%);
+            position: relative;
+        }
+        .bg-soft-glass-blue::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at 15% 50%, rgba(53, 37, 205, 0.05), transparent 25%),
+                        radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.06), transparent 25%);
+            z-index: 0;
+            pointer-events: none;
+        }
+        /* Custom Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #4f46e5;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #4f46e5;
+        }
+    </style>
+</head>
+<body class="bg-soft-glass-blue text-text-primary min-h-screen flex overflow-hidden">
+<!-- JSON: SideNavBar (Semantic Map: Settings -> Settings) -->
+<nav class="fixed left-0 top-0 h-screen w-64 border-r border-border-subtle bg-surface-container-lowest z-20 flex flex-col h-full py-lg">
+<div class="px-lg mb-lg">
+<h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">md-king</h1>
+<p class="font-label-sm text-label-sm text-text-weak mt-xs">V2.4.0 Professional</p>
+</div>
+<ul class="flex-1 flex flex-col gap-sm px-md">
+<li><a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-2xl hover:bg-surface-container transition-colors duration-200" href="#"><span class="material-symbols-outlined">swap_horiz</span><span class="font-label-md text-label-md">Convert</span></a></li>
+<li><a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-2xl hover:bg-surface-container transition-colors duration-200" href="#"><span class="material-symbols-outlined">description</span><span class="font-label-md text-label-md">Template Center</span></a></li>
+<li><a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-2xl hover:bg-surface-container transition-colors duration-200" href="#"><span class="material-symbols-outlined">history</span><span class="font-label-md text-label-md">History</span></a></li>
+<li><a class="text-on-surface-variant flex items-center gap-md px-lg py-sm rounded-2xl hover:bg-surface-container transition-colors duration-200" href="#"><span class="material-symbols-outlined">terminal</span><span class="font-label-md text-label-md">CLI / Agent</span></a></li>
+<li><a class="text-primary font-bold flex items-center gap-md px-lg py-sm bg-surface-container-high rounded-2xl shadow-sm" href="#"><span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings</span><span class="font-label-md text-label-md">Settings</span></a></li>
+</ul>
+<ul class="mt-auto flex flex-col gap-sm px-md pt-lg border-t border-border-subtle mx-md">
+<li><a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-2xl hover:bg-surface-container transition-colors duration-200" href="#"><span class="material-symbols-outlined">help_outline</span><span class="font-label-md text-label-md">Support</span></a></li>
+<li><a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-2xl hover:bg-surface-container transition-colors duration-200" href="#"><span class="material-symbols-outlined">article</span><span class="font-label-md text-label-md">Documentation</span></a></li>
+</ul>
+</nav>
+<!-- Main Content Area -->
+<main class="ml-64 flex-1 h-screen overflow-y-auto relative z-10 px-margin py-lg">
+<!-- Header -->
+<header class="flex justify-between items-center mb-lg">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-text-primary">设置中心</h2>
+<p class="font-body-md text-body-md text-text-weak mt-xs flex items-center gap-xs">
+<span class="material-symbols-outlined text-secondary-container" style="font-size: 16px;">check_circle</span>
+                    已自动保存
+                </p>
+</div>
+<div class="flex items-center gap-md">
+<button class="w-10 h-10 rounded-full glass-card flex items-center justify-center text-text-primary hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="h-10 w-10 rounded-full bg-primary-fixed text-primary flex items-center justify-center font-bold">
+                    MK
+                </div>
+</div>
+</header>
+<!-- Settings Layout (Vertical Tabs + Content) -->
+<div class="flex gap-margin h-[calc(100vh-140px)]">
+<!-- Category Sidebar (Inner) -->
+<aside class="w-56 flex-shrink-0">
+<nav class="glass-panel rounded-3xl p-sm flex flex-col gap-xs">
+<button class="w-full text-left px-md py-sm rounded-2xl bg-surface-container-high text-primary font-label-md text-label-md shadow-sm transition-all flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+                        常规设置
+                    </button>
+<button class="w-full text-left px-md py-sm rounded-2xl text-on-surface-variant hover:bg-surface-container transition-all font-label-md text-label-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">brush</span>
+                        外观与主题
+                    </button>
+<button class="w-full text-left px-md py-sm rounded-2xl text-on-surface-variant hover:bg-surface-container transition-all font-label-md text-label-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+                        引擎配置
+                    </button>
+<button class="w-full text-left px-md py-sm rounded-2xl text-on-surface-variant hover:bg-surface-container transition-all font-label-md text-label-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">extension</span>
+                        集成与快捷键
+                    </button>
+<button class="w-full text-left px-md py-sm rounded-2xl text-on-surface-variant hover:bg-surface-container transition-all font-label-md text-label-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]">shield</span>
+                        隐私与数据
+                    </button>
+</nav>
+</aside>
+<!-- Settings Content Grid -->
+<div class="flex-1 overflow-y-auto pr-md pb-xl space-y-lg">
+<!-- Section: Conversion Defaults -->
+<section class="glass-panel rounded-3xl p-lg">
+<h3 class="font-headline-md text-headline-md mb-md text-text-primary flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined text-primary">auto_awesome</span>
+                        转换默认行为
+                    </h3>
+<div class="space-y-sm">
+<div class="flex items-center justify-between p-md rounded-2xl hover:bg-surface-container-low transition-colors">
+<div>
+<h4 class="font-label-md text-label-md text-text-primary">转换后自动打开文件</h4>
+<p class="font-body-md text-body-md text-text-weak">生成文档后调用系统默认应用打开</p>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+<input checked="" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-border-subtle z-10 checked:right-0 checked:border-primary" id="toggle1" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-border-subtle cursor-pointer" for="toggle1"></label>
+</div>
+</div>
+<div class="flex items-center justify-between p-md rounded-2xl hover:bg-surface-container-low transition-colors">
+<div>
+<h4 class="font-label-md text-label-md text-text-primary">自动生成目录 (TOC)</h4>
+<p class="font-body-md text-body-md text-text-weak">在输出文档首页插入导航目录</p>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+<input checked="" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-border-subtle z-10 checked:right-0 checked:border-primary" id="toggle2" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-border-subtle cursor-pointer" for="toggle2"></label>
+</div>
+</div>
+<div class="flex items-center justify-between p-md rounded-2xl hover:bg-surface-container-low transition-colors">
+<div>
+<h4 class="font-label-md text-label-md text-text-primary">保留原始图片资源</h4>
+<p class="font-body-md text-body-md text-text-weak">将引用的本地图片复制到输出目录的 assets 文件夹中</p>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+<input class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-border-subtle z-10 checked:right-0 checked:border-primary" id="toggle3" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-border-subtle cursor-pointer" for="toggle3"></label>
+</div>
+</div>
+</div>
+</section>
+<!-- Section: Engine & Output -->
+<section class="glass-panel rounded-3xl p-lg">
+<h3 class="font-headline-md text-headline-md mb-md text-text-primary flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined text-primary">build</span>
+                        引擎与输出路径
+                    </h3>
+<div class="space-y-md mt-md">
+<!-- Pandoc Path -->
+<div>
+<label class="font-label-md text-label-md text-text-primary mb-xs block flex justify-between">
+                                Pandoc 执行路径
+                                <span class="text-secondary font-label-sm px-2 py-0.5 rounded-full bg-secondary-container bg-opacity-20 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">verified</span> 3.x Detected
+                                </span>
+</label>
+<div class="flex gap-sm">
+<input class="flex-1 rounded-xl border border-border-subtle bg-white/50 px-md py-2 font-code-md text-code-md text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" readonly="" type="text" value="/usr/local/bin/pandoc"/>
+<button class="px-md py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-label-md text-label-md transition-colors border border-primary-fixed">
+                                    浏览...
+                                </button>
+</div>
+</div>
+<!-- Output Dir -->
+<div>
+<label class="font-label-md text-label-md text-text-primary mb-xs block">默认输出目录</label>
+<div class="flex gap-sm">
+<input class="flex-1 rounded-xl border border-border-subtle bg-white/50 px-md py-2 font-code-md text-code-md text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" type="text" value="~/Documents/md-king-output"/>
+<button class="px-md py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-label-md text-label-md transition-colors border border-primary-fixed">
+                                    选择...
+                                </button>
+</div>
+</div>
+<!-- Default Template -->
+<div>
+<label class="font-label-md text-label-md text-text-primary mb-xs block">默认文档模板</label>
+<div class="relative">
+<select class="w-full rounded-xl border border-border-subtle bg-white/50 px-md py-2.5 font-body-md text-body-md text-on-surface-variant appearance-none focus:border-primary outline-none cursor-pointer">
+<option>Academic Minimal (Word)</option>
+<option>Corporate Report (PDF)</option>
+<option>Tech Blog (HTML)</option>
+</select>
+<span class="material-symbols-outlined absolute right-md top-1/2 -translate-y-1/2 text-text-weak pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section: Privacy & Data -->
+<section class="glass-panel rounded-3xl p-lg border-l-4 border-error/50">
+<h3 class="font-headline-md text-headline-md mb-md text-error flex items-center gap-sm border-b border-border-subtle pb-sm">
+<span class="material-symbols-outlined">security</span>
+                        隐私与数据管理
+                    </h3>
+<div class="space-y-sm mt-md">
+<div class="flex items-center justify-between p-md rounded-2xl bg-error-container/20 border border-error-container">
+<div>
+<h4 class="font-label-md text-label-md text-on-error-container flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">wifi_off</span>
+                                    纯本地模式 (Local Only Mode)
+                                </h4>
+<p class="font-body-md text-body-md text-error/70">禁用所有云端模板同步和更新检查，确保数据绝对隔离</p>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+<input class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-border-subtle z-10 checked:right-0 checked:border-error" id="toggle_privacy" name="toggle_privacy" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-border-subtle cursor-pointer" for="toggle_privacy"></label>
+</div>
+</div>
+<div class="p-md rounded-2xl flex items-center justify-between">
+<div>
+<h4 class="font-label-md text-label-md text-text-primary">清除所有转换历史</h4>
+<p class="font-body-md text-body-md text-text-weak">将删除所有本地日志和缓存文件</p>
+</div>
+<button class="px-md py-2 rounded-xl bg-error/10 hover:bg-error/20 text-error font-label-md text-label-md transition-colors border border-error/20 flex items-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+                                立即清除
+                            </button>
+</div>
+</div>
+</section>
+</div>
+</div>
+</main>
+</body></html>

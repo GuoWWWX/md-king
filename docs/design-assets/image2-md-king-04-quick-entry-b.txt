@@ -1,0 +1,9 @@
+Use case: ui-mockup
+Asset type: desktop software page concept image
+Primary request: Generate the Quick Entry page for MD King.
+Global style lock: Use the same visual language as the selected MD King direction B: premium blue dimensional desktop software, fuller and more tactile than flat web UI, rounded thick panels, soft glass and neumorphic hybrid, blue and white palette, gentle cyan highlights, deep navy text, soft inner highlights, elegant shadows, bright mode only. It must feel like a serious beautiful Windows desktop productivity app for converting AI Markdown into Word DOCX. Avoid purple, dark cyberpunk, generic SaaS cards, boring admin dashboard, mobile UI, browser chrome, stock people, watermark, and distorted text. Chinese labels should be minimal and readable.
+Scene/backdrop: Premium blue desktop app shell with an additional floating ball preview.
+Subject: quick access center showing four entry methods: floating ball drag-and-drop, global hotkeys, Windows right-click menu, system tray mini window. Include a large 3D floating blue ball preview, a drag target for multiple Markdown files, shortcut cards, a visual mock of a Windows context menu item, and recent quick conversion activity.
+Layout details: page title "快速入口"; show switches and permission/status indicators for each entry method. Make it feel convenient and low-friction for users copying text from AI web chats.
+Text (verbatim): "MD King", "快速入口", "悬浮球", "拖入文件", "快捷键", "右键菜单", "系统托盘", "批量生成 Word".
+Constraints: Very beautiful, dimensional and intuitive; no marketing landing page.

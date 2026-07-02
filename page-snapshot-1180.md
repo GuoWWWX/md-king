@@ -1,0 +1,88 @@
+- generic [ref=e2] [box=0,0,1311,844]:
+  - generic [ref=e4] [box=0,0,1311,844]:
+    - complementary [ref=e5] [box=0,0,260,844]:
+      - generic [ref=e6] [box=16,20,227,44]:
+        - img [ref=e8] [box=32,32,20,20]
+        - generic [ref=e10] [box=76,22,128,40]:
+          - generic [ref=e11] [box=76,22,128,24]:
+            - heading "md-king" [level=1] [ref=e12] [box=76,22,66,24]
+            - generic [ref=e13] [box=150,24,33,19]: Pro
+          - paragraph [ref=e14] [box=76,46,128,16]: AI Markdown to Word
+      - navigation [ref=e15] [box=16,105,227,260]:
+        - button "转换" [ref=e16] [box=16,105,227,40]:
+          - img [box=27,117,16,16]
+          - text: 转换
+        - button "模板中心" [ref=e17] [box=16,149,227,40]:
+          - img [box=27,161,16,16]
+          - text: 模板中心
+        - button "转换历史" [ref=e18] [box=16,193,227,40]:
+          - img [box=27,205,16,16]
+          - text: 转换历史
+        - button "CLI / Agent" [ref=e19] [box=16,237,227,40]:
+          - img [box=27,249,16,16]
+          - text: CLI / Agent
+        - button "设置" [ref=e20] [box=16,281,227,40]:
+          - img [box=27,293,16,16]
+          - text: 设置
+        - button "关于" [ref=e21] [box=16,325,227,40]:
+          - img [box=27,337,16,16]
+          - text: 关于
+      - generic [ref=e22] [box=16,389,227,96]:
+        - paragraph [ref=e23] [box=16,389,227,16]: 工作区
+        - button "控制台" [ref=e24] [box=16,409,227,36]:
+          - img [box=27,419,16,16]
+          - text: 控制台
+        - button "工作流" [ref=e25] [box=16,449,227,36]:
+          - img [box=27,459,16,16]
+          - text: 工作流
+      - generic [ref=e26] [box=16,667,227,157]:
+        - generic [ref=e27] [box=16,691,227,101]:
+          - generic [ref=e28] [box=33,708,194,20]:
+            - img [ref=e29] [box=33,710,16,16]
+            - text: 本地优先
+          - paragraph [ref=e32] [box=33,736,194,40]: 文档默认只在本机转换，不上传云端。当前模板：默认报告模板
+        - generic [ref=e33] [box=16,808,227,16]:
+          - generic [ref=e34] [box=20,808,86,16]: md-king v0.1.0
+          - img [ref=e35] [box=223,808,16,16]
+    - main [ref=e38] [box=260,0,1051,844]:
+      - generic [ref=e40] [box=260,0,1051,64]:
+        - generic [ref=e41] [box=292,19,402,25]:
+          - generic [ref=e42] [box=292,19,123,25]:
+            - img [ref=e43] [box=303,25,14,14]
+            - text: Pandoc 待检测
+          - generic [ref=e46] [box=423,19,89,25]:
+            - img [ref=e47] [box=434,25,14,14]
+            - text: 本地转换
+          - generic [ref=e50] [box=520,19,173,25]:
+            - img [ref=e51] [box=531,25,14,14]
+            - text: 默认模板：默认报告模板
+        - generic [ref=e54] [box=1129,16,150,32]:
+          - button "通知" [ref=e55] [box=1129,18,28,28]:
+            - img [box=1135,24,16,16]
+          - button "本地用户" [ref=e56] [box=1174,16,105,32]:
+            - img [box=1182,24,16,16]
+            - generic [ref=e57] [box=1206,20,64,24]: 本地用户
+      - generic [ref=e59] [box=292,73,987,32]:
+        - generic [ref=e60] [box=292,73,700,32]:
+          - heading "转换 Markdown 为 Word" [level=2] [ref=e61] [box=292,73,282,32]
+          - paragraph [ref=e62] [box=586,83,406,20]: 拖入 Markdown 文件，或粘贴 AI 生成内容，一键生成样式统一、可继续编辑的 DOCX 文档。
+        - generic [ref=e63] [box=1004,79,275,20]:
+          - generic [ref=e64] [box=1004,79,69,20]: 本地转换
+          - generic [ref=e65] [box=1081,79,84,20]: Word/WPS
+          - generic [ref=e66] [box=1174,79,105,20]: 模板样式可复用
+      - generic [ref=e70] [box=284,137,1003,683]:
+        - generic [ref=e71] [box=284,137,667,683]:
+          - generic [ref=e72] [box=284,137,667,537]:
+            - generic [ref=e74] [box=297,150,288,44]
+            - generic [ref=e77] [box=297,206,642,455]
+          - generic [ref=e83] [box=284,686,667,134]:
+            - generic [ref=e84] [box=297,699,642,57]
+            - generic [ref=e98] [box=297,768,642,40]
+        - complementary [ref=e103] [box=967,137,320,683]:
+          - generic [ref=e104] [box=967,137,316,123]:
+            - generic [ref=e105] [box=980,150,291,20]
+            - generic [ref=e108] [box=980,182,291,65]
+          - generic [ref=e112] [box=967,272,316,91]:
+            - generic [ref=e113] [box=980,284,291,20]
+            - paragraph [ref=e119] [box=980,312,291,37]: 完成转换后显示记录。
+  - region "Notifications alt+T" [box=0,844,1311,0]

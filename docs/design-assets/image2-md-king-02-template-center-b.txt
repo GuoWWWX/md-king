@@ -1,0 +1,9 @@
+Use case: ui-mockup
+Asset type: desktop software page concept image
+Primary request: Generate the Template Center page for MD King.
+Global style lock: Use the same visual language as the selected MD King direction B: premium blue dimensional desktop software, fuller and more tactile than flat web UI, rounded thick panels, soft glass and neumorphic hybrid, blue and white palette, gentle cyan highlights, deep navy text, soft inner highlights, elegant shadows, bright mode only. It must feel like a serious beautiful Windows desktop productivity app for converting AI Markdown into Word DOCX. Avoid purple, dark cyberpunk, generic SaaS cards, boring admin dashboard, mobile UI, browser chrome, stock people, watermark, and distorted text. Chinese labels should be minimal and readable.
+Scene/backdrop: Same premium desktop app window on a soft blue studio background.
+Subject: a template management center with left sidebar navigation, top status bar, large page title "模板中心", category filter chips, search box, import template button, grid of rich DOCX template cards, selected default template panel, and a Word style preview panel.
+Layout details: template cards should look dimensional and tactile, each showing a small Word page preview, scenario labels such as report, official document, technical document, academic paper, and actions like try, set default, edit style. Include one highlighted selected card.
+Text (verbatim): "MD King", "模板中心", "导入模板", "通用报告", "正式公文", "技术文档", "设为默认", "样式预览".
+Constraints: Make template reuse feel valuable and easy; polished, spacious, consistent with direction B.

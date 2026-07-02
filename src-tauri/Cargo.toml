@@ -1,0 +1,23 @@
+[package]
+name = "md-king"
+version = "0.1.0"
+description = "AI Markdown to Word/WPS document converter"
+authors = ["md-king contributors"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix keeps the library name unique on Windows.
+name = "md_king_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+zip = "5"

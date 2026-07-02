@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>md-king - 转换工作台</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary": "#2563EB", /* Cobalt blue for brand */
+                        "primary-container": "#1D4ED8",
+                        "on-primary": "#ffffff",
+                        "secondary": "#10B981", /* Green for status */
+                        "secondary-container": "#D1FAE5",
+                        "surface": "#ffffff",
+                        "surface-bright": "#f8fafc",
+                        "surface-container": "#f1f5f9",
+                        "surface-container-low": "#f8fafc",
+                        "surface-container-high": "#e2e8f0",
+                        "on-surface": "#0f172a",
+                        "on-surface-variant": "#475569",
+                        "text-weak": "#64748b",
+                        "border-subtle": "#e2e8f0",
+                        "bg-slate": "#f8fafc",
+                        "card-white": "#ffffff",
+                        "outline-variant": "#cbd5e1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.375rem",
+                        "md": "0.5rem",
+                        "lg": "0.625rem", /* 10px */
+                        "xl": "0.75rem", /* 12px */
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "body": ["Inter", "sans-serif"],
+                        "headline": ["Inter", "sans-serif"],
+                        "code": ["jetbrainsMono", "monospace"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for main canvas */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: #94a3b8;
+        }
+        
+        /* Markdown Editor specific font */
+        .markdown-text {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+        
+        .shadow-ambient-blue {
+            box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.05), 0 8px 10px -6px rgba(37, 99, 235, 0.05);
+        }
+    </style>
+</head>
+<body class="bg-bg-slate text-on-surface h-screen w-full flex overflow-hidden font-body antialiased selection:bg-primary/20 selection:text-primary">
+<!-- Shared Component: SideNavBar -->
+<aside class="w-[240px] h-screen sticky left-0 top-0 bg-surface border-r border-border-subtle flex flex-col h-full py-6 px-4 shrink-0 z-20">
+<!-- Header -->
+<div class="mb-8 flex items-center gap-3 pl-2">
+<div class="w-9 h-9 rounded bg-primary flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">transform</span>
+</div>
+<div>
+<h2 class="text-xl font-headline font-bold text-primary tracking-tight">md-king</h2>
+</div>
+</div>
+<!-- Main Navigation -->
+<nav class="flex-1 space-y-1">
+<!-- Active Tab: 转换 -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-container text-primary font-semibold transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">swap_horiz</span>
+<span class="text-sm">转换</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard_customize</span>
+<span class="text-sm">模板中心</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span class="text-sm">转换历史</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">bolt</span>
+<span class="text-sm">快速入口</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+<span class="text-sm">Agent / CLI</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="text-sm">设置</span>
+</a>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-bg-slate relative">
+<!-- Shared Component: TopNavBar -->
+<header class="docked full-width top-0 h-16 border-b border-border-subtle bg-surface flex justify-between items-center w-full px-6 max-w-full shrink-0 z-10">
+<div class="flex items-center gap-8">
+<!-- Links -->
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-primary border-b-2 border-primary pb-1 pt-1 text-sm font-medium" href="#">编辑器</a>
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all px-2 py-1 rounded text-sm" href="#">预览</a>
+</nav>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">help_outline</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-high border border-border-subtle overflow-hidden flex items-center justify-center ml-2 cursor-pointer">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">person</span>
+</div>
+</div>
+</header>
+<!-- Dynamic Page Canvas -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col gap-6 max-w-[1400px] mx-auto w-full">
+<!-- Context Header -->
+<div class="flex flex-col gap-3">
+<div class="flex items-baseline gap-4">
+<h1 class="text-2xl font-headline font-bold text-on-surface tracking-tight">转换工作台</h1>
+<span class="text-sm text-text-weak">V2.4.0</span>
+</div>
+<p class="text-base text-on-surface-variant max-w-2xl">
+                    粘贴 Markdown 或拖入 .md 文件，生成可编辑 Word 文档。
+                </p>
+<!-- Status Chips -->
+<div class="flex flex-wrap items-center gap-2 mt-2">
+<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-secondary text-xs font-medium">
+<span class="material-symbols-outlined text-[14px]">done</span> 本地转换
+                    </div>
+<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Pandoc 可用
+                    </div>
+<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface border border-border-subtle text-on-surface-variant text-xs font-medium">
+<span class="text-text-weak">默认模板:</span> 通用报告
+                    </div>
+<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface border border-border-subtle text-on-surface-variant text-xs font-medium">
+<span class="text-text-weak">输出:</span> 与源文件同目录
+                    </div>
+</div>
+</div>
+<!-- Main Split Layout -->
+<div class="flex flex-col lg:flex-row gap-6 flex-1 min-h-[500px]">
+<!-- Left Area: Editor Card -->
+<div class="flex-[6.5] min-w-0 bg-card-white border border-border-subtle rounded-xl shadow-sm flex flex-col overflow-hidden relative">
+<!-- Editor Tabs & Toolbar -->
+<div class="h-12 border-b border-border-subtle bg-surface-bright flex items-center justify-between px-2 shrink-0">
+<div class="flex items-center h-full">
+<button class="h-full px-4 text-primary border-b-2 border-primary text-sm font-medium bg-card-white flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">edit_document</span>
+                                粘贴 Markdown
+                            </button>
+<button class="h-full px-4 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low text-sm font-medium transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">upload_file</span>
+                                导入文件
+                            </button>
+<button class="h-full px-4 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low text-sm font-medium transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">content_paste</span>
+                                读取剪贴板
+                            </button>
+</div>
+<div class="flex items-center gap-1 pr-2">
+<button class="p-1.5 text-text-weak hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="清空">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+<div class="w-px h-4 bg-border-subtle mx-1"></div>
+<button class="px-3 py-1.5 ml-1 bg-surface border border-border-subtle text-on-surface-variant rounded text-xs font-medium hover:bg-surface-container-low transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">visibility</span> 预览
+                            </button>
+</div>
+</div>
+<!-- Text Area (Inset shadow for depth) -->
+<div class="flex-1 relative bg-slate-50 shadow-[inset_0_2px_8px_rgba(0,0,0,0.03)]">
+<textarea class="w-full h-full p-6 bg-transparent border-none resize-none focus:ring-0 text-sm text-on-surface markdown-text leading-relaxed outline-none" placeholder="在此粘贴您的 Markdown 内容..." spellcheck="false"># Q3 区域销售数据分析报告
+
+## 1. 核心数据摘要
+本季度实现总营收 **¥4,250,000**，环比增长 `15.2%`。主要增长驱动力来自于华东区的新产品线推广。
+
+&gt; "AI 辅助工具的全面导入，使得销售团队的跟单效率提升了约 30%。" —— 销售总监
+
+## 2. 关键指标列表
+- **客户转化率**: 12.5% (↑ 2.1%)
+- **客单价**: ¥8,500 (持平)
+- **回款周期**: 45天 (↓ 5天)
+
+### 2.1 待办事项
+- [x] 完成华南区渠道培训
+- [ ] 制定 Q4 冲刺计划预案</textarea>
+</div>
+</div>
+<!-- Right Area: Conversion Panel -->
+<div class="flex-[3.5] min-w-0 bg-card-white border border-border-subtle rounded-xl shadow-ambient-blue flex flex-col relative overflow-hidden">
+<div class="p-6 flex flex-col h-full">
+<h3 class="text-lg font-headline font-semibold text-on-surface mb-5 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[22px]">tune</span>
+                            生成设置
+                        </h3>
+<div class="space-y-5 flex-1">
+<!-- Field: Target Template -->
+<div>
+<label class="block text-xs font-medium text-text-weak mb-2 uppercase tracking-wider">当前模板</label>
+<div class="p-3 border border-border-subtle rounded-lg bg-surface hover:border-primary/50 cursor-pointer transition-colors flex items-start gap-3">
+<div class="w-10 h-12 bg-surface-container border border-border-subtle rounded flex items-center justify-center shrink-0 relative overflow-hidden">
+<span class="material-symbols-outlined text-primary/40 text-[24px]">article</span>
+<div class="absolute bottom-0 w-full h-1 bg-primary"></div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-sm font-medium text-on-surface">企业通用报告.docx</span>
+<span class="text-[10px] bg-primary/10 px-1.5 py-0.5 rounded text-primary">默认</span>
+</div>
+<p class="text-xs text-text-weak leading-tight">包含标准封面、目录及三级标题样式映射。</p>
+</div>
+<span class="material-symbols-outlined text-text-weak mt-2 text-[20px]">unfold_more</span>
+</div>
+</div>
+<!-- Field: Output Location -->
+<div>
+<label class="block text-xs font-medium text-text-weak mb-2 uppercase tracking-wider">输出位置</label>
+<div class="flex items-center gap-2">
+<div class="flex-1 relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-weak text-[18px]">folder</span>
+<input class="w-full pl-9 pr-3 py-2 bg-surface border border-border-subtle rounded-lg text-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all" type="text" value="D:/Documents/md-king-output/"/>
+</div>
+<button class="p-2 border border-border-subtle rounded-lg bg-surface hover:bg-surface-container transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Field: Filename -->
+<div>
+<label class="block text-xs font-medium text-text-weak mb-2 uppercase tracking-wider">文件名</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-weak text-[18px]">edit</span>
+<input class="w-full pl-9 pr-3 py-2 bg-surface border border-border-subtle rounded-lg text-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="留空则使用 Markdown 标题" type="text" value="Q3_区域销售数据分析报告.docx"/>
+</div>
+</div>
+<!-- Toggles -->
+<div class="space-y-4 pt-3 border-t border-border-subtle mt-2">
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors">完成后自动打开文档</span>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</label>
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors">覆盖同名文件</span>
+<div class="relative inline-flex items-center">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</label>
+</div>
+</div>
+<!-- Primary Action Area -->
+<div class="mt-6 pt-4 flex flex-col items-center">
+<button class="w-full relative group overflow-hidden rounded-lg bg-primary text-on-primary font-medium text-base py-3 shadow-[0_4px_10px_rgba(37,99,235,0.3)] hover:bg-primary-container hover:shadow-[0_6px_15px_rgba(37,99,235,0.4)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-inner transition-all duration-200">
+<div class="absolute inset-x-0 top-0 h-[1px] bg-white/20 rounded-t-lg"></div>
+<div class="relative z-10 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[20px]">magic_button</span>
+                                    生成 Word
+                                </div>
+</button>
+<p class="text-xs text-text-weak mt-3 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">lock</span> 本机处理，不上传云端
+                            </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Span: Recent Tasks -->
+<div class="bg-card-white border border-border-subtle rounded-xl shadow-sm p-5 mt-2 shrink-0">
+<h4 class="text-sm font-medium text-on-surface mb-3 flex items-center gap-2">
+<span class="material-symbols-outlined text-text-weak text-[18px]">history</span>
+                    最近任务
+                </h4>
+<div class="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div>
+<p class="text-sm font-medium text-on-surface">Q3_区域销售数据分析报告.docx</p>
+<p class="text-xs text-text-weak mt-0.5">14:23 • 共 4 页 • 耗时 1.2s</p>
+</div>
+</div>
+<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded transition-colors">
+                            打开文档
+                        </button>
+<button class="p-1.5 text-on-surface-variant hover:bg-surface-container rounded transition-colors" title="打开所在目录">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+</button>
+</div>
+</div>
+<!-- Divider -->
+<div class="h-px w-full bg-border-subtle my-1 ml-11 w-[calc(100%-44px)]"></div>
+<div class="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-text-weak">
+<span class="material-symbols-outlined text-[18px]">draft</span>
+</div>
+<div>
+<p class="text-sm font-medium text-on-surface-variant">产品需求文档_V2.docx</p>
+<p class="text-xs text-text-weak mt-0.5">昨天 16:45</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Floating Action Button -->
+<button class="absolute bottom-8 right-8 w-14 h-14 rounded-full bg-primary text-on-primary shadow-[0_8px_20px_rgba(37,99,235,0.35)] flex items-center justify-center hover:bg-primary-container hover:scale-105 active:scale-95 transition-all group z-30" title="新建任务">
+<span class="material-symbols-outlined text-[28px]">add</span>
+</button>
+</main>
+</body></html>

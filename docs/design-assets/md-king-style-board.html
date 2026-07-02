@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>md-king Style Exploration</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "outline": "#777587",
+                        "surface-container": "#e5eeff",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-tertiary-fixed": "#2a1700",
+                        "card-white": "#FFFFFF",
+                        "text-primary": "#0F172A",
+                        "on-error": "#ffffff",
+                        "surface-container-highest": "#d3e4fe",
+                        "surface-container-low": "#eff4ff",
+                        "text-weak": "#94A3B8",
+                        "secondary-fixed-dim": "#4edea3",
+                        "border-subtle": "#E2E8F0",
+                        "error": "#ba1a1a",
+                        "background": "#f8f9ff",
+                        "on-secondary-container": "#00714d",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "bg-slate": "#F8FAFC",
+                        "on-secondary-fixed-variant": "#005236",
+                        "tertiary-container": "#885500",
+                        "on-background": "#0b1c30",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-surface-variant": "#464555",
+                        "on-error-container": "#93000a",
+                        "surface-container-high": "#dce9ff",
+                        "tertiary": "#684000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface": "#f8f9ff",
+                        "inverse-surface": "#213145",
+                        "surface-tint": "#4d44e3",
+                        "secondary": "#006c49",
+                        "on-tertiary": "#ffffff",
+                        "surface-dim": "#cbdbf5",
+                        "secondary-container": "#6cf8bb",
+                        "primary-fixed": "#e2dfff",
+                        "primary": "#3525cd",
+                        "surface-bright": "#f8f9ff",
+                        "primary-container": "#4f46e5",
+                        "on-secondary": "#ffffff",
+                        "on-surface": "#0b1c30",
+                        "tertiary-fixed": "#ffddb8",
+                        "outline-variant": "#c7c4d8",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "on-tertiary-container": "#ffd4a4",
+                        "inverse-primary": "#c3c0ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "surface-variant": "#d3e4fe",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "info-blue": "#3B82F6",
+                        "on-primary-container": "#dad7ff",
+                        "on-primary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed": "#002113",
+                        "error-red": "#EF4444",
+                        "surface-container-lowest": "#ffffff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "xs": "4px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "xl": "40px",
+                        "margin": "24px"
+                    },
+                    fontFamily: {
+                        "label-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "code-md": ["jetbrainsMono"],
+                        "headline-lg-mobile": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    fontSize: {
+                        "label-md": ["14px", { lineHeight: "20px", fontWeight: "600" }],
+                        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+                        "label-sm": ["12px", { lineHeight: "16px", fontWeight: "500" }],
+                        "code-md": ["13px", { lineHeight: "20px", fontWeight: "400" }],
+                        "headline-lg-mobile": ["24px", { lineHeight: "32px", fontWeight: "700" }],
+                        "headline-lg": ["28px", { lineHeight: "36px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "headline-md": ["20px", { lineHeight: "28px", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; padding: 40px; min-width: 1440px; overflow-x: auto; }
+        .board-container { display: flex; gap: 40px; }
+        .mockup-wrapper { width: 900px; height: 600px; position: relative; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); flex-shrink: 0; }
+        .direction-title { font-size: 20px; font-weight: 600; margin-bottom: 16px; color: #334155; }
+        
+        /* Floating Ball */
+        .floating-ball {
+            position: absolute;
+            bottom: 32px;
+            right: 32px;
+            background: rgba(37, 99, 235, 0.9);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(8px);
+            z-index: 50;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* Direction A Styles */
+        .theme-a { background-color: #F8FAFC; color: #0F172A; }
+        .theme-a .sidebar { background-color: #FFFFFF; border-right: 1px solid #E2E8F0; }
+        .theme-a .nav-item { color: #64748B; }
+        .theme-a .nav-item.active { background-color: #EFF6FF; color: #2563EB; font-weight: 600; }
+        .theme-a .topbar { background-color: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+        .theme-a .btn-primary { background-color: #2563EB; color: white; }
+        .theme-a .chip-success { background-color: #DCFCE7; color: #166534; }
+        .theme-a .chip-info { background-color: #EFF6FF; color: #1E40AF; }
+        
+        /* Direction B Styles */
+        .theme-b { background-color: #FAFAF9; color: #334155; }
+        .theme-b .sidebar { background-color: #F5F5F4; border-right: 1px solid #E7E5E4; }
+        .theme-b .nav-item { color: #78716C; }
+        .theme-b .nav-item.active { background-color: #ECFDF5; color: #166534; font-weight: 600; }
+        .theme-b .topbar { background-color: #F5F5F4; border-bottom: 1px solid #E7E5E4; }
+        .theme-b .btn-primary { background-color: #166534; color: white; }
+        .theme-b .floating-ball { background: rgba(22, 101, 52, 0.9); }
+        .theme-b .chip-success { background-color: #D1FAE5; color: #065F46; }
+        .theme-b .chip-info { background-color: #F3F4F6; color: #374151; }
+
+        /* Direction C Styles */
+        .theme-c { background-color: #0F172A; color: #F8FAFC; }
+        .theme-c .sidebar { background-color: #1E293B; border-right: 1px solid #334155; }
+        .theme-c .nav-item { color: #94A3B8; }
+        .theme-c .nav-item.active { background-color: #064E3B; color: #10B981; font-weight: 600; }
+        .theme-c .topbar { background-color: #1E293B; border-bottom: 1px solid #334155; }
+        .theme-c .btn-primary { background-color: #10B981; color: #022C22; }
+        .theme-c .floating-ball { background: rgba(16, 185, 129, 0.9); color: #022C22; }
+        .theme-c .chip-success { background-color: #064E3B; color: #34D399; }
+        .theme-c .chip-info { background-color: #1E293B; border: 1px solid #475569; color: #94A3B8; }
+        .theme-c .panel-bg { background-color: #1E293B; border: 1px solid #334155; }
+    </style>
+</head>
+<body>
+<div class="mb-8">
+<h1 class="text-3xl font-bold text-slate-800">md-king UI Style Exploration</h1>
+<p class="text-slate-500 mt-2">Desktop Application Mockups (1440x900 base scaled down)</p>
+</div>
+<div class="board-container">
+<!-- Direction A -->
+<div>
+<div class="direction-title">Direction A: Refined Office Blue (清爽办公蓝)</div>
+<div class="mockup-wrapper theme-a flex">
+<!-- Sidebar -->
+<div class="sidebar w-48 flex flex-col justify-between py-6">
+<div>
+<div class="px-6 mb-8 font-bold text-xl tracking-tight">md-king</div>
+<nav class="flex flex-col gap-1 px-3">
+<a class="nav-item active flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">swap_horiz</span> 转换</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">description</span> 模板</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">history</span> 历史</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">bolt</span> 快速入口</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span> Agent / CLI</a>
+</nav>
+</div>
+<div class="px-3">
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">settings</span> 设置</a>
+</div>
+</div>
+<!-- Main Content -->
+<div class="flex-1 flex flex-col h-full">
+<!-- Topbar -->
+<div class="topbar h-14 flex items-center justify-between px-6">
+<div class="flex items-center gap-3">
+<h2 class="font-semibold text-lg">工作区</h2>
+</div>
+<div class="flex items-center gap-3 text-xs">
+<span class="chip-success px-2 py-1 rounded-md font-medium flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">check_circle</span> 本地转换</span>
+<span class="chip-info px-2 py-1 rounded-md font-medium flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">extension</span> Pandoc 可用</span>
+</div>
+</div>
+<!-- Editor Area -->
+<div class="flex-1 flex p-6 gap-6">
+<div class="flex-1 bg-white rounded-lg border border-slate-200 p-6 shadow-sm overflow-hidden flex flex-col">
+<h3 class="font-medium text-slate-800 mb-4 pb-2 border-b border-slate-100">输入区 (Markdown)</h3>
+<div class="font-mono text-sm text-slate-600 flex-1 opacity-70">
+                                # 季度总结报告<br/><br/>
+                                ## 核心数据<br/>
+                                - 用户增长: 15%<br/>
+                                - 活跃度: 稳定<br/><br/>
+                                &gt; "持续提升用户体验是本季度的核心目标。"
+                            </div>
+</div>
+<div class="w-64 bg-white rounded-lg border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
+<h3 class="font-medium text-slate-800 pb-2 border-b border-slate-100">导出设置</h3>
+<div class="text-sm flex flex-col gap-2">
+<label class="text-slate-500">目标格式</label>
+<select class="w-full border-slate-200 rounded-md text-sm"><option>Word (.docx)</option></select>
+</div>
+<div class="text-sm flex flex-col gap-2">
+<label class="text-slate-500">使用模板</label>
+<select class="w-full border-slate-200 rounded-md text-sm"><option>标准商务模板 A</option></select>
+</div>
+<div class="mt-auto">
+<button class="btn-primary w-full py-2 rounded-md font-medium text-sm flex items-center justify-center gap-2">生成 Word <span class="material-symbols-outlined text-[18px]">arrow_forward</span></button>
+</div>
+</div>
+</div>
+</div>
+<div class="floating-ball">
+<span class="material-symbols-outlined">add</span>
+                    拖入文件或粘贴内容
+                </div>
+</div>
+</div>
+<!-- Direction B -->
+<div>
+<div class="direction-title">Direction B: Paper Green (文档纸张绿)</div>
+<div class="mockup-wrapper theme-b flex">
+<!-- Sidebar -->
+<div class="sidebar w-48 flex flex-col justify-between py-6">
+<div>
+<div class="px-6 mb-8 font-bold text-xl tracking-tight text-slate-800">md-king</div>
+<nav class="flex flex-col gap-1 px-3">
+<a class="nav-item active flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">swap_horiz</span> 转换</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">description</span> 模板</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">history</span> 历史</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">bolt</span> 快速入口</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span> Agent / CLI</a>
+</nav>
+</div>
+<div class="px-3">
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">settings</span> 设置</a>
+</div>
+</div>
+<!-- Main Content -->
+<div class="flex-1 flex flex-col h-full">
+<!-- Topbar -->
+<div class="topbar h-14 flex items-center justify-between px-6">
+<div class="flex items-center gap-3">
+<h2 class="font-semibold text-lg text-slate-700">编辑区</h2>
+</div>
+<div class="flex items-center gap-3 text-xs">
+<span class="chip-success px-2 py-1 rounded-md font-medium flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">shield</span> 本地安全</span>
+<span class="chip-info px-2 py-1 rounded-md font-medium flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">done_all</span> Pandoc 就绪</span>
+</div>
+</div>
+<!-- Editor Area -->
+<div class="flex-1 flex p-6 gap-6">
+<div class="flex-1 bg-white rounded-lg border border-[#E7E5E4] p-8 shadow-sm overflow-hidden flex flex-col font-serif" style="background-color: #FFFCF8;">
+<div class="text-slate-700 flex-1 opacity-80 leading-relaxed">
+<h1 class="text-2xl font-bold mb-4">季度总结报告</h1>
+<h2 class="text-xl font-semibold mb-2 mt-4">核心数据</h2>
+<ul class="list-disc pl-5 mb-4">
+<li>用户增长: 15%</li>
+<li>活跃度: 稳定</li>
+</ul>
+<blockquote class="border-l-4 border-green-600 pl-4 italic text-slate-500">
+                                    "持续提升用户体验是本季度的核心目标。"
+                                </blockquote>
+</div>
+</div>
+<div class="w-64 bg-white rounded-lg border border-[#E7E5E4] p-6 shadow-sm flex flex-col gap-5">
+<h3 class="font-medium text-slate-800 pb-2 border-b border-[#E7E5E4]">输出配置</h3>
+<div class="text-sm flex flex-col gap-2">
+<label class="text-slate-500 text-xs uppercase tracking-wider">格式</label>
+<div class="p-2 border border-[#E7E5E4] rounded-md bg-[#F5F5F4] text-slate-700">Word Document</div>
+</div>
+<div class="text-sm flex flex-col gap-2">
+<label class="text-slate-500 text-xs uppercase tracking-wider">样式表</label>
+<div class="p-2 border border-[#E7E5E4] rounded-md bg-[#F5F5F4] text-slate-700">学术排版风格</div>
+</div>
+<div class="mt-auto">
+<button class="btn-primary w-full py-2.5 rounded-md font-medium text-sm flex items-center justify-center gap-2">生成 Word <span class="material-symbols-outlined text-[18px]">done</span></button>
+</div>
+</div>
+</div>
+</div>
+<div class="floating-ball">
+<span class="material-symbols-outlined">add</span>
+                    拖入文件或粘贴内容
+                </div>
+</div>
+</div>
+<!-- Direction C -->
+<div>
+<div class="direction-title">Direction C: Dark Agent Tool (深色 Agent 工具感)</div>
+<div class="mockup-wrapper theme-c flex">
+<!-- Sidebar -->
+<div class="sidebar w-48 flex flex-col justify-between py-6">
+<div>
+<div class="px-6 mb-8 font-bold text-xl tracking-tight font-mono text-emerald-400">~/md-king</div>
+<nav class="flex flex-col gap-1 px-3">
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">swap_horiz</span> 转换</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">description</span> 模板</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">history</span> 历史</a>
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">bolt</span> 快速入口</a>
+<a class="nav-item active flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span> Agent / CLI</a>
+</nav>
+</div>
+<div class="px-3">
+<a class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm" href="#"><span class="material-symbols-outlined text-[20px]">settings</span> 设置</a>
+</div>
+</div>
+<!-- Main Content -->
+<div class="flex-1 flex flex-col h-full">
+<!-- Topbar -->
+<div class="topbar h-14 flex items-center justify-between px-6">
+<div class="flex items-center gap-3 font-mono text-sm">
+<span class="text-slate-400">status:</span> <span class="text-emerald-400">online</span>
+</div>
+<div class="flex items-center gap-3 text-xs font-mono">
+<span class="chip-success px-2 py-1 rounded font-medium flex items-center gap-1">[LOCAL_ENV]</span>
+<span class="chip-info px-2 py-1 rounded font-medium flex items-center gap-1">PANDOC_V3.1</span>
+</div>
+</div>
+<!-- Editor Area -->
+<div class="flex-1 flex p-6 gap-6">
+<div class="flex-1 panel-bg rounded-lg p-0 flex flex-col overflow-hidden">
+<div class="bg-[#0F172A] px-4 py-2 border-b border-[#334155] font-mono text-xs text-slate-500 flex gap-4">
+<span class="text-emerald-400 border-b border-emerald-400 pb-2 -mb-2">input.md</span>
+<span>agent_log.txt</span>
+</div>
+<div class="p-4 font-mono text-sm text-slate-300 flex-1 leading-relaxed">
+<span class="text-pink-500">#</span> 季度总结报告<br/><br/>
+<span class="text-pink-500">##</span> 核心数据<br/>
+<span class="text-emerald-400">-</span> 用户增长: 15%<br/>
+<span class="text-emerald-400">-</span> 活跃度: 稳定<br/><br/>
+<span class="text-slate-500">&gt; "持续提升用户体验是本季度的核心目标。"</span>
+</div>
+<div class="bg-[#0F172A] p-2 border-t border-[#334155] font-mono text-xs text-slate-500">
+                                &gt; Agent ready for commands...
+                            </div>
+</div>
+<div class="w-64 panel-bg rounded-lg p-6 flex flex-col gap-6">
+<div class="text-sm flex flex-col gap-2 font-mono">
+<label class="text-slate-400 text-xs">--target</label>
+<div class="border-b border-emerald-500/30 pb-1 text-slate-200 flex justify-between">docx <span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span></div>
+</div>
+<div class="text-sm flex flex-col gap-2 font-mono">
+<label class="text-slate-400 text-xs">--template</label>
+<div class="border-b border-emerald-500/30 pb-1 text-slate-200 flex justify-between">tech_spec_v2 <span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span></div>
+</div>
+<div class="mt-auto">
+<button class="btn-primary w-full py-2 rounded font-mono font-bold text-sm">EXECUTE _</button>
+</div>
+</div>
+</div>
+</div>
+<div class="floating-ball font-mono text-xs rounded-none border border-emerald-500/50">
+<span class="text-emerald-400">&gt;</span> DROP_FILE_HERE
+                </div>
+</div>
+</div>
+</div>
+</body></html>

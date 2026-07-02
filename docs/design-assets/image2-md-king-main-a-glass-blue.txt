@@ -1,0 +1,12 @@
+Use case: ui-mockup
+Asset type: desktop software main interface concept image
+Primary request: Generate a high-fidelity UI mockup image for a Windows desktop app named MD King. The app converts AI generated Markdown or pasted Markdown content into editable Word DOCX documents.
+Scene/backdrop: a polished desktop productivity app window floating over a soft light-blue atmospheric background.
+Subject: the main conversion workspace UI with a left navigation sidebar, a large Markdown editor/drop zone, a right conversion settings panel, a Word document preview card, and a conversion result strip.
+Style/medium: true AI-generated raster UI concept image, soft glassmorphism, premium blue dimensional interface, translucent rounded panels, luminous blue highlights, crisp card depth, modern Chinese desktop productivity tool.
+Composition/framing: 16:9 landscape, centered app window, readable hierarchy, no browser chrome, no phone mockup, no marketing landing page.
+Lighting/mood: bright, clean, premium, calm, trustworthy, slightly futuristic but still practical.
+Color palette: rich blue theme, sky blue, royal blue, white glass, cool slate text, no purple dominant gradient.
+Text (verbatim): "MD King", "转换工作台", "Markdown 输入", "生成 Word", "模板", "输出位置", "本地安全转换".
+Constraints: make the UI feel beautiful, dimensional, full, and suitable for implementation; use Chinese labels where visible; avoid messy tiny unreadable text.
+Avoid: purple AI SaaS look, dark cyberpunk theme, flat admin dashboard, generic template cards, stock photo people, browser page, mobile app, distorted text, watermark.

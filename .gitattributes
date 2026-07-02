@@ -1,0 +1,1 @@
+src-tauri/resources/pandoc/windows/pandoc.exe filter=lfs diff=lfs merge=lfs -text

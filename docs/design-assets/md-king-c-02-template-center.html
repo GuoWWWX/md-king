@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>md-king - Template Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-high": "#dce9ff",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "surface-container": "#e5eeff",
+                        "border-subtle": "#E2E8F0",
+                        "tertiary-container": "#885500",
+                        "surface-bright": "#f8f9ff",
+                        "surface": "#f8f9ff",
+                        "on-primary-container": "#dad7ff",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "on-primary-fixed": "#0f0069",
+                        "on-primary": "#ffffff",
+                        "error-red": "#EF4444",
+                        "tertiary-fixed": "#ffddb8",
+                        "secondary": "#006c49",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "outline": "#777587",
+                        "primary": "#3525cd",
+                        "text-primary": "#0F172A",
+                        "on-tertiary-fixed": "#2a1700",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-secondary-fixed-variant": "#005236",
+                        "bg-slate": "#F8FAFC",
+                        "surface-container-low": "#eff4ff",
+                        "background": "#f8f9ff",
+                        "on-background": "#0b1c30",
+                        "on-tertiary": "#ffffff",
+                        "primary-fixed": "#e2dfff",
+                        "on-surface-variant": "#464555",
+                        "primary-container": "#4f46e5",
+                        "outline-variant": "#c7c4d8",
+                        "on-error-container": "#93000a",
+                        "on-error": "#ffffff",
+                        "tertiary": "#684000",
+                        "surface-container-highest": "#d3e4fe",
+                        "inverse-surface": "#213145",
+                        "on-surface": "#0b1c30",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-secondary-container": "#00714d",
+                        "card-white": "#FFFFFF",
+                        "error": "#ba1a1a",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#cbdbf5",
+                        "surface-tint": "#4d44e3",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-container": "#ffd4a4",
+                        "text-weak": "#94A3B8",
+                        "surface-variant": "#d3e4fe",
+                        "on-secondary-fixed": "#002113",
+                        "inverse-primary": "#c3c0ff",
+                        "secondary-fixed": "#6ffbbe",
+                        "inverse-on-surface": "#eaf1ff",
+                        "secondary-container": "#6cf8bb",
+                        "info-blue": "#3B82F6",
+                        
+                        "glass-blue-100": "rgba(229, 238, 255, 0.4)",
+                        "glass-blue-200": "rgba(203, 219, 245, 0.6)",
+                        "glass-border": "rgba(255, 255, 255, 0.3)",
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "xs": "4px",
+                        "margin": "24px",
+                        "gutter": "16px",
+                        "md": "16px",
+                        "xl": "40px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter", "Microsoft YaHei", "sans-serif"],
+                        "label-md": ["Inter", "Microsoft YaHei", "sans-serif"],
+                        "body-md": ["Inter", "Microsoft YaHei", "sans-serif"],
+                        "headline-lg": ["Inter", "Microsoft YaHei", "sans-serif"],
+                        "body-lg": ["Inter", "Microsoft YaHei", "sans-serif"],
+                        "code-md": ["jetbrainsMono", "monospace"],
+                        "label-sm": ["Inter", "Microsoft YaHei", "sans-serif"],
+                        "headline-lg-mobile": ["Inter", "Microsoft YaHei", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "label-md": ["14px", {"lineHeight": "20px", "fontWeight": "600"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["28px", {"lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "code-md": ["13px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}]
+                    },
+                    "boxShadow": {
+                        'glass': '0 4px 30px rgba(0, 0, 0, 0.05)',
+                        'ambient': '0 10px 40px -10px rgba(53, 37, 205, 0.1)',
+                        'fab': '0 8px 32px rgba(53, 37, 205, 0.25)',
+                    },
+                    "backdropBlur": {
+                        'xs': '2px',
+                        'sm': '4px',
+                        'md': '8px',
+                        'lg': '12px',
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: var(--tw-colors-glass-blue-100);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--tw-colors-glass-border);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+        }
+        
+        .card-hover-effect {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover-effect:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -10px rgba(53, 37, 205, 0.15);
+            border-color: var(--tw-colors-primary-fixed-dim);
+        }
+        
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        
+        .ambient-bg {
+            background: radial-gradient(circle at top left, #ffffff, #eff4ff 70%, #dce9ff);
+        }
+    </style>
+</head>
+<body class="h-full ambient-bg text-on-surface font-body-md overflow-hidden selection:bg-primary selection:text-white">
+<!-- JSON: SideNavBar -->
+<nav class="fixed left-0 top-0 h-screen w-64 border-r border-border-subtle bg-surface-container-lowest glass-panel flex flex-col h-full py-lg z-20">
+<div class="px-lg mb-xl">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md font-bold text-primary tracking-tight">md-king</span>
+<span class="font-label-sm text-label-sm text-text-weak mt-1">V2.4.0 Professional</span>
+</div>
+</div>
+<div class="flex-1 px-sm space-y-1">
+<!-- 转换 -->
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined text-outline group-hover:text-primary">swap_horiz</span>
+<span class="font-label-md text-label-md">转换</span>
+</a>
+<!-- 模板中心 (Active) -->
+<a class="text-primary font-bold flex items-center gap-md px-lg py-sm bg-surface-container-high rounded-lg shadow-sm" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+<span class="font-label-md text-label-md">模板中心</span>
+</a>
+<!-- 历史 -->
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined text-outline group-hover:text-primary">history</span>
+<span class="font-label-md text-label-md">历史</span>
+</a>
+<!-- CLI / Agent -->
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined text-outline group-hover:text-primary">terminal</span>
+<span class="font-label-md text-label-md">CLI / Agent</span>
+</a>
+<!-- 设置 -->
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined text-outline group-hover:text-primary">settings</span>
+<span class="font-label-md text-label-md">设置</span>
+</a>
+</div>
+<div class="mt-auto px-sm pt-4 border-t border-border-subtle/50 space-y-1">
+<a class="text-text-weak flex items-center gap-md px-lg py-sm hover:text-on-surface-variant transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">help_outline</span>
+<span class="font-label-sm text-label-sm">Support</span>
+</a>
+<a class="text-text-weak flex items-center gap-md px-lg py-sm hover:text-on-surface-variant transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">article</span>
+<span class="font-label-sm text-label-sm">Documentation</span>
+</a>
+</div>
+</nav>
+<!-- JSON: TopAppBar -->
+<header class="fixed top-0 right-0 left-64 h-16 border-b border-border-subtle glass-panel z-10">
+<div class="flex justify-between items-center px-lg w-full h-full">
+<!-- Status Badges -->
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 rounded-full border border-green-100">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-sm text-label-sm text-secondary">本地转换</span>
+</div>
+<div class="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
+<span class="material-symbols-outlined text-[14px] text-info-blue">check_circle</span>
+<span class="font-label-sm text-label-sm text-info-blue">Pandoc 可用</span>
+</div>
+<div class="h-4 w-px bg-border-subtle mx-2"></div>
+<div class="flex items-center gap-2 text-text-weak">
+<span class="font-label-sm text-label-sm">默认模板:</span>
+<span class="font-label-sm text-label-sm text-on-surface font-medium">通用报告</span>
+</div>
+<div class="flex items-center gap-2 text-text-weak ml-2">
+<span class="font-label-sm text-label-sm">输出:</span>
+<span class="font-label-sm text-label-sm text-on-surface font-medium">与源文件同目录</span>
+</div>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="ml-64 pt-16 h-screen overflow-hidden flex relative z-0">
+<!-- Left Content Area -->
+<div class="flex-1 overflow-y-auto px-lg py-xl">
+<div class="max-w-6xl mx-auto">
+<!-- Header & Toolbar -->
+<div class="mb-xl">
+<div class="flex justify-between items-end mb-6">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-text-primary mb-2">模板中心</h1>
+<p class="font-body-md text-body-md text-text-weak">选择或导入 reference.docx，让 Markdown 输出不同 Word/WPS 风格</p>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 px-4 py-2 border border-border-subtle bg-white text-on-surface font-label-md text-label-md rounded-lg shadow-sm hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                                新建样式草稿
+                            </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-primary text-white font-label-md text-label-md rounded-lg shadow-sm hover:bg-primary-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">file_upload</span>
+                                导入模板
+                            </button>
+</div>
+</div>
+<!-- Filter Bar -->
+<div class="flex items-center justify-between p-4 bg-white/60 backdrop-blur-md border border-border-subtle rounded-xl shadow-sm">
+<div class="flex items-center gap-2">
+<div class="relative w-64 mr-4">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-weak text-[18px]">search</span>
+<input class="w-full pl-9 pr-4 py-1.5 bg-surface-bright border border-border-subtle rounded-md font-body-md text-body-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-shadow" placeholder="搜索模板..." type="text"/>
+</div>
+<button class="px-3 py-1.5 bg-primary-container text-white font-label-sm text-label-sm rounded-full">全部</button>
+<button class="px-3 py-1.5 bg-transparent text-text-weak hover:bg-surface-container-low font-label-sm text-label-sm rounded-full transition-colors">报告</button>
+<button class="px-3 py-1.5 bg-transparent text-text-weak hover:bg-surface-container-low font-label-sm text-label-sm rounded-full transition-colors">公文</button>
+<button class="px-3 py-1.5 bg-transparent text-text-weak hover:bg-surface-container-low font-label-sm text-label-sm rounded-full transition-colors">技术文档</button>
+<button class="px-3 py-1.5 bg-transparent text-text-weak hover:bg-surface-container-low font-label-sm text-label-sm rounded-full transition-colors">我的模板</button>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-1.5 text-primary bg-surface-container rounded-md">
+<span class="material-symbols-outlined text-[20px]">grid_view</span>
+</button>
+<button class="p-1.5 text-text-weak hover:bg-surface-container-low rounded-md transition-colors">
+<span class="material-symbols-outlined text-[20px]">view_list</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Template Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-24">
+<!-- Card 1 (Active/Default) -->
+<div class="bg-white rounded-2xl border-2 border-primary overflow-hidden flex flex-col shadow-ambient card-hover-effect cursor-pointer relative group">
+<div class="absolute top-3 right-3 z-10 bg-primary text-white text-xs px-2 py-1 rounded-full font-label-sm flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+                            当前默认
+                        </div>
+<div class="h-40 bg-surface-container-low relative border-b border-border-subtle flex items-center justify-center p-4">
+<div class="bg-cover bg-top w-[80%] h-[120%] shadow-md bg-white rounded-t-sm border border-border-subtle absolute bottom-0" data-alt="A highly detailed miniature thumbnail preview of a professional Microsoft Word document report layout. Light blue background, crisp text layout, clean modern corporate aesthetic. High resolution mock-up." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCPpGrmb5qjDbl3nlfCzIuqgKX-mpSlmNvDSkosGC2hK1g180ETH1FvmNfKb9gAFOKbR6bX5uVKjjTr1pCLq5OjN_9BOGRxhNiIxccemt0rpRdUxE_UxW2rF6ckinTSzPEAyyq1OYmAjRn2dWJPZd6Q0UaCsAQgyQoHJDs-YYhKH2s_P6TK5VvgsIUvZmVZH86envFg6l8tEQ6LAvI8Fm8FDJm14oDKTgDpIwJr_KmyPIgAVHZgckhq3bvWa87hY42t6FkGvxwgPWc')"></div>
+</div>
+<div class="p-5 flex-1 flex flex-col">
+<h3 class="font-headline-md text-headline-md text-text-primary mb-1">通用报告</h3>
+<p class="font-body-md text-body-md text-text-weak mb-3 line-clamp-2 text-sm">标准企业内外部分享使用的文档格式，包含完整的大纲层级、页眉页脚与封面样式。</p>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 bg-surface-container text-primary text-xs rounded-md">#通用</span>
+<span class="px-2 py-1 bg-surface-container text-primary text-xs rounded-md">#A4</span>
+</div>
+<div class="mt-auto pt-4 flex gap-2 border-t border-border-subtle">
+<button class="flex-1 bg-primary text-white py-1.5 rounded-lg font-label-sm hover:bg-primary-container transition-colors">编辑样式</button>
+<button class="p-1.5 border border-border-subtle text-text-weak rounded-lg hover:bg-surface-container-low" title="更多选项">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-white/80 backdrop-blur-sm rounded-2xl border border-border-subtle overflow-hidden flex flex-col shadow-sm card-hover-effect cursor-pointer group">
+<div class="h-40 bg-slate-50 relative border-b border-border-subtle flex items-center justify-center p-4">
+<div class="bg-cover bg-top w-[80%] h-[120%] shadow-md bg-white rounded-t-sm border border-border-subtle absolute bottom-0 opacity-90 group-hover:opacity-100 transition-opacity" data-alt="A detailed thumbnail preview of an official government or formal corporate document layout in Microsoft Word. Features red header text typical of formal notices, precise margins, minimalist aesthetic. High key lighting." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDszCJWOuvgCGq9uqc8Dg_1wX-KVgPn988_NV9E5KEC3GGteDK4TqIT-g6DzqByhmQit8n6CB2tLaDmYatarrEx3SmMUH4E3iSJKVBH7fCpmsbzLO5qyAeisafVHQO3cyGPXXXEq8l84J_SwvK74Mbo7XL8TWSCdoqcVZg4KSEkzhv2o0XgSWBODh88ASaxb0MWITZOcpN0IZhWfvegmUMnXpw24RAjU8vwJn1o2XF44DyG7Lk2Nhtg2XRMDpGZbuM7ncyZXSmQQCs')"></div>
+</div>
+<div class="p-5 flex-1 flex flex-col">
+<h3 class="font-headline-md text-headline-md text-text-primary mb-1">正式公文</h3>
+<p class="font-body-md text-body-md text-text-weak mb-3 line-clamp-2 text-sm">符合国家公文标准（红头文件）的排版样式，仿宋GB2312正文，小标宋黑体标题。</p>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 bg-surface-container-low text-text-weak text-xs rounded-md border border-border-subtle">#正式</span>
+<span class="px-2 py-1 bg-surface-container-low text-text-weak text-xs rounded-md border border-border-subtle">#公文</span>
+</div>
+<div class="mt-auto pt-4 flex gap-2 border-t border-border-subtle opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="flex-1 border border-primary text-primary py-1.5 rounded-lg font-label-sm hover:bg-primary-50 transition-colors">设为默认</button>
+<button class="flex-1 bg-surface-container text-primary py-1.5 rounded-lg font-label-sm hover:bg-surface-container-high transition-colors">用于本次</button>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-white/80 backdrop-blur-sm rounded-2xl border border-border-subtle overflow-hidden flex flex-col shadow-sm card-hover-effect cursor-pointer group">
+<div class="h-40 bg-slate-50 relative border-b border-border-subtle flex items-center justify-center p-4">
+<div class="bg-cover bg-top w-[80%] h-[120%] shadow-md bg-white rounded-t-sm border border-border-subtle absolute bottom-0 opacity-90 group-hover:opacity-100 transition-opacity" data-alt="A detailed thumbnail preview of a technical documentation layout in Word. Shows code block formatting, tight margins, sans-serif typography, clean digital aesthetic." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCmkWVPLDT5rVfK0MGWTkZpouHN8hHpLxZvEfrzcyKy3jPgyudeM2uchUSr3BtiSn1XOTqS6-oApn56uPb83wJpGKDP1t_S6F_AjhxRXkWjYCRb-Pe3fwZDlZXGXE-RY1_xhCPra34_tFw_8WWGNwNLTDdDCOsF0kTelQdQQ9A5CvbbnOCrZB50l7vxz3FcPWWuRNMyq5EF4wMpXaJzXxTpNVjfxMbWNiWhNTH1KoK65KyIYLosDqhW_e2xY7a20vaX1lIS8gDrPj8')"></div>
+</div>
+<div class="p-5 flex-1 flex flex-col">
+<h3 class="font-headline-md text-headline-md text-text-primary mb-1">技术文档</h3>
+<p class="font-body-md text-body-md text-text-weak mb-3 line-clamp-2 text-sm">专门针对代码块、表格、API说明优化的技术文档模板，内嵌JetBrains Mono字体样式。</p>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 bg-surface-container-low text-text-weak text-xs rounded-md border border-border-subtle">#IT</span>
+<span class="px-2 py-1 bg-surface-container-low text-text-weak text-xs rounded-md border border-border-subtle">#代码块优化</span>
+</div>
+<div class="mt-auto pt-4 flex gap-2 border-t border-border-subtle opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="flex-1 border border-primary text-primary py-1.5 rounded-lg font-label-sm hover:bg-primary-50 transition-colors">设为默认</button>
+<button class="flex-1 bg-surface-container text-primary py-1.5 rounded-lg font-label-sm hover:bg-surface-container-high transition-colors">用于本次</button>
+</div>
+</div>
+</div>
+<!-- Card 4 (Missing Reference Warning) -->
+<div class="bg-white/80 backdrop-blur-sm rounded-2xl border border-red-200 overflow-hidden flex flex-col shadow-sm card-hover-effect cursor-pointer group">
+<div class="absolute top-3 left-3 z-10 bg-red-100 text-error-red text-xs px-2 py-1 rounded-full font-label-sm flex items-center gap-1 border border-red-200">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                            缺失 reference.docx
+                        </div>
+<div class="h-40 bg-red-50/50 relative border-b border-red-100 flex items-center justify-center p-4">
+<div class="w-[80%] h-[120%] shadow-sm bg-white rounded-t-sm border border-red-200 border-dashed absolute bottom-0 flex items-center justify-center opacity-70">
+<span class="material-symbols-outlined text-red-300 text-4xl">broken_image</span>
+</div>
+</div>
+<div class="p-5 flex-1 flex flex-col">
+<h3 class="font-headline-md text-headline-md text-text-primary mb-1">论文草稿</h3>
+<p class="font-body-md text-body-md text-text-weak mb-3 line-clamp-2 text-sm">满足基本学术论文规范的模板，双倍行距，首行缩进。</p>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 bg-surface-container-low text-text-weak text-xs rounded-md border border-border-subtle">#学术</span>
+</div>
+<div class="mt-auto pt-4 flex gap-2 border-t border-border-subtle opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="flex-1 border border-red-300 text-error-red py-1.5 rounded-lg font-label-sm hover:bg-red-50 transition-colors">修复模板</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Detail Panel (Collapsible / Floating look) -->
+<div class="w-80 border-l border-border-subtle glass-panel h-full overflow-y-auto hidden lg:block right-0 absolute z-10 shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
+<div class="p-6">
+<div class="flex justify-between items-center mb-6">
+<h2 class="font-headline-md text-headline-md text-text-primary">模板详情</h2>
+<button class="text-text-weak hover:text-on-surface p-1 rounded-md hover:bg-surface-container-low">
+<span class="material-symbols-outlined text-[20px]">close_fullscreen</span>
+</button>
+</div>
+<div class="w-full aspect-[1/1.4] bg-white border border-border-subtle rounded-lg shadow-sm mb-6 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-top" data-alt="A highly detailed full-page preview of a professional Microsoft Word document report layout. Shows header, title, sub-heading, paragraph text, and footer. Crisp, light blue background, clean modern corporate aesthetic. High resolution mock-up." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBTT6ERLvxLHhXznhQY_LGxFLtQpLiBETEFCI95MsJKjobhjPSWk_29E16Us0Xwhh4yVk6yviWOh-hFIoFx-pxPvvIYW5YDq0qmi-M038Nxxr9-yR75V7Je5vE4V3-DMPLQthnfCzMvWNR3Vd5aaT2Cggja4WhRWYBm5HgVDBdPFxayRmW9qjOH6wqq0Vdw9pAlMIoshYxkTdYT-erm11iRlqZ0dcqE8gTgmGgBFVuDgtdhpgpg25jHEiPGPiOHvSGGOSoKhpapH6o')"></div>
+</div>
+<div class="space-y-6">
+<div>
+<h3 class="font-label-md text-label-md text-text-primary mb-2">样式覆盖率</h3>
+<div class="space-y-3">
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-text-weak">标题 (Heading 1-6)</span>
+<span class="text-primary font-medium">100%</span>
+</div>
+<div class="w-full bg-surface-container-low rounded-full h-1.5">
+<div class="bg-primary h-1.5 rounded-full w-full"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-text-weak">段落 &amp; 列表</span>
+<span class="text-primary font-medium">100%</span>
+</div>
+<div class="w-full bg-surface-container-low rounded-full h-1.5">
+<div class="bg-primary h-1.5 rounded-full w-full"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-text-weak">代码块 &amp; 表格</span>
+<span class="text-amber-600 font-medium">部分缺失</span>
+</div>
+<div class="w-full bg-surface-container-low rounded-full h-1.5">
+<div class="bg-amber-500 h-1.5 rounded-full w-[70%]"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="pt-4 border-t border-border-subtle">
+<h3 class="font-label-md text-label-md text-text-primary mb-3">使用字体</h3>
+<div class="flex flex-wrap gap-2">
+<span class="px-2.5 py-1 bg-surface-bright border border-border-subtle text-text-weak text-xs rounded-md">微软雅黑</span>
+<span class="px-2.5 py-1 bg-surface-bright border border-border-subtle text-text-weak text-xs rounded-md">Arial</span>
+<span class="px-2.5 py-1 bg-surface-bright border border-border-subtle text-text-weak text-xs rounded-md">Consolas</span>
+</div>
+</div>
+<div class="pt-4 border-t border-border-subtle">
+<button class="w-full py-2 bg-primary text-white font-label-md text-label-md rounded-lg shadow-sm hover:bg-primary-container transition-colors mb-2">应用此模板转换</button>
+<button class="w-full py-2 bg-surface-container text-primary font-label-md text-label-md rounded-lg hover:bg-surface-container-high transition-colors">导出 Reference.docx</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Floating Ball -->
+<div class="fixed bottom-8 right-12 z-50 group">
+<!-- Tooltip -->
+<div class="absolute right-full mr-4 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                拖入文件或粘贴内容
+                <!-- Arrow -->
+<div class="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 bg-inverse-surface rotate-45"></div>
+</div>
+<button class="w-14 h-14 rounded-full bg-primary/90 backdrop-blur-lg shadow-fab flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20">
+<span class="material-symbols-outlined text-[28px]">add</span>
+</button>
+</div>
+</main>
+</body></html>

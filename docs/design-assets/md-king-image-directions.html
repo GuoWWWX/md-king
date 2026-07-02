@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MD King Image Style Directions</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #dbeafe;
+        font-family:
+          "Microsoft YaHei UI",
+          "Segoe UI",
+          sans-serif;
+        color: #0f172a;
+      }
+
+      .frame {
+        width: 1440px;
+        height: 900px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .direction-a {
+        background:
+          radial-gradient(circle at 16% 14%, rgba(125, 211, 252, 0.75), transparent 28%),
+          radial-gradient(circle at 82% 18%, rgba(37, 99, 235, 0.28), transparent 30%),
+          linear-gradient(135deg, #f8fcff 0%, #e5f3ff 42%, #d7ebff 100%);
+      }
+
+      .direction-b {
+        background:
+          radial-gradient(circle at 20% 18%, rgba(96, 165, 250, 0.55), transparent 30%),
+          radial-gradient(circle at 90% 70%, rgba(14, 165, 233, 0.38), transparent 26%),
+          linear-gradient(135deg, #eff8ff 0%, #dbeafe 52%, #c7ddff 100%);
+      }
+
+      .direction-c {
+        background:
+          radial-gradient(circle at 50% -4%, rgba(59, 130, 246, 0.28), transparent 34%),
+          radial-gradient(circle at 8% 76%, rgba(6, 182, 212, 0.28), transparent 28%),
+          linear-gradient(135deg, #f7fbff 0%, #e6f0ff 48%, #d4e7ff 100%);
+      }
+
+      .orb {
+        position: absolute;
+        border-radius: 999px;
+        filter: blur(2px);
+        opacity: 0.78;
+      }
+
+      .orb.one {
+        width: 390px;
+        height: 390px;
+        left: -130px;
+        top: 80px;
+        background: linear-gradient(145deg, rgba(125, 211, 252, 0.78), rgba(37, 99, 235, 0.2));
+      }
+
+      .orb.two {
+        width: 460px;
+        height: 460px;
+        right: -160px;
+        bottom: -80px;
+        background: linear-gradient(145deg, rgba(147, 197, 253, 0.82), rgba(14, 165, 233, 0.18));
+      }
+
+      .window {
+        position: absolute;
+        inset: 42px;
+        border-radius: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.78);
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(219, 234, 254, 0.58));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.95),
+          0 38px 100px rgba(29, 78, 216, 0.18),
+          0 12px 32px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(26px) saturate(160%);
+        display: grid;
+        grid-template-columns: 236px 1fr;
+        overflow: hidden;
+      }
+
+      .direction-b .window {
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(191, 219, 254, 0.68));
+        box-shadow:
+          inset 0 2px 0 rgba(255, 255, 255, 0.98),
+          0 42px 120px rgba(37, 99, 235, 0.22),
+          0 18px 48px rgba(15, 23, 42, 0.1);
+      }
+
+      .direction-c .window {
+        border-color: rgba(191, 219, 254, 0.85);
+        background: rgba(248, 252, 255, 0.9);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.96),
+          0 30px 86px rgba(30, 64, 175, 0.13);
+      }
+
+      .sidebar {
+        padding: 28px 22px;
+        border-right: 1px solid rgba(147, 197, 253, 0.34);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(219, 234, 254, 0.28));
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 36px;
+      }
+
+      .logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        background:
+          linear-gradient(145deg, #60a5fa, #1d4ed8);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.55),
+          0 14px 28px rgba(37, 99, 235, 0.35);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        letter-spacing: -0.05em;
+      }
+
+      .brand-title {
+        font-weight: 900;
+        letter-spacing: -0.04em;
+        font-size: 22px;
+      }
+
+      .brand-sub {
+        color: #64748b;
+        font-size: 12px;
+        margin-top: 2px;
+      }
+
+      .nav-item {
+        height: 48px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        margin: 8px 0;
+        color: #475569;
+        font-weight: 700;
+        font-size: 14px;
+      }
+
+      .nav-item.active {
+        color: #fff;
+        background: linear-gradient(145deg, #3b82f6, #1d4ed8);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.38),
+          0 14px 28px rgba(37, 99, 235, 0.28);
+      }
+
+      .nav-dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 9px;
+        background: rgba(59, 130, 246, 0.16);
+      }
+
+      .active .nav-dot {
+        background: rgba(255, 255, 255, 0.32);
+      }
+
+      .side-card {
+        position: absolute;
+        left: 22px;
+        bottom: 26px;
+        width: 190px;
+        padding: 18px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        box-shadow: 0 16px 42px rgba(37, 99, 235, 0.12);
+      }
+
+      .side-card strong {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 8px;
+      }
+
+      .side-card span {
+        display: block;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .content {
+        padding: 28px;
+        display: grid;
+        grid-template-rows: 58px 1fr;
+        gap: 22px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .title {
+        font-size: 32px;
+        line-height: 1;
+        font-weight: 950;
+        letter-spacing: -0.05em;
+      }
+
+      .subtitle {
+        margin-top: 8px;
+        color: #64748b;
+        font-size: 14px;
+      }
+
+      .top-pills {
+        display: flex;
+        gap: 10px;
+      }
+
+      .pill {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 800;
+        color: #1e3a8a;
+        background: rgba(255, 255, 255, 0.66);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.1);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #10b981;
+        box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.12);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 1fr 342px;
+        gap: 22px;
+        min-height: 0;
+      }
+
+      .editor-card,
+      .convert-card,
+      .result-card,
+      .metric-card,
+      .preview-card {
+        border-radius: 26px;
+        border: 1px solid rgba(255, 255, 255, 0.76);
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(219, 234, 254, 0.46));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.88),
+          0 20px 52px rgba(37, 99, 235, 0.12);
+      }
+
+      .direction-b .editor-card,
+      .direction-b .convert-card,
+      .direction-b .result-card,
+      .direction-b .metric-card,
+      .direction-b .preview-card {
+        border-radius: 30px;
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(191, 219, 254, 0.58));
+        box-shadow:
+          inset 0 2px 2px rgba(255, 255, 255, 0.95),
+          inset 0 -12px 28px rgba(37, 99, 235, 0.05),
+          0 24px 70px rgba(37, 99, 235, 0.16);
+      }
+
+      .direction-c .editor-card,
+      .direction-c .convert-card,
+      .direction-c .result-card,
+      .direction-c .metric-card,
+      .direction-c .preview-card {
+        background: rgba(255, 255, 255, 0.88);
+        border-color: rgba(191, 219, 254, 0.64);
+        box-shadow: 0 18px 46px rgba(37, 99, 235, 0.1);
+      }
+
+      .main-column {
+        display: grid;
+        grid-template-rows: 1fr 150px;
+        gap: 22px;
+        min-height: 0;
+      }
+
+      .editor-card {
+        padding: 22px;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 16px;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .card-title {
+        font-weight: 900;
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+
+      .ghost-button {
+        height: 34px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(147, 197, 253, 0.55);
+        background: rgba(255, 255, 255, 0.62);
+        color: #2563eb;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .dropzone {
+        border-radius: 24px;
+        height: 122px;
+        border: 1.5px dashed rgba(37, 99, 235, 0.46);
+        background:
+          radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.9), transparent 40%),
+          linear-gradient(145deg, rgba(219, 234, 254, 0.46), rgba(239, 246, 255, 0.72));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+      }
+
+      .drop-icon {
+        width: 62px;
+        height: 62px;
+        border-radius: 22px;
+        background: linear-gradient(145deg, #eff6ff, #bfdbfe);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.94),
+          0 16px 34px rgba(37, 99, 235, 0.18);
+      }
+
+      .drop-main {
+        font-weight: 900;
+        font-size: 20px;
+      }
+
+      .drop-sub {
+        color: #64748b;
+        font-size: 13px;
+        margin-top: 6px;
+      }
+
+      .markdown {
+        border-radius: 24px;
+        padding: 22px;
+        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid rgba(255, 255, 255, 0.76);
+        color: #334155;
+        font-family: "Cascadia Mono", "JetBrains Mono", monospace;
+        font-size: 14px;
+        line-height: 1.65;
+        overflow: hidden;
+      }
+
+      .markdown strong {
+        color: #0f172a;
+      }
+
+      .side-column {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 22px;
+      }
+
+      .convert-card {
+        padding: 22px;
+      }
+
+      .select-box {
+        margin-top: 16px;
+        height: 58px;
+        border-radius: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        background: rgba(255, 255, 255, 0.68);
+        border: 1px solid rgba(191, 219, 254, 0.62);
+        font-weight: 800;
+      }
+
+      .field-label {
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 800;
+        margin-top: 18px;
+        margin-bottom: 8px;
+      }
+
+      .path-box {
+        min-height: 42px;
+        border-radius: 14px;
+        background: rgba(241, 245, 249, 0.72);
+        color: #475569;
+        display: flex;
+        align-items: center;
+        padding: 0 13px;
+        font-size: 12px;
+      }
+
+      .primary-button {
+        height: 58px;
+        width: 100%;
+        margin-top: 22px;
+        border-radius: 18px;
+        border: 0;
+        color: white;
+        font-weight: 950;
+        font-size: 16px;
+        background: linear-gradient(145deg, #3b82f6, #1d4ed8);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.38),
+          0 18px 40px rgba(37, 99, 235, 0.32);
+      }
+
+      .preview-card {
+        padding: 22px;
+      }
+
+      .doc-preview {
+        margin-top: 16px;
+        height: 242px;
+        border-radius: 22px;
+        background:
+          linear-gradient(90deg, transparent 44px, rgba(147, 197, 253, 0.18) 45px, transparent 46px),
+          linear-gradient(#ffffff, #f8fbff);
+        box-shadow:
+          inset 0 0 0 1px rgba(191, 219, 254, 0.5),
+          0 18px 40px rgba(15, 23, 42, 0.08);
+        padding: 28px 34px 26px 64px;
+      }
+
+      .doc-line {
+        height: 9px;
+        border-radius: 999px;
+        background: #bfdbfe;
+        margin: 13px 0;
+      }
+
+      .doc-line.big {
+        width: 52%;
+        height: 16px;
+        background: #1d4ed8;
+        margin-bottom: 22px;
+      }
+
+      .doc-line.short {
+        width: 64%;
+      }
+
+      .result-card {
+        padding: 20px 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .result-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .file-chip {
+        width: 58px;
+        height: 70px;
+        border-radius: 16px;
+        background: linear-gradient(145deg, #ffffff, #dbeafe);
+        border: 1px solid rgba(147, 197, 253, 0.5);
+        box-shadow: 0 14px 28px rgba(37, 99, 235, 0.13);
+      }
+
+      .result-title {
+        font-weight: 950;
+        font-size: 18px;
+      }
+
+      .result-sub {
+        color: #64748b;
+        margin-top: 6px;
+        font-size: 13px;
+      }
+
+      .metric-row {
+        display: flex;
+        gap: 12px;
+      }
+
+      .metric-card {
+        width: 92px;
+        height: 70px;
+        padding: 13px;
+      }
+
+      .metric-value {
+        font-weight: 950;
+        font-size: 22px;
+        color: #1d4ed8;
+      }
+
+      .metric-label {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 5px;
+        font-weight: 800;
+      }
+
+      .style-badge {
+        position: absolute;
+        right: 70px;
+        bottom: 58px;
+        width: 86px;
+        height: 86px;
+        border-radius: 30px;
+        background: linear-gradient(145deg, rgba(255,255,255,.9), rgba(147,197,253,.52));
+        border: 1px solid rgba(255,255,255,.8);
+        box-shadow: 0 24px 58px rgba(37,99,235,.2);
+        display: grid;
+        place-items: center;
+        color: #1d4ed8;
+        font-weight: 950;
+      }
+
+      .caption {
+        position: absolute;
+        left: 72px;
+        top: 58px;
+        color: rgba(30, 58, 138, 0.16);
+        font-size: 120px;
+        font-weight: 950;
+        letter-spacing: -0.09em;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="direction-a" class="frame direction-a">
+      <div class="caption">A</div>
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="window">
+        <aside class="sidebar">
+          <div class="brand">
+            <div class="logo">M</div>
+            <div>
+              <div class="brand-title">MD King</div>
+              <div class="brand-sub">AI Markdown to Word</div>
+            </div>
+          </div>
+          <div class="nav-item active"><span class="nav-dot"></span>转换工作台</div>
+          <div class="nav-item"><span class="nav-dot"></span>模板中心</div>
+          <div class="nav-item"><span class="nav-dot"></span>转换历史</div>
+          <div class="nav-item"><span class="nav-dot"></span>快速入口</div>
+          <div class="nav-item"><span class="nav-dot"></span>Agent / CLI</div>
+          <div class="nav-item"><span class="nav-dot"></span>设置中心</div>
+          <div class="side-card">
+            <strong>本地安全转换</strong>
+            <span>内容只在本机处理，Pandoc 引擎已就绪。</span>
+          </div>
+        </aside>
+        <main class="content">
+          <div class="topbar">
+            <div>
+              <div class="title">转换工作台</div>
+              <div class="subtitle">粘贴 AI Markdown 或导入 .md 文件，生成可编辑 DOCX。</div>
+            </div>
+            <div class="top-pills">
+              <div class="pill"><span class="status-dot"></span>Pandoc 就绪</div>
+              <div class="pill">默认模板 · 通用报告</div>
+            </div>
+          </div>
+          <div class="workspace">
+            <div class="main-column">
+              <section class="editor-card">
+                <div class="card-head">
+                  <div class="card-title">Markdown 输入</div>
+                  <button class="ghost-button">读取剪贴板</button>
+                </div>
+                <div class="dropzone">
+                  <div class="drop-icon"></div>
+                  <div>
+                    <div class="drop-main">拖入 Markdown 文件，或直接粘贴内容</div>
+                    <div class="drop-sub">支持 .md / .markdown / 批量文件，保留标题、表格、代码块结构。</div>
+                  </div>
+                </div>
+                <div class="markdown">
+                  <strong># AI 项目周报</strong><br />
+                  本周完成 Markdown 到 Word 的转换主链路，模板中心支持导入 reference.docx。<br /><br />
+                  <strong>## 下一步</strong><br />
+                  - 优化样式预览<br />
+                  - 接入批量队列<br />
+                  - 增加快捷入口和右键菜单<br /><br />
+                  | 模块 | 状态 | 说明 |<br />
+                  | 转换 | 完成 | 可生成 DOCX |
+                </div>
+              </section>
+              <section class="result-card">
+                <div class="result-left">
+                  <div class="file-chip"></div>
+                  <div>
+                    <div class="result-title">AI 项目周报.docx 已生成</div>
+                    <div class="result-sub">D:/Documents/MD King/AI 项目周报.docx · 842ms</div>
+                  </div>
+                </div>
+                <div class="metric-row">
+                  <div class="metric-card"><div class="metric-value">12</div><div class="metric-label">标题</div></div>
+                  <div class="metric-card"><div class="metric-value">4</div><div class="metric-label">表格</div></div>
+                  <div class="metric-card"><div class="metric-value">0</div><div class="metric-label">错误</div></div>
+                </div>
+              </section>
+            </div>
+            <div class="side-column">
+              <section class="convert-card">
+                <div class="card-title">转换设置</div>
+                <div class="select-box">通用报告模板 <span>⌄</span></div>
+                <div class="field-label">输出位置</div>
+                <div class="path-box">D:/Documents/MD King</div>
+                <div class="field-label">输出文件名</div>
+                <div class="path-box">AI 项目周报.docx</div>
+                <button class="primary-button">生成 Word 文档</button>
+              </section>
+              <section class="preview-card">
+                <div class="card-title">Word 样式预览</div>
+                <div class="doc-preview">
+                  <div class="doc-line big"></div>
+                  <div class="doc-line"></div>
+                  <div class="doc-line"></div>
+                  <div class="doc-line short"></div>
+                  <div class="doc-line"></div>
+                  <div class="doc-line short"></div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </main>
+      </div>
+      <div class="style-badge">Glass</div>
+    </section>
+
+    <section id="direction-b" class="frame direction-b">
+      <div class="caption">B</div>
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="window">
+        <aside class="sidebar">
+          <div class="brand"><div class="logo">M</div><div><div class="brand-title">MD King</div><div class="brand-sub">Premium Desktop</div></div></div>
+          <div class="nav-item active"><span class="nav-dot"></span>转换工作台</div>
+          <div class="nav-item"><span class="nav-dot"></span>模板中心</div>
+          <div class="nav-item"><span class="nav-dot"></span>转换历史</div>
+          <div class="nav-item"><span class="nav-dot"></span>快速入口</div>
+          <div class="nav-item"><span class="nav-dot"></span>Agent / CLI</div>
+          <div class="nav-item"><span class="nav-dot"></span>设置中心</div>
+          <div class="side-card"><strong>桌面效率模式</strong><span>复制 AI 内容后，快捷键唤起转换。</span></div>
+        </aside>
+        <main class="content">
+          <div class="topbar">
+            <div><div class="title">转换工作台</div><div class="subtitle">更饱满的立体卡片，更像一个精致桌面应用。</div></div>
+            <div class="top-pills"><div class="pill"><span class="status-dot"></span>本地引擎</div><div class="pill">批量队列 · 3 个文件</div></div>
+          </div>
+          <div class="workspace">
+            <div class="main-column">
+              <section class="editor-card">
+                <div class="card-head"><div class="card-title">批量 Markdown 输入</div><button class="ghost-button">导入文件夹</button></div>
+                <div class="dropzone"><div class="drop-icon"></div><div><div class="drop-main">把多个文档拖进来，一次转成 Word</div><div class="drop-sub">更强调实体感、光泽边缘和圆润控件。</div></div></div>
+                <div class="markdown"><strong># 产品需求说明</strong><br />这里展示 AI 生成的 PRD、周报、方案和技术文档。<br /><br /><strong>## 转换规则</strong><br />- 标题映射到 Word Heading<br />- 表格保留为可编辑表格<br />- 代码块使用等宽字体<br /><br />系统会自动选择默认模板并输出到同目录。</div>
+              </section>
+              <section class="result-card">
+                <div class="result-left"><div class="file-chip"></div><div><div class="result-title">3 个文档正在准备转换</div><div class="result-sub">使用“正式汇报”模板 · 完成后自动打开目录</div></div></div>
+                <div class="metric-row"><div class="metric-card"><div class="metric-value">3</div><div class="metric-label">队列</div></div><div class="metric-card"><div class="metric-value">98%</div><div class="metric-label">可读</div></div><div class="metric-card"><div class="metric-value">1</div><div class="metric-label">警告</div></div></div>
+              </section>
+            </div>
+            <div class="side-column">
+              <section class="convert-card"><div class="card-title">本次转换</div><div class="select-box">正式汇报模板 <span>⌄</span></div><div class="field-label">批量策略</div><div class="path-box">每个 Markdown 生成独立 DOCX</div><div class="field-label">打开方式</div><div class="path-box">完成后打开输出目录</div><button class="primary-button">批量生成 Word</button></section>
+              <section class="preview-card"><div class="card-title">模板效果</div><div class="doc-preview"><div class="doc-line big"></div><div class="doc-line"></div><div class="doc-line short"></div><div class="doc-line"></div><div class="doc-line"></div><div class="doc-line short"></div></div></section>
+            </div>
+          </div>
+        </main>
+      </div>
+      <div class="style-badge">Solid</div>
+    </section>
+
+    <section id="direction-c" class="frame direction-c">
+      <div class="caption">C</div>
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="window">
+        <aside class="sidebar">
+          <div class="brand"><div class="logo">M</div><div><div class="brand-title">MD King</div><div class="brand-sub">Clear Workbench</div></div></div>
+          <div class="nav-item active"><span class="nav-dot"></span>转换工作台</div>
+          <div class="nav-item"><span class="nav-dot"></span>模板中心</div>
+          <div class="nav-item"><span class="nav-dot"></span>转换历史</div>
+          <div class="nav-item"><span class="nav-dot"></span>快速入口</div>
+          <div class="nav-item"><span class="nav-dot"></span>Agent / CLI</div>
+          <div class="nav-item"><span class="nav-dot"></span>设置中心</div>
+          <div class="side-card"><strong>清晰办公蓝</strong><span>更稳、更严谨，适合长期使用。</span></div>
+        </aside>
+        <main class="content">
+          <div class="topbar">
+            <div><div class="title">转换工作台</div><div class="subtitle">少一点装饰，多一点清晰，但仍保持蓝色立体感。</div></div>
+            <div class="top-pills"><div class="pill"><span class="status-dot"></span>隐私模式</div><div class="pill">输出 · DOCX</div></div>
+          </div>
+          <div class="workspace">
+            <div class="main-column">
+              <section class="editor-card">
+                <div class="card-head"><div class="card-title">Markdown 编辑区</div><button class="ghost-button">清理格式</button></div>
+                <div class="dropzone"><div class="drop-icon"></div><div><div class="drop-main">复制 AI 对话后，一键生成可交付文档</div><div class="drop-sub">更偏严谨办公工具，减少玻璃炫光。</div></div></div>
+                <div class="markdown"><strong># 招标方案草稿</strong><br />用户可以在这里轻量编辑 Markdown，再选择模板转换。<br /><br /><strong>## 交付格式</strong><br />- DOCX 可继续编辑<br />- 模板控制标题、正文、表格<br />- 保留 AI 文档结构<br /><br />这版更适合做正式产品界面。</div>
+              </section>
+              <section class="result-card">
+                <div class="result-left"><div class="file-chip"></div><div><div class="result-title">准备就绪，可以生成 Word</div><div class="result-sub">当前模板：单位正式公文 · 输出到默认目录</div></div></div>
+                <div class="metric-row"><div class="metric-card"><div class="metric-value">8</div><div class="metric-label">章节</div></div><div class="metric-card"><div class="metric-value">2</div><div class="metric-label">表格</div></div><div class="metric-card"><div class="metric-value">A</div><div class="metric-label">质量</div></div></div>
+              </section>
+            </div>
+            <div class="side-column">
+              <section class="convert-card"><div class="card-title">输出控制</div><div class="select-box">单位正式公文 <span>⌄</span></div><div class="field-label">输出目录</div><div class="path-box">与源文件同目录</div><div class="field-label">转换选项</div><div class="path-box">生成目录 · 自动打开</div><button class="primary-button">生成 Word 文档</button></section>
+              <section class="preview-card"><div class="card-title">DOCX 预览</div><div class="doc-preview"><div class="doc-line big"></div><div class="doc-line"></div><div class="doc-line"></div><div class="doc-line short"></div><div class="doc-line"></div><div class="doc-line short"></div></div></section>
+            </div>
+          </div>
+        </main>
+      </div>
+      <div class="style-badge">Clean</div>
+    </section>
+  </body>
+  <script>
+    const variant = new URLSearchParams(window.location.search).get("variant");
+    if (variant) {
+      for (const section of document.querySelectorAll(".frame")) {
+        section.style.display = section.id === `direction-${variant}` ? "block" : "none";
+      }
+    }
+  </script>
+</html>

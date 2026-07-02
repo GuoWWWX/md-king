@@ -1,0 +1,9 @@
+Use case: ui-mockup
+Asset type: desktop software page concept image
+Primary request: Generate the Conversion History page for MD King.
+Global style lock: Use the same visual language as the selected MD King direction B: premium blue dimensional desktop software, fuller and more tactile than flat web UI, rounded thick panels, soft glass and neumorphic hybrid, blue and white palette, gentle cyan highlights, deep navy text, soft inner highlights, elegant shadows, bright mode only. It must feel like a serious beautiful Windows desktop productivity app for converting AI Markdown into Word DOCX. Avoid purple, dark cyberpunk, generic SaaS cards, boring admin dashboard, mobile UI, browser chrome, stock people, watermark, and distorted text. Chinese labels should be minimal and readable.
+Scene/backdrop: Same premium blue dimensional desktop app shell.
+Subject: history page with left sidebar navigation, title "转换历史", search and filters, a list of recent conversion records, success and failed status chips, output file path cards, action buttons to open DOCX, open folder, copy path, retry conversion. Include a right-side statistics panel and a selected record detail panel.
+Layout details: focus on finding recently generated Word documents, not developer logs. Use rows/cards with soft 3D depth and clear status colors.
+Text (verbatim): "MD King", "转换历史", "打开 DOCX", "打开目录", "复制路径", "重新转换", "成功", "失败".
+Constraints: Practical, readable, premium blue desktop UI; no messy log table.

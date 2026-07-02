@@ -1,0 +1,9 @@
+Use case: ui-mockup
+Asset type: desktop software page concept image
+Primary request: Generate the Agent and CLI page for MD King.
+Global style lock: Use the same visual language as the selected MD King direction B: premium blue dimensional desktop software, fuller and more tactile than flat web UI, rounded thick panels, soft glass and neumorphic hybrid, blue and white palette, gentle cyan highlights, deep navy text, soft inner highlights, elegant shadows, bright mode only. It must feel like a serious beautiful Windows desktop productivity app for converting AI Markdown into Word DOCX. Avoid purple, dark cyberpunk, generic SaaS cards, boring admin dashboard, mobile UI, browser chrome, stock people, watermark, and distorted text. Chinese labels should be minimal and readable.
+Scene/backdrop: Same blue dimensional desktop app window, with a premium deep-blue glass terminal panel.
+Subject: a developer-friendly page for AI Agent and command line usage. Include title "Agent 与命令行", command examples, stdin conversion, JSON output preview, local service status, API token/port card, and a three-step workflow diagram: AI generates Markdown, CLI converts, DOCX path returned.
+Layout details: terminal should be deep blue glass but not black cyberpunk. Use rounded command cards, error code reference, and service toggle.
+Text (verbatim): "MD King", "Agent 与命令行", "mdking convert input.md", "--template", "--json", "本地服务", "DOCX 路径".
+Constraints: Keep text minimal and legible; professional but still visually aligned with the B style.

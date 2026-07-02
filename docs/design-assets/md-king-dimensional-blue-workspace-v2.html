@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ProDoc AI - Conversion Workbench</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary": "#684000",
+                        "surface": "#f8f9ff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "outline-variant": "#c7c4d8",
+                        "surface-container": "#e5eeff",
+                        "primary": "#3525cd",
+                        "surface-container-lowest": "#ffffff",
+                        "text-weak": "#94A3B8",
+                        "on-error-container": "#93000a",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "error-red": "#EF4444",
+                        "surface-container-high": "#dce9ff",
+                        "background": "#f8f9ff",
+                        "secondary": "#006c49",
+                        "on-surface": "#0b1c30",
+                        "card-white": "#FFFFFF",
+                        "surface-bright": "#f8f9ff",
+                        "surface-tint": "#4d44e3",
+                        "primary-fixed": "#e2dfff",
+                        "secondary-container": "#6cf8bb",
+                        "inverse-surface": "#213145",
+                        "secondary-fixed-dim": "#4edea3",
+                        "outline": "#777587",
+                        "primary-container": "#4f46e5",
+                        "error": "#ba1a1a",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-tertiary-fixed": "#2a1700",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#eff4ff",
+                        "text-primary": "#0F172A",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-secondary-fixed": "#002113",
+                        "surface-dim": "#cbdbf5",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "surface-container-highest": "#d3e4fe",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-container": "#00714d",
+                        "surface-variant": "#d3e4fe",
+                        "on-tertiary-container": "#ffd4a4",
+                        "error-container": "#ffdad6",
+                        "bg-slate": "#F8FAFC",
+                        "tertiary-container": "#885500",
+                        "on-background": "#0b1c30",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed": "#0f0069",
+                        "on-primary": "#ffffff",
+                        "on-primary-container": "#dad7ff",
+                        "info-blue": "#3B82F6",
+                        "tertiary-fixed": "#ffddb8",
+                        "border-subtle": "#E2E8F0"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "xl": "40px",
+                        "lg": "24px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter", "sans-serif"],
+                        "body-lg": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "headline-lg-mobile": ["Inter", "sans-serif"],
+                        "label-sm": ["Inter", "sans-serif"],
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "code-md": ["jetbrainsMono", "monospace"],
+                        "body-md": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-md": ["13px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for main canvas */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #c7c4d8;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: #777587;
+        }
+        
+        /* Markdown Editor specific font */
+        .markdown-text {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body class="bg-bg-slate text-on-surface h-screen w-full flex overflow-hidden font-body-md text-body-md antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- Shared Component: SideNavBar -->
+<aside class="w-[220px] h-screen sticky left-0 top-0 bg-surface dark:bg-inverse-surface border-r border-outline-variant dark:border-outline flex flex-col h-full py-lg px-md shrink-0 z-20 shadow-[1px_0_4px_rgba(0,0,0,0.02)]">
+<!-- Header -->
+<div class="mb-8 flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-info-blue flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+</div>
+<div>
+<h2 class="text-headline-md font-headline-md font-bold text-primary dark:text-primary-fixed-dim tracking-tight">ProDoc AI</h2>
+<p class="text-label-sm font-label-sm text-secondary flex items-center gap-1 mt-0.5">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> Local Security Active
+                </p>
+</div>
+</div>
+<!-- Main Navigation -->
+<nav class="flex-1 space-y-1">
+<!-- Active Tab: Dashboard (Mapping to user's intended working area) -->
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-high text-primary dark:text-primary-fixed-dim font-bold transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-label-md font-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant hover:text-primary transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="text-label-md font-label-md">Templates</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant hover:text-primary transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+<span class="text-label-md font-label-md">Documents</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant hover:text-primary transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">library_books</span>
+<span class="text-label-md font-label-md">Library</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant hover:text-primary transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-label-md font-label-md">Settings</span>
+</a>
+</nav>
+<!-- CTA -->
+<div class="mt-auto mb-6">
+<button class="w-full py-2.5 bg-primary text-on-primary rounded-lg text-label-md font-label-md hover:bg-primary-container transition-colors shadow-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Project
+            </button>
+</div>
+<!-- Footer Navigation -->
+<div class="border-t border-outline-variant pt-4 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant hover:text-primary transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">help_outline</span>
+<span class="text-label-sm font-label-sm">Support</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant hover:text-primary transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">account_circle</span>
+<span class="text-label-sm font-label-sm">Account</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-bg-slate relative">
+<!-- Shared Component: TopNavBar -->
+<header class="docked full-width top-0 h-16 border-b border-outline-variant dark:border-outline shadow-sm bg-surface-bright dark:bg-surface-dim flex justify-between items-center w-full px-lg max-w-full shrink-0 z-10">
+<div class="flex items-center gap-8">
+<!-- Links -->
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-primary border-b-2 border-primary pb-1 text-label-sm font-label-sm pt-1" href="#">Editor</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-all px-2 py-1 rounded text-label-sm font-label-sm" href="#">Preview</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-all px-2 py-1 rounded text-label-sm font-label-sm" href="#">History</a>
+</nav>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-secondary hover:bg-secondary-container/30 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">security</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors flex items-center justify-center mr-2">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant overflow-hidden flex items-center justify-center">
+<span class="material-symbols-outlined text-outline">person</span>
+</div>
+</div>
+</header>
+<!-- Dynamic Page Canvas -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-margin flex flex-col gap-margin">
+<!-- Context Header (App Specific) -->
+<div class="flex flex-col gap-3">
+<div class="flex items-baseline gap-4">
+<h1 class="text-headline-lg font-headline-lg text-on-surface tracking-tight">转换工作台</h1>
+<span class="text-body-md font-body-md text-text-weak">md-king V2.4.0</span>
+</div>
+<p class="text-body-lg font-body-lg text-on-surface-variant max-w-2xl">
+                    粘贴 AI Markdown 或拖入 .md 文件，生成可编辑 Word 文档。
+                </p>
+<!-- Status Chips & Quick Entry -->
+<div class="flex flex-wrap items-center gap-2 mt-1">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/40 border border-secondary-container text-secondary text-label-sm font-label-sm">
+<span class="material-symbols-outlined text-[14px]">done</span> 本地转换
+                    </div>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high border border-outline-variant text-primary text-label-sm font-label-sm">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Pandoc 可用
+                    </div>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container border border-surface-tint/20 text-on-surface-variant text-label-sm font-label-sm">
+<span class="text-text-weak">模板:</span> 通用报告
+                    </div>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container border border-surface-tint/20 text-on-surface-variant text-label-sm font-label-sm">
+<span class="text-text-weak">输出:</span> 源目录
+                    </div>
+<div class="w-px h-4 bg-outline-variant mx-2"></div>
+<span class="text-label-sm font-label-sm text-text-weak flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">keyboard</span> Ctrl+Alt+M
+                    </span>
+</div>
+</div>
+<!-- Main Split Layout -->
+<div class="flex flex-col lg:flex-row gap-gutter flex-1 min-h-[480px]">
+<!-- Left Area (65%): Editor Card -->
+<div class="flex-[6.5] min-w-0 bg-card-white border border-border-subtle rounded-xl shadow-sm flex flex-col overflow-hidden relative">
+<!-- Editor Tabs & Toolbar -->
+<div class="h-12 border-b border-border-subtle bg-surface-bright flex items-center justify-between px-2 shrink-0">
+<div class="flex items-center h-full">
+<button class="h-full px-4 text-primary border-b-2 border-primary text-label-md font-label-md bg-surface-container-lowest flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">edit_document</span>
+                                粘贴 Markdown
+                            </button>
+<button class="h-full px-4 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low text-label-md font-label-md transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">upload_file</span>
+                                导入文件
+                            </button>
+</div>
+<div class="flex items-center gap-1 pr-2">
+<button class="p-1.5 text-text-weak hover:text-error-red hover:bg-error-container/30 rounded transition-colors" title="清空">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+<div class="w-px h-4 bg-border-subtle mx-1"></div>
+<button class="p-1.5 text-text-weak hover:text-primary hover:bg-surface-container-low rounded transition-colors" title="格式整理">
+<span class="material-symbols-outlined text-[18px]">format_paint</span>
+</button>
+<button class="px-3 py-1.5 ml-1 bg-surface-container border border-border-subtle text-on-surface-variant rounded text-label-sm font-label-sm hover:bg-surface-container-high transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">visibility</span> 预览
+                            </button>
+</div>
+</div>
+<!-- Text Area (Inset shadow for depth) -->
+<div class="flex-1 relative bg-[#FAFBFF] shadow-[inset_0_2px_6px_rgba(0,0,0,0.02)]">
+<textarea class="w-full h-full p-6 bg-transparent border-none resize-none focus:ring-0 text-body-md font-body-md text-on-surface markdown-text leading-relaxed outline-none" placeholder="在此粘贴您的 Markdown 内容..." spellcheck="false"># Q3 区域销售数据分析报告
+
+## 1. 核心数据摘要
+本季度实现总营收 **¥4,250,000**，环比增长 `15.2%`。主要增长驱动力来自于华东区的新产品线推广。
+
+&gt; "AI 辅助工具的全面导入，使得销售团队的跟单效率提升了约 30%。" —— 销售总监
+
+## 2. 关键指标列表
+- **客户转化率**: 12.5% (↑ 2.1%)
+- **客单价**: ¥8,500 (持平)
+- **回款周期**: 45天 (↓ 5天)
+
+### 2.1 待办事项
+- [x] 完成华南区渠道培训
+- [ ] 制定 Q4 冲刺计划预案</textarea>
+</div>
+</div>
+<!-- Right Area (35%): Conversion Panel -->
+<div class="flex-[3.5] min-w-0 bg-surface border border-border-subtle rounded-xl shadow-sm flex flex-col relative overflow-hidden">
+<!-- Subtle top highlight for depth -->
+<div class="absolute inset-x-0 top-0 h-px bg-white/60"></div>
+<div class="p-lg flex flex-col h-full">
+<h3 class="text-headline-md font-headline-md text-on-surface mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">settings_applications</span>
+                            生成设置
+                        </h3>
+<div class="space-y-6 flex-1">
+<!-- Field: Target Template -->
+<div>
+<label class="block text-label-sm font-label-sm text-on-surface-variant mb-2">目标模板</label>
+<div class="p-3 border border-border-subtle rounded-lg bg-card-white hover:border-primary/50 cursor-pointer transition-colors flex items-start gap-3 shadow-sm">
+<div class="w-10 h-12 bg-surface-container border border-outline-variant rounded flex items-center justify-center shrink-0 relative overflow-hidden">
+<span class="material-symbols-outlined text-primary/40 text-[24px]">article</span>
+<div class="absolute bottom-0 w-full h-1 bg-primary"></div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-label-md font-label-md text-on-surface">企业通用报告.docx</span>
+<span class="text-[10px] bg-surface-container px-1.5 py-0.5 rounded text-primary">默认</span>
+</div>
+<p class="text-[11px] text-text-weak leading-tight">包含标准封面、目录及三级标题样式映射。</p>
+</div>
+<span class="material-symbols-outlined text-text-weak mt-2">unfold_more</span>
+</div>
+</div>
+<!-- Field: Output Location -->
+<div>
+<label class="block text-label-sm font-label-sm text-on-surface-variant mb-2">输出位置</label>
+<div class="flex items-center gap-2">
+<div class="flex-1 relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-weak text-[18px]">folder</span>
+<input class="w-full pl-9 pr-3 py-2 bg-card-white border border-border-subtle rounded-lg text-body-md font-body-md text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] transition-all" type="text" value="D:/Documents/md-king-output/"/>
+</div>
+<button class="p-2 border border-border-subtle rounded-lg bg-surface-bright hover:bg-surface-container-low transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Toggles -->
+<div class="space-y-3 pt-2">
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-body-md font-body-md text-on-surface-variant group-hover:text-on-surface transition-colors">完成后自动打开文档</span>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]"></div>
+</div>
+</label>
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-body-md font-body-md text-on-surface-variant group-hover:text-on-surface transition-colors">覆盖同名文件</span>
+<div class="relative inline-flex items-center">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]"></div>
+</div>
+</label>
+</div>
+</div>
+<!-- Primary Action Area -->
+<div class="mt-8 pt-4 border-t border-border-subtle flex flex-col items-center">
+<!-- Highly styled glossy primary button -->
+<button class="w-full relative group overflow-hidden rounded-xl bg-gradient-to-b from-primary-container to-primary text-on-primary font-headline-md text-headline-md py-3.5 px-4 shadow-[0_4px_14px_rgba(53,37,205,0.25)] hover:shadow-[0_6px_20px_rgba(53,37,205,0.4)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-inner transition-all duration-200 border border-[#4335da]">
+<!-- Bevel Highlight -->
+<div class="absolute inset-x-0 top-0 h-[1px] bg-white/30 rounded-t-xl"></div>
+<div class="relative z-10 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">auto_fix_high</span>
+                                    生成 Word 文档
+                                </div>
+<!-- Subtle gradient flare on hover -->
+<div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
+</button>
+<p class="text-label-sm font-label-sm text-text-weak mt-3 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">lock</span> 本机处理，不上传云端
+                            </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Span: Recent Tasks -->
+<div class="bg-card-white border border-border-subtle rounded-xl shadow-sm p-5 mt-4 shrink-0">
+<h4 class="text-label-md font-label-md text-on-surface mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-text-weak text-[20px]">history</span>
+                    最近任务
+                </h4>
+<div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-lowest border border-transparent hover:border-border-subtle transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-secondary-container/30 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div>
+<p class="text-label-md font-label-md text-on-surface">Q3_区域销售数据分析报告.docx</p>
+<p class="text-label-sm font-label-sm text-text-weak">14:23 • 共 4 页 • 耗时 1.2s</p>
+</div>
+</div>
+<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 text-label-sm font-label-sm text-primary bg-primary/5 hover:bg-primary/10 rounded transition-colors">
+                            打开文档
+                        </button>
+<button class="p-1.5 text-on-surface-variant hover:bg-surface-container rounded transition-colors" title="打开所在目录">
+<span class="material-symbols-outlined text-[20px]">folder_open</span>
+</button>
+</div>
+</div>
+<!-- Divider -->
+<div class="h-px w-full bg-border-subtle my-1 ml-12 w-[calc(100%-48px)]"></div>
+<div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-lowest border border-transparent hover:border-border-subtle transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-text-weak">
+<span class="material-symbols-outlined text-[20px]">draft</span>
+</div>
+<div>
+<p class="text-label-md font-label-md text-on-surface-variant">产品需求文档_V2.docx</p>
+<p class="text-label-sm font-label-sm text-text-weak">昨天 16:45</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Floating Action Button (Lower Right) -->
+<button class="absolute bottom-10 right-10 w-14 h-14 rounded-full bg-gradient-to-br from-info-blue to-primary text-on-primary shadow-[0_8px_20px_rgba(53,37,205,0.35)] border border-white/20 flex items-center justify-center hover:scale-105 active:scale-95 transition-all group z-30" title="拖入文件或粘贴内容">
+<div class="absolute inset-0 rounded-full shadow-[inset_0_2px_4px_rgba(255,255,255,0.4)] pointer-events-none"></div>
+<span class="material-symbols-outlined text-[28px] group-hover:-translate-y-0.5 transition-transform">post_add</span>
+</button>
+</main>
+<style>
+        @keyframes shimmer {
+            100% {
+                transform: translateX(100%);
+            }
+        }
+    </style>
+</body></html>

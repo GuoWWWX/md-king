@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>md-king - 转换工作台</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-error-container": "#93000a",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-bright": "#f8f9ff",
+                        "secondary-container": "#6cf8bb",
+                        "primary-container": "#4f46e5",
+                        "on-error": "#ffffff",
+                        "on-primary-container": "#dad7ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-tertiary-fixed": "#2a1700",
+                        "on-surface-variant": "#464555",
+                        "on-surface": "#0b1c30",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed-dim": "#4edea3",
+                        "tertiary-fixed": "#ffddb8",
+                        "error-red": "#EF4444",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "surface": "#f8f9ff",
+                        "secondary-fixed": "#6ffbbe",
+                        "surface-tint": "#4d44e3",
+                        "primary-fixed": "#e2dfff",
+                        "info-blue": "#3B82F6",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "surface-variant": "#d3e4fe",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-secondary-fixed": "#002113",
+                        "on-secondary-container": "#00714d",
+                        "outline": "#777587",
+                        "primary": "#3525cd",
+                        "on-secondary": "#ffffff",
+                        "bg-slate": "#F8FAFC",
+                        "surface-dim": "#cbdbf5",
+                        "text-primary": "#0F172A",
+                        "surface-container-low": "#eff4ff",
+                        "on-tertiary-container": "#ffd4a4",
+                        "inverse-surface": "#213145",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed-variant": "#005236",
+                        "card-white": "#FFFFFF",
+                        "surface-container-high": "#dce9ff",
+                        "on-background": "#0b1c30",
+                        "background": "#f8f9ff",
+                        "tertiary-container": "#885500",
+                        "error-container": "#ffdad6",
+                        "text-weak": "#94A3B8",
+                        "inverse-primary": "#c3c0ff",
+                        "border-subtle": "#E2E8F0",
+                        "error": "#ba1a1a",
+                        "secondary": "#006c49",
+                        "on-primary": "#ffffff",
+                        "tertiary": "#684000",
+                        "surface-container": "#e5eeff",
+                        "inverse-on-surface": "#eaf1ff",
+                        "outline-variant": "#c7c4d8"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "sm": "8px",
+                        "lg": "24px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "xl": "40px",
+                        "gutter": "16px",
+                        "md": "16px"
+                    },
+                    fontFamily: {
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "label-sm": ["Inter", "sans-serif"],
+                        "label-md": ["Inter", "sans-serif"],
+                        "headline-lg-mobile": ["Inter", "sans-serif"],
+                        "code-md": ["JetBrains Mono", "monospace"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "body-lg": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"]
+                    },
+                    fontSize: {
+                        "headline-lg": ["28px", { lineHeight: "36px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "label-sm": ["12px", { lineHeight: "16px", fontWeight: "500" }],
+                        "label-md": ["14px", { lineHeight: "20px", fontWeight: "600" }],
+                        "headline-lg-mobile": ["24px", { lineHeight: "32px", fontWeight: "700" }],
+                        "code-md": ["13px", { lineHeight: "20px", fontWeight: "400" }],
+                        "headline-md": ["20px", { lineHeight: "28px", fontWeight: "600" }],
+                        "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+                        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }]
+                    },
+                    boxShadow: {
+                        'ambient-blue': '0 4px 20px -4px rgba(53, 37, 205, 0.1)',
+                        'inset-light': 'inset 0 1px 0 rgba(255, 255, 255, 0.6)',
+                        'glossy-btn': '0 4px 12px rgba(53, 37, 205, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.3)',
+                        'glass-panel': '0 8px 32px rgba(11, 28, 48, 0.05)',
+                        'floating-ball': '0 10px 25px -5px rgba(53, 37, 205, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.5)'
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #0b1c30; }
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .dimensional-surface {
+            background: linear-gradient(145deg, #ffffff, #f3f6fc);
+            box-shadow: 2px 2px 8px rgba(203, 219, 245, 0.3), -2px -2px 8px rgba(255, 255, 255, 0.8);
+        }
+        .inset-panel {
+            background: #F1F5F9;
+            box-shadow: inset 2px 2px 5px rgba(203, 219, 245, 0.4), inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+        }
+        /* Custom Scrollbar for Editor */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="h-screen w-full flex overflow-hidden bg-bg-slate text-on-surface">
+<!-- JSON: SideNavBar -->
+<nav class="flex flex-col h-full py-lg fixed left-0 top-0 w-64 border-r border-border-subtle bg-surface-container-lowest shadow-sm z-20">
+<div class="px-lg mb-xl">
+<h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">md-king</h1>
+<p class="font-label-sm text-label-sm text-text-weak mt-1">V2.4.0 Professional</p>
+</div>
+<ul class="flex-1 px-sm space-y-2">
+<li>
+<a class="text-primary font-bold flex items-center gap-md px-lg py-sm bg-surface-container-high rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">swap_horiz</span>
+<span class="font-label-md text-label-md">Convert</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-label-md text-label-md">Template Center</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-label-md text-label-md">CLI / Agent</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</li>
+</ul>
+<div class="px-sm mt-auto border-t border-border-subtle pt-4">
+<ul class="space-y-1">
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant flex items-center gap-md px-lg py-sm hover:bg-surface-container transition-colors duration-200 rounded-lg" href="#">
+<span class="material-symbols-outlined">article</span>
+<span class="font-label-md text-label-md">Documentation</span>
+</a>
+</li>
+</ul>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="ml-64 flex-1 flex flex-col h-screen relative bg-gradient-to-br from-bg-slate to-[#E2E8F0]/30">
+<!-- JSON: TopAppBar -->
+<header class="flex justify-between items-center px-lg w-full h-16 border-b border-border-subtle bg-surface z-10 glass-morphism absolute top-0 left-0 right-0">
+<div class="flex items-center gap-6">
+<!-- Status Indicators mimicking macOS/Windows premium tools -->
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary-container/20 text-on-secondary-container font-label-sm text-label-sm border border-secondary-container/30">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> 本地转换
+                    </span>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-high text-primary font-label-sm text-label-sm border border-primary-fixed-dim/50">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Pandoc Ready
+                    </span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="hidden lg:flex items-center text-text-weak font-label-sm text-label-sm mr-4 divide-x divide-border-subtle">
+<span class="pr-3">默认模板: 通用报告</span>
+<span class="pl-3">输出: 与源文件同目录</span>
+</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded-md hover:bg-surface-container">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded-md hover:bg-surface-container">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+<button class="ml-2 font-label-md text-label-md bg-primary text-on-primary px-4 py-1.5 rounded-[10px] shadow-glossy-btn hover:bg-primary/90 transition-all active:scale-95">
+                    Local Conversion
+                </button>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-1 pt-24 px-margin pb-margin overflow-y-auto">
+<!-- Header Section -->
+<div class="mb-8">
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-2">转换工作台</h2>
+<p class="font-body-md text-body-md text-text-weak">粘贴 AI Markdown 或拖入 .md 文件，生成可编辑 Word 文档</p>
+<!-- Quick Entry Chips -->
+<div class="flex gap-2 mt-4">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-surface-container border border-border-subtle font-code-md text-code-md text-on-surface-variant shadow-sm">
+<span class="material-symbols-outlined text-[14px] mr-1">keyboard</span> Ctrl+Alt+M
+                    </span>
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-surface-container border border-border-subtle font-label-sm text-label-sm text-on-surface-variant shadow-sm">
+<span class="material-symbols-outlined text-[14px] mr-1">mouse</span> 右键菜单
+                    </span>
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-surface-container border border-border-subtle font-label-sm text-label-sm text-on-surface-variant shadow-sm">
+<span class="material-symbols-outlined text-[14px] mr-1">terminal</span> Agent CLI
+                    </span>
+</div>
+</div>
+<!-- Main Workspace Grid -->
+<div class="grid grid-cols-12 gap-gutter lg:gap-lg h-[calc(100%-140px)] min-h-[500px]">
+<!-- Center-Left: Markdown Editor Panel -->
+<div class="col-span-12 lg:col-span-8 flex flex-col bg-card-white rounded-2xl border border-border-subtle shadow-glass-panel overflow-hidden dimensional-surface relative">
+<!-- Editor Toolbar Tabs -->
+<div class="flex justify-between items-center px-4 py-3 border-b border-border-subtle bg-surface/50 backdrop-blur-sm">
+<div class="flex gap-1">
+<button class="px-4 py-1.5 rounded-[10px] bg-surface-container-high text-primary font-label-md text-label-md shadow-sm border border-primary-fixed-dim/30">粘贴 Markdown</button>
+<button class="px-4 py-1.5 rounded-[10px] text-on-surface-variant hover:bg-surface-container transition-colors font-label-md text-label-md">导入文件</button>
+<button class="px-4 py-1.5 rounded-[10px] text-on-surface-variant hover:bg-surface-container transition-colors font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">content_paste</span> 读取剪贴板
+                            </button>
+</div>
+<div class="flex gap-2">
+<button class="p-1.5 rounded-md text-text-weak hover:text-error-red hover:bg-error-container/30 transition-colors" title="清空">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+<button class="p-1.5 rounded-md text-text-weak hover:text-primary hover:bg-surface-container transition-colors" title="格式整理">
+<span class="material-symbols-outlined text-[18px]">format_align_left</span>
+</button>
+<button class="p-1.5 rounded-md text-text-weak hover:text-primary hover:bg-surface-container transition-colors" title="预览">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</button>
+</div>
+</div>
+<!-- Editor Area -->
+<div class="flex-1 p-4 inset-panel m-4 rounded-[10px] border border-border-subtle/50 overflow-y-auto font-code-md text-code-md text-on-surface-variant leading-relaxed">
+<pre class="whitespace-pre-wrap font-code-md"><code># 2024年Q3市场分析报告
+
+## 核心摘要
+本次分析主要针对北美市场的新兴增长点，AI驱动的工具类产品表现尤为突出。
+
+### 关键数据点
+* 用户增长率: **145%** (同比)
+* 留存率 (30天): 68%
+* 获客成本 (CAC): 下降了12%
+
+### 待办事项
+- [x] 完成初步数据清洗
+- [ ] 运行情感分析模型
+- [ ] 生成可视化图表</code></pre></div></div></div></main></div></body></html>

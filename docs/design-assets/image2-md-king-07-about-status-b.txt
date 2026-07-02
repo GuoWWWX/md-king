@@ -1,0 +1,9 @@
+Use case: ui-mockup
+Asset type: desktop software page concept image
+Primary request: Generate the About and System Status page for MD King.
+Global style lock: Use the same visual language as the selected MD King direction B: premium blue dimensional desktop software, fuller and more tactile than flat web UI, rounded thick panels, soft glass and neumorphic hybrid, blue and white palette, gentle cyan highlights, deep navy text, soft inner highlights, elegant shadows, bright mode only. It must feel like a serious beautiful Windows desktop productivity app for converting AI Markdown into Word DOCX. Avoid purple, dark cyberpunk, generic SaaS cards, boring admin dashboard, mobile UI, browser chrome, stock people, watermark, and distorted text. Chinese labels should be minimal and readable.
+Scene/backdrop: Same premium blue dimensional desktop app shell.
+Subject: about page with product identity, version card, mission statement, core capability grid, system health checklist, local privacy card, update check and feedback buttons. Show Pandoc detected, local storage OK, right-click menu active, CLI planned/linked status.
+Layout details: page title "关于 MD King", subtitle about turning AI Markdown into deliverable Word documents. Use beautiful blue info cards and status list, but keep it practical, not a marketing landing page.
+Text (verbatim): "MD King", "关于 MD King", "把 AI Markdown 变成 Word 文档", "版本", "系统状态", "本地隐私", "检查更新", "反馈建议".
+Constraints: Trustworthy, polished, clear product status, consistent with B style.
