@@ -35,6 +35,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
   return (
     <AppSurface
       as="article"
+      padding="sm"
       radius="sm"
       interactive
       className={cn(
@@ -48,20 +49,20 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
         <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70" />
       ) : null}
 
-      <div className="mk-template-card-preview mb-2.5 h-32 overflow-hidden rounded-[10px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
+      <div className="mk-template-card-preview mb-2 h-28 overflow-hidden rounded-[8px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
         {template.previewImagePath ? (
-          <img src={template.previewImagePath} alt={`${template.name} 预览`} className="h-full w-full rounded-md object-cover" />
+          <img src={template.previewImagePath} alt={`${template.name} 预览`} className="h-full w-full rounded-md bg-white object-contain" />
         ) : (
           <WordPreviewPage
             styleConfig={cardPreviewStyleConfig}
             markdown={cardPreviewMarkdown}
             showHeader={false}
             showPageFooter={false}
-            zoom={58}
+            zoom={54}
             pageWidth={520}
             pageMinHeight={680}
             className="pointer-events-none h-full max-h-none rounded-none border-0 bg-transparent p-0 shadow-none"
-            viewportClassName="mk-template-preview-viewport rounded-[10px] bg-gradient-to-br from-white/86 to-slate-100/80 px-1 py-1 overflow-hidden"
+            viewportClassName="mk-template-preview-viewport rounded-[8px] bg-white px-1 py-1 overflow-hidden"
           />
         )}
         <div className="sr-only">{template.previewImagePath ? "用户模板预览图" : "根据模板样式生成的 Word 缩略预览"}</div>
@@ -70,7 +71,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
-          className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-lg border text-white", isSelected ? "border-blue-600 bg-blue-600" : "border-blue-200 bg-white/70")}
+          className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border text-white", isSelected ? "border-blue-600 bg-blue-600" : "border-blue-200 bg-white/70")}
           onClick={(event) => {
             event.stopPropagation();
             onPreview(template);
@@ -83,10 +84,10 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate font-semibold text-slate-950">{template.name}</h3>
+            <h3 className="truncate text-sm font-semibold text-slate-950">{template.name}</h3>
             {isCurrent ? <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" /> : null}
           </div>
-          <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-slate-500">{template.description ?? "Word/WPS 参考样式模板"}</p>
+          <p className="mt-0.5 line-clamp-1 text-xs leading-4 text-slate-500">{template.description ?? "Word/WPS 参考样式模板"}</p>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -101,23 +102,23 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
         ))}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <PrimaryActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onUse(template); }}>使用</PrimaryActionButton>
-        <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); return template.isDefault ? toast.info("当前已经是默认模板") : onSetDefault(template); }}>{template.isDefault ? "已默认" : "设默认"}</SoftActionButton>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <PrimaryActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onUse(template); }}>使用</PrimaryActionButton>
+        <SoftActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); return template.isDefault ? toast.info("当前已经是默认模板") : onSetDefault(template); }}>{template.isDefault ? "已默认" : "设默认"}</SoftActionButton>
       </div>
 
       {template.isBuiltIn ? (
-        <SoftActionButton className="mt-2 h-9 w-full rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onStyleManager(template); }}>
+        <SoftActionButton className="mt-1.5 h-8 w-full rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onStyleManager(template); }}>
           <Edit3 className="size-4" />
           编辑样式
         </SoftActionButton>
       ) : (
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />模板信息</SoftActionButton>
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
+          <SoftActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />模板信息</SoftActionButton>
           <Button
             variant="ghost"
             size="sm"
-            className="justify-center text-red-600 hover:bg-red-50 hover:text-red-700"
+            className="h-8 justify-center rounded-[8px] text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
             onClick={(event) => {
               event.stopPropagation();
               onDelete(template);

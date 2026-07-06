@@ -555,7 +555,7 @@ export function TemplatesPage() {
           </div>
           ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
             {filteredTemplates.map((template) => (
               <TemplateGalleryCard
                 key={template.id}
