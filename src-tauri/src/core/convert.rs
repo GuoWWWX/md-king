@@ -71,6 +71,12 @@ struct PageSettingsConfig {
     margin_right: f64,
     margin_bottom: f64,
     margin_left: f64,
+    header_enabled: bool,
+    header_text: String,
+    footer_enabled: bool,
+    footer_text: String,
+    footer_page_number_format: String,
+    footer_start_page: u32,
 }
 
 #[derive(Clone)]
@@ -838,6 +844,21 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
             .filter(|value| value.is_finite() && *value > 0.0)
             .unwrap_or(default_value)
     };
+    let read_page_number = |key: &str, default_value: u32| {
+        settings
+            .get(key)
+            .and_then(|value| {
+                value.as_u64().or_else(|| {
+                    value
+                        .as_f64()
+                        .filter(|number| number.is_finite() && *number > 0.0)
+                        .map(|number| number.round() as u64)
+                })
+            })
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(default_value)
+    };
 
     Some(PageSettingsConfig {
         paper_size: settings
@@ -854,6 +875,32 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
         margin_right: read_number("marginRight", 3.18),
         margin_bottom: read_number("marginBottom", 2.54),
         margin_left: read_number("marginLeft", 3.18),
+        header_enabled: settings
+            .get("headerEnabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        header_text: settings
+            .get("headerText")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string(),
+        footer_enabled: settings
+            .get("footerEnabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        footer_text: settings
+            .get("footerText")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string(),
+        footer_page_number_format: settings
+            .get("footerPageNumberFormat")
+            .and_then(Value::as_str)
+            .unwrap_or("page-total")
+            .to_string(),
+        footer_start_page: read_page_number("footerStartPage", 1),
     })
 }
 
@@ -1256,6 +1303,11 @@ fn normalize_docx(
     let mut output = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(&mut output);
     let mut has_numbering_xml = false;
+    let mut has_document_rels_xml = false;
+    let mut has_content_types_xml = false;
+    let mut has_header_xml = false;
+    let mut has_footer_xml = false;
+    let header_footer = page_settings.filter(|settings| page_settings_has_header_footer(settings));
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -1293,6 +1345,31 @@ fn normalize_docx(
                 data = ensure_heading_numbering_xml(&xml, heading_numbering).into_bytes();
             }
         }
+        if name == "[Content_Types].xml" {
+            has_content_types_xml = true;
+            if let Some(settings) = header_footer {
+                let xml = String::from_utf8(data)
+                    .map_err(|error| format!("解析 [Content_Types].xml 失败：{error}"))?;
+                data = ensure_header_footer_content_types_xml(&xml, settings).into_bytes();
+            }
+        } else if name == "word/_rels/document.xml.rels" {
+            has_document_rels_xml = true;
+            if let Some(settings) = header_footer {
+                let xml = String::from_utf8(data)
+                    .map_err(|error| format!("解析 document.xml.rels 失败：{error}"))?;
+                data = ensure_header_footer_relationships_xml(&xml, settings).into_bytes();
+            }
+        } else if name == "word/header-mdking.xml" {
+            has_header_xml = true;
+            if let Some(settings) = header_footer.filter(|settings| page_settings_has_header(settings)) {
+                data = create_header_xml(settings).into_bytes();
+            }
+        } else if name == "word/footer-mdking.xml" {
+            has_footer_xml = true;
+            if let Some(settings) = header_footer.filter(|settings| page_settings_has_footer(settings)) {
+                data = create_footer_xml(settings).into_bytes();
+            }
+        }
         writer
             .write_all(&data)
             .map_err(|error| format!("写入 DOCX 内容失败：{error}"))?;
@@ -1308,6 +1385,60 @@ fn normalize_docx(
         writer
             .write_all(create_heading_numbering_xml(heading_numbering).as_bytes())
             .map_err(|error| format!("写入 numbering.xml 内容失败：{error}"))?;
+    }
+
+    if let Some(settings) = header_footer {
+        if !has_content_types_xml {
+            writer
+                .start_file(
+                    "[Content_Types].xml",
+                    SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(|error| format!("写入 [Content_Types].xml 失败：{error}"))?;
+            writer
+                .write_all(create_header_footer_content_types_xml(settings).as_bytes())
+                .map_err(|error| format!("写入 [Content_Types].xml 内容失败：{error}"))?;
+        }
+
+        if !has_document_rels_xml {
+            writer
+                .start_file(
+                    "word/_rels/document.xml.rels",
+                    SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(|error| format!("写入 document.xml.rels 失败：{error}"))?;
+            writer
+                .write_all(create_header_footer_relationships_xml(settings).as_bytes())
+                .map_err(|error| format!("写入 document.xml.rels 内容失败：{error}"))?;
+        }
+
+        if page_settings_has_header(settings) && !has_header_xml {
+            writer
+                .start_file(
+                    "word/header-mdking.xml",
+                    SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(|error| format!("写入 header-mdking.xml 失败：{error}"))?;
+            writer
+                .write_all(create_header_xml(settings).as_bytes())
+                .map_err(|error| format!("写入 header-mdking.xml 内容失败：{error}"))?;
+        }
+
+        if page_settings_has_footer(settings) && !has_footer_xml {
+            writer
+                .start_file(
+                    "word/footer-mdking.xml",
+                    SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(|error| format!("写入 footer-mdking.xml 失败：{error}"))?;
+            writer
+                .write_all(create_footer_xml(settings).as_bytes())
+                .map_err(|error| format!("写入 footer-mdking.xml 内容失败：{error}"))?;
+        }
     }
 
     writer
@@ -1364,11 +1495,16 @@ fn apply_page_settings_to_document_xml(
     let Some(page_settings) = page_settings else {
         return xml.to_string();
     };
+    let xml = if page_settings_has_header_footer(page_settings) {
+        ensure_word_relationship_namespace(xml)
+    } else {
+        xml.to_string()
+    };
 
     let section = Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#).expect("valid sectPr regex");
-    if section.is_match(xml) {
+    if section.is_match(&xml) {
         return section
-            .replace_all(xml, |captures: &Captures| {
+            .replace_all(&xml, |captures: &Captures| {
                 normalize_section_page_settings(&captures[0], page_settings)
             })
             .to_string();
@@ -1377,8 +1513,20 @@ fn apply_page_settings_to_document_xml(
     let insert_at = Regex::new(r#"</w:body>"#).expect("valid body closing regex");
     let section_xml = normalize_section_page_settings("<w:sectPr></w:sectPr>", page_settings);
     insert_at
-        .replace(xml, format!("{section_xml}</w:body>"))
+        .replace(&xml, format!("{section_xml}</w:body>"))
         .to_string()
+}
+
+fn ensure_word_relationship_namespace(xml: &str) -> String {
+    if xml.contains("xmlns:r=") {
+        return xml.to_string();
+    }
+
+    xml.replacen(
+        "<w:document",
+        r#"<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#,
+        1,
+    )
 }
 
 fn normalize_section_page_settings(
@@ -1404,10 +1552,201 @@ fn normalize_section_page_settings(
     let page_margins = page_margins_xml(page_settings);
     let page_size_re = Regex::new(r#"(?s)<w:pgSz\b[^>]*/>"#).expect("valid page size regex");
     let page_margins_re = Regex::new(r#"(?s)<w:pgMar\b[^>]*/>"#).expect("valid page margins regex");
+    let header_footer_re = Regex::new(
+        r#"(?s)<w:(?:headerReference|footerReference|pgNumType)\b[^>]*/>"#,
+    )
+    .expect("valid header footer section regex");
     let body = page_size_re.replace_all(body, "");
     let body = page_margins_re.replace_all(&body, "");
+    let body = header_footer_re.replace_all(&body, "");
+    let header_footer_refs = section_header_footer_references_xml(page_settings);
 
-    format!("{start}{page_size}{page_margins}{body}{end}")
+    format!("{start}{header_footer_refs}{page_size}{page_margins}{body}{end}")
+}
+
+fn page_settings_has_header_footer(page_settings: &PageSettingsConfig) -> bool {
+    page_settings_has_header(page_settings) || page_settings_has_footer(page_settings)
+}
+
+fn page_settings_has_header(page_settings: &PageSettingsConfig) -> bool {
+    page_settings.header_enabled && !page_settings.header_text.trim().is_empty()
+}
+
+fn page_settings_has_footer(page_settings: &PageSettingsConfig) -> bool {
+    page_settings.footer_enabled
+        && (!page_settings.footer_text.trim().is_empty()
+            || page_settings.footer_page_number_format.trim() != "none")
+}
+
+fn section_header_footer_references_xml(page_settings: &PageSettingsConfig) -> String {
+    let mut xml = String::new();
+    if page_settings_has_header(page_settings) {
+        xml.push_str(r#"<w:headerReference w:type="default" r:id="rIdMdKingHeader" />"#);
+    }
+    if page_settings_has_footer(page_settings) {
+        xml.push_str(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#);
+        xml.push_str(&format!(
+            r#"<w:pgNumType w:start="{}" />"#,
+            page_settings.footer_start_page.max(1)
+        ));
+    }
+    xml
+}
+
+fn ensure_header_footer_content_types_xml(
+    xml: &str,
+    page_settings: &PageSettingsConfig,
+) -> String {
+    let mut output = xml.to_string();
+    if page_settings_has_header(page_settings) && !output.contains("/word/header-mdking.xml") {
+        output = output.replace(
+            "</Types>",
+            r#"<Override PartName="/word/header-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" /></Types>"#,
+        );
+    }
+    if page_settings_has_footer(page_settings) && !output.contains("/word/footer-mdking.xml") {
+        output = output.replace(
+            "</Types>",
+            r#"<Override PartName="/word/footer-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" /></Types>"#,
+        );
+    }
+    output
+}
+
+fn create_header_footer_content_types_xml(page_settings: &PageSettingsConfig) -> String {
+    let mut xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" /><Default Extension="xml" ContentType="application/xml" />"#.to_string();
+    if page_settings_has_header(page_settings) {
+        xml.push_str(r#"<Override PartName="/word/header-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" />"#);
+    }
+    if page_settings_has_footer(page_settings) {
+        xml.push_str(r#"<Override PartName="/word/footer-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" />"#);
+    }
+    xml.push_str("</Types>");
+    xml
+}
+
+fn ensure_header_footer_relationships_xml(
+    xml: &str,
+    page_settings: &PageSettingsConfig,
+) -> String {
+    let mut output = xml.to_string();
+    if page_settings_has_header(page_settings)
+        && !output.contains(r#"Id="rIdMdKingHeader""#)
+        && !output.contains(r#"Target="header-mdking.xml""#)
+    {
+        output = output.replace(
+            "</Relationships>",
+            r#"<Relationship Id="rIdMdKingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header-mdking.xml" /></Relationships>"#,
+        );
+    }
+    if page_settings_has_footer(page_settings)
+        && !output.contains(r#"Id="rIdMdKingFooter""#)
+        && !output.contains(r#"Target="footer-mdking.xml""#)
+    {
+        output = output.replace(
+            "</Relationships>",
+            r#"<Relationship Id="rIdMdKingFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer-mdking.xml" /></Relationships>"#,
+        );
+    }
+    output
+}
+
+fn create_header_footer_relationships_xml(page_settings: &PageSettingsConfig) -> String {
+    let mut xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#.to_string();
+    if page_settings_has_header(page_settings) {
+        xml.push_str(r#"<Relationship Id="rIdMdKingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header-mdking.xml" />"#);
+    }
+    if page_settings_has_footer(page_settings) {
+        xml.push_str(r#"<Relationship Id="rIdMdKingFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer-mdking.xml" />"#);
+    }
+    xml.push_str("</Relationships>");
+    xml
+}
+
+fn create_header_xml(page_settings: &PageSettingsConfig) -> String {
+    let text = escape_xml_text(&page_settings.header_text);
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center" /></w:pPr><w:r><w:rPr><w:color w:val="64748B" /><w:sz w:val="18" /><w:szCs w:val="18" /></w:rPr><w:t>{text}</w:t></w:r></w:p></w:hdr>"#
+    )
+}
+
+fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
+    let text = page_settings.footer_text.trim();
+    let text_xml = if text.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<w:r><w:rPr>{}</w:rPr><w:t>{}</w:t></w:r>"#,
+            footer_run_style_xml(),
+            escape_xml_text(text)
+        )
+    };
+    let separator_xml = if !text_xml.is_empty()
+        && page_settings.footer_page_number_format.trim() != "none"
+    {
+        format!(
+            r#"<w:r><w:rPr>{}</w:rPr><w:t> · </w:t></w:r>"#,
+            footer_run_style_xml()
+        )
+    } else {
+        String::new()
+    };
+    let page_number_xml = footer_page_number_xml(&page_settings.footer_page_number_format);
+
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center" /></w:pPr>{text_xml}{separator_xml}{page_number_xml}</w:p></w:ftr>"#
+    )
+}
+
+fn footer_page_number_xml(format: &str) -> String {
+    match format.trim() {
+        "none" => String::new(),
+        "dash" => format!(
+            r#"<w:r><w:rPr>{style}</w:rPr><w:t>- </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> -</w:t></w:r>"#,
+            style = footer_run_style_xml(),
+            page = page_field_xml()
+        ),
+        "page-total" => format!(
+            r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> / </w:t></w:r>{total}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
+            style = footer_run_style_xml(),
+            page = page_field_xml(),
+            total = num_pages_field_xml()
+        ),
+        _ => format!(
+            r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
+            style = footer_run_style_xml(),
+            page = page_field_xml()
+        ),
+    }
+}
+
+fn page_field_xml() -> String {
+    field_xml("PAGE")
+}
+
+fn num_pages_field_xml() -> String {
+    field_xml("NUMPAGES")
+}
+
+fn field_xml(instruction: &str) -> String {
+    format!(
+        r#"<w:r><w:rPr>{style}</w:rPr><w:fldChar w:fldCharType="begin" /></w:r><w:r><w:rPr>{style}</w:rPr><w:instrText xml:space="preserve"> {instruction} </w:instrText></w:r><w:r><w:rPr>{style}</w:rPr><w:fldChar w:fldCharType="separate" /></w:r><w:r><w:rPr>{style}</w:rPr><w:t>1</w:t></w:r><w:r><w:rPr>{style}</w:rPr><w:fldChar w:fldCharType="end" /></w:r>"#,
+        style = footer_run_style_xml(),
+        instruction = instruction
+    )
+}
+
+fn footer_run_style_xml() -> &'static str {
+    r#"<w:color w:val="94A3B8" /><w:sz w:val="18" /><w:szCs w:val="18" />"#
+}
+
+fn escape_xml_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 fn page_size_xml(page_settings: &PageSettingsConfig) -> String {
@@ -2824,6 +3163,97 @@ mod tests {
         assert!(output.contains(r#"<w:cols w:space="720" />"#));
         assert_eq!(output.matches("<w:pgSz").count(), 1);
         assert_eq!(output.matches("<w:pgMar").count(), 1);
+    }
+
+    #[test]
+    fn writes_header_and_footer_parts_into_docx_package() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("md-king-header-footer-test-{}.docx", std::process::id()));
+        let document_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p /><w:sectPr><w:pgSz w:w="1" w:h="2" /></w:sectPr></w:body></w:document>"#;
+        let content_types_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" /><Default Extension="xml" ContentType="application/xml" /><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" /></Types>"#;
+        let rels_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>"#;
+
+        {
+            let file = fs::File::create(&path).unwrap();
+            let mut writer = ZipWriter::new(file);
+            writer
+                .start_file("[Content_Types].xml", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(content_types_xml.as_bytes()).unwrap();
+            writer
+                .start_file("word/document.xml", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(document_xml.as_bytes()).unwrap();
+            writer
+                .start_file("word/_rels/document.xml.rels", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(rels_xml.as_bytes()).unwrap();
+            writer.finish().unwrap();
+        }
+
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A4",
+                "orientation": "portrait",
+                "headerEnabled": true,
+                "headerText": "项目 & 周报",
+                "footerEnabled": true,
+                "footerText": "内部资料",
+                "footerPageNumberFormat": "page-total",
+                "footerStartPage": 3
+            }
+        }))
+        .unwrap();
+
+        normalize_docx(
+            &path,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            Some(&settings),
+            None,
+        )
+        .unwrap();
+
+        let file = fs::File::open(&path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut document = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut document)
+            .unwrap();
+        let mut rels = String::new();
+        archive
+            .by_name("word/_rels/document.xml.rels")
+            .unwrap()
+            .read_to_string(&mut rels)
+            .unwrap();
+        let mut header = String::new();
+        archive
+            .by_name("word/header-mdking.xml")
+            .unwrap()
+            .read_to_string(&mut header)
+            .unwrap();
+        let mut footer = String::new();
+        archive
+            .by_name("word/footer-mdking.xml")
+            .unwrap()
+            .read_to_string(&mut footer)
+            .unwrap();
+
+        assert!(document.contains(r#"xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#));
+        assert!(document.contains(r#"<w:headerReference w:type="default" r:id="rIdMdKingHeader" />"#));
+        assert!(document.contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
+        assert!(document.contains(r#"<w:pgNumType w:start="3" />"#));
+        assert!(rels.contains(r#"Target="header-mdking.xml""#));
+        assert!(rels.contains(r#"Target="footer-mdking.xml""#));
+        assert!(header.contains("项目 &amp; 周报"));
+        assert!(footer.contains("内部资料"));
+        assert!(footer.contains("PAGE"));
+        assert!(footer.contains("NUMPAGES"));
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
