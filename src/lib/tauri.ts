@@ -12,7 +12,7 @@ const PANDOC_BROWSER_MESSAGE = "浏览器预览无法验证内置 Pandoc，请�
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "0.1.7",
+  version: "0.1.8",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",

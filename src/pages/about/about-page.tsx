@@ -7,6 +7,8 @@ const stack = ["Tauri 2", "React", "TypeScript", "shadcn/ui", "Rust", "Pandoc"];
 
 export function AboutPage() {
   const { appStatus } = useAppStore();
+  const appVersion = appStatus?.version ?? "0.1.8";
+  const platformLabel = getPlatformLabel(appStatus?.platform);
 
   return (
     <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -22,7 +24,7 @@ export function AboutPage() {
             <p>
               md-king 面向 AI 生成 Markdown 文档的后处理场景，目标是把标题、正文、列表、表格、代码块等结构稳定映射到 Word/WPS 可编辑 DOCX。
             </p>
-            <p>当前桌面后端已支持 .md 文件路径转换；浏览器预览只展示前端流程，不生成实际 DOCX。</p>
+            <p>桌面端使用本地 Pandoc 转换 Markdown，支持粘贴内容、文件导入、模板样式和历史记录，生成的 DOCX 可继续在 Word/WPS 中编辑。</p>
           </div>
         </AppSurface>
 
@@ -64,11 +66,11 @@ export function AboutPage() {
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">版本</span>
-              <span>{appStatus?.version ?? "0.1.7"}</span>
+              <span>{appVersion}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">平台</span>
-              <span>{appStatus?.platform ?? "desktop/browser"}</span>
+              <span>{platformLabel}</span>
             </div>
           </div>
         </AppSurface>
@@ -90,6 +92,17 @@ export function AboutPage() {
       </aside>
     </div>
   );
+}
+
+function getPlatformLabel(platform?: string) {
+  const labels: Record<string, string> = {
+    windows: "Windows 桌面端",
+    macos: "macOS 桌面端",
+    linux: "Linux 桌面端",
+    "browser-preview": "浏览器预览",
+  };
+
+  return platform ? labels[platform] ?? platform : "桌面端";
 }
 
 function Capability({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
