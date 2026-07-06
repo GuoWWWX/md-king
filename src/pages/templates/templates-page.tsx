@@ -94,16 +94,16 @@ function GroupManageDialog({
 
           <div className="space-y-2">
             <Label>现有分组</Label>
-            <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
               {groups.map((group) => {
                 const fixed = isFixedTemplateGroup(group);
                 return (
-                  <div key={group} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div key={group} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-800/70">
                     <div>
-                      <p className="text-sm font-medium text-slate-900">{group}</p>
-                      <p className="text-xs text-slate-500">{fixed ? "系统分组，固定保留" : "自定义分组，可删除"}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-zinc-50">{group}</p>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400">{fixed ? "系统分组，固定保留" : "自定义分组，可删除"}</p>
                     </div>
-                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" disabled={fixed} onClick={() => onDelete(group)}>
+                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" disabled={fixed} onClick={() => onDelete(group)}>
                       <Trash2 className="size-4" />
                       删除
                     </Button>
@@ -414,8 +414,8 @@ export function TemplatesPage() {
       <section className="flex min-h-0 flex-col overflow-hidden rounded-[16px]">
         <div className="mb-3 flex shrink-0 items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950">模板中心</h2>
-            <p className="mt-1 text-sm text-blue-900/58">选择参考 DOCX 模板，让同类文档保持稳定格式。</p>
+            <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950 dark:text-zinc-50">模板中心</h2>
+            <p className="mt-1 text-sm text-blue-900/58 dark:text-zinc-400">选择参考 DOCX 模板，让同类文档保持稳定格式。</p>
           </div>
           <PrimaryActionButton className="rounded-[14px]" onClick={() => openDialog("import")}>
             <Upload className="size-4" />
@@ -423,25 +423,25 @@ export function TemplatesPage() {
           </PrimaryActionButton>
         </div>
 
-        <div className="mk-template-filter-panel mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-[12px] border border-blue-100/60 bg-white/24 p-2.5">
+        <div className="mk-template-filter-panel mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-[12px] border border-blue-100/60 bg-white/24 p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="group h-9 w-[190px] justify-between rounded-[10px] border-white/70 bg-white/68 px-3 max-[640px]:w-full">
+              <Button variant="outline" className="group h-9 w-[190px] justify-between rounded-[10px] border-white/70 bg-white/68 px-3 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full">
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                   {selectedGroups.length === 0 ? (
-                    <span className="truncate px-1 text-slate-500">全部分组</span>
+                    <span className="truncate px-1 text-slate-500 dark:text-zinc-400">全部分组</span>
                   ) : (
                     selectedGroups.slice(0, 2).map((group) => (
-                      <span key={group} className="max-w-[70px] truncate rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                      <span key={group} className="max-w-[70px] truncate rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200">
                         {group}
                       </span>
                     ))
                   )}
-                  {selectedGroups.length > 2 ? <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">+{selectedGroups.length - 2}</span> : null}
+                  {selectedGroups.length > 2 ? <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-zinc-800 dark:text-zinc-400">+{selectedGroups.length - 2}</span> : null}
                 </span>
                 {selectedGroups.length > 0 ? (
                   <span
-                    className="hidden size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover:flex"
+                    className="hidden size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 group-hover:flex"
                     role="button"
                     tabIndex={-1}
                     aria-label="清空分组筛选"
@@ -458,13 +458,13 @@ export function TemplatesPage() {
                     <X className="size-3.5" />
                   </span>
                 ) : null}
-                <ChevronDown className="size-4 shrink-0 text-slate-400" />
+                <ChevronDown className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-[240px] p-2" align="start">
-              <DropdownMenuItem className="justify-between text-slate-600" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
+              <DropdownMenuItem className="justify-between text-slate-600 dark:text-zinc-300" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
                 显示全部分组
-                {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600">当前</span> : null}
+                {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600 dark:text-indigo-300">当前</span> : null}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {filterGroups.map((group) => (
@@ -480,7 +480,7 @@ export function TemplatesPage() {
               {selectedGroups.length > 0 ? (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-slate-500" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
+                  <DropdownMenuItem className="text-slate-500 dark:text-zinc-400" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
                     <X className="size-4" />
                     清空选择
                   </DropdownMenuItem>
@@ -495,19 +495,19 @@ export function TemplatesPage() {
           </DropdownMenu>
 
           <div className="ml-auto grid min-w-0 grid-cols-2 items-center gap-2 max-[640px]:ml-0 max-[640px]:w-full">
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68" onClick={() => setStyleTemplate(templates[0])} disabled={templates.length === 0}>
+            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900" onClick={() => setStyleTemplate(templates[0])} disabled={templates.length === 0}>
               <Palette className="size-4" />
               样式管理器
             </Button>
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68" onClick={() => openDialog("create")}>
+            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900" onClick={() => openDialog("create")}>
               <Plus className="size-4" />
               创建模板
             </Button>
           </div>
         </div>
 
-        <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/80 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_16px_42px_rgba(37,99,235,0.08)]">
-          <div className="mk-template-list-toolbar flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-blue-100/70 px-3 py-2.5">
+        <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/80 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_16px_42px_rgba(37,99,235,0.08)] dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:shadow-none">
+          <div className="mk-template-list-toolbar flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-blue-100/70 px-3 py-2.5 dark:border-zinc-700/70">
             <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
               <button
                 type="button"
@@ -526,14 +526,14 @@ export function TemplatesPage() {
                 {isCurrentGroupAllSelected ? <CheckSquare className="size-4" /> : null}
               </button>
               <span>全选当前筛选</span>
-              <span className="text-slate-400">{selectedFilteredCount}/{filteredTemplates.length}</span>
+              <span className="text-slate-400 dark:text-zinc-500">{selectedFilteredCount}/{filteredTemplates.length}</span>
             </div>
             <Button
               variant="outline"
               size="sm"
               className={cn(
                 "mk-template-batch-delete rounded-[12px]",
-                selectedIds.length > 0 ? "text-red-600 hover:text-red-700" : "text-slate-400 hover:text-slate-400",
+                selectedIds.length > 0 ? "text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" : "text-slate-400 hover:text-slate-400 dark:text-zinc-500 dark:hover:text-zinc-500",
               )}
               onClick={() => deleteTemplates(selectedIds)}
               disabled={selectedIds.length === 0}
@@ -544,8 +544,8 @@ export function TemplatesPage() {
           </div>
 
           {filteredTemplates.length === 0 ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-10 text-center text-sm text-slate-500">
-              <Plus className="mb-3 size-8 text-indigo-500" />
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-10 text-center text-sm text-slate-500 dark:text-zinc-400">
+              <Plus className="mb-3 size-8 text-indigo-500 dark:text-indigo-300" />
               当前筛选下暂无模板。你可以创建一个自定义模板，或导入已有 DOCX 模板。
               <div className="mt-4 flex gap-2">
                 <SoftActionButton onClick={() => openDialog("create")}>创建模板</SoftActionButton>
@@ -576,9 +576,9 @@ export function TemplatesPage() {
           </div>
           )}
 
-          <div className="mk-template-list-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-blue-100/70 px-3 py-2 text-xs text-slate-500">
+          <div className="mk-template-list-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-blue-100/70 px-3 py-2 text-xs text-slate-500 dark:border-zinc-700/70 dark:text-zinc-400">
             <span>共 {filteredTemplates.length} 个模板</span>
-            <span className="rounded-[9px] bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">已选 {selectedIds.length}</span>
+            <span className="rounded-[9px] bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">已选 {selectedIds.length}</span>
           </div>
         </section>
       </section>
