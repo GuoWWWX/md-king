@@ -51,11 +51,16 @@ const paperSizeOptions: Array<{ value: PageSettingsDraft["paperSize"]; label: st
   { value: "A3", label: "A3", description: "29.7 x 42 cm" },
   { value: "A4", label: "A4", description: "21 x 29.7 cm" },
   { value: "A5", label: "A5", description: "14.8 x 21 cm" },
+  { value: "A6", label: "A6", description: "10.5 x 14.8 cm" },
   { value: "B4", label: "B4", description: "25 x 35.3 cm" },
   { value: "B5", label: "B5", description: "17.6 x 25 cm" },
+  { value: "B6", label: "B6", description: "12.5 x 17.6 cm" },
+  { value: "K16", label: "16K", description: "18.4 x 26 cm" },
+  { value: "K32", label: "32K", description: "13 x 18.4 cm" },
   { value: "Letter", label: "Letter", description: "8.5 x 11 in" },
   { value: "Legal", label: "Legal", description: "8.5 x 14 in" },
   { value: "Executive", label: "Executive", description: "7.25 x 10.5 in" },
+  { value: "Tabloid", label: "Tabloid", description: "11 x 17 in" },
 ];
 
 const footerPageNumberFormats: Array<{ value: PageSettingsDraft["footerPageNumberFormat"]; label: string }> = [
@@ -695,6 +700,12 @@ function clampPreviewZoom(value: number) {
   return Math.min(previewZoomMax, Math.max(previewZoomMin, value));
 }
 
+function formatPaperPreviewLabel(pageSettings: PageSettingsDraft) {
+  const paper = paperSizeOptions.find((option) => option.value === pageSettings.paperSize);
+  const orientation = pageSettings.orientation === "landscape" ? "横向" : "纵向";
+  return `${paper?.label ?? pageSettings.paperSize} · ${orientation}`;
+}
+
 function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selectedStyle: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void }) {
   function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
     if (!event.ctrlKey) return;
@@ -706,7 +717,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selected
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden bg-slate-50/80 px-4 py-4 max-lg:order-1 max-lg:min-h-[430px] max-lg:border-b max-lg:border-slate-200">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
-        <p className="text-sm font-semibold text-slate-400">实时预览（A4 视图）</p>
+        <p className="text-sm font-semibold text-slate-400">实时预览（{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
         <div className="flex shrink-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm">
           <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} title="缩小预览" aria-label="缩小预览"><ZoomOut className="size-4 text-slate-500" /></Button>
           <span className="w-10 text-center text-xs font-bold text-slate-500">{zoom}%</span>
@@ -798,7 +809,6 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <PanelCard title="纸张">
-        <div className="grid gap-4 sm:grid-cols-2">
         <Field label="纸张大小">
           <Select value={pageSettings.paperSize} onValueChange={(value) => patchPageSettings({ paperSize: value as PageSettingsDraft["paperSize"] })}>
             <SelectTrigger className="h-11 w-full rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
@@ -815,15 +825,26 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
           </Select>
         </Field>
         <Field label="方向">
-          <Select value={pageSettings.orientation} onValueChange={(value) => patchPageSettings({ orientation: value as PageSettingsDraft["orientation"] })}>
-            <SelectTrigger className="h-11 w-full rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="portrait">纵向</SelectItem>
-              <SelectItem value="landscape">横向</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="grid h-11 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+            {([
+              ["portrait", "纵向"],
+              ["landscape", "横向"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={cn(
+                  "flex items-center justify-center border-r border-slate-200 text-sm font-semibold last:border-r-0",
+                  pageSettings.orientation === value ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-white hover:text-slate-800",
+                )}
+                onClick={() => patchPageSettings({ orientation: value })}
+                aria-pressed={pageSettings.orientation === value}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </Field>
-        </div>
       </PanelCard>
 
       <PanelCard title="页边距">

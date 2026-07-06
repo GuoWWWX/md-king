@@ -42,11 +42,16 @@ const PAPER_SIZE_PX = {
   A3: { width: 1123, height: 1587 },
   A4: { width: 794, height: 1123 },
   A5: { width: 559, height: 794 },
+  A6: { width: 397, height: 559 },
   B4: { width: 945, height: 1337 },
   B5: { width: 665, height: 943 },
+  B6: { width: 472, height: 665 },
   Letter: { width: 816, height: 1056 },
   Legal: { width: 816, height: 1344 },
   Executive: { width: 696, height: 1008 },
+  Tabloid: { width: 1056, height: 1632 },
+  K16: { width: 697, height: 984 },
+  K32: { width: 492, height: 697 },
 } as const;
 
 function formatPreviewPageNumber(format: TemplateStyleConfig["pageSettings"]["footerPageNumberFormat"], pageNumber: number, totalPages: number) {

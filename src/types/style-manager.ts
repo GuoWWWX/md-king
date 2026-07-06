@@ -79,7 +79,7 @@ export type StyleDraft = {
   tablePreset: TablePresetKey;
 };
 
-export type PaperSize = "A3" | "A4" | "A5" | "B4" | "B5" | "Letter" | "Legal" | "Executive";
+export type PaperSize = "A3" | "A4" | "A5" | "A6" | "B4" | "B5" | "B6" | "Letter" | "Legal" | "Executive" | "Tabloid" | "K16" | "K32";
 export type FooterPageNumberFormat = "page" | "page-total" | "dash" | "none";
 
 export type PageSettingsDraft = {
