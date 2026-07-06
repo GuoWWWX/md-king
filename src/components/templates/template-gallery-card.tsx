@@ -6,11 +6,14 @@ import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/
 import { Button } from "@/components/ui/button";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateCategory } from "@/lib/template-categories";
+import { createTemplatePreviewMarkdown } from "@/lib/template-preview";
 import { cn } from "@/lib/utils";
-import type { Template } from "@/types";
+import type { Template, TemplateStyleConfig } from "@/types";
 
 type TemplateGalleryCardProps = {
   template: Template;
+  previewMarkdown?: string;
+  previewStyleConfig?: TemplateStyleConfig;
   isCurrent?: boolean;
   isPreviewed?: boolean;
   isSelected?: boolean;
@@ -23,10 +26,10 @@ type TemplateGalleryCardProps = {
   onDelete: (template: Template) => void;
 };
 
-export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onEdit, onStyleManager, onDelete }: TemplateGalleryCardProps) {
+export function TemplateGalleryCard({ template, previewMarkdown, previewStyleConfig, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onEdit, onStyleManager, onDelete }: TemplateGalleryCardProps) {
   const category = getTemplateCategory(template.tags, template.isBuiltIn);
-  const previewStyleConfig = mergeTemplateStyleConfig(template.id);
-  const previewMarkdown = createTemplatePreviewMarkdown(template, category);
+  const cardPreviewStyleConfig = previewStyleConfig ?? mergeTemplateStyleConfig(template.id);
+  const cardPreviewMarkdown = previewMarkdown ?? createTemplatePreviewMarkdown(template);
   const visibleTags = template.isBuiltIn ? [] : template.tags.filter((tag) => tag !== category && tag !== "内置").slice(0, 4);
 
   return (
@@ -45,18 +48,18 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
         <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70" />
       ) : null}
 
-      <div className="mk-template-card-preview mb-3 h-44 overflow-hidden rounded-[10px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
+      <div className="mk-template-card-preview mb-2.5 h-32 overflow-hidden rounded-[10px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
         {template.previewImagePath ? (
           <img src={template.previewImagePath} alt={`${template.name} 预览`} className="h-full w-full rounded-md object-cover" />
         ) : (
           <WordPreviewPage
-            styleConfig={previewStyleConfig}
-            markdown={previewMarkdown}
+            styleConfig={cardPreviewStyleConfig}
+            markdown={cardPreviewMarkdown}
             showHeader={false}
             showPageFooter={false}
-            zoom={74}
-            pageWidth={620}
-            pageMinHeight={780}
+            zoom={58}
+            pageWidth={520}
+            pageMinHeight={680}
             className="pointer-events-none h-full max-h-none rounded-none border-0 bg-transparent p-0 shadow-none"
             viewportClassName="mk-template-preview-viewport rounded-[10px] bg-gradient-to-br from-white/86 to-slate-100/80 px-1 py-1 overflow-hidden"
           />
@@ -128,21 +131,4 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
       )}
     </AppSurface>
   );
-}
-
-function createTemplatePreviewMarkdown(template: Template, category: string) {
-  const text = `${template.name} ${category} ${template.tags.join(" ")}`;
-  if (/技术|代码|开发|API/i.test(text)) {
-    return "# 技术方案\n\n## 接口概览\n\n- Markdown 解析\n- Word 样式映射\n\n```ts\nconvert(markdown, template)\n```\n\n| 模块 | 状态 |\n| --- | --- |\n| 预览 | 正常 |";
-  }
-
-  if (/公文|正式|政务|通知/i.test(text)) {
-    return "# 关于材料报送的通知\n\n## 一、总体要求\n\n正文段落用于展示公文模板的标题、行距和段落间距。\n\n> 请按统一格式提交材料。\n\n| 项目 | 要求 |\n| --- | --- |\n| 格式 | 统一 |";
-  }
-
-  if (/论文|学术|研究/i.test(text)) {
-    return "# 研究报告标题\n\n## 摘要\n\n本文用于预览学术类模板的标题层级、正文和表格样式。\n\n| 指标 | 结果 |\n| --- | --- |\n| 样本 | 120 |";
-  }
-
-  return "# 项目报告\n\n## 核心结论\n\n这是一段报告正文，用于快速展示默认模板的标题、正文、引用和表格。\n\n> 关键内容可以在这里突出展示。\n\n| 字段 | 样式 | 备注 |\n| --- | --- | --- |\n| 标题 | 加粗 | 层级清晰 |";
 }

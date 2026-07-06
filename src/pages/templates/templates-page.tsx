@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
 import { getTemplateCategory, getTemplateGroups, isFixedTemplateGroup, loadCustomTemplateGroups, saveCustomTemplateGroups, toTemplateGroupName } from "@/lib/template-categories";
+import { createTemplatePreviewMarkdown } from "@/lib/template-preview";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ImportTemplateRequest, Template, TemplateStyleConfig } from "@/types";
@@ -134,6 +135,7 @@ export function TemplatesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewTemplateId, setPreviewTemplateId] = useState<string | undefined>(currentTemplateId ?? appConfig?.defaultTemplateId);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(currentTemplateId ?? appConfig?.defaultTemplateId ?? "default-report"));
+  const [cardPreviewStyleConfigs, setCardPreviewStyleConfigs] = useState<Record<string, TemplateStyleConfig>>({});
 
   useEffect(() => {
     setCustomGroups(loadCustomTemplateGroups());
@@ -179,6 +181,40 @@ export function TemplatesPage() {
       cancelled = true;
     };
   }, [highlightedTemplate]);
+
+  useEffect(() => {
+    if (filteredTemplateIds.length === 0) {
+      setCardPreviewStyleConfigs({});
+      return;
+    }
+
+    let cancelled = false;
+    setCardPreviewStyleConfigs((current) => {
+      const next: Record<string, TemplateStyleConfig> = {};
+      for (const id of filteredTemplateIds) {
+        next[id] = current[id] ?? mergeTemplateStyleConfig(id);
+      }
+      return next;
+    });
+
+    void Promise.all(
+      filteredTemplateIds.map(async (id) => {
+        try {
+          const storedConfig = await getTemplateStyleConfig(id);
+          return [id, mergeTemplateStyleConfig(id, storedConfig ?? undefined)] as const;
+        } catch {
+          return [id, mergeTemplateStyleConfig(id)] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setCardPreviewStyleConfigs(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredTemplateIds, styleTemplate?.id]);
 
   function syncCustomGroups(nextGroups: string[]) {
     setCustomGroups(nextGroups);
@@ -519,11 +555,13 @@ export function TemplatesPage() {
           </div>
           ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
             {filteredTemplates.map((template) => (
               <TemplateGalleryCard
                 key={template.id}
                 template={template}
+                previewMarkdown={createTemplatePreviewMarkdown(template)}
+                previewStyleConfig={cardPreviewStyleConfigs[template.id]}
                 isCurrent={currentTemplateId === template.id}
                 isPreviewed={highlightedTemplate?.id === template.id}
                 isSelected={selectedIds.includes(template.id)}
