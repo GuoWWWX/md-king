@@ -16,6 +16,7 @@ export function AboutPage() {
   const pandocTone = isBrowserPreview || !pandocStatus ? "muted" : pandocStatus.available ? "success" : "danger";
   const contextMenuValue = isBrowserPreview ? "桌面端功能" : appConfig ? appConfig.enableContextMenu ? "已启用" : "未启用" : "加载中";
   const floatingBallValue = isBrowserPreview ? "桌面端功能" : appConfig ? appConfig.enableFloatingBall ? "已启用" : "未启用" : "加载中";
+  const trayValue = isBrowserPreview ? "桌面端功能" : appConfig ? appConfig.enableTray ? "已启用" : "未启用" : "加载中";
 
   return (
     <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -78,6 +79,7 @@ export function AboutPage() {
             <Status label="本地处理" value={isBrowserPreview ? "预览模式" : "本机转换"} tone={isBrowserPreview ? "muted" : "success"} />
             <Status label="右键菜单" value={contextMenuValue} tone={appConfig?.enableContextMenu ? "success" : "muted"} />
             <Status label="悬浮球" value={floatingBallValue} tone={appConfig?.enableFloatingBall ? "success" : "muted"} />
+            <Status label="系统托盘" value={trayValue} tone={appConfig?.enableTray ? "success" : "muted"} />
           </div>
         </AppSurface>
       </aside>
