@@ -218,17 +218,17 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
           <h4 className="text-lg font-black text-blue-700">导入 Markdown</h4>
           <p className="mt-2 max-w-[250px] text-xs leading-5 text-blue-900/55">选择单个文件可载入编辑区；批量导入会直接逐个生成 DOCX。</p>
           <div className="mt-5 flex flex-col gap-2">
-            <Button type="button" onClick={() => inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50">
+            <Button type="button" onClick={() => inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">
               <UploadCloud className="size-4" />
               选择文件
             </Button>
             {onBatchSelect ? (
-              <Button type="button" variant="outline" className="rounded-[10px] border-white/70 bg-white/70 text-blue-700 hover:bg-white" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
+              <Button type="button" variant="outline" className="rounded-[10px] border-white/70 bg-white/70 text-blue-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-700" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
                 <UploadCloud className="size-4" />
                 批量导入
               </Button>
             ) : null}
-            <Button type="button" variant="ghost" className="rounded-[10px] text-blue-700 hover:bg-white/70" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
+            <Button type="button" variant="ghost" className="rounded-[10px] text-blue-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:text-white" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
               <ClipboardPaste className="size-4" />
               粘贴剪贴板
             </Button>

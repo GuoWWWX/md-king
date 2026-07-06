@@ -1018,6 +1018,30 @@ select {
     transform: translateY(-1px);
   }
 
+  .dark .mk-mode-tile {
+    border-color: rgba(212, 212, 216, 0.18);
+    color: #e5e7eb;
+    background: rgba(39, 39, 42, 0.72);
+  }
+
+  .dark .mk-mode-tile:hover {
+    color: #ffffff;
+    background: rgba(63, 63, 70, 0.86);
+  }
+
+  .dark .mk-mode-tile-active {
+    border-color: transparent;
+    color: #ffffff;
+    background: #2563eb;
+  }
+
+  .mk-template-card-previewed {
+    border-color: rgba(96, 165, 250, 0.62) !important;
+    box-shadow:
+      inset 4px 0 0 rgba(37, 99, 235, 0.72),
+      inset 0 0 0 1px rgba(147, 197, 253, 0.42) !important;
+  }
+
   .mk-editor-surface {
     border: 1px solid rgba(226, 232, 240, 0.82);
     background: #ffffff;
@@ -1437,8 +1461,19 @@ select {
       0 18px 42px rgba(0, 0, 0, 0.18) !important;
   }
 
+  .dark .mk-template-card-previewed {
+    border-color: rgba(96, 165, 250, 0.62) !important;
+    background:
+      linear-gradient(145deg, rgba(39, 39, 42, 0.98), rgba(31, 31, 31, 0.94)),
+      #27272a !important;
+    box-shadow:
+      inset 4px 0 0 rgba(59, 130, 246, 0.9),
+      inset 0 0 0 1px rgba(147, 197, 253, 0.36),
+      0 18px 42px rgba(0, 0, 0, 0.2) !important;
+  }
+
   .dark .mk-template-card-active-ring {
-    border-color: rgba(147, 197, 253, 0.42) !important;
+    border-color: rgba(147, 197, 253, 0.62) !important;
   }
 
   .dark .mk-template-side-preview {

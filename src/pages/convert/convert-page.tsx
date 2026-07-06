@@ -219,7 +219,7 @@ export function ConvertPage() {
 
   return (
     <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
-      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1">
+      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1 dark:border-zinc-700/70 dark:bg-zinc-900/80">
         <ModeTile active={mode === "markdown"} icon={FileText} title="Markdown 输入" onClick={() => setMode("markdown")} />
         <ModeTile active={mode === "file"} icon={UploadCloud} title="导入文件" onClick={() => setMode("file")} />
         <ModeTile icon={ClipboardPaste} title="粘贴内容" onClick={() => void handleReadClipboard()} disabled={isConverting} />
@@ -332,7 +332,7 @@ function ModeTile({ active = false, disabled = false, icon: Icon, title, onClick
       type="button"
       className={cn(
         "flex h-11 items-center justify-center gap-2 rounded-[10px] text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-        active ? "bg-blue-600 text-white shadow-none" : "text-blue-800 hover:bg-slate-50 hover:text-blue-700",
+        active ? "bg-blue-600 text-white shadow-none" : "text-blue-800 hover:bg-slate-50 hover:text-blue-700 dark:text-zinc-200 dark:hover:bg-zinc-800/85 dark:hover:text-white",
       )}
       onClick={onClick}
       disabled={disabled}

@@ -38,7 +38,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
       interactive
       className={cn(
         "mk-template-card group relative cursor-pointer overflow-hidden transition",
-        isPreviewed && "border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)]",
+        isPreviewed && "mk-template-card-previewed border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)]",
         isSelected && "bg-white/88",
       )}
       onClick={() => onPreview(template)}
