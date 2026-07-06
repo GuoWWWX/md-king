@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, FileText, RotateCcw, Search, Trash2, XCircle, type LucideIcon } from "lucide-react";
+import { CheckCircle2, CheckSquare, Clock3, FileText, RotateCcw, Search, Trash2, XCircle, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { HistoryRecordCard } from "@/components/history/history-record-card";
@@ -140,46 +140,53 @@ export function HistoryPage() {
           </Button>
         </div>
 
-        <div className="mk-history-filter-panel mb-3 grid shrink-0 gap-2 rounded-[12px] border border-slate-200 bg-white p-3">
-          <div className="relative min-w-0">
+        <div className="mk-history-filter-panel mb-3 grid shrink-0 grid-cols-[minmax(280px,1fr)_132px_180px_auto] gap-2 rounded-[12px] border border-slate-200 bg-white p-3 max-[1180px]:grid-cols-[132px_minmax(240px,1fr)_auto] max-[760px]:grid-cols-1">
+          <div className="relative min-w-0 max-[1180px]:col-span-3 max-[760px]:col-span-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
             <Input className="h-11 rounded-[10px] border-slate-200 bg-white pl-9 text-sm" placeholder="搜索文件名或输出路径" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
-          <div className="grid min-w-0 grid-cols-[minmax(120px,0.8fr)_minmax(150px,1fr)_auto] gap-2 max-[680px]:grid-cols-1">
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-10"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="success">成功</SelectItem>
-                <SelectItem value="failed">失败</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-10"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部模板</SelectItem>
-                {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" className="h-10 rounded-[10px] border-slate-200 bg-white px-3 max-[680px]:w-full" onClick={handleClearHistory} disabled={history.length === 0}>
-              <Trash2 className="size-4" />
-              清空历史
-            </Button>
-          </div>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="h-11 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-11"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="success">成功</SelectItem>
+              <SelectItem value="failed">失败</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={templateId} onValueChange={setTemplateId}>
+            <SelectTrigger className="h-11 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-11"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部模板</SelectItem>
+              {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" className="h-11 rounded-[10px] border-slate-200 bg-white px-3 max-[760px]:w-full" onClick={handleClearHistory} disabled={history.length === 0}>
+            <Trash2 className="size-4" />
+            清空历史
+          </Button>
         </div>
 
         <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-[12px] border border-blue-100/60 bg-white/32 px-3 py-2.5">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              className="size-4 rounded border-slate-300 accent-indigo-600"
-              checked={isCurrentFilterAllSelected}
+          <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
+            <button
+              type="button"
+              className={cn(
+                "flex size-5 shrink-0 items-center justify-center rounded-lg border text-white transition",
+                isCurrentFilterAllSelected
+                  ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
+                  : "border-blue-200 bg-white/70 hover:border-blue-300 hover:bg-white dark:border-zinc-600 dark:bg-zinc-900/70 dark:hover:border-zinc-500 dark:hover:bg-zinc-800",
+                filteredHistoryIds.length === 0 && "cursor-not-allowed opacity-45 hover:border-blue-200 hover:bg-white/70 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/70",
+              )}
               disabled={filteredHistoryIds.length === 0}
-              onChange={toggleCurrentFilterSelection}
-            />
+              onClick={toggleCurrentFilterSelection}
+              aria-label="全选当前筛选"
+              aria-pressed={isCurrentFilterAllSelected}
+            >
+              {isCurrentFilterAllSelected ? <CheckSquare className="size-4" /> : null}
+            </button>
             <span>全选当前筛选</span>
             <span className="text-slate-400">{selectedFilteredCount}/{filteredHistory.length}</span>
-          </label>
+          </div>
           <Button
             variant="outline"
             size="sm"
