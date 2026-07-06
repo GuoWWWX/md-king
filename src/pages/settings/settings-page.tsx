@@ -159,7 +159,7 @@ export function SettingsPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="grid gap-4 lg:grid-cols-2">
-        <SettingsSection title="基础设置" description="默认目录、语言、外观和主题色。" icon={Settings2}>
+        <SettingsSection title="基础设置" description="默认目录、外观和主题色。" icon={Settings2}>
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500 dark:text-zinc-400">默认输出目录</Label>
             <div className="flex gap-2">
@@ -170,21 +170,12 @@ export function SettingsPage() {
               </Button>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-500 dark:text-zinc-400">语言</Label>
-              <Select value={draft.language ?? "zh"} onValueChange={(value) => updateDraft("language", value as AppConfig["language"])}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="zh">简体中文</SelectItem></SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-500 dark:text-zinc-400">外观主题</Label>
-              <Select value={draft.themeMode ?? "light"} onValueChange={(value) => updateDraft("themeMode", value as AppConfig["themeMode"])}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="system">跟随系统</SelectItem><SelectItem value="light">浅色</SelectItem><SelectItem value="dark">深色</SelectItem></SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500 dark:text-zinc-400">外观主题</Label>
+            <Select value={draft.themeMode ?? "light"} onValueChange={(value) => updateDraft("themeMode", value as AppConfig["themeMode"])}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="system">跟随系统</SelectItem><SelectItem value="light">浅色</SelectItem><SelectItem value="dark">深色</SelectItem></SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -258,19 +249,6 @@ export function SettingsPage() {
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">单次转换和批量转换都会默认采用这里的处理策略。</p>
-          </div>
-          <SettingRow label="保留转换日志" description="保存转换过程和 Pandoc 摘要，便于排查失败原因。" checked={draft.keepConversionLog ?? true} onCheckedChange={(checked) => updateDraft("keepConversionLog", checked)} />
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500 dark:text-zinc-400">日志级别</Label>
-            <Select value={draft.logLevel ?? "info"} onValueChange={(value) => updateDraft("logLevel", value as AppConfig["logLevel"])}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="error">仅错误</SelectItem>
-                <SelectItem value="warn">警告及错误</SelectItem>
-                <SelectItem value="info">常规信息</SelectItem>
-                <SelectItem value="debug">详细调试</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </SettingsSection>
 
