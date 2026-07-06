@@ -49,7 +49,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
         <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70" />
       ) : null}
 
-      <div className="mk-template-card-preview mb-2.5 h-36 overflow-hidden rounded-[8px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
+      <div className="mk-template-card-preview mb-2.5 h-44 overflow-hidden rounded-[8px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
         {template.previewImagePath ? (
           <img src={template.previewImagePath} alt={`${template.name} 预览`} className="h-full w-full rounded-md bg-white object-contain" />
         ) : (
@@ -57,10 +57,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
             styleConfig={cardPreviewStyleConfig}
             markdown={cardPreviewMarkdown}
             showHeader={false}
-            showPageFooter={false}
             zoom={60}
-            pageWidth={540}
-            pageMinHeight={720}
             className="pointer-events-none h-full max-h-none rounded-none border-0 bg-transparent p-0 shadow-none"
             viewportClassName="mk-template-preview-viewport rounded-[8px] bg-white px-1 py-1 overflow-hidden"
           />
