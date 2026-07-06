@@ -31,7 +31,7 @@ const fallbackTemplate: Template = {
   name: "默认报告模板",
   description: "适合 AI 生成的通用报告、方案和说明文档。",
   referenceDocxPath: "",
-  tags: ["报告", "通用", "内置"],
+  tags: ["系统", "内置"],
   isBuiltIn: true,
   isDefault: true,
   createdAt: "",
