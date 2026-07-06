@@ -1,4 +1,4 @@
-import { FileText, History, Info, LayoutTemplate, Settings, Terminal } from "lucide-react";
+import { FileText, History, Info, LayoutTemplate, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { applyAppearance } from "@/lib/appearance";
 import { SystemFloatingWindowManager } from "@/components/floating/system-floating-window-manager";
@@ -8,7 +8,6 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import type { PageMeta } from "@/components/layout/page-header";
 import { AboutPage } from "@/pages/about/about-page";
-import { CliPage } from "@/pages/cli/cli-page";
 import { ConvertPage } from "@/pages/convert/convert-page";
 import { HistoryPage } from "@/pages/history/history-page";
 import { SettingsPage } from "@/pages/settings/settings-page";
@@ -20,7 +19,6 @@ const navigation = [
   { id: "convert", label: "转换", icon: FileText },
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
   { id: "history", label: "转换历史", icon: History },
-  { id: "cli", label: "命令行", icon: Terminal },
   { id: "settings", label: "设置", icon: Settings },
   { id: "about", label: "关于", icon: Info },
 ];
@@ -43,12 +41,6 @@ const pageMeta: Record<string, PageMeta> = {
     title: "转换历史",
     description: "查看最近生成的 DOCX，快速复制输出路径、定位失败原因，或重新触发转换流程。",
     tags: ["成功 / 失败", "模板追踪", "错误详情"],
-  },
-  cli: {
-    eyebrow: "命令行自动化",
-    title: "命令行",
-    description: "面向高级用户和自动化脚本的命令行入口，提供稳定退出码、JSON 输出和模板查询能力。",
-    tags: ["--json", "稳定退出码", "模板查询"],
   },
   settings: {
     eyebrow: "偏好与系统集成",
@@ -129,8 +121,6 @@ function App() {
         return <TemplatesPage />;
       case "history":
         return <HistoryPage />;
-      case "cli":
-        return <CliPage />;
       case "settings":
         return <SettingsPage />;
       case "about":

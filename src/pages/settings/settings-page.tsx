@@ -1,4 +1,4 @@
-import { Check, Database, FolderOpen, Globe2, HardDrive, Keyboard, MousePointer2, PanelTop, Palette, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
+import { Check, Database, FolderOpen, Globe2, HardDrive, MousePointer2, PanelTop, Palette, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SettingRow } from "@/components/settings/setting-row";
@@ -290,9 +290,7 @@ export function SettingsPage() {
             <InfoLine icon={Database} text={`历史记录：${history.length} 条`} />
             <InfoLine icon={Globe2} text="运行模式：本地桌面" />
             <InfoLine icon={Palette} text={`主题色：${accentOptions.find((option) => option.value === draft.accentColor)?.label ?? "专业蓝"}`} />
-            <InfoLine icon={Keyboard} text={`CLI JSON 默认输出：${draft.cliDefaultJson ? "开启" : "关闭"}`} />
           </div>
-          <SettingRow label="CLI 默认 JSON 输出" description="用于命令行和自动化脚本时，默认输出结构化 JSON。" checked={draft.cliDefaultJson} onCheckedChange={(checked) => updateDraft("cliDefaultJson", checked)} />
           <Button variant="outline" className="w-full" onClick={handleClearHistory}>清空转换历史</Button>
         </SettingsSection>
         </div>
