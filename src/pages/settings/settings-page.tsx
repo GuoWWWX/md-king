@@ -47,10 +47,10 @@ export function SettingsPage() {
   const pandocAvailable = pandocStatus?.available === true;
   const pandocSummaryLabel = pandocStatus ? (pandocAvailable ? "已检测可用" : "不可用") : "未检测";
   const pandocBadgeClass = pandocAvailable
-    ? "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+    ? "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"
     : pandocStatus
-      ? "rounded-full bg-red-50 text-red-700 hover:bg-red-50"
-      : "rounded-full bg-slate-100 text-slate-600 hover:bg-slate-100";
+      ? "rounded-full bg-red-50 text-red-700 hover:bg-red-50 dark:bg-red-500/16 dark:text-red-200 dark:hover:bg-red-500/16"
+      : "rounded-full bg-slate-100 text-slate-600 hover:bg-slate-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800";
   const pandocBadgeLabel = pandocAvailable ? "可用" : pandocStatus ? "不可用" : "未检测";
 
   function handleReset() {
@@ -116,7 +116,7 @@ export function SettingsPage() {
   }
 
   if (!draft) {
-    return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">正在加载设置...</div>;
+    return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">正在加载设置...</div>;
   }
 
   return (
@@ -125,22 +125,22 @@ export function SettingsPage() {
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">
                 <Save className="size-4" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-base font-semibold text-slate-950">设置总览</p>
-                  <Badge className={hasChanges ? "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50" : "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50"}>{hasChanges ? "有未保存更改" : "已保存"}</Badge>
+                  <p className="text-base font-semibold text-slate-950 dark:text-zinc-50">设置总览</p>
+                  <Badge className={hasChanges ? "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"}>{hasChanges ? "有未保存更改" : "已保存"}</Badge>
                 </div>
-                <p className="mt-1 text-sm leading-5 text-slate-500">修改配置后可在这里统一保存或重置。</p>
+                <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-zinc-400">修改配置后可在这里统一保存或重置。</p>
               </div>
             </div>
-            <div className="mt-3 flex flex-col gap-2 text-sm text-slate-600 lg:flex-row lg:flex-wrap">
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">历史记录：{history.length} 条</div>
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">Pandoc：{pandocSummaryLabel}</div>
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">系统集成：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray].filter(Boolean).length}/3 已启用</div>
-              <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5" title={draft.defaultOutputDir?.trim() || "文档/MD King"}>默认目录：{draft.defaultOutputDir?.trim() || "文档/MD King"}</div>
+            <div className="mt-3 flex flex-col gap-2 text-sm text-slate-600 dark:text-zinc-300 lg:flex-row lg:flex-wrap">
+              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">历史记录：{history.length} 条</div>
+              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">Pandoc：{pandocSummaryLabel}</div>
+              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">系统集成：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray].filter(Boolean).length}/3 已启用</div>
+              <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72" title={draft.defaultOutputDir?.trim() || "文档/MD King"}>默认目录：{draft.defaultOutputDir?.trim() || "文档/MD King"}</div>
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
@@ -160,7 +160,7 @@ export function SettingsPage() {
         <div className="grid gap-4 lg:grid-cols-2">
         <SettingsSection title="基础设置" description="默认目录、语言、外观和主题色。" icon={Settings2}>
           <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">默认输出目录</Label>
+            <Label className="text-xs text-slate-500 dark:text-zinc-400">默认输出目录</Label>
             <div className="flex gap-2">
               <Input value={draft.defaultOutputDir ?? ""} onChange={(event) => updateDraft("defaultOutputDir", event.target.value || undefined)} placeholder="文档/MD King" />
               <Button variant="outline" size="sm" onClick={handleSelectOutputDir}>
@@ -171,14 +171,14 @@ export function SettingsPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-500">语言</Label>
+              <Label className="text-xs text-slate-500 dark:text-zinc-400">语言</Label>
               <Select value={draft.language ?? "zh"} onValueChange={(value) => updateDraft("language", value as AppConfig["language"])}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="zh">简体中文</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-500">外观主题</Label>
+              <Label className="text-xs text-slate-500 dark:text-zinc-400">外观主题</Label>
               <Select value={draft.themeMode ?? "light"} onValueChange={(value) => updateDraft("themeMode", value as AppConfig["themeMode"])}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="system">跟随系统</SelectItem><SelectItem value="light">浅色</SelectItem><SelectItem value="dark">深色</SelectItem></SelectContent>
@@ -187,8 +187,8 @@ export function SettingsPage() {
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs text-slate-500">主题色</Label>
-              <span className="text-xs text-slate-400">推荐：专业蓝 / 效率绿 / 商务灰</span>
+              <Label className="text-xs text-slate-500 dark:text-zinc-400">主题色</Label>
+              <span className="text-xs text-slate-400 dark:text-zinc-500">推荐：专业蓝 / 效率绿 / 商务灰</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {accentOptions.map((option) => {
@@ -197,7 +197,7 @@ export function SettingsPage() {
                   <button
                     key={option.value}
                     type="button"
-                    className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition ${active ? "border-[var(--app-primary)] bg-[var(--app-primary-soft)] text-[var(--app-primary-text)] shadow-sm" : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white"}`}
+                    className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition ${active ? "border-[var(--app-primary)] bg-[var(--app-primary-soft)] text-[var(--app-primary-text)] shadow-sm dark:text-blue-100" : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"}`}
                     title={option.description}
                     onClick={() => updateDraft("accentColor", option.value)}
                   >
@@ -212,13 +212,13 @@ export function SettingsPage() {
         </SettingsSection>
 
         <SettingsSection title="Pandoc 引擎" description="默认优先使用应用内置的 Pandoc，无需用户单独安装。" icon={Terminal}>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-800/60">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium text-slate-900">引擎状态</span>
+              <span className="text-sm font-medium text-slate-900 dark:text-zinc-100">引擎状态</span>
               <Badge className={pandocBadgeClass}>{pandocBadgeLabel}</Badge>
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-500">{pandocStatus?.message ?? "可点击下方按钮检测 Pandoc 状态。"}</p>
-            {pandocStatus?.version ? <p className="mt-2 truncate font-mono text-xs text-slate-500">{pandocStatus.version}</p> : null}
+            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-zinc-400">{pandocStatus?.message ?? "可点击下方按钮检测 Pandoc 状态。"}</p>
+            {pandocStatus?.version ? <p className="mt-2 truncate font-mono text-xs text-slate-500 dark:text-zinc-500">{pandocStatus.version}</p> : null}
           </div>
           <SettingRow
             label="优先使用内置 Pandoc"
@@ -228,13 +228,13 @@ export function SettingsPage() {
             onCheckedChange={(checked) => updateDraft("useBundledPandoc", checked)}
           />
           <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">自定义执行路径（可选覆盖）</Label>
+            <Label className="text-xs text-slate-500 dark:text-zinc-400">自定义执行路径（可选覆盖）</Label>
             <Input
               value={draft.pandocPath ?? ""}
               onChange={(event) => updateDraft("pandocPath", event.target.value || undefined)}
               placeholder={draft.useBundledPandoc ? "留空则使用内置 Pandoc" : "例如：C:/Tools/pandoc/pandoc.exe"}
             />
-            <p className="text-xs leading-5 text-slate-500">
+            <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">
               {draft.useBundledPandoc ? "当前启用内置 Pandoc。只有你想强制改用其他版本时，才需要填写这里。" : "当前已关闭内置 Pandoc，将优先使用这里填写的路径；留空时回退系统 Pandoc。"}
             </p>
           </div>
@@ -247,7 +247,7 @@ export function SettingsPage() {
         <SettingsSection title="转换设置" description="默认转换行为。" icon={HardDrive}>
           <SettingRow label="完成后自动打开文件" description="转换成功后使用默认应用打开生成的 DOCX。" checked={draft.openAfterConvert} onCheckedChange={(checked) => updateDraft("openAfterConvert", checked)} />
           <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">同名文件处理</Label>
+            <Label className="text-xs text-slate-500 dark:text-zinc-400">同名文件处理</Label>
             <Select value={draft.defaultConflictStrategy ?? "overwrite"} onValueChange={(value) => updateDraft("defaultConflictStrategy", value as AppConfig["defaultConflictStrategy"])}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -256,11 +256,11 @@ export function SettingsPage() {
                 <SelectItem value="ask">每次询问</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs leading-5 text-slate-500">单次转换和批量转换都会默认采用这里的处理策略。</p>
+            <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">单次转换和批量转换都会默认采用这里的处理策略。</p>
           </div>
           <SettingRow label="保留转换日志" description="保存转换过程和 Pandoc 摘要，便于排查失败原因。" checked={draft.keepConversionLog ?? true} onCheckedChange={(checked) => updateDraft("keepConversionLog", checked)} />
           <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">日志级别</Label>
+            <Label className="text-xs text-slate-500 dark:text-zinc-400">日志级别</Label>
             <Select value={draft.logLevel ?? "info"} onValueChange={(value) => updateDraft("logLevel", value as AppConfig["logLevel"])}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -277,7 +277,7 @@ export function SettingsPage() {
           <SettingRow label="添加到右键菜单" description="开启并保存后，.md/.markdown 文件右键可直接转换为 Word，桌面空白处右键可打开 MD King。" checked={draft.enableContextMenu} badge="可用" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
           <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入多个 Markdown 文件或文本批量转换。" checked={draft.enableFloatingBall} badge="可用" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
           <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="可用" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
-          <div className="grid gap-2 text-sm text-slate-500">
+          <div className="grid gap-2 text-sm text-slate-500 dark:text-zinc-400">
             <InfoLine icon={MousePointer2} text={`右键菜单：${draft.enableContextMenu ? "保存后写入当前用户 Windows 右键菜单" : "未开启"}`} />
             <InfoLine icon={PanelTop} text={`悬浮球：${draft.enableFloatingBall ? "保存后显示在右下角" : "未显示"}`} />
             <InfoLine icon={PanelTop} text={`系统托盘：${draft.enableTray ? "保存后显示托盘图标" : "未开启"}`} />
@@ -286,7 +286,7 @@ export function SettingsPage() {
 
         <SettingsSection title="隐私与数据" description="本地优先的数据策略。" icon={ShieldCheck}>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:border-zinc-700/70 dark:bg-zinc-800/60 dark:text-zinc-200">Markdown 和 DOCX 默认只在本机处理，不上传云端。</div>
-          <div className="grid gap-2 text-sm text-slate-500">
+          <div className="grid gap-2 text-sm text-slate-500 dark:text-zinc-400">
             <InfoLine icon={Database} text={`历史记录：${history.length} 条`} />
             <InfoLine icon={Globe2} text="运行模式：本地桌面" />
             <InfoLine icon={Palette} text={`主题色：${accentOptions.find((option) => option.value === draft.accentColor)?.label ?? "专业蓝"}`} />
@@ -301,8 +301,8 @@ export function SettingsPage() {
 
 function InfoLine({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-      <Icon className="size-4 shrink-0 text-slate-400" />
+    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-800/60">
+      <Icon className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" />
       <span className="truncate">{text}</span>
     </div>
   );
