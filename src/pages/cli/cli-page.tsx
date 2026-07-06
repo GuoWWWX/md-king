@@ -9,7 +9,7 @@ const commandSpec = `md-king CLI 使用说明
 1. 自动化命令默认支持 --json，并输出稳定 JSON 结构。
 2. 当前可用转换命令：md-king-cli convert <input.md> -o <output.docx> --template <template-id> --json。
 3. 当前可用模板命令：md-king-cli templates list --json。
-4. 转换失败时返回 errorCode，便于 Agent 判断重试、降级或提示用户。`;
+4. 转换失败时返回错误码，便于脚本判断重试、降级或提示用户。`;
 
 async function copyCommandSpec() {
   try {
@@ -24,8 +24,8 @@ export function CliPage() {
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_150px] gap-3 overflow-hidden">
       <section className="shrink-0">
-        <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950">Agent 与命令行</h2>
-        <p className="mt-1 text-sm text-blue-900/58">通过 CLI 让脚本和 AI Agent 把 Markdown 稳定交给 MD King。</p>
+        <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950">命令行与自动化</h2>
+        <p className="mt-1 text-sm text-blue-900/58">通过 CLI 让脚本把 Markdown 稳定交给 MD King。</p>
       </section>
 
       <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_310px] gap-3 overflow-hidden max-[1080px]:grid-cols-1">

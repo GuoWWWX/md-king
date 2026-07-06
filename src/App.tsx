@@ -20,7 +20,7 @@ const navigation = [
   { id: "convert", label: "转换", icon: FileText },
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
   { id: "history", label: "转换历史", icon: History },
-  { id: "cli", label: "CLI / Agent", icon: Terminal },
+  { id: "cli", label: "命令行", icon: Terminal },
   { id: "settings", label: "设置", icon: Settings },
   { id: "about", label: "关于", icon: Info },
 ];
@@ -45,9 +45,9 @@ const pageMeta: Record<string, PageMeta> = {
     tags: ["成功 / 失败", "模板追踪", "错误详情"],
   },
   cli: {
-    eyebrow: "CLI / Agent Interface",
-    title: "CLI / Agent",
-    description: "面向高级用户和 AI Agent 的命令行入口，提供稳定退出码、JSON 输出和模板查询能力。",
+    eyebrow: "命令行自动化",
+    title: "命令行",
+    description: "面向高级用户和自动化脚本的命令行入口，提供稳定退出码、JSON 输出和模板查询能力。",
     tags: ["--json", "稳定退出码", "模板查询"],
   },
   settings: {

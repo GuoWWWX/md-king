@@ -292,7 +292,7 @@ export function SettingsPage() {
             <InfoLine icon={Palette} text={`主题色：${accentOptions.find((option) => option.value === draft.accentColor)?.label ?? "专业蓝"}`} />
             <InfoLine icon={Keyboard} text={`CLI JSON 默认输出：${draft.cliDefaultJson ? "开启" : "关闭"}`} />
           </div>
-          <SettingRow label="CLI 默认 JSON 输出" description="面向 Agent 和自动化脚本时，默认输出结构化 JSON。" checked={draft.cliDefaultJson} onCheckedChange={(checked) => updateDraft("cliDefaultJson", checked)} />
+          <SettingRow label="CLI 默认 JSON 输出" description="用于命令行和自动化脚本时，默认输出结构化 JSON。" checked={draft.cliDefaultJson} onCheckedChange={(checked) => updateDraft("cliDefaultJson", checked)} />
           <Button variant="outline" className="w-full" onClick={handleClearHistory}>清空转换历史</Button>
         </SettingsSection>
         </div>
