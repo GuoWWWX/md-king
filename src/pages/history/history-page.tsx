@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { clearHistoryRemote, saveHistory } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { HistoryItem } from "@/types";
 
@@ -160,7 +161,7 @@ export function HistoryPage() {
                 {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button variant="outline" className="h-10 rounded-[10px] border-slate-200 bg-white px-3 max-[680px]:w-full" onClick={handleClearHistory}>
+            <Button variant="outline" className="h-10 rounded-[10px] border-slate-200 bg-white px-3 max-[680px]:w-full" onClick={handleClearHistory} disabled={history.length === 0}>
               <Trash2 className="size-4" />
               清空历史
             </Button>
@@ -179,7 +180,16 @@ export function HistoryPage() {
             <span>全选当前筛选</span>
             <span className="text-slate-400">{selectedFilteredCount}/{filteredHistory.length}</span>
           </label>
-          <Button variant="outline" size="sm" className="rounded-[12px] text-red-600 hover:text-red-700" onClick={() => void deleteHistory(selectedIds)} disabled={selectedIds.length === 0}>
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              "rounded-[12px]",
+              selectedIds.length > 0 ? "text-red-600 hover:text-red-700" : "text-slate-400 hover:text-slate-400",
+            )}
+            onClick={() => void deleteHistory(selectedIds)}
+            disabled={selectedIds.length === 0}
+          >
             <Trash2 className="size-4" />
             删除选中{selectedIds.length > 0 ? ` ${selectedIds.length}` : ""}
           </Button>

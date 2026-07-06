@@ -154,6 +154,7 @@ export function TemplatesPage() {
   }, [selectedGroupSet, selectedGroups.length, templates]);
 
   const filteredTemplateIds = useMemo(() => filteredTemplates.map((template) => template.id), [filteredTemplates]);
+  const selectedFilteredCount = selectedIds.filter((id) => filteredTemplateIds.includes(id)).length;
   const isCurrentGroupAllSelected = filteredTemplateIds.length > 0 && filteredTemplateIds.every((id) => selectedIds.includes(id));
   const highlightedTemplate = templates.find((item) => item.id === previewTemplateId) ?? templates.find((item) => item.id === currentTemplateId) ?? templates.find((item) => item.isDefault) ?? filteredTemplates[0];
 
@@ -490,9 +491,18 @@ export function TemplatesPage() {
                 {isCurrentGroupAllSelected ? <CheckSquare className="size-4" /> : null}
               </button>
               <span>全选当前筛选</span>
-              <span className="text-slate-400">{selectedIds.length}/{filteredTemplates.length}</span>
+              <span className="text-slate-400">{selectedFilteredCount}/{filteredTemplates.length}</span>
             </div>
-            <Button variant="outline" size="sm" className="mk-template-batch-delete rounded-[12px] text-red-600 hover:text-red-700" onClick={() => deleteTemplates(selectedIds)} disabled={selectedIds.length === 0}>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "mk-template-batch-delete rounded-[12px]",
+                selectedIds.length > 0 ? "text-red-600 hover:text-red-700" : "text-slate-400 hover:text-slate-400",
+              )}
+              onClick={() => deleteTemplates(selectedIds)}
+              disabled={selectedIds.length === 0}
+            >
               <Trash2 className="size-4" />
               批量删除
             </Button>
