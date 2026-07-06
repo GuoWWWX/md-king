@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { WordColorPicker } from "@/components/ui/word-color-picker";
 import { WordFontSizeSelect } from "@/components/ui/word-font-size-select";
 import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
@@ -27,7 +26,6 @@ type TemplateStyleManagerProps = {
 };
 
 const editorTabs = [
-  { id: "basic", label: "基础信息" },
   { id: "styles", label: "样式设计" },
   { id: "page", label: "页面设置" },
   { id: "mapping", label: "样式映射" },
@@ -294,7 +292,6 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
               <PreviewColumn selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} setZoom={setZoom} />
             </div>
           ) : null}
-          {activeTab === "basic" ? <TabScrollArea><BasicInfoPanel template={template} /></TabScrollArea> : null}
           {activeTab === "page" ? <TabScrollArea><PageSettingsPanel pageSettings={styleConfig.pageSettings} patchPageSettings={patchPageSettings} /></TabScrollArea> : null}
           {activeTab === "mapping" ? <TabScrollArea><MappingPanel markdownFeatures={styleConfig.markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} /></TabScrollArea> : null}
         </div>
@@ -795,10 +792,6 @@ function SettingSwitch({ label, checked, onCheckedChange, disabled = false }: { 
 
 function TabScrollArea({ children }: { children: ReactNode }) {
   return <div className="h-full overflow-auto p-5 xl:p-6">{children}</div>;
-}
-
-function BasicInfoPanel({ template }: { template?: Template }) {
-  return <AppSurface variant="plain" radius="sm" padding="none" className="p-5"><h3 className="text-xl font-bold">基础信息</h3><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="模板名称"><Input className="h-11" defaultValue={template?.name ?? "通用报告"} /></Field><Field label="模板分类"><Input className="h-11" defaultValue="报告" /></Field></div><Field label="模板说明"><Textarea className="mt-3 min-h-28" defaultValue={template?.description ?? "适合工作总结、项目汇报、方案材料。"} /></Field></AppSurface>;
 }
 
 function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: PageSettingsDraft; patchPageSettings: (patch: Partial<PageSettingsDraft>) => void }) {
