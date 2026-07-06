@@ -94,7 +94,6 @@ export type PageSettingsDraft = {
   footerEnabled: boolean;
   footerText: string;
   footerPageNumberFormat: FooterPageNumberFormat;
-  footerShowFromPage: number;
   footerStartPage: number;
   tocEnabled: boolean;
   tocDepth: string;

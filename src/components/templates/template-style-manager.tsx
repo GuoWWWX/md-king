@@ -885,7 +885,7 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
                 onChange={(event) => patchPageSettings({ footerText: event.target.value })}
               />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px_130px]">
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
               <Field label="页码格式">
                 <Select value={pageSettings.footerPageNumberFormat} onValueChange={(value) => patchPageSettings({ footerPageNumberFormat: value as PageSettingsDraft["footerPageNumberFormat"] })}>
                   <SelectTrigger className="h-11 w-full rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
@@ -895,17 +895,6 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
                     ))}
                   </SelectContent>
                 </Select>
-              </Field>
-              <Field label="从第几页显示">
-                <Input
-                  className="h-11 rounded-lg bg-slate-50 dark:bg-zinc-900/72"
-                  type="number"
-                  min={1}
-                  max={999}
-                  step={1}
-                  value={pageSettings.footerShowFromPage}
-                  onChange={(event) => patchPageSettings({ footerShowFromPage: Number(event.target.value) })}
-                />
               </Field>
               <Field label="起始页码">
                 <Input
@@ -921,7 +910,7 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
             </div>
           </>
         ) : null}
-        <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">页眉为空时不显示文字；页脚文本可和页码一起显示。</p>
+        <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">页眉为空时不显示文字；页脚会从文档第一页开始显示，页脚文本可和页码一起显示。</p>
       </PanelCard>
 
       <PanelCard title="目录">

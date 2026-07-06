@@ -534,7 +534,6 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const footerEnabled = showPageFooter && (pageSettings?.footerEnabled ?? true);
   const headerText = pageSettings?.headerText?.trim() ?? "";
   const footerText = pageSettings?.footerText?.trim() ?? "";
-  const footerShowFromPage = Number.isFinite(pageSettings?.footerShowFromPage) ? Math.max(1, Math.trunc(pageSettings?.footerShowFromPage ?? 1)) : 1;
   const footerStartPage = Number.isFinite(pageSettings?.footerStartPage) ? Math.max(1, Math.trunc(pageSettings?.footerStartPage ?? 1)) : 1;
   const pageMargins = {
     top: cmToPx(pageSettings?.marginTop ?? 2.54),
@@ -727,8 +726,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             drafts: previewDrafts,
             tableStyle: { captionStyle, headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders } },
           })}
-          {footerEnabled && pageIndex + 1 >= footerShowFromPage ? (() => {
-            const pageNumber = footerStartPage + pageIndex - footerShowFromPage + 1;
+          {footerEnabled ? (() => {
+            const pageNumber = footerStartPage + pageIndex;
             const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page-total", pageNumber, previewPages.length);
             const footerContent = [footerText, pageNumberText].filter(Boolean).join(" · ");
             return footerContent ? <div className="absolute bottom-5 left-0 right-0 px-8 text-center text-[9px] text-slate-300">{footerContent}</div> : null;

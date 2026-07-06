@@ -185,7 +185,6 @@ export const defaultPageSettings: PageSettingsDraft = {
   footerEnabled: true,
   footerText: "",
   footerPageNumberFormat: "page-total",
-  footerShowFromPage: 1,
   footerStartPage: 1,
   tocEnabled: true,
   tocDepth: "1-3",
