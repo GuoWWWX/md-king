@@ -1227,9 +1227,10 @@ src/
 ├─ App.tsx                         # md-king 主界面壳与页面导航
 ├─ components/
 │  ├─ ui/                          # shadcn/ui 基础组件
-│  ├─ file-dropzone/               # Markdown 文件拖拽入口
-│  ├─ task-list/                   # 转换任务/历史列表
-│  ├─ template-card/               # 模板卡片
+│  ├─ convert/                     # 转换输入、结果与设置组件
+│  ├─ templates/                   # 模板中心与样式管理组件
+│  ├─ history/                     # 转换历史卡片
+│  ├─ layout/                      # 标题栏、侧边栏和应用壳
 │  └─ command-preview/             # CLI 命令展示
 ├─ pages/
 │  ├─ convert/                     # 转换主页

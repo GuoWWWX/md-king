@@ -166,9 +166,10 @@ src/
 ├─ main.tsx                     # React 应用入口
 ├─ components/                  # 通用组件
 │  ├─ ui/                       # shadcn/ui 组件
-│  ├─ file-dropzone/            # 文件拖拽区域
-│  ├─ template-card/            # 模板卡片
-│  ├─ task-list/                # 转换任务列表
+│  ├─ convert/                  # 转换输入、结果与设置组件
+│  ├─ templates/                # 模板中心与样式管理组件
+│  ├─ history/                  # 转换历史卡片
+│  ├─ layout/                   # 标题栏、侧边栏和应用壳
 │  └─ command-preview/          # CLI 命令展示
 ├─ pages/
 │  ├─ convert/                  # 转换主页
@@ -978,9 +979,10 @@ md-king/
 │  ├─ main.tsx
 │  ├─ components/
 │  │  ├─ ui/
-│  │  ├─ file-dropzone/
-│  │  ├─ task-list/
-│  │  ├─ template-card/
+│  │  ├─ convert/
+│  │  ├─ templates/
+│  │  ├─ history/
+│  │  ├─ layout/
 │  │  └─ command-preview/
 │  ├─ pages/
 │  ├─ stores/
