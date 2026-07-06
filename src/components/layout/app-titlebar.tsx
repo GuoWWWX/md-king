@@ -1,10 +1,12 @@
 import { Copy, Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
+import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { cn } from "@/lib/utils";
 
-function getAppWindow(): Window | undefined {
+function getAppWindow(): TauriWindow | undefined {
+  if (!isTauriEnvironment()) return undefined;
+
   try {
     return getCurrentWindow();
   } catch {
@@ -12,8 +14,15 @@ function getAppWindow(): Window | undefined {
   }
 }
 
+function isTauriEnvironment() {
+  if (typeof window === "undefined") return false;
+  const tauriWindow = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };
+  return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
+}
+
 export function AppTitlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const canControlWindow = isTauriEnvironment();
 
   async function syncMaximizedState() {
     const appWindow = getAppWindow();
@@ -85,13 +94,13 @@ export function AppTitlebar() {
       </div>
 
       <div className="flex h-full shrink-0 items-center">
-        <TitlebarButton label="最小化" onClick={() => handleWindowAction("minimize")}>
+        <TitlebarButton disabled={!canControlWindow} label="最小化" onClick={() => handleWindowAction("minimize")}>
           <Minus className="size-4" />
         </TitlebarButton>
-        <TitlebarButton label={isMaximized ? "还原窗口" : "最大化"} onClick={() => handleWindowAction("toggleMaximize")}>
+        <TitlebarButton disabled={!canControlWindow} label={isMaximized ? "还原窗口" : "最大化"} onClick={() => handleWindowAction("toggleMaximize")}>
           {isMaximized ? <Copy className="size-3.5" /> : <Square className="size-3.5" />}
         </TitlebarButton>
-        <TitlebarButton label="关闭" danger onClick={() => handleWindowAction("close")}>
+        <TitlebarButton disabled={!canControlWindow} label="关闭" danger onClick={() => handleWindowAction("close")}>
           <X className="size-4" />
         </TitlebarButton>
       </div>
@@ -99,21 +108,25 @@ export function AppTitlebar() {
   );
 }
 
-function TitlebarButton({ label, danger = false, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
+function TitlebarButton({ label, danger = false, disabled = false, onClick, children }: { label: string; danger?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  const title = disabled ? `${label}仅在桌面端可用` : label;
+
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
+      title={title}
+      disabled={disabled}
       className={cn(
-        "mk-titlebar-button relative z-10 flex h-10 w-10 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950",
-        danger && "mk-titlebar-button-danger hover:bg-red-500 hover:text-white",
+        "mk-titlebar-button relative z-10 flex h-10 w-10 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",
+        danger && !disabled && "mk-titlebar-button-danger hover:bg-red-500 hover:text-white",
       )}
       onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (disabled) return;
         onClick();
       }}
     >
