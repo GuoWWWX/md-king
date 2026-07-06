@@ -37,6 +37,7 @@ export function SidebarNav({
 }: SidebarNavProps) {
   return (
     <aside
+      data-collapsed={collapsed ? "true" : "false"}
       className={cn(
         "mk-sidebar-panel flex h-full shrink-0 flex-col overflow-hidden rounded-[10px] p-4 transition-[width,padding] duration-200 max-[980px]:w-[76px] max-[980px]:px-3",
         collapsed ? "w-[76px] px-3" : "w-[220px]",
@@ -59,7 +60,7 @@ export function SidebarNav({
 }
 
 function SidebarContent({ navigation, activePage, currentTemplate, appStatus, collapsed = false, themeMode, onNavigate, onToggleCollapsed, onToggleThemeMode, onThemeModeChange }: SidebarNavProps) {
-  const textHiddenClass = collapsed ? "hidden" : "max-[980px]:hidden";
+  const sidebarLabelClass = cn("mk-sidebar-label min-w-0 truncate whitespace-nowrap", collapsed && "hidden");
   const centeredWhenCollapsed = collapsed ? "mx-auto size-11 justify-center rounded-[12px] px-0" : "justify-start gap-3 px-4 max-[980px]:mx-auto max-[980px]:size-11 max-[980px]:justify-center max-[980px]:rounded-[12px] max-[980px]:px-0";
   const navRailLayout = collapsed
     ? "mx-auto mt-5 flex w-12 flex-col items-center gap-2 rounded-[12px] bg-white/28 p-1.5 shadow-inner shadow-blue-100/40"
@@ -69,9 +70,9 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PrimaryActionButton className={cn("h-11 rounded-[10px] text-sm font-bold shadow-blue-500/25", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
+      <PrimaryActionButton className={cn("h-11 overflow-hidden rounded-[10px] text-sm font-bold whitespace-nowrap shadow-blue-500/25", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
         <Plus className="size-4" />
-        <span className={textHiddenClass}>新建转换</span>
+        <span className={sidebarLabelClass}>新建转换</span>
       </PrimaryActionButton>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-4">
@@ -84,7 +85,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
                 <Button
                   key={item.id}
                   className={cn(
-                    "mk-nav-auto-collapsed text-sm font-bold transition",
+                    "mk-nav-auto-collapsed overflow-hidden text-sm font-bold whitespace-nowrap transition",
                     navButtonBase,
                     navButtonLayout,
                     isActive ? "mk-nav-active text-white" : "mk-nav-idle",
@@ -95,7 +96,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
                   onClick={() => onNavigate(item.id)}
                 >
                   <Icon className="size-4" />
-                  <span className={textHiddenClass}>{item.label}</span>
+                  <span className={sidebarLabelClass}>{item.label}</span>
                 </Button>
               );
             })}
@@ -108,19 +109,22 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
         <ThemeModeButton collapsed={collapsed} themeMode={themeMode} onToggleThemeMode={onToggleThemeMode} onThemeModeChange={onThemeModeChange} />
         <Button
           variant="outline"
-          className={cn("h-9 w-full rounded-[10px] border-white/70 bg-white/62 text-xs font-bold text-blue-900/70 hover:bg-white/82", collapsed && "px-0")}
+          className={cn(
+            "h-9 justify-center overflow-hidden rounded-[10px] border-white/70 bg-white/62 text-xs font-bold whitespace-nowrap text-blue-900/70 hover:bg-white/82",
+            collapsed ? "mx-auto w-9 px-0" : "w-full gap-2 px-2 max-[980px]:mx-auto max-[980px]:w-9 max-[980px]:px-0",
+          )}
           onClick={onToggleCollapsed}
           title={collapsed ? "展开侧边栏" : "收起侧边栏"}
           aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
         >
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-          <span className={textHiddenClass}>{collapsed ? "展开侧栏" : "收起侧栏"}</span>
+          <span className={sidebarLabelClass}>{collapsed ? "展开侧栏" : "收起侧栏"}</span>
         </Button>
-        <div className={cn("flex items-center justify-between px-2 text-xs text-slate-400 max-[980px]:justify-center", collapsed && "justify-center px-0")}>
-          <span className={textHiddenClass}>{appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}</span>
+        <div className={cn("flex items-center overflow-hidden text-xs text-slate-400", collapsed ? "justify-center px-0" : "justify-between px-2 max-[980px]:justify-center")}>
+          <span className={sidebarLabelClass}>{appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}</span>
           <div className="flex items-center gap-2" title="本地运行">
             <ShieldCheck className="size-4 text-blue-600" />
-            <span className={cn("text-[11px] font-semibold text-slate-400", textHiddenClass)}>本地</span>
+            <span className={cn("text-[11px] font-semibold text-slate-400", sidebarLabelClass)}>本地</span>
           </div>
         </div>
       </div>
@@ -152,7 +156,7 @@ function ThemeModeButton({
     return (
       <Button
         variant="outline"
-        className="mk-theme-cycle-button h-9 w-full rounded-[10px] px-0"
+        className="mk-theme-cycle-button mx-auto h-9 w-9 justify-center rounded-[10px] px-0"
         onClick={onToggleThemeMode}
         title={activeMode.label}
         aria-label={`切换外观主题，当前：${activeMode.label}`}
@@ -190,7 +194,7 @@ function ThemeModeButton({
       </div>
       <Button
         variant="outline"
-        className="mk-theme-cycle-button hidden h-9 w-full rounded-[10px] px-0 max-[980px]:inline-flex"
+        className="mk-theme-cycle-button mx-auto hidden h-9 w-9 justify-center rounded-[10px] px-0 max-[980px]:inline-flex"
         onClick={onToggleThemeMode}
         title={activeMode.label}
         aria-label={`切换外观主题，当前：${activeMode.label}`}
