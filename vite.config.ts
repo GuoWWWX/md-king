@@ -15,6 +15,21 @@ export default defineConfig(async () => ({
       "@": path.resolve(dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("lucide-react")) return "icons";
+          if (id.includes("react") || id.includes("react-dom")) return "react";
+          if (id.includes("radix-ui")) return "radix";
+          if (id.includes("markdown-it")) return "markdown";
+          if (id.includes("@tauri-apps")) return "tauri";
+          return "vendor";
+        },
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
