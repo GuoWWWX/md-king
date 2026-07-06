@@ -464,9 +464,10 @@ function StyleProperties({
 }) {
   const isHeading = selectedStyle.kind === "heading";
   const isCode = selectedStyle.kind === "code";
-  const isTable = selectedStyle.kind === "table";
+  const isTableNode = selectedStyle.kind === "table";
+  const isTableRoot = selectedStyle.id === "table";
   const isTableHeader = selectedStyle.id === "table-header";
-  const isTableBody = selectedStyle.id === "table-body" || selectedStyle.id === "table";
+  const isTableBody = selectedStyle.id === "table-body";
   const isTableCaption = selectedStyle.id === "table-caption";
 
   function handleAutoNumberingChange(checked: boolean) {
@@ -502,14 +503,14 @@ function StyleProperties({
       <div className="space-y-4">
         <MarkdownFeatureStyleSwitch selectedStyleId={selectedStyle.id} markdownFeatures={markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} />
 
-        <PropertyCard title={isCode ? "代码块样式" : isTable ? "基础文本样式" : "文本属性"}>
+        {!isTableRoot ? <PropertyCard title={isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="中文字体"><Select value={draft.chineseFont} onValueChange={(value) => updateDraft("chineseFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
             <Field label="英文字体"><Select value={isCode ? "JetBrains Mono" : draft.latinFont} onValueChange={(value) => updateDraft("latinFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
-            <Field label="字号"><WordFontSizeSelect value={draft.fontSize} onChange={(value) => updateDraft("fontSize", value)} /></Field>
+            {(!isTableNode || isTableCaption) ? <Field label="字号"><WordFontSizeSelect value={draft.fontSize} onChange={(value) => updateDraft("fontSize", value)} /></Field> : null}
             <Field label="文字颜色"><WordColorPicker value={draft.color} onChange={(value) => updateDraft("color", value)} autoColor="#111827" /></Field>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-[120px_minmax(0,1fr)]">
+          {(!isTableNode || isTableCaption) ? <div className="mt-4 grid gap-3 md:grid-cols-[120px_minmax(0,1fr)]">
             <Button
               className={cn(
                 "h-11 rounded-lg font-bold",
@@ -531,10 +532,10 @@ function StyleProperties({
                 </SelectContent>
               </Select>
             </Field>
-          </div>
-        </PropertyCard>
+          </div> : null}
+        </PropertyCard> : null}
 
-        <PropertyCard title="段落与间距">
+        {(!isTableNode || isTableCaption) ? <PropertyCard title="段落与间距">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="行高"><Input className="h-11 rounded-lg bg-slate-50" value={draft.lineHeight} onChange={(event) => updateDraft("lineHeight", event.target.value)} /></Field>
             <Field label="首行缩进 (字符)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={4} step={0.5} value={draft.firstLineIndent} onChange={(event) => updateDraft("firstLineIndent", Number(event.target.value))} /></Field>
@@ -542,10 +543,12 @@ function StyleProperties({
             <Field label="段前间距 (pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.beforeSpacing} onChange={(event) => updateDraft("beforeSpacing", Number(event.target.value))} /></Field>
             <Field label="段后间距 (pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.afterSpacing} onChange={(event) => updateDraft("afterSpacing", Number(event.target.value))} /></Field>
           </div>
-        </PropertyCard>
+        </PropertyCard> : null}
 
-        {isTable ? (
+        {isTableNode ? (
           <>
+            {isTableRoot ? (
+            <>
             <PropertyCard title="表格预设">
               <div className="grid gap-3 md:grid-cols-2">
                 {tablePresets.map((preset) => (
@@ -602,8 +605,10 @@ function StyleProperties({
                 <SettingSwitch label="显示内横线" checked={draft.showInnerHorizontalBorder} onCheckedChange={(checked) => updateDraft("showInnerHorizontalBorder", checked)} />
               </div>
             </PropertyCard>
+            </>
+            ) : null}
 
-            {(isTableHeader || selectedStyle.id === "table") ? (
+            {isTableHeader ? (
               <PropertyCard title="表头样式">
                 <div className="grid gap-4 md:grid-cols-2">
                   <SettingSwitch label="表头加粗" checked={draft.headerBold} onCheckedChange={(checked) => updateDraft("headerBold", checked)} />
@@ -616,7 +621,7 @@ function StyleProperties({
               </PropertyCard>
             ) : null}
 
-            {(isTableBody || selectedStyle.id === "table") ? (
+            {isTableBody ? (
               <PropertyCard title="表格体样式">
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="表格体水平对齐"><SimpleAlignSelect value={draft.bodyAlign} onChange={(value) => updateDraft("bodyAlign", value)} /></Field>
@@ -628,7 +633,7 @@ function StyleProperties({
               </PropertyCard>
             ) : null}
 
-            {(isTableCaption || selectedStyle.id === "table") ? (
+            {isTableCaption ? (
               <PropertyCard title="表格题注样式">
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="题注对齐"><SimpleAlignSelect value={draft.captionAlign} onChange={(value) => updateDraft("captionAlign", value)} /></Field>

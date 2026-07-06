@@ -424,6 +424,10 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles.table = { ...styles.table, tablePreset: "grid", tableLayout: "fixed", rowStripe: false, borderColor: "#64748B", headerBackgroundColor: "#F1F5F9", headerBorderColor: "#64748B", bodyBorderColor: "#64748B" };
   }
 
+  styles["table-header"] = { ...styles.table, styleId: "table-header" };
+  styles["table-body"] = { ...styles.table, styleId: "table-body" };
+  styles["table-caption"] = { ...styles.table, ...styles["table-caption"], styleId: "table-caption" };
+
   return {
     templateId,
     styles,

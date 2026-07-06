@@ -427,6 +427,7 @@ function renderMarkdownBlocks({
   drafts: Record<string, StyleDraft>;
   selectedStyle?: StyleNode;
   tableStyle: {
+    captionStyle: CSSProperties;
     headerStyle: CSSProperties;
     bodyCellStyle: CSSProperties;
     tableWidth: string;
@@ -495,7 +496,7 @@ function renderMarkdownBlocks({
       const [header, ...rows] = block.rows;
       rendered.push(
         <div key={index}>
-          {block.caption ? <div className="mb-2 mt-4 text-center text-[10px] font-semibold text-slate-700">{block.caption}</div> : null}
+          {block.caption ? <div className="mb-2 mt-4 text-[10px] font-semibold text-slate-700" style={tableStyle.captionStyle}>{block.caption}</div> : null}
         <table className={cn("mt-3 border-collapse text-[10px]", selectedRing(selectedStyle, "table"))} style={{ width: tableStyle.tableWidth, margin: tableStyle.tableMargin, tableLayout: tableStyle.tableLayout, ...tableStyle.borderStyle }}>
           {header ? (
             <thead>
@@ -552,6 +553,9 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const quote = getDraft(styleConfig, "quote");
   const code = getDraft(styleConfig, "source-code");
   const table = getDraft(styleConfig, "table");
+  const tableHeader = getDraft(styleConfig, "table-header");
+  const tableBody = getDraft(styleConfig, "table-body");
+  const tableCaption = getDraft(styleConfig, "table-caption");
 
   const tableWidth = `${table.fitToPageWidth ? 100 : table.tableWidthPercent}%`;
   const tableMargin = table.tableHorizontalAlign === "center" ? "0 auto" : table.tableHorizontalAlign === "right" ? "0 0 0 auto" : "0";
@@ -563,17 +567,27 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     borderBottom: border(table.borderBottomWidth || baseBorderWidth, table.borderStyle, table.borderColor),
     borderLeft: border(table.borderLeftWidth || baseBorderWidth, table.borderStyle, table.borderColor),
   };
-  const headerBorder = border(table.headerBorderWidth, table.borderStyle, table.headerBorderColor);
-  const bodyBorder = border(table.bodyBorderWidth, table.borderStyle, table.bodyBorderColor);
+  const headerBorder = border(tableHeader.headerBorderWidth, table.borderStyle, tableHeader.headerBorderColor);
+  const bodyBorder = border(tableBody.bodyBorderWidth, table.borderStyle, tableBody.bodyBorderColor);
   const whiteSpace = table.cellWrap ? "normal" : "nowrap";
+  const captionStyle: CSSProperties = {
+    color: tableCaption.color,
+    fontFamily: `"${tableCaption.chineseFont}", "${tableCaption.latinFont}", sans-serif`,
+    fontSize: `${tableCaption.fontSize}pt`,
+    fontWeight: tableCaption.fontWeight,
+    lineHeight: tableCaption.lineHeight,
+    textAlign: resolveTextAlign(tableCaption.captionAlign),
+  };
   const headerStyle: CSSProperties = {
-    backgroundColor: table.headerBackgroundColor,
-    fontWeight: table.headerBold ? 700 : 500,
-    fontSize: `${table.headerFontSize}pt`,
-    lineHeight: table.headerLineHeight,
+    backgroundColor: tableHeader.headerBackgroundColor,
+    color: tableHeader.color,
+    fontFamily: `"${tableHeader.chineseFont}", "${tableHeader.latinFont}", sans-serif`,
+    fontWeight: tableHeader.headerBold ? 700 : 500,
+    fontSize: `${tableHeader.headerFontSize}pt`,
+    lineHeight: tableHeader.headerLineHeight,
     minHeight: `${table.minRowHeight}px`,
-    textAlign: resolveTextAlign(table.headerAlign),
-    verticalAlign: resolveVerticalAlign(table.headerVerticalAlign),
+    textAlign: resolveTextAlign(tableHeader.headerAlign),
+    verticalAlign: resolveVerticalAlign(tableHeader.headerVerticalAlign),
     borderTop: headerBorder,
     borderBottom: table.showInnerHorizontalBorder ? headerBorder : "none",
     borderLeft: table.showInnerVerticalBorder ? headerBorder : baseBorder,
@@ -583,12 +597,14 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     textIndent: 0,
   };
   const bodyCellStyle: CSSProperties = {
-    backgroundColor: table.bodyBackgroundColor,
-    fontSize: `${table.bodyFontSize}pt`,
-    lineHeight: table.bodyLineHeight,
+    backgroundColor: tableBody.bodyBackgroundColor,
+    color: tableBody.color,
+    fontFamily: `"${tableBody.chineseFont}", "${tableBody.latinFont}", sans-serif`,
+    fontSize: `${tableBody.bodyFontSize}pt`,
+    lineHeight: tableBody.bodyLineHeight,
     minHeight: `${table.minRowHeight}px`,
-    textAlign: resolveTextAlign(table.bodyAlign),
-    verticalAlign: resolveVerticalAlign(table.bodyVerticalAlign),
+    textAlign: resolveTextAlign(tableBody.bodyAlign),
+    verticalAlign: resolveVerticalAlign(tableBody.bodyVerticalAlign),
     borderTop: table.showInnerHorizontalBorder ? bodyBorder : "none",
     borderBottom: table.showInnerHorizontalBorder ? bodyBorder : baseBorder,
     borderLeft: table.showInnerVerticalBorder ? bodyBorder : baseBorder,
@@ -599,7 +615,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   };
   const markdownBlocks = markdown?.trim() ? parseMarkdownPreview(markdown) : [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
-  const fallbackBlocks = createFallbackBlocks(table.captionNumbering ? "表 1-1  表格样式预览" : "表格样式预览");
+  const fallbackBlocks = createFallbackBlocks(tableCaption.captionNumbering ? "表 1-1  表格样式预览" : "表格样式预览");
   const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures);
   const previewDrafts = { "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code };
   const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
@@ -709,7 +725,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             blocks: pageBlocks,
             selectedStyle,
             drafts: previewDrafts,
-            tableStyle: { headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders } },
+            tableStyle: { captionStyle, headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders } },
           })}
           {footerEnabled && pageIndex + 1 >= footerShowFromPage ? (() => {
             const pageNumber = footerStartPage + pageIndex - footerShowFromPage + 1;
