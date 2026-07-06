@@ -244,7 +244,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
         <header className="shrink-0 border-b border-slate-200 px-5 py-3 xl:px-7 xl:py-4">
           <div className="flex items-center justify-between gap-5">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">
+              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-600">
                 {embedded ? <ArrowLeft className="size-3.5" /> : null}
                 模板样式管理
               </div>

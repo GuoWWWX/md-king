@@ -33,13 +33,13 @@ const pageMeta: Record<string, PageMeta> = {
     tags: ["本地转换", "Word/WPS", "模板样式可复用"],
   },
   templates: {
-    eyebrow: "Word/WPS Template Center",
+    eyebrow: "Word/WPS 模板中心",
     title: "模板中心",
     description: "管理 Word/WPS 样式模板，让同一份 Markdown 生成报告、公文、技术文档等不同视觉风格。",
     tags: ["参考 DOCX", "样式诊断", "样式管理器"],
   },
   history: {
-    eyebrow: "Conversion Records",
+    eyebrow: "转换记录",
     title: "转换历史",
     description: "查看最近生成的 DOCX，快速复制输出路径、定位失败原因，或重新触发转换流程。",
     tags: ["成功 / 失败", "模板追踪", "错误详情"],
@@ -51,13 +51,13 @@ const pageMeta: Record<string, PageMeta> = {
     tags: ["--json", "稳定退出码", "模板查询"],
   },
   settings: {
-    eyebrow: "Preferences & Integrations",
+    eyebrow: "偏好与系统集成",
     title: "设置中心",
     description: "配置默认输出目录、Pandoc 路径、转换行为和系统集成能力。",
     tags: ["Pandoc", "右键菜单", "悬浮球"],
   },
   about: {
-    eyebrow: "About md-king",
+    eyebrow: "关于 md-king",
     title: "关于 md-king",
     description: "面向 AI 时代的 Markdown 转 Word/WPS 本地效率工具。",
     tags: ["隐私优先", "本地运行", "Pandoc 引擎"],
