@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { clearHistoryRemote, saveHistory } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { HistoryItem } from "@/types";
@@ -78,7 +79,7 @@ export function HistoryPage() {
       setHistory([]);
       setSelectedIds([]);
       setSelectedHistoryId(null);
-      toast.error(error instanceof Error ? error.message : "远程清空失败，已清空本地视图");
+      toast.error(userFacingErrorMessage(error, "远程清空失败，已清空本地视图"));
     }
   }
 
@@ -101,7 +102,7 @@ export function HistoryPage() {
       toast.success(`已删除 ${targets.length} 条历史记录`);
     } catch (error) {
       setHistory(previousHistory);
-      toast.error(error instanceof Error ? error.message : "删除历史记录失败");
+      toast.error(userFacingErrorMessage(error, "删除历史记录失败"));
     }
   }
 

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { selectDocxFile } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import type { ImportTemplateRequest, Template } from "@/types";
 
 type TemplateImportDialogProps = {
@@ -43,7 +44,7 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
       setReferenceDocxPath(selected);
       toast.success("已选择参考 DOCX 文件");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择参考 DOCX 失败");
+      toast.error(userFacingErrorMessage(error, "选择参考 DOCX 失败"));
     }
   }
 
@@ -78,7 +79,7 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
       }
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : mode === "import" ? "导入模板失败" : "创建模板失败");
+      toast.error(userFacingErrorMessage(error, mode === "import" ? "导入模板失败" : "创建模板失败"));
     } finally {
       setIsSubmitting(false);
     }

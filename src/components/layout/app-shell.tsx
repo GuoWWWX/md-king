@@ -6,6 +6,7 @@ import { AppTitlebar } from "./app-titlebar";
 import type { PageMeta } from "./page-header";
 import { applyAppearance } from "@/lib/appearance";
 import { saveAppConfig } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import type { ThemeMode } from "@/types";
 
 type AppShellProps = {
@@ -38,7 +39,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
     } catch (error) {
       setAppConfig(previousConfig);
       applyAppearance(previousConfig.themeMode ?? "light", previousConfig.accentColor ?? "blue");
-      toast.error(error instanceof Error ? error.message : "切换外观失败");
+      toast.error(userFacingErrorMessage(error, "切换外观失败"));
     }
   }
 

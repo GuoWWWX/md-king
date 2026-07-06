@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
 import { getTemplateCategory, getTemplateGroups, isFixedTemplateGroup, loadCustomTemplateGroups, saveCustomTemplateGroups, toTemplateGroupName } from "@/lib/template-categories";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ImportTemplateRequest, Template, TemplateStyleConfig } from "@/types";
@@ -238,7 +239,7 @@ export function TemplatesPage() {
       const saved = await saveTemplates(nextTemplates);
       setTemplates(saved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存模板列表失败，仅更新了当前界面");
+      toast.error(userFacingErrorMessage(error, "保存模板列表失败，仅更新了当前界面"));
     }
   }
 
@@ -255,7 +256,7 @@ export function TemplatesPage() {
       await persistTemplates(templates.map((item) => ({ ...item, isDefault: item.id === template.id })));
       toast.success(`已将「${template.name}」设为默认模板`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存默认模板失败");
+      toast.error(userFacingErrorMessage(error, "保存默认模板失败"));
     }
   }
 

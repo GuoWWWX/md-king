@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { selectDocxFile } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import type { Template } from "@/types";
 
 type TemplateEditDrawerProps = {
@@ -56,7 +57,7 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
       if (!selected) return;
       setReferenceDocxPath(selected);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择参考 DOCX 失败");
+      toast.error(userFacingErrorMessage(error, "选择参考 DOCX 失败"));
     }
   }
 
@@ -68,6 +69,9 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
     setIsSaving(true);
     try {
       await onSetDefault(template);
+    } catch (error) {
+      setIsDefault(false);
+      toast.error(userFacingErrorMessage(error, "设为默认模板失败"));
     } finally {
       setIsSaving(false);
     }
@@ -101,6 +105,8 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
       await onSave(nextTemplate);
       toast.success(`已保存「${nextTemplate.name}」`);
       onOpenChange(false);
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "保存模板失败"));
     } finally {
       setIsSaving(false);
     }

@@ -11,6 +11,7 @@ import { buildDocxOutputName, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { readMarkdownFile } from "@/lib/markdown-files";
 import { convertMarkdown, saveHistory } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ConvertResult, HistoryItem, Template } from "@/types";
@@ -476,7 +477,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
         const item = await readMarkdownFile(file);
         nextTasks.push(makeTask(item.name, item.text));
       } catch (error) {
-        showFloatingToast(systemWindow, "error", error instanceof Error ? error.message : `读取 ${file.name} 失败`);
+        showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, `读取 ${file.name} 失败`));
       }
     }
 
@@ -562,7 +563,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
         try {
           results.push(await convertTask(task));
         } catch (error) {
-          updateTask(task.id, { status: "failed", message: error instanceof Error ? error.message : "转换失败" });
+          updateTask(task.id, { status: "failed", message: userFacingErrorMessage(error, "转换失败") });
         }
       }
       const nextHistory = [...results.map(buildHistoryItem), ...history].slice(0, 20);

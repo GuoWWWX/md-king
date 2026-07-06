@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { applyAppearance } from "@/lib/appearance";
 import { checkPandoc, clearHistoryRemote, saveAppConfig, selectDirectory } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { useAppStore } from "@/stores/app-store";
 import type { AccentColor, AppConfig } from "@/types";
 
@@ -69,7 +70,7 @@ export function SettingsPage() {
       setAppConfig(saved);
       toast.success("设置已保存");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存设置失败");
+      toast.error(userFacingErrorMessage(error, "保存设置失败"));
     } finally {
       setIsSaving(false);
     }
@@ -82,7 +83,7 @@ export function SettingsPage() {
       updateDraft("defaultOutputDir", selected);
       toast.success("已选择默认输出目录，保存设置后生效");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择目录失败");
+      toast.error(userFacingErrorMessage(error, "选择目录失败"));
     }
   }
 
@@ -93,7 +94,7 @@ export function SettingsPage() {
       setPandocStatus(status);
       toast[status.available ? "success" : "error"](status.message ?? (status.available ? "Pandoc 可用" : "Pandoc 不可用"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "检测 Pandoc 失败");
+      toast.error(userFacingErrorMessage(error, "检测 Pandoc 失败"));
     } finally {
       setIsChecking(false);
     }
@@ -111,7 +112,7 @@ export function SettingsPage() {
       toast.success("转换历史已清空");
     } catch (error) {
       clearHistory();
-      toast.error(error instanceof Error ? error.message : "远程清空失败，已清空本地视图");
+      toast.error(userFacingErrorMessage(error, "远程清空失败，已清空本地视图"));
     }
   }
 

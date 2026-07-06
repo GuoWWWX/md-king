@@ -13,6 +13,7 @@ import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
 import { borderStyleOptions, createDefaultStyleDraft, createDefaultTemplateStyleConfig, getDefaultNumberFormat, markdownMappings, mergeTemplateStyleConfig, numberFormatOptions, styleGroupLabels, styleNodes, tablePresets } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, resetTemplateStyleConfig, saveTemplateStyleConfig } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import type { HorizontalAlign, MarkdownFeatureSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, Template, TemplateStyleConfig, VerticalAlign } from "@/types";
 
@@ -119,7 +120,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
         const fallback = createDefaultTemplateStyleConfig(templateId);
         setStyleConfig(fallback);
         setSavedConfig(fallback);
-        toast.error(error instanceof Error ? error.message : typeof error === "string" ? error : "加载模板样式失败，已使用默认样式");
+        toast.error(userFacingErrorMessage(error, "加载模板样式失败，已使用默认样式"));
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -187,7 +188,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       toast.success("模板样式已保存，下次打开和导出时会使用当前配置。");
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : typeof error === "string" ? error : "保存模板样式失败");
+      toast.error(userFacingErrorMessage(error, "保存模板样式失败"));
       return false;
     } finally {
       setIsSaving(false);
@@ -204,7 +205,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       setSavedConfig(nextConfig);
       toast.success(template?.isBuiltIn ? "系统模板已恢复为内置默认样式" : "模板样式已恢复为默认样式");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : typeof error === "string" ? error : "重置模板样式失败");
+      toast.error(userFacingErrorMessage(error, "重置模板样式失败"));
     } finally {
       setIsSaving(false);
     }
