@@ -196,7 +196,7 @@ export function ConvertPage() {
 
   async function handleSelectOutputDir() {
     if (!appConfig) {
-      toast.error("设置尚未加载完成，稍后再选择输出目录");
+      toast.error("设置正在加载，稍后再选择输出目录");
       return;
     }
 

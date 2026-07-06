@@ -209,7 +209,7 @@ export function TemplatesPage() {
 
   async function setDefaultTemplate(template: Template) {
     if (!appConfig) {
-      toast.error("配置尚未加载完成");
+      toast.error("配置正在加载，请稍后再试");
       return;
     }
     const nextConfig = { ...appConfig, defaultTemplateId: template.id };

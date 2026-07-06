@@ -217,7 +217,7 @@ export function SettingsPage() {
               <span className="text-sm font-medium text-slate-900">引擎状态</span>
               <Badge className={pandocBadgeClass}>{pandocBadgeLabel}</Badge>
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-500">{pandocStatus?.message ?? "尚未检测 Pandoc。"}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">{pandocStatus?.message ?? "可点击下方按钮检测 Pandoc 状态。"}</p>
             {pandocStatus?.version ? <p className="mt-2 truncate font-mono text-xs text-slate-500">{pandocStatus.version}</p> : null}
           </div>
           <SettingRow
@@ -274,9 +274,9 @@ export function SettingsPage() {
         </SettingsSection>
 
         <SettingsSection title="系统集成" description="悬浮球、Windows 右键菜单和系统托盘已可用。" icon={MousePointer2}>
-          <SettingRow label="添加到右键菜单" description="开启并保存后，.md/.markdown 文件右键可直接转换为 Word，桌面空白处右键可打开 MD King。" checked={draft.enableContextMenu} badge="已接入" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
-          <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入多个 Markdown 文件或文本批量转换。" checked={draft.enableFloatingBall} badge="已接入" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
-          <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="已接入" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
+          <SettingRow label="添加到右键菜单" description="开启并保存后，.md/.markdown 文件右键可直接转换为 Word，桌面空白处右键可打开 MD King。" checked={draft.enableContextMenu} badge="可用" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
+          <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入多个 Markdown 文件或文本批量转换。" checked={draft.enableFloatingBall} badge="可用" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
+          <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="可用" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
           <div className="grid gap-2 text-sm text-slate-500">
             <InfoLine icon={MousePointer2} text={`右键菜单：${draft.enableContextMenu ? "保存后写入当前用户 Windows 右键菜单" : "未开启"}`} />
             <InfoLine icon={PanelTop} text={`悬浮球：${draft.enableFloatingBall ? "保存后显示在右下角" : "未显示"}`} />
@@ -288,7 +288,7 @@ export function SettingsPage() {
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:border-zinc-700/70 dark:bg-zinc-800/60 dark:text-zinc-200">Markdown 和 DOCX 默认只在本机处理，不上传云端。</div>
           <div className="grid gap-2 text-sm text-slate-500">
             <InfoLine icon={Database} text={`历史记录：${history.length} 条`} />
-            <InfoLine icon={Globe2} text="运行模式：本地桌面 / 浏览器预览兼容" />
+            <InfoLine icon={Globe2} text="运行模式：本地桌面" />
             <InfoLine icon={Palette} text={`主题色：${accentOptions.find((option) => option.value === draft.accentColor)?.label ?? "专业蓝"}`} />
             <InfoLine icon={Keyboard} text={`CLI JSON 默认输出：${draft.cliDefaultJson ? "开启" : "关闭"}`} />
           </div>

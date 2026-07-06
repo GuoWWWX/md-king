@@ -30,7 +30,7 @@ export function AboutPage() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <Capability icon={ClipboardPaste} title="粘贴转换" text="复制 AI 对话内容后快速生成 DOCX。" />
-          <Capability icon={Layers3} title="模板样式" text="复用 reference.docx 控制 Word 样式。" />
+          <Capability icon={Layers3} title="模板样式" text="复用参考 DOCX 控制 Word 样式。" />
           <Capability icon={Bot} title="Agent/CLI" text="提供稳定命令和 JSON 输出，方便自动化调用。" />
         </div>
 
@@ -83,10 +83,10 @@ export function AboutPage() {
             </h3>
           </div>
           <div className="space-y-3 text-sm">
-            <Status label="Pandoc 引擎" value="已接入检测" />
+            <Status label="Pandoc 引擎" value="检测可用" />
             <Status label="本地隐私" value="默认本机处理" />
-            <Status label="右键菜单" value="已接入" />
-            <Status label="CLI" value="已接入" />
+            <Status label="右键菜单" value="可用" />
+            <Status label="CLI" value="可用" />
           </div>
         </AppSurface>
       </aside>
