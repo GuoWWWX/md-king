@@ -47,7 +47,7 @@ const pageMeta: Record<string, PageMeta> = {
   cli: {
     eyebrow: "CLI / Agent Interface",
     title: "CLI / Agent",
-    description: "面向高级用户和 AI Agent 的命令行入口，后续支持 JSON 输出、批量转换和模板管理。",
+    description: "面向高级用户和 AI Agent 的命令行入口，提供稳定退出码、JSON 输出和批量转换能力。",
     tags: ["--json", "稳定退出码", "自动化友好"],
   },
   settings: {

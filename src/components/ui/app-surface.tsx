@@ -15,7 +15,7 @@ type AppSurfaceProps = React.HTMLAttributes<HTMLElement> & {
 const surfaceVariants = {
   glass: "mk-card",
   solid: "mk-card-solid",
-  plain: "border border-slate-200/80 bg-white shadow-none",
+  plain: "border border-slate-200/80 bg-white shadow-none dark:border-zinc-800 dark:bg-zinc-950",
 };
 
 const surfacePadding = {
@@ -59,7 +59,7 @@ export function PrimaryActionButton({ className, ...props }: AppButtonProps) {
 }
 
 export function SoftActionButton({ className, variant = "outline", ...props }: AppButtonProps) {
-  return <Button variant={variant} className={cn("rounded-[10px] border-slate-200 bg-white", className)} {...props} />;
+  return <Button variant={variant} className={cn("rounded-[10px] border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-900", className)} {...props} />;
 }
 
 export function DocPreviewSurface({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

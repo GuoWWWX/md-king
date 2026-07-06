@@ -17,7 +17,7 @@ export function TemplateCard({ template }: TemplateCardProps) {
   function useForCurrentConvert() {
     setCurrentTemplateId(template.id);
     setActivePage("convert");
-    toast.success(`已选择「${template.name}」作为本次转换模板；当前阶段仅记录模板，reference.docx 样式映射下一步接入`);
+    toast.success(`已选择「${template.name}」作为本次转换模板`);
   }
 
   return (
@@ -50,7 +50,7 @@ export function TemplateCard({ template }: TemplateCardProps) {
         <p className="truncate text-xs text-muted-foreground">{template.referenceDocxPath || "内置模板配置"}</p>
         <Button className="w-full" variant={isCurrent ? "secondary" : "outline"} onClick={useForCurrentConvert}>
           {isCurrent ? <FileText className="size-4" /> : <ArrowRight className="size-4" />}
-          {isCurrent ? "已用于本次转换（样式映射待接入）" : "用于本次转换"}
+          {isCurrent ? "已用于本次转换" : "用于本次转换"}
         </Button>
       </CardContent>
     </Card>

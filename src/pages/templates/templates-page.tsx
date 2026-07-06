@@ -539,21 +539,21 @@ export function TemplatesPage() {
 
       <aside className="grid min-h-0 grid-rows-[250px_minmax(0,1fr)] gap-3 overflow-hidden max-[1180px]:hidden">
         <AppSurface as="section">
-          <p className="text-sm font-black text-blue-950">当前预览模板</p>
+          <p className="text-sm font-black text-foreground">当前预览模板</p>
           <div className="mt-4 grid grid-cols-[86px_minmax(0,1fr)] gap-4">
             <DocPreviewSurface className="h-28 p-3 shadow-sm">
               <div className="mx-auto h-20 w-14 rounded-md bg-white shadow-lg">
                 <div className="space-y-1.5 p-2">
-                  <div className="h-2 w-8 rounded-full bg-blue-500" />
-                  <div className="h-1 rounded-full bg-blue-100" />
-                  <div className="h-1 rounded-full bg-blue-100" />
+                  <div className="h-2 w-8 rounded-full bg-primary" />
+                  <div className="h-1 rounded-full bg-primary/15" />
+                  <div className="h-1 rounded-full bg-primary/15" />
                 </div>
               </div>
             </DocPreviewSurface>
             <div className="min-w-0">
-              <h3 className="truncate text-base font-black text-blue-950">{highlightedTemplate?.name ?? "默认报告模板"}</h3>
-              {highlightedTemplate?.isDefault ? <Badge className="mt-2 rounded-full bg-blue-50 text-blue-700">默认模板</Badge> : null}
-              <p className="mt-3 line-clamp-3 text-xs leading-5 text-blue-900/60">{highlightedTemplate?.description ?? "适用于 AI 生成的通用报告、方案和说明文档。"}</p>
+              <h3 className="truncate text-base font-black text-foreground">{highlightedTemplate?.name ?? "默认报告模板"}</h3>
+              {highlightedTemplate?.isDefault ? <Badge variant="secondary" className="mt-2 rounded-full">默认模板</Badge> : null}
+              <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{highlightedTemplate?.description ?? "适用于 AI 生成的通用报告、方案和说明文档。"}</p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
