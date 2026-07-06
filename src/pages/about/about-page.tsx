@@ -22,7 +22,7 @@ export function AboutPage() {
       <section className="min-w-0 space-y-5">
         <AppSurface as="section" radius="lg" className="space-y-4">
           <div>
-            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
               <FileText className="size-4" />
               把 AI Markdown 变成可交付 Word 文档
             </h3>
@@ -45,7 +45,7 @@ export function AboutPage() {
       <aside className="min-w-0 space-y-5">
         <AppSurface as="section" className="space-y-3">
           <div>
-            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
               <Cpu className="size-4" />
               应用信息
             </h3>
@@ -68,7 +68,7 @@ export function AboutPage() {
 
         <AppSurface as="section" className="space-y-3">
           <div>
-            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
               <ShieldCheck className="size-4" />
               系统状态
             </h3>

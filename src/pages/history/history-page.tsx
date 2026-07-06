@@ -131,22 +131,22 @@ export function HistoryPage() {
       <section className="flex min-h-0 flex-col overflow-hidden">
         <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950">转换历史</h2>
-            <p className="mt-1 text-sm text-blue-900/58">查找 DOCX 输出、复制路径，或重新触发转换流程。</p>
+            <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950 dark:text-zinc-50">转换历史</h2>
+            <p className="mt-1 text-sm text-blue-900/58 dark:text-zinc-400">查找 DOCX 输出、复制路径，或重新触发转换流程。</p>
           </div>
-          <Button variant="outline" className="rounded-[12px] border-white/70 bg-white/68" onClick={resetFilters} disabled={!hasActiveFilters}>
+          <Button variant="outline" className="rounded-[12px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900" onClick={resetFilters} disabled={!hasActiveFilters}>
             <RotateCcw className="size-4" />
             重置筛选
           </Button>
         </div>
 
-        <div className="mk-history-filter-panel mb-3 grid shrink-0 grid-cols-[minmax(280px,1fr)_132px_180px_auto] gap-2 rounded-[12px] border border-slate-200 bg-white p-3 max-[1180px]:grid-cols-[132px_minmax(240px,1fr)_auto] max-[760px]:grid-cols-1">
+        <div className="mk-history-filter-panel mb-3 grid shrink-0 grid-cols-[minmax(280px,1fr)_132px_180px_auto] gap-2 rounded-[12px] border border-slate-200 bg-white p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72 max-[1180px]:grid-cols-[132px_minmax(240px,1fr)_auto] max-[760px]:grid-cols-1">
           <div className="relative min-w-0 max-[1180px]:col-span-3 max-[760px]:col-span-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <Input className="h-11 rounded-[10px] border-slate-200 bg-white pl-9 text-sm" placeholder="搜索文件名或输出路径" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+            <Input className="h-11 rounded-[10px] border-slate-200 bg-white pl-9 text-sm dark:border-zinc-700 dark:bg-zinc-950/60" placeholder="搜索文件名或输出路径" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-11 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-11"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-11 w-full rounded-[10px] border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-11"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="success">成功</SelectItem>
@@ -155,19 +155,19 @@ export function HistoryPage() {
             </SelectContent>
           </Select>
           <Select value={templateId} onValueChange={setTemplateId}>
-            <SelectTrigger className="h-11 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-11"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-11 w-full rounded-[10px] border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-11"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部模板</SelectItem>
               {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" className="h-11 rounded-[10px] border-slate-200 bg-white px-3 max-[760px]:w-full" onClick={handleClearHistory} disabled={history.length === 0}>
+          <Button variant="outline" className="h-11 rounded-[10px] border-slate-200 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-950/60 max-[760px]:w-full" onClick={handleClearHistory} disabled={history.length === 0}>
             <Trash2 className="size-4" />
             清空历史
           </Button>
         </div>
 
-        <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-[12px] border border-blue-100/60 bg-white/32 px-3 py-2.5">
+        <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-[12px] border border-blue-100/60 bg-white/32 px-3 py-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
           <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
             <button
               type="button"
@@ -186,14 +186,14 @@ export function HistoryPage() {
               {isCurrentFilterAllSelected ? <CheckSquare className="size-4" /> : null}
             </button>
             <span>全选当前筛选</span>
-            <span className="text-slate-400">{selectedFilteredCount}/{filteredHistory.length}</span>
+            <span className="text-slate-400 dark:text-zinc-500">{selectedFilteredCount}/{filteredHistory.length}</span>
           </div>
           <Button
             variant="outline"
             size="sm"
             className={cn(
               "rounded-[12px]",
-              selectedIds.length > 0 ? "text-red-600 hover:text-red-700" : "text-slate-400 hover:text-slate-400",
+              selectedIds.length > 0 ? "text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" : "text-slate-400 hover:text-slate-400 dark:text-zinc-500 dark:hover:text-zinc-500",
             )}
             onClick={() => void deleteHistory(selectedIds)}
             disabled={selectedIds.length === 0}
@@ -205,18 +205,18 @@ export function HistoryPage() {
 
         <div className="min-h-0 overflow-y-auto pr-1">
           {filteredHistory.length === 0 ? (
-            <section className="flex min-h-[280px] flex-col items-center justify-center rounded-[14px] border border-dashed border-blue-100/80 bg-white/24 p-8 text-center">
-              <div className="mb-4 flex size-14 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600 shadow-inner">
+            <section className="flex min-h-[280px] flex-col items-center justify-center rounded-[14px] border border-dashed border-blue-100/80 bg-white/24 p-8 text-center dark:border-zinc-700/70 dark:bg-zinc-900/50">
+              <div className="mb-4 flex size-14 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600 shadow-inner dark:bg-blue-500/16 dark:text-blue-200">
                 <Clock3 className="size-7" />
               </div>
-              <h3 className="font-black text-slate-950">暂无转换历史</h3>
-              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{hasActiveFilters ? "当前筛选条件下没有记录，可以重置筛选查看全部历史。" : "完成第一次 Markdown 转 DOCX 后，记录会显示在这里。"}</p>
+              <h3 className="font-black text-slate-950 dark:text-zinc-50">暂无转换历史</h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-zinc-400">{hasActiveFilters ? "当前筛选条件下没有记录，可以重置筛选查看全部历史。" : "完成第一次 Markdown 转 DOCX 后，记录会显示在这里。"}</p>
             </section>
           ) : (
           <div className="space-y-5">
           {Object.entries(grouped).map(([group, items]) => items.length > 0 ? (
             <section key={group} className="space-y-3">
-              <h3 className="text-sm font-black text-blue-700/70">{group}</h3>
+              <h3 className="text-sm font-black text-blue-700/70 dark:text-blue-300/80">{group}</h3>
               <div className="grid gap-3">
                 {items.map((item) => (
                   <HistoryRecordCard
@@ -241,8 +241,8 @@ export function HistoryPage() {
       <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1 max-[1080px]:hidden">
         <AppSurface as="section">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-sm font-black text-blue-950">统计概览</h3>
-            <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-blue-700">当前筛选</span>
+            <h3 className="text-sm font-black text-blue-950 dark:text-zinc-50">统计概览</h3>
+            <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-zinc-800/70 dark:text-blue-200">当前筛选</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <StatCard icon={CheckCircle2} label="成功" value={String(successCount)} tone="text-emerald-600" compact />
@@ -253,15 +253,15 @@ export function HistoryPage() {
         </AppSurface>
 
         <AppSurface as="section" className="shrink-0">
-          <h3 className="text-sm font-black text-blue-950">记录详情</h3>
+          <h3 className="text-sm font-black text-blue-950 dark:text-zinc-50">记录详情</h3>
           {selectedRecord ? (
             <div className="mt-4 space-y-3">
-              <div className="rounded-[16px] border border-blue-100 bg-white/58 p-4">
+              <div className="rounded-[16px] border border-blue-100 bg-white/58 p-4 dark:border-zinc-700/70 dark:bg-zinc-900/72">
                 <div className="flex items-start gap-3">
                   <FilePreviewIcon status={selectedRecord.status} simulated={selectedRecord.simulated} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-black text-blue-950" title={selectedRecord.inputPath}>{selectedRecord.inputPath}</p>
-                    <p className="mt-1 text-xs font-semibold text-blue-700/70">{selectedTemplateName}</p>
+                    <p className="truncate text-sm font-black text-blue-950 dark:text-zinc-50" title={selectedRecord.inputPath}>{selectedRecord.inputPath}</p>
+                    <p className="mt-1 text-xs font-semibold text-blue-700/70 dark:text-blue-300/80">{selectedTemplateName}</p>
                   </div>
                 </div>
               </div>
@@ -269,13 +269,13 @@ export function HistoryPage() {
               <DetailLine label="状态" value={selectedRecord.simulated ? "浏览器预览" : selectedRecord.status === "success" ? "转换成功" : selectedRecord.status === "failed" ? "转换失败" : "处理中"} />
               <DetailLine label="时间" value={new Date(selectedRecord.createdAt).toLocaleString()} />
               {selectedRecord.durationMs !== undefined ? <DetailLine label="耗时" value={`${selectedRecord.durationMs} ms`} /> : null}
-              {selectedRecord.errorMessage ? <p className="rounded-[12px] bg-red-50 p-3 text-xs leading-5 text-red-700">{selectedRecord.errorMessage}</p> : null}
+              {selectedRecord.errorMessage ? <p className="rounded-[12px] bg-red-50 p-3 text-xs leading-5 text-red-700 dark:bg-red-500/12 dark:text-red-200">{selectedRecord.errorMessage}</p> : null}
             </div>
           ) : (
-            <div className="mt-4 flex min-h-[220px] flex-col items-center justify-center rounded-[16px] border border-dashed border-blue-200 bg-white/48 p-6 text-center">
+            <div className="mt-4 flex min-h-[220px] flex-col items-center justify-center rounded-[16px] border border-dashed border-blue-200 bg-white/48 p-6 text-center dark:border-zinc-700/70 dark:bg-zinc-900/60">
               <FilePreviewIcon />
-              <p className="mt-4 text-sm font-black text-blue-950">{filteredHistory.length === 0 ? "暂无记录详情" : "选择一条记录"}</p>
-              <p className="mt-2 text-xs leading-5 text-blue-900/55">{filteredHistory.length === 0 ? "完成转换后，这里会展示最近记录的输出路径和状态。" : "转换详情、输出路径和错误信息会展示在这里。"}</p>
+              <p className="mt-4 text-sm font-black text-blue-950 dark:text-zinc-50">{filteredHistory.length === 0 ? "暂无记录详情" : "选择一条记录"}</p>
+              <p className="mt-2 text-xs leading-5 text-blue-900/55 dark:text-zinc-400">{filteredHistory.length === 0 ? "完成转换后，这里会展示最近记录的输出路径和状态。" : "转换详情、输出路径和错误信息会展示在这里。"}</p>
             </div>
           )}
         </AppSurface>
@@ -286,13 +286,13 @@ export function HistoryPage() {
 
 function StatCard({ icon: Icon, label, value, tone, compact = false }: { icon: LucideIcon; label: string; value: string; tone: string; compact?: boolean }) {
   return (
-    <article className={compact ? "rounded-[10px] border border-blue-100/60 bg-white/28 p-3" : "rounded-[12px] border border-blue-100/60 bg-white/32 p-5"}>
+    <article className={compact ? "rounded-[10px] border border-blue-100/60 bg-white/28 p-3 dark:border-zinc-700/70 dark:bg-zinc-900/60" : "rounded-[12px] border border-blue-100/60 bg-white/32 p-5 dark:border-zinc-700/70 dark:bg-zinc-900/60"}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold text-slate-500">{label}</p>
-          <p className={compact ? "mt-1 text-xl font-black tracking-[-0.05em] text-slate-950" : "mt-2 text-3xl font-black tracking-[-0.05em] text-slate-950"}>{value}</p>
+          <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400">{label}</p>
+          <p className={compact ? "mt-1 text-xl font-black tracking-[-0.05em] text-slate-950 dark:text-zinc-50" : "mt-2 text-3xl font-black tracking-[-0.05em] text-slate-950 dark:text-zinc-50"}>{value}</p>
         </div>
-        <div className={compact ? "flex size-9 items-center justify-center rounded-[10px] bg-white/68 shadow-sm" : "flex size-12 items-center justify-center rounded-xl bg-white/68 shadow-sm"}>
+        <div className={compact ? "flex size-9 items-center justify-center rounded-[10px] bg-white/68 shadow-sm dark:bg-zinc-800/70" : "flex size-12 items-center justify-center rounded-xl bg-white/68 shadow-sm dark:bg-zinc-800/70"}>
           <Icon className={`${compact ? "size-5" : "size-6"} ${tone}`} />
         </div>
       </div>
@@ -302,9 +302,9 @@ function StatCard({ icon: Icon, label, value, tone, compact = false }: { icon: L
 
 function DetailLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[12px] border border-white/70 bg-white/54 px-3 py-2">
-      <p className="text-[11px] font-bold text-blue-900/45">{label}</p>
-      <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-700">{value}</p>
+    <div className="rounded-[12px] border border-white/70 bg-white/54 px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-900/72">
+      <p className="text-[11px] font-bold text-blue-900/45 dark:text-zinc-500">{label}</p>
+      <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-700 dark:text-zinc-300">{value}</p>
     </div>
   );
 }
