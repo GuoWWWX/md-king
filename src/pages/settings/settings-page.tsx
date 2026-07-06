@@ -256,7 +256,7 @@ export function SettingsPage() {
                 <SelectItem value="ask">每次询问</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs leading-5 text-slate-500">单次转换会读取这里的默认策略；批量转换接入后会沿用该策略作为默认值。</p>
+            <p className="text-xs leading-5 text-slate-500">单次转换和批量转换都会默认采用这里的处理策略。</p>
           </div>
           <SettingRow label="保留转换日志" description="保存转换过程和 Pandoc 摘要，便于排查失败原因。" checked={draft.keepConversionLog ?? true} onCheckedChange={(checked) => updateDraft("keepConversionLog", checked)} />
           <div className="space-y-1.5">

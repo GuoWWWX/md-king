@@ -397,7 +397,7 @@ function createFallbackBlocks(tableCaption: string): PreviewBlock[] {
     { type: "heading", level: 6, text: "五级条目" },
     { type: "paragraph", text: "这是一段正文，用于预览正文样式、行距、字号、对齐方式和段落间距。md-king 会把 AI 生成的 Markdown 转换成可继续编辑的 Word/WPS 文档，并尽量保留清晰的文档结构。inline code 也会在这里展示行内代码效果。" },
     { type: "quote", text: "这里展示引用块样式，内容仅用于观察缩进、边框、字体和背景效果。" },
-    { type: "code", text: "md-king convert ./input.md --template default --json" },
+    { type: "code", text: "md-king-cli convert ./input.md --template default-report --json" },
     { type: "hr" },
     { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "用于章节层级"], ["正文", "常规", "用于段落内容"], ["表格", "按页面宽度铺满", "自动换行"]] },
   ];

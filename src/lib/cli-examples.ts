@@ -1,18 +1,18 @@
 export const cliExamples = [
   {
     title: "单文件转换",
-    command: "md-king convert ./input.md -o ./output.docx --template report --json",
+    command: "md-king-cli convert ./input.md -o ./output.docx --template default-report --json",
   },
   {
-    title: "批量转换",
-    command: "md-king batch ./docs --out ./dist --template official --json",
+    title: "覆盖输出",
+    command: "md-king-cli convert ./input.md -o ./output.docx --template default-report --overwrite",
   },
   {
     title: "查看模板",
-    command: "md-king templates list --json",
+    command: "md-king-cli templates list --json",
   },
   {
-    title: "查看状态",
-    command: "md-king status --json",
+    title: "按模板名称转换",
+    command: "md-king-cli convert ./input.md -o ./output.docx --template 我的自定义模板 --json",
   },
 ];
