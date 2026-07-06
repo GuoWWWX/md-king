@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
+import { CheckSquare, ChevronDown, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { TemplateGalleryCard } from "@/components/templates/template-gallery-card";
+import { TemplateEditDrawer } from "@/components/templates/template-edit-drawer";
 import { TemplateImportDialog } from "@/components/templates/template-import-dialog";
 import { TemplateStyleManager } from "@/components/templates/template-style-manager";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
@@ -22,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
 import { getTemplateCategory, getTemplateGroups, isFixedTemplateGroup, loadCustomTemplateGroups, saveCustomTemplateGroups, toTemplateGroupName } from "@/lib/template-categories";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ImportTemplateRequest, Template, TemplateStyleConfig } from "@/types";
 
@@ -127,6 +129,7 @@ export function TemplatesPage() {
   const [dialogMode, setDialogMode] = useState<"import" | "create">("import");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Template | undefined>();
   const [styleTemplate, setStyleTemplate] = useState<Template | undefined>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewTemplateId, setPreviewTemplateId] = useState<string | undefined>(currentTemplateId ?? appConfig?.defaultTemplateId);
@@ -220,8 +223,27 @@ export function TemplatesPage() {
     }
   }
 
+  async function saveTemplateEdit(template: Template) {
+    const nextTemplates = template.isDefault
+      ? templates.map((item) => ({ ...item, ...(item.id === template.id ? template : {}), isDefault: item.id === template.id }))
+      : templates.map((item) => item.id === template.id ? template : item);
+
+    if (template.isDefault && appConfig) {
+      const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: template.id });
+      setAppConfig(savedConfig);
+    }
+
+    await persistTemplates(nextTemplates);
+    setPreviewTemplateId(template.id);
+    setEditingTemplate(undefined);
+  }
+
   async function handleImport(request: ImportTemplateRequest) {
     const template = await importTemplate(request);
+    if (request.isDefault && appConfig) {
+      const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: template.id });
+      setAppConfig(savedConfig);
+    }
     try {
       const nextTemplates = await listTemplates();
       setTemplates(nextTemplates);
@@ -246,6 +268,10 @@ export function TemplatesPage() {
       updatedAt: now,
     };
     const nextTemplates = request.isDefault ? templates.map((item) => ({ ...item, isDefault: false })).concat(template) : templates.concat(template);
+    if (request.isDefault && appConfig) {
+      const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: template.id });
+      setAppConfig(savedConfig);
+    }
     await persistTemplates(nextTemplates);
     setPreviewTemplateId(template.id);
     setStyleTemplate(template);
@@ -256,13 +282,25 @@ export function TemplatesPage() {
     const targets = templates.filter((template) => ids.includes(template.id));
     const protectedTargets = targets.filter((template) => template.isBuiltIn);
     if (protectedTargets.length > 0) {
-      toast.error("系统分组里的默认模板不能删除，可以只删除用户创建的模板");
+      toast.error("系统模板不能删除，可以只删除用户创建或导入的模板");
       return;
     }
     if (targets.length === 0) return;
-    await persistTemplates(templates.filter((template) => !ids.includes(template.id)));
+    const nextTemplates = templates.filter((template) => !ids.includes(template.id));
+    const fallbackTemplate = nextTemplates.find((template) => template.isDefault) ?? nextTemplates[0];
+    const deletedDefault = appConfig ? ids.includes(appConfig.defaultTemplateId) : false;
+    const deletedCurrent = currentTemplateId ? ids.includes(currentTemplateId) : false;
+
+    await persistTemplates(nextTemplates);
+    if (deletedDefault && appConfig && fallbackTemplate) {
+      const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: fallbackTemplate.id });
+      setAppConfig(savedConfig);
+    }
+    if (deletedCurrent) {
+      setCurrentTemplateId(fallbackTemplate?.id);
+    }
     setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
-    if (previewTemplateId && ids.includes(previewTemplateId)) setPreviewTemplateId(undefined);
+    if (previewTemplateId && ids.includes(previewTemplateId)) setPreviewTemplateId(fallbackTemplate?.id);
     toast.success(`已删除 ${targets.length} 个模板`);
   }
 
@@ -329,7 +367,7 @@ export function TemplatesPage() {
 
   if (styleTemplate) {
     return (
-      <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
         <TemplateStyleManager embedded template={styleTemplate} onRequestClose={() => setStyleTemplate(undefined)} />
       </div>
     );
@@ -349,92 +387,78 @@ export function TemplatesPage() {
           </PrimaryActionButton>
         </div>
 
-        <div className="mk-template-filter-panel mb-3 grid shrink-0 gap-2 rounded-[12px] border border-blue-100/60 bg-white/24 p-2.5">
-          <div className="grid min-w-0 grid-cols-[150px_minmax(0,1fr)] items-center gap-2 max-[860px]:grid-cols-1">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="group h-9 w-[150px] justify-between rounded-[10px] border-white/70 bg-white/68 px-3 max-[860px]:w-full">
-                  <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-                    {selectedGroups.length === 0 ? (
-                      <span className="truncate px-1 text-slate-500">全部分组</span>
-                    ) : (
-                      selectedGroups.slice(0, 2).map((group) => (
-                        <span key={group} className="max-w-[70px] truncate rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                          {group}
-                        </span>
-                      ))
-                    )}
-                    {selectedGroups.length > 2 ? <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">+{selectedGroups.length - 2}</span> : null}
-                  </span>
-                  {selectedGroups.length > 0 ? (
-                    <span
-                      className="hidden size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover:flex"
-                      role="button"
-                      tabIndex={-1}
-                      aria-label="清空分组筛选"
-                      onPointerDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        clearGroupFilter();
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                    >
-                      <X className="size-3.5" />
-                    </span>
-                  ) : null}
-                  <ChevronDown className="size-4 shrink-0 text-slate-400" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-[240px] p-2" align="start">
-                <DropdownMenuItem className="justify-between text-slate-600" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
-                  显示全部分组
-                  {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600">当前</span> : null}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {filterGroups.map((group) => (
-                  <DropdownMenuCheckboxItem
-                    key={group}
-                    checked={selectedGroupSet.has(group)}
-                    onCheckedChange={() => toggleGroupFilter(group)}
-                    onSelect={(event) => event.preventDefault()}
-                  >
-                    {group}
-                  </DropdownMenuCheckboxItem>
-                ))}
+        <div className="mk-template-filter-panel mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-[12px] border border-blue-100/60 bg-white/24 p-2.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="group h-9 w-[190px] justify-between rounded-[10px] border-white/70 bg-white/68 px-3 max-[640px]:w-full">
+                <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+                  {selectedGroups.length === 0 ? (
+                    <span className="truncate px-1 text-slate-500">全部分组</span>
+                  ) : (
+                    selectedGroups.slice(0, 2).map((group) => (
+                      <span key={group} className="max-w-[70px] truncate rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                        {group}
+                      </span>
+                    ))
+                  )}
+                  {selectedGroups.length > 2 ? <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">+{selectedGroups.length - 2}</span> : null}
+                </span>
                 {selectedGroups.length > 0 ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-slate-500" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
-                      <X className="size-4" />
-                      清空选择
-                    </DropdownMenuItem>
-                  </>
+                  <span
+                    className="hidden size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover:flex"
+                    role="button"
+                    tabIndex={-1}
+                    aria-label="清空分组筛选"
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      clearGroupFilter();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                  >
+                    <X className="size-3.5" />
+                  </span>
                 ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(86px,1fr))] gap-2">
-            {groups.slice(1, 6).map((group) => (
-              selectedGroupSet.has(group) ? (
-                <PrimaryActionButton key={group} className="h-9 min-w-0 rounded-[10px] px-2 text-xs" onClick={() => toggleGroupFilter(group)}>
+                <ChevronDown className="size-4 shrink-0 text-slate-400" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-[240px] p-2" align="start">
+              <DropdownMenuItem className="justify-between text-slate-600" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
+                显示全部分组
+                {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600">当前</span> : null}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {filterGroups.map((group) => (
+                <DropdownMenuCheckboxItem
+                  key={group}
+                  checked={selectedGroupSet.has(group)}
+                  onCheckedChange={() => toggleGroupFilter(group)}
+                  onSelect={(event) => event.preventDefault()}
+                >
                   {group}
-                </PrimaryActionButton>
-              ) : (
-                <SoftActionButton key={group} className="h-9 min-w-0 rounded-[10px] px-2 text-xs" onClick={() => toggleGroupFilter(group)}>
-                  {group}
-                </SoftActionButton>
-              )
-            ))}
-            </div>
-          </div>
+                </DropdownMenuCheckboxItem>
+              ))}
+              {selectedGroups.length > 0 ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-slate-500" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
+                    <X className="size-4" />
+                    清空选择
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}>
+                <FolderCog className="size-4" />
+                分组管理
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          <div className="grid min-w-0 grid-cols-3 items-center gap-2 max-[720px]:grid-cols-1">
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68" onClick={() => setGroupDialogOpen(true)}>
-              <FolderCog className="size-4" />
-              分组管理
-            </Button>
+          <div className="ml-auto grid min-w-0 grid-cols-2 items-center gap-2 max-[640px]:ml-0 max-[640px]:w-full">
             <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68" onClick={() => setStyleTemplate(templates[0])} disabled={templates.length === 0}>
               <Palette className="size-4" />
               样式管理器
@@ -448,17 +472,26 @@ export function TemplatesPage() {
 
         <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/80 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_16px_42px_rgba(37,99,235,0.08)]">
           <div className="mk-template-list-toolbar flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-blue-100/70 px-3 py-2.5">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                className="size-4 rounded border-slate-300 accent-indigo-600"
-                checked={isCurrentGroupAllSelected}
+            <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
+              <button
+                type="button"
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded-lg border text-white transition",
+                  isCurrentGroupAllSelected
+                    ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
+                    : "border-blue-200 bg-white/70 hover:border-blue-300 hover:bg-white dark:border-zinc-600 dark:bg-zinc-900/70 dark:hover:border-zinc-500 dark:hover:bg-zinc-800",
+                  filteredTemplateIds.length === 0 && "cursor-not-allowed opacity-45 hover:border-blue-200 hover:bg-white/70 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/70",
+                )}
                 disabled={filteredTemplateIds.length === 0}
-                onChange={toggleCurrentGroupSelection}
-              />
+                onClick={toggleCurrentGroupSelection}
+                aria-label="全选当前筛选"
+                aria-pressed={isCurrentGroupAllSelected}
+              >
+                {isCurrentGroupAllSelected ? <CheckSquare className="size-4" /> : null}
+              </button>
               <span>全选当前筛选</span>
               <span className="text-slate-400">{selectedIds.length}/{filteredTemplates.length}</span>
-            </label>
+            </div>
             <Button variant="outline" size="sm" className="mk-template-batch-delete rounded-[12px] text-red-600 hover:text-red-700" onClick={() => deleteTemplates(selectedIds)} disabled={selectedIds.length === 0}>
               <Trash2 className="size-4" />
               批量删除
@@ -488,6 +521,7 @@ export function TemplatesPage() {
                 onToggleSelect={toggleSelect}
                 onUse={useTemplate}
                 onSetDefault={setDefaultTemplate}
+                onEdit={setEditingTemplate}
                 onStyleManager={setStyleTemplate}
                 onDelete={(target) => deleteTemplates([target.id])}
               />
@@ -498,11 +532,7 @@ export function TemplatesPage() {
 
           <div className="mk-template-list-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-blue-100/70 px-3 py-2 text-xs text-slate-500">
             <span>共 {filteredTemplates.length} 个模板</span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 rounded-[10px] border-white/80 bg-white/70" disabled>上一页</Button>
-              <span className="rounded-[9px] bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">1 / 1</span>
-              <Button variant="outline" size="sm" className="h-8 rounded-[10px] border-white/80 bg-white/70" disabled>下一页</Button>
-            </div>
+            <span className="rounded-[9px] bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">已选 {selectedIds.length}</span>
           </div>
         </section>
       </section>
@@ -522,7 +552,7 @@ export function TemplatesPage() {
             </DocPreviewSurface>
             <div className="min-w-0">
               <h3 className="truncate text-base font-black text-blue-950">{highlightedTemplate?.name ?? "默认报告模板"}</h3>
-              <Badge className="mt-2 rounded-full bg-blue-50 text-blue-700">{highlightedTemplate?.isDefault ? "默认模板" : "预览中"}</Badge>
+              {highlightedTemplate?.isDefault ? <Badge className="mt-2 rounded-full bg-blue-50 text-blue-700">默认模板</Badge> : null}
               <p className="mt-3 line-clamp-3 text-xs leading-5 text-blue-900/60">{highlightedTemplate?.description ?? "适用于 AI 生成的通用报告、方案和说明文档。"}</p>
             </div>
           </div>
@@ -547,6 +577,18 @@ export function TemplatesPage() {
       </aside>
 
       <TemplateImportDialog open={dialogOpen} mode={dialogMode} groups={groups} onOpenChange={setDialogOpen} onImport={handleImport} onCreate={handleCreate} />
+      <TemplateEditDrawer
+        open={Boolean(editingTemplate)}
+        template={editingTemplate}
+        groups={groups}
+        onOpenChange={(open) => !open && setEditingTemplate(undefined)}
+        onSave={saveTemplateEdit}
+        onSetDefault={setDefaultTemplate}
+        onOpenStyleManager={(template) => {
+          setEditingTemplate(undefined);
+          setStyleTemplate(template);
+        }}
+      />
       <GroupManageDialog open={groupDialogOpen} groups={groups.filter((group) => group !== "全部")} onOpenChange={setGroupDialogOpen} onCreate={handleCreateGroup} onDelete={(group) => void handleDeleteGroup(group)} />
     </div>
   );

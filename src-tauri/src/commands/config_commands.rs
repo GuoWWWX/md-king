@@ -1,4 +1,7 @@
 use crate::core::config::{load_config, save_config as save_config_core, AppConfig, AppStatus};
+use crate::system::context_menu::sync_context_menu;
+use crate::system::tray::sync_tray;
+use tauri::AppHandle;
 
 #[tauri::command]
 pub fn get_app_status() -> AppStatus {
@@ -17,6 +20,8 @@ pub fn get_app_config() -> AppConfig {
 }
 
 #[tauri::command]
-pub fn save_app_config(config: AppConfig) -> Result<AppConfig, String> {
+pub fn save_app_config(app: AppHandle, config: AppConfig) -> Result<AppConfig, String> {
+    sync_context_menu(config.enable_context_menu)?;
+    sync_tray(&app, config.enable_tray)?;
     save_config_core(config)
 }

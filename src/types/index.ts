@@ -2,4 +2,4 @@ export type { AccentColor, AppConfig, AppStatus, DefaultConflictStrategy, ThemeM
 export type { ConvertRequest, ConvertResult, ConvertStatus, PandocStatus } from "./convert";
 export type { HistoryItem } from "./history";
 export type { ImportTemplateRequest, Template } from "./template";
-export type { BorderStyleMode, ColumnWidthMode, HorizontalAlign, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, StyleNodeKind, TableLayoutMode, TablePresetKey, TemplateStyleConfig, VerticalAlign } from "./style-manager";
+export type { BorderStyleMode, ColumnWidthMode, FooterPageNumberFormat, HorizontalAlign, MarkdownFeatureSettings, PageSettingsDraft, PaperSize, StyleDraft, StyleGroupKey, StyleNode, StyleNodeKind, TableLayoutMode, TablePresetKey, TemplateStyleConfig, VerticalAlign } from "./style-manager";

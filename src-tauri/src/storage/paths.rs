@@ -10,8 +10,10 @@ pub fn app_data_dir_hint() -> &'static str {
 pub fn app_data_dir() -> io::Result<PathBuf> {
     let base = env::var_os("APPDATA")
         .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share")))
-        .unwrap_or_else(|| env::temp_dir());
+        .or_else(|| {
+            env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"))
+        })
+        .unwrap_or_else(env::temp_dir);
     let dir = base.join(app_data_dir_hint());
     fs::create_dir_all(&dir)?;
     Ok(dir)

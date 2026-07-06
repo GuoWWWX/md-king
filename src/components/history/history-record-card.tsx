@@ -1,9 +1,10 @@
-import { AlertCircle, CheckCircle2, Clock, Copy, ExternalLink, RefreshCcw } from "lucide-react";
+import { AlertCircle, CheckCircle2, CheckSquare, Clock, Copy, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { openOutputPath } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import type { HistoryItem, Template } from "@/types";
 
 type HistoryRecordCardProps = {
@@ -11,7 +12,10 @@ type HistoryRecordCardProps = {
   templates?: Template[];
   compact?: boolean;
   selected?: boolean;
+  checked?: boolean;
   onSelect?: (item: HistoryItem) => void;
+  onToggleChecked?: (item: HistoryItem) => void;
+  onDelete?: (item: HistoryItem) => void;
 };
 
 async function copyText(text?: string, message = "已复制") {
@@ -41,7 +45,7 @@ async function openFile(path?: string) {
   }
 }
 
-export function HistoryRecordCard({ item, templates = [], compact = false, selected = false, onSelect }: HistoryRecordCardProps) {
+export function HistoryRecordCard({ item, templates = [], compact = false, selected = false, checked = false, onSelect, onToggleChecked, onDelete }: HistoryRecordCardProps) {
   const templateName = templates.find((template) => template.id === item.templateId)?.name ?? item.templateId ?? "未指定模板";
   const isSuccess = item.status === "success";
   const isFailed = item.status === "failed";
@@ -52,11 +56,25 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
       as="article"
       variant="solid"
       radius="sm"
-      className={selected ? "min-w-0 overflow-hidden ring-2 ring-blue-500/40" : "min-w-0 overflow-hidden"}
+      className={cn("min-w-0 overflow-hidden", selected && "ring-2 ring-blue-500/40", checked && "bg-white/88")}
       interactive={Boolean(onSelect)}
       onClick={() => onSelect?.(item)}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
+        {onToggleChecked ? (
+          <button
+            type="button"
+            className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-lg border text-white", checked ? "border-blue-600 bg-blue-600" : "border-blue-200 bg-white/70")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleChecked(item);
+            }}
+            aria-label={`选择 ${item.inputPath}`}
+            aria-pressed={checked}
+          >
+            {checked ? <CheckSquare className="size-4" /> : null}
+          </button>
+        ) : null}
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-2">
             {isSuccess ? <CheckCircle2 className="size-4 shrink-0 text-emerald-600" /> : isFailed ? <AlertCircle className="size-4 shrink-0 text-red-600" /> : <Clock className="size-4 shrink-0 text-indigo-600" />}
@@ -79,18 +97,29 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
 
       {!compact ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <SoftActionButton size="sm" className="rounded-lg" onClick={() => copyText(item.outputPath, "输出路径已复制")}>
+          <SoftActionButton size="sm" className="rounded-lg" onClick={(event) => { event.stopPropagation(); void copyText(item.outputPath, "输出路径已复制"); }}>
             <Copy className="size-4" />
             复制路径
           </SoftActionButton>
-          <SoftActionButton size="sm" className="rounded-lg" onClick={() => openFile(item.outputPath)} disabled={!canOpenOutput} title={item.simulated ? "浏览器预览没有实际 DOCX 文件" : undefined}>
+          <SoftActionButton size="sm" className="rounded-lg" onClick={(event) => { event.stopPropagation(); void openFile(item.outputPath); }} disabled={!canOpenOutput} title={item.simulated ? "浏览器预览没有实际 DOCX 文件" : undefined}>
             <ExternalLink className="size-4" />
             打开文件
           </SoftActionButton>
-          <Button size="sm" variant="ghost" disabled title="批量队列接入后启用">
-            <RefreshCcw className="size-4" />
-            重新转换
-          </Button>
+          {onDelete ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(item);
+              }}
+              title="删除记录"
+            >
+              <Trash2 className="size-4" />
+              删除
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </AppSurface>

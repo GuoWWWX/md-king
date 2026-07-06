@@ -6,6 +6,7 @@ export type ConvertRequest = {
   templateId?: string;
   openAfterConvert?: boolean;
   overwrite?: boolean;
+  conflictStrategy?: "overwrite" | "rename" | "ask";
 };
 
 export type ConvertResult = {

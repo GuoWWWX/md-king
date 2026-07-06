@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "md-king",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "identifier": "com.mdking.app",
   "build": {
     "beforeDevCommand": "node ensure-dev-server.mjs",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "node node_modules/typescript/bin/tsc && node node_modules/vite/bin/vite.js build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -17,6 +17,7 @@
         "height": 760,
         "minWidth": 960,
         "minHeight": 640,
+        "backgroundColor": "#111111",
         "decorations": false
       }
     ],
@@ -37,6 +38,19 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "uninstallerHeaderImage": "icons/nsis-header.bmp"
+      },
+      "wix": {
+        "bannerPath": "icons/wix-banner.bmp",
+        "dialogImagePath": "icons/wix-dialog.bmp"
+      }
+    }
   }
 }

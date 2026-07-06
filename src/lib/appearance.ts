@@ -1,5 +1,7 @@
 import type { AccentColor, ThemeMode } from "@/types";
 
+export const APPEARANCE_STORAGE_KEY = "md-king-appearance";
+
 export const accentThemes: Record<AccentColor, { primary: string; hover: string; ring: string; accent: string; accentForeground: string; muted: string; backgroundGlow: string }> = {
   indigo: { primary: "#4f46e5", hover: "#4338ca", ring: "#4f46e5", accent: "#eef2ff", accentForeground: "#312e81", muted: "#eef2ff", backgroundGlow: "rgba(79, 70, 229, 0.12)" },
   blue: { primary: "#2563eb", hover: "#1d4ed8", ring: "#2563eb", accent: "#dbeafe", accentForeground: "#1e3a8a", muted: "#eff6ff", backgroundGlow: "rgba(37, 99, 235, 0.12)" },
@@ -18,6 +20,8 @@ export function applyAppearance(themeMode: ThemeMode, accentColor: AccentColor) 
 
   root.classList.toggle("dark", isDark);
   root.dataset.accentColor = accentColor;
+  root.dataset.bootTheme = isDark ? "dark" : "light";
+  root.style.colorScheme = isDark ? "dark" : "light";
   root.style.setProperty("--primary", theme.primary);
   root.style.setProperty("--ring", theme.ring);
   root.style.setProperty("--chart-1", theme.primary);
@@ -38,4 +42,10 @@ export function applyAppearance(themeMode: ThemeMode, accentColor: AccentColor) 
   root.style.setProperty("--mk-blue-soft", isDark ? `color-mix(in srgb, ${theme.primary} 22%, #111827)` : theme.accent);
   root.style.setProperty("--mk-blue-faint", isDark ? `color-mix(in srgb, ${theme.primary} 12%, #0f172a)` : theme.muted);
   root.style.setProperty("--mk-blue-border", isDark ? `color-mix(in srgb, ${theme.primary} 28%, transparent)` : `color-mix(in srgb, ${theme.primary} 28%, white)`);
+
+  try {
+    window.localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ themeMode, accentColor }));
+  } catch {
+    // Local storage can be unavailable in restricted webviews; visual theme still applies.
+  }
 }

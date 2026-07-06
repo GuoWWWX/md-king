@@ -6,7 +6,7 @@ import { AppSurface } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { clearHistoryRemote } from "@/lib/tauri";
+import { clearHistoryRemote, saveHistory } from "@/lib/tauri";
 import { useAppStore } from "@/stores/app-store";
 import type { HistoryItem } from "@/types";
 
@@ -32,6 +32,7 @@ export function HistoryPage() {
   const [status, setStatus] = useState("all");
   const [templateId, setTemplateId] = useState("all");
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const filteredHistory = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -44,8 +45,12 @@ export function HistoryPage() {
   }, [history, query, status, templateId]);
 
   const grouped = groupHistory(filteredHistory);
+  const filteredHistoryIds = useMemo(() => filteredHistory.map((item) => item.id), [filteredHistory]);
+  const selectedFilteredCount = selectedIds.filter((id) => filteredHistoryIds.includes(id)).length;
+  const isCurrentFilterAllSelected = filteredHistoryIds.length > 0 && filteredHistoryIds.every((id) => selectedIds.includes(id));
   const successCount = history.filter((item) => item.status === "success").length;
   const failedCount = history.filter((item) => item.status === "failed").length;
+  const pendingCount = history.filter((item) => item.status === "pending").length;
   const selectedRecord = filteredHistory.find((item) => item.id === selectedHistoryId) ?? filteredHistory[0];
   const selectedTemplateName = selectedRecord ? templates.find((template) => template.id === selectedRecord.templateId)?.name ?? selectedRecord.templateId ?? "未指定模板" : "";
   const hasActiveFilters = query.trim() !== "" || status !== "all" || templateId !== "all";
@@ -65,10 +70,58 @@ export function HistoryPage() {
     try {
       const nextHistory = await clearHistoryRemote();
       setHistory(nextHistory);
+      setSelectedIds([]);
+      setSelectedHistoryId(null);
       toast.success("转换历史已清空");
     } catch (error) {
       setHistory([]);
+      setSelectedIds([]);
+      setSelectedHistoryId(null);
       toast.error(error instanceof Error ? error.message : "远程清空失败，已清空本地视图");
+    }
+  }
+
+  async function deleteHistory(ids: string[]) {
+    const targetIds = Array.from(new Set(ids));
+    const targets = history.filter((item) => targetIds.includes(item.id));
+    if (targets.length === 0) return;
+
+    const previousHistory = history;
+    const nextHistory = history.filter((item) => !targetIds.includes(item.id));
+    setHistory(nextHistory);
+    setSelectedIds((current) => current.filter((id) => !targetIds.includes(id)));
+    if (selectedHistoryId && targetIds.includes(selectedHistoryId)) {
+      setSelectedHistoryId(null);
+    }
+
+    try {
+      const saved = await saveHistory(nextHistory);
+      setHistory(saved);
+      toast.success(`已删除 ${targets.length} 条历史记录`);
+    } catch (error) {
+      setHistory(previousHistory);
+      toast.error(error instanceof Error ? error.message : "删除历史记录失败");
+    }
+  }
+
+  function toggleSelect(item: HistoryItem) {
+    setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]);
+  }
+
+  function selectCurrentFilter() {
+    if (filteredHistoryIds.length === 0) return;
+    setSelectedIds((current) => Array.from(new Set([...current, ...filteredHistoryIds])));
+  }
+
+  function unselectCurrentFilter() {
+    setSelectedIds((current) => current.filter((id) => !filteredHistoryIds.includes(id)));
+  }
+
+  function toggleCurrentFilterSelection() {
+    if (isCurrentFilterAllSelected) {
+      unselectCurrentFilter();
+    } else {
+      selectCurrentFilter();
     }
   }
 
@@ -86,29 +139,49 @@ export function HistoryPage() {
           </Button>
         </div>
 
-        <div className="mk-history-filter-panel mb-3 grid shrink-0 gap-3 rounded-[14px] border border-slate-200/70 bg-white/42 p-3 shadow-inner shadow-slate-200/40 lg:grid-cols-[minmax(0,1fr)_150px_170px_auto]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <Input className="h-10 rounded-[14px] border-white/70 bg-white/68 pl-9" placeholder="搜索文件名或路径" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <div className="mk-history-filter-panel mb-3 grid shrink-0 gap-2 rounded-[12px] border border-slate-200 bg-white p-3">
+          <div className="relative min-w-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <Input className="h-11 rounded-[10px] border-slate-200 bg-white pl-9 text-sm" placeholder="搜索文件名或输出路径" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-10 rounded-[14px] border-white/70 bg-white/68"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="success">成功</SelectItem>
-              <SelectItem value="failed">失败</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={templateId} onValueChange={setTemplateId}>
-            <SelectTrigger className="h-10 rounded-[14px] border-white/70 bg-white/68"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部模板</SelectItem>
-              {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" className="rounded-[14px] border-white/70 bg-white/68" onClick={handleClearHistory}>
+          <div className="grid min-w-0 grid-cols-[minmax(120px,0.8fr)_minmax(150px,1fr)_auto] gap-2 max-[680px]:grid-cols-1">
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="success">成功</SelectItem>
+                <SelectItem value="failed">失败</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 bg-white data-[size=default]:h-10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部模板</SelectItem>
+                {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" className="h-10 rounded-[10px] border-slate-200 bg-white px-3 max-[680px]:w-full" onClick={handleClearHistory}>
+              <Trash2 className="size-4" />
+              清空历史
+            </Button>
+          </div>
+        </div>
+
+        <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-[12px] border border-blue-100/60 bg-white/32 px-3 py-2.5">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="size-4 rounded border-slate-300 accent-indigo-600"
+              checked={isCurrentFilterAllSelected}
+              disabled={filteredHistoryIds.length === 0}
+              onChange={toggleCurrentFilterSelection}
+            />
+            <span>全选当前筛选</span>
+            <span className="text-slate-400">{selectedFilteredCount}/{filteredHistory.length}</span>
+          </label>
+          <Button variant="outline" size="sm" className="rounded-[12px] text-red-600 hover:text-red-700" onClick={() => void deleteHistory(selectedIds)} disabled={selectedIds.length === 0}>
             <Trash2 className="size-4" />
-            清空历史
+            删除选中{selectedIds.length > 0 ? ` ${selectedIds.length}` : ""}
           </Button>
         </div>
 
@@ -127,7 +200,18 @@ export function HistoryPage() {
             <section key={group} className="space-y-3">
               <h3 className="text-sm font-black text-blue-700/70">{group}</h3>
               <div className="grid gap-3">
-                {items.map((item) => <HistoryRecordCard key={item.id} item={item} templates={templates} selected={selectedRecord?.id === item.id} onSelect={(record) => setSelectedHistoryId(record.id)} />)}
+                {items.map((item) => (
+                  <HistoryRecordCard
+                    key={item.id}
+                    item={item}
+                    templates={templates}
+                    selected={selectedRecord?.id === item.id}
+                    checked={selectedIds.includes(item.id)}
+                    onSelect={(record) => setSelectedHistoryId(record.id)}
+                    onToggleChecked={toggleSelect}
+                    onDelete={(record) => void deleteHistory([record.id])}
+                  />
+                ))}
               </div>
             </section>
           ) : null)}
@@ -146,7 +230,7 @@ export function HistoryPage() {
             <StatCard icon={CheckCircle2} label="成功" value={String(successCount)} tone="text-emerald-600" compact />
             <StatCard icon={XCircle} label="失败" value={String(failedCount)} tone="text-red-600" compact />
             <StatCard icon={Clock3} label="筛选" value={String(filteredHistory.length)} tone="text-blue-600" compact />
-            <StatCard icon={Clock3} label="处理中" value="0" tone="text-amber-500" compact />
+            <StatCard icon={Clock3} label="处理中" value={String(pendingCount)} tone="text-amber-500" compact />
           </div>
         </AppSurface>
 

@@ -1,7 +1,7 @@
 {
   "name": "md-king",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,8 +9,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:build": "tauri build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/patch-nsis-installer.ps1",
     "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "test": "pnpm typecheck && pnpm tauri:check"
+    "cli:check": "cargo check --manifest-path src-tauri/Cargo.toml --bin md-king-cli",
+    "test": "pnpm typecheck && pnpm tauri:check && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

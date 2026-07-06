@@ -1,11 +1,10 @@
-import type { BorderStyleMode, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
+import type { BorderStyleMode, MarkdownFeatureSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
 
 export const styleGroupLabels: Record<StyleGroupKey, string> = {
   headings: "标题样式",
   blocks: "正文与块级样式",
   lists: "列表样式",
   tables: "表格样式",
-  custom: "自定义样式",
 };
 
 export const styleNodes: StyleNode[] = [
@@ -28,9 +27,6 @@ export const styleNodes: StyleNode[] = [
   { id: "table-header", name: "Table Header", displayName: "表头", group: "tables", kind: "table", markdown: "thead", description: "控制表头加粗、居中、背景色、边框与字号" },
   { id: "table-body", name: "Table Body", displayName: "表格体", group: "tables", kind: "table", markdown: "tbody", description: "控制表格体字体字号、水平/垂直对齐与隔行底色" },
   { id: "table-caption", name: "Table Caption", displayName: "表格题注", group: "tables", kind: "table", markdown: "table caption", description: "控制表格标题、对齐和自动编号" },
-  { id: "official-title", name: "公文标题", displayName: "公文标题", group: "custom", kind: "custom", markdown: "custom", description: "中文公文标题样式" },
-  { id: "fangsong-body", name: "正文仿宋", displayName: "正文仿宋", group: "custom", kind: "custom", markdown: "custom", description: "正式材料正文" },
-  { id: "business-summary", name: "商务摘要", displayName: "商务摘要", group: "custom", kind: "custom", markdown: "summary", description: "商业方案摘要块" },
 ];
 
 export const borderStyleOptions: { value: BorderStyleMode; label: string }[] = [
@@ -185,9 +181,21 @@ export const defaultPageSettings: PageSettingsDraft = {
   marginLeft: 3.18,
   marginRight: 3.18,
   headerEnabled: false,
+  headerText: "md-king · Word 样式预览",
   footerEnabled: true,
+  footerText: "",
+  footerPageNumberFormat: "page-total",
+  footerShowFromPage: 1,
+  footerStartPage: 1,
   tocEnabled: true,
   tocDepth: "1-3",
+};
+
+export const defaultMarkdownFeatures: MarkdownFeatureSettings = {
+  inlineCode: false,
+  codeBlock: true,
+  quoteBlock: true,
+  horizontalRule: false,
 };
 
 export const headingNumberFormats: Record<string, string> = {
@@ -420,6 +428,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     templateId,
     styles,
     pageSettings: defaultPageSettings,
+    markdownFeatures: defaultMarkdownFeatures,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -455,6 +464,10 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
     pageSettings: {
       ...defaults.pageSettings,
       ...(config?.pageSettings ?? {}),
+    },
+    markdownFeatures: {
+      ...defaults.markdownFeatures,
+      ...(config?.markdownFeatures ?? {}),
     },
   };
 }

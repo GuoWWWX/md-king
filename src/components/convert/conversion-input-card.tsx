@@ -12,6 +12,7 @@ type ConversionInputCardProps = {
   disabled?: boolean;
   onChange: (value: string) => void;
   onFileTextLoad: (text: string, file: File) => void;
+  onBatchSelect?: () => void | Promise<void>;
   onReadClipboard: () => void | Promise<void>;
 };
 
@@ -48,7 +49,7 @@ const toolbarGroups: Array<{ label: string; items: Array<{ action: ToolbarAction
   },
 ];
 
-export function ConversionInputCard({ markdown, mode = "markdown", disabled = false, onChange, onFileTextLoad, onReadClipboard }: ConversionInputCardProps) {
+export function ConversionInputCard({ markdown, mode = "markdown", disabled = false, onChange, onFileTextLoad, onBatchSelect, onReadClipboard }: ConversionInputCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -90,7 +91,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
 
     const files = Array.from(event.dataTransfer.files);
     if (files.length !== 1) {
-      toast.error("请一次拖入单个 Markdown 文件");
+      toast.error("多文件请使用批量导入按钮");
       return;
     }
     void loadMarkdownFile(files[0]);
@@ -151,8 +152,8 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
   const singlePane = showMarkdownEditor !== showDropZone;
 
   return (
-    <section className={cn("mk-card flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[12px]", isExpanded ? "fixed inset-6 z-50 h-auto bg-white/95 shadow-2xl dark:bg-slate-950" : "h-full max-[1100px]:h-auto")}>
-      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-white/60 bg-white/58 px-3 dark:border-slate-700/70 dark:bg-slate-950/35">
+    <section className={cn("mk-card flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] max-[760px]:min-h-[300px]", isExpanded ? "fixed inset-6 z-50 h-auto bg-white/95 shadow-2xl dark:bg-slate-950" : "h-full max-[1100px]:h-auto")}>
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-700/70 dark:bg-slate-950/35">
         <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-1 text-slate-700 [scrollbar-width:none] dark:text-slate-300 [&::-webkit-scrollbar]:hidden">
           {showMarkdownEditor ? (
             <>
@@ -163,7 +164,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
                     <button
                       key={action}
                       type="button"
-                      className="mk-editor-tool-button flex size-8 items-center justify-center rounded-[8px] border border-transparent text-slate-700 transition hover:-translate-y-px hover:border-blue-100 hover:bg-white/78 hover:text-slate-950 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
+                      className="mk-editor-tool-button flex size-8 items-center justify-center rounded-[8px] border border-transparent text-slate-700 transition hover:-translate-y-px hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
                       disabled={disabled || !showMarkdownEditor}
                       title={label}
                       aria-label={label}
@@ -177,20 +178,20 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
             </>
           ) : <div className="h-8" />}
         </div>
-        <button type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-white/70 bg-white/70 text-slate-700 transition hover:-translate-y-px hover:bg-white hover:text-slate-950 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} title={isExpanded ? "退出放大" : "放大编辑区"} onClick={() => setIsExpanded((value) => !value)}>
+        <button type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} title={isExpanded ? "退出放大" : "放大编辑区"} onClick={() => setIsExpanded((value) => !value)}>
           <Maximize2 className="size-3.5" />
         </button>
       </div>
 
       <div className={cn("grid min-h-0 flex-1 gap-3", singlePane ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_280px] max-[1180px]:grid-cols-1")}>
         {showMarkdownEditor ? (
-        <div className="min-h-0 max-[1100px]:min-h-[520px]">
+        <div className="min-h-0 max-[1100px]:min-h-[360px] max-[760px]:min-h-[256px]">
           <Textarea
             ref={textareaRef}
             id="conversion-markdown-editor"
             name="markdown"
             aria-label="Markdown 输入内容"
-            className="h-full min-h-[300px] resize-none rounded-none border-0 bg-transparent p-5 font-mono text-xs leading-6 text-slate-800 shadow-none focus-visible:ring-0 dark:text-slate-200 dark:placeholder:text-slate-500"
+            className="h-full min-h-[300px] resize-none rounded-none border-0 bg-transparent p-5 font-mono text-xs leading-6 text-slate-800 shadow-none focus-visible:ring-0 max-[760px]:min-h-[240px] dark:text-slate-200 dark:placeholder:text-slate-500"
             value={markdown}
             onChange={(event) => onChange(event.target.value)}
             placeholder={"# 文档标题\n\n把需要转换的 Markdown 粘贴到这里..."}
@@ -204,7 +205,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
           className={cn(
             "mk-drop-zone flex min-h-[300px] flex-col items-center justify-center rounded-[12px] p-5 text-center transition-all",
             !singlePane && "max-[1180px]:hidden",
-            isDragging && "border-blue-500 bg-blue-50 shadow-lg shadow-blue-100",
+            isDragging && "border-blue-500 bg-blue-50",
           )}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
@@ -215,12 +216,18 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
             <FileText className="size-10" />
           </div>
           <h4 className="text-lg font-black text-blue-700">导入 Markdown</h4>
-          <p className="mt-2 max-w-[230px] text-xs leading-5 text-blue-900/55">拖拽或选择一个 Markdown 文件，载入后会回到编辑区并同步右侧 Word 预览。</p>
+          <p className="mt-2 max-w-[250px] text-xs leading-5 text-blue-900/55">选择单个文件可载入编辑区；批量导入会直接逐个生成 DOCX。</p>
           <div className="mt-5 flex flex-col gap-2">
-            <Button type="button" onClick={() => inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-[0_14px_30px_rgba(37,99,235,0.14)] hover:bg-blue-50">
+            <Button type="button" onClick={() => inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50">
               <UploadCloud className="size-4" />
               选择文件
             </Button>
+            {onBatchSelect ? (
+              <Button type="button" variant="outline" className="rounded-[10px] border-white/70 bg-white/70 text-blue-700 hover:bg-white" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
+                <UploadCloud className="size-4" />
+                批量导入
+              </Button>
+            ) : null}
             <Button type="button" variant="ghost" className="rounded-[10px] text-blue-700 hover:bg-white/70" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
               <ClipboardPaste className="size-4" />
               粘贴剪贴板

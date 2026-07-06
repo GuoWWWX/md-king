@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::PathBuf;
 
 use crate::storage::paths::config_path;
 
@@ -43,7 +44,7 @@ pub fn default_config() -> AppConfig {
         pandoc_path: None,
         use_bundled_pandoc: true,
         default_template_id: "default-report".to_string(),
-        default_output_dir: None,
+        default_output_dir: default_output_dir(),
         open_after_convert: true,
         enable_context_menu: false,
         enable_floating_ball: false,
@@ -56,6 +57,14 @@ pub fn default_config() -> AppConfig {
         default_conflict_strategy: default_conflict_strategy(),
         keep_conversion_log: default_keep_conversion_log(),
     }
+}
+
+fn default_output_dir() -> Option<String> {
+    let base = std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .map(|path| path.join("Documents"))
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Documents")))?;
+    Some(base.join("MD King").to_string_lossy().to_string())
 }
 
 fn default_language() -> String {
@@ -94,7 +103,8 @@ pub fn load_config() -> AppConfig {
 pub fn save_config(config: AppConfig) -> Result<AppConfig, String> {
     let path = config_path().map_err(|error| format!("获取配置路径失败：{error}"))?;
     let config = normalize_config(config);
-    let content = serde_json::to_string_pretty(&config).map_err(|error| format!("序列化配置失败：{error}"))?;
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("序列化配置失败：{error}"))?;
     fs::write(path, content).map_err(|error| format!("写入配置失败：{error}"))?;
     Ok(config)
 }
@@ -107,7 +117,8 @@ fn normalize_config(mut config: AppConfig) -> AppConfig {
         .filter(|path| !path.is_empty())
         .map(str::to_string);
 
-    let is_legacy_default = matches!(normalized_path.as_deref(), Some("pandoc")) && !config.use_bundled_pandoc;
+    let is_legacy_default =
+        matches!(normalized_path.as_deref(), Some("pandoc")) && !config.use_bundled_pandoc;
     if is_legacy_default {
         config.pandoc_path = None;
         config.use_bundled_pandoc = true;
@@ -135,6 +146,15 @@ fn normalize_config(mut config: AppConfig) -> AppConfig {
         "overwrite" | "rename" | "ask" => config.default_conflict_strategy,
         _ => default_conflict_strategy(),
     };
+    if config
+        .default_output_dir
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
+        config.default_output_dir = default_output_dir();
+    }
 
     config
 }

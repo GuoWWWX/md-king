@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 const commandSpec = `md-king CLI 命令规范
 
 1. 自动化命令默认支持 --json，并输出稳定 JSON 结构。
-2. 转换命令草案：md-king convert <input.md> -o <output.docx> --template <template-id> --json。
-3. 批量命令草案：md-king batch <docs-dir> --out <output-dir> --template <template-id> --json。
+2. 当前可用转换命令：md-king-cli convert <input.md> -o <output.docx> --template <template-id> --json。
+3. 当前可用模板命令：md-king-cli templates list --json。
 4. 转换失败时返回稳定 errorCode，便于 Agent 判断重试、降级或提示用户。
-5. CLI、MCP Server、本地 HTTP API 入口仍按相同输入输出契约规划。`;
+5. 批量转换与服务化入口会沿用相同输入输出契约。`;
 
 async function copyCommandSpec() {
   try {
@@ -41,19 +41,19 @@ export function CliPage() {
             </Button>
           </div>
           <p className="text-slate-400"># 基本转换</p>
-          <p><span className="text-slate-200">mdking</span> convert input.md</p>
+          <p><span className="text-slate-200">md-king-cli</span> convert input.md -o output.docx</p>
           <p className="mt-4 text-slate-400"># 使用模板</p>
-          <p><span className="text-slate-200">mdking</span> convert input.md --template elegant</p>
+          <p><span className="text-slate-200">md-king-cli</span> convert input.md -o output.docx --template default-report</p>
           <p className="mt-4 text-slate-400"># 返回 JSON 输出</p>
-          <p><span className="text-slate-200">mdking</span> convert input.md --json</p>
-          <p className="mt-4 text-slate-400"># 从标准输入读取 Markdown</p>
-          <p>cat input.md | <span className="text-slate-200">mdking</span> convert -</p>
+          <p><span className="text-slate-200">md-king-cli</span> convert input.md -o output.docx --json</p>
+          <p className="mt-4 text-slate-400"># 查看模板列表</p>
+          <p><span className="text-slate-200">md-king-cli</span> templates list --json</p>
         </div>
 
         <aside className="grid min-h-0 grid-rows-[1fr_auto] gap-3 overflow-hidden max-[1080px]:hidden">
           <div className="grid min-h-0 gap-3">
-            <CommandPreview title="STDIN 转换" command="cat input.md | mdking convert -" />
-            <CommandPreview title="JSON 契约草案" command={`{\n  "ok": true,\n  "output": "<实际输出路径>",\n  "duration_ms": "<转换耗时>"\n}`} />
+            <CommandPreview title="模板列表" command="md-king-cli templates list --json" />
+            <CommandPreview title="JSON 契约草案" command={`{\n  "ok": true,\n  "output": "<实际输出路径>",\n  "durationMs": "<转换耗时>"\n}`} />
           </div>
 
           <AppSurface as="section" className="space-y-2">
@@ -64,7 +64,7 @@ export function CliPage() {
               </h3>
             </div>
             <div className="space-y-2 text-sm text-slate-600">
-              <StatusLine icon={CheckCircle2} label="服务状态" value="规划中" />
+              <StatusLine icon={CheckCircle2} label="CLI 命令" value="可用" />
               <StatusLine icon={FileCode2} label="JSON 输出" value="稳定契约" />
               <SoftActionButton className="w-full" onClick={copyCommandSpec}>
                 <Copy className="size-4" />
@@ -77,8 +77,8 @@ export function CliPage() {
 
       <AppSurface as="section" className="grid shrink-0 grid-cols-3 items-center gap-3">
         {["AI 生成 Markdown", "CLI 转换", "DOCX 路径返回"].map((step, index) => (
-          <div key={step} className="rounded-[18px] border border-white/70 bg-white/58 p-4 text-center">
-            <div className="mx-auto flex size-9 items-center justify-center rounded-[14px] bg-blue-600 font-black text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)]">{index + 1}</div>
+          <div key={step} className="rounded-[10px] border border-white/70 bg-white/58 p-4 text-center">
+            <div className="mx-auto flex size-9 items-center justify-center rounded-[9px] bg-blue-600 font-black text-white shadow-[0_10px_22px_rgba(37,99,235,0.18)]">{index + 1}</div>
             <p className="mt-2 text-sm font-black text-blue-950">{step}</p>
           </div>
         ))}
@@ -89,7 +89,7 @@ export function CliPage() {
 
 function StatusLine({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/70 bg-white/58 px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-[10px] border border-white/70 bg-white/58 px-4 py-3">
       <span className="flex items-center gap-2 font-semibold text-slate-700">
         <Icon className="size-4 text-blue-600" />
         {label}

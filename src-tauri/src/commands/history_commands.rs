@@ -1,4 +1,6 @@
-use crate::core::history::{clear_history_items, list_history_items, save_history_items, HistoryItem};
+use crate::core::history::{
+    clear_history_items, list_history_items, save_history_items, HistoryItem,
+};
 
 #[tauri::command]
 pub fn list_history() -> Vec<HistoryItem> {

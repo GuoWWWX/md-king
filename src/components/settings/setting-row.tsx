@@ -20,7 +20,7 @@ export function SettingRow({ label, description, checked, badge, disabled = fals
         </div>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{description}</p>
       </div>
-      {checked !== undefined ? <Switch className="shrink-0" checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /> : null}
+      {checked !== undefined ? <Switch className="shrink-0" checked={checked} disabled={disabled} aria-label={label} onCheckedChange={onCheckedChange} /> : null}
     </div>
   );
 }

@@ -8,12 +8,18 @@ export function extractMarkdownTitle(markdown: string) {
 }
 
 export function sanitizeDocxFileName(title: string | undefined) {
-  const fallback = title?.trim() || "未命名文档";
+  const fallback = title?.trim() || "untitled";
   return fallback.replace(/[\\/:*?\"<>|]/g, "-");
 }
 
 export function buildDocxOutputName(markdown: string) {
   return `${sanitizeDocxFileName(extractMarkdownTitle(markdown))}.docx`;
+}
+
+export function buildDocxOutputNameFromPath(path: string) {
+  const name = path.split(/[\\/]/).pop() || "untitled.md";
+  const withoutExtension = name.replace(/\.(md|markdown)$/i, "");
+  return `${sanitizeDocxFileName(withoutExtension)}.docx`;
 }
 
 export function buildOutputPath(outputDir: string | undefined, outputName: string) {

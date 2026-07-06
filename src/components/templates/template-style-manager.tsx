@@ -1,5 +1,5 @@
-import { AlignCenter, AlignLeft, AlignRight, ArrowLeft, ChevronDown, FileText, Heading, ListTree, Palette, Pilcrow, Search, Shapes, SlidersHorizontal, Table2, Wand2, X, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, Heading, ListTree, Pilcrow, Quote, Search, SlidersHorizontal, Table2, X, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,12 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { WordColorPicker } from "@/components/ui/word-color-picker";
+import { WordFontSizeSelect } from "@/components/ui/word-font-size-select";
 import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
-import { batchActions, borderStyleOptions, createDefaultStyleDraft, createDefaultTemplateStyleConfig, getDefaultNumberFormat, markdownMappings, mergeTemplateStyleConfig, numberFormatOptions, styleGroupLabels, styleNodes, tablePresets } from "@/lib/style-manager-data";
+import { borderStyleOptions, createDefaultStyleDraft, createDefaultTemplateStyleConfig, getDefaultNumberFormat, markdownMappings, mergeTemplateStyleConfig, numberFormatOptions, styleGroupLabels, styleNodes, tablePresets } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, resetTemplateStyleConfig, saveTemplateStyleConfig } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import type { HorizontalAlign, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, Template, TemplateStyleConfig, VerticalAlign } from "@/types";
+import type { HorizontalAlign, MarkdownFeatureSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, Template, TemplateStyleConfig, VerticalAlign } from "@/types";
 
 type TemplateStyleManagerProps = {
   open?: boolean;
@@ -29,8 +31,6 @@ const editorTabs = [
   { id: "styles", label: "样式设计" },
   { id: "page", label: "页面设置" },
   { id: "mapping", label: "样式映射" },
-  { id: "diagnostics", label: "样式诊断", dot: true },
-  { id: "advanced", label: "高级" },
 ];
 
 const styleGroupIcons: Record<StyleGroupKey, LucideIcon> = {
@@ -38,8 +38,43 @@ const styleGroupIcons: Record<StyleGroupKey, LucideIcon> = {
   blocks: Pilcrow,
   lists: ListTree,
   tables: Table2,
-  custom: Shapes,
 };
+
+const fontWeightOptions = [
+  { value: "300", label: "300 Light" },
+  { value: "400", label: "400 常规" },
+  { value: "500", label: "500 中等" },
+  { value: "600", label: "600 半粗" },
+  { value: "700", label: "700 加粗" },
+  { value: "800", label: "800 特粗" },
+];
+
+const paperSizeOptions: Array<{ value: PageSettingsDraft["paperSize"]; label: string; description: string }> = [
+  { value: "A3", label: "A3", description: "29.7 x 42 cm" },
+  { value: "A4", label: "A4", description: "21 x 29.7 cm" },
+  { value: "A5", label: "A5", description: "14.8 x 21 cm" },
+  { value: "B4", label: "B4", description: "25 x 35.3 cm" },
+  { value: "B5", label: "B5", description: "17.6 x 25 cm" },
+  { value: "Letter", label: "Letter", description: "8.5 x 11 in" },
+  { value: "Legal", label: "Legal", description: "8.5 x 14 in" },
+  { value: "Executive", label: "Executive", description: "7.25 x 10.5 in" },
+];
+
+const footerPageNumberFormats: Array<{ value: PageSettingsDraft["footerPageNumberFormat"]; label: string }> = [
+  { value: "page", label: "第 1 页" },
+  { value: "page-total", label: "第 1 / 12 页" },
+  { value: "dash", label: "- 1 -" },
+  { value: "none", label: "不显示页码" },
+];
+
+function getStyleNodeIcon(node: StyleNode) {
+  if (node.id === "quote") return Quote;
+  if (node.kind === "code") return Code2;
+  if (node.kind === "heading") return Heading;
+  if (node.kind === "list") return ListTree;
+  if (node.kind === "table") return Table2;
+  return Pilcrow;
+}
 
 export function TemplateStyleManager({ open = true, template, embedded = false, onDirtyChange, onOpenChange, onRequestClose }: TemplateStyleManagerProps) {
   const [activeTab, setActiveTab] = useState("styles");
@@ -49,7 +84,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
   const [savedConfig, setSavedConfig] = useState<TemplateStyleConfig>(() => createDefaultTemplateStyleConfig(template?.id ?? "default-report"));
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState(60);
 
   const selectedStyle = styleNodes.find((node) => node.id === activeStyleId) ?? styleNodes[1];
   const currentDraft = styleConfig.styles[activeStyleId] ?? createDefaultStyleDraft(activeStyleId);
@@ -122,6 +157,14 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
     }));
   }
 
+  function patchMarkdownFeatures(patch: Partial<MarkdownFeatureSettings>) {
+    setStyleConfig((current) => ({
+      ...current,
+      markdownFeatures: { ...current.markdownFeatures, ...patch },
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
   function resetCurrentStyle() {
     setStyleConfig((current) => ({
       ...current,
@@ -138,7 +181,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       const nextConfig = mergeTemplateStyleConfig(styleConfig.templateId, saved);
       setStyleConfig(nextConfig);
       setSavedConfig(nextConfig);
-      toast.success("模板样式已保存，下次打开会继续使用；DOCX 写回将在后续接入。");
+      toast.success("模板样式已保存，下次打开和导出时会使用当前配置。");
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : typeof error === "string" ? error : "保存模板样式失败");
@@ -197,7 +240,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
 
   function renderEditorContent() {
     return (
-      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
+      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col bg-white">
         <header className="shrink-0 border-b border-slate-200 px-5 py-3 xl:px-7 xl:py-4">
           <div className="flex items-center justify-between gap-5">
             <div className="min-w-0">
@@ -239,37 +282,28 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
-              {tab.dot ? <span className="mt-[-8px] size-1.5 rounded-full bg-red-500" /> : null}
             </button>
           ))}
         </nav>
 
         <div className="min-h-0 flex-1 overflow-hidden bg-slate-50/50">
           {activeTab === "styles" ? (
-            <div className="grid h-full min-h-0 overflow-y-auto xl:overflow-x-hidden xl:overflow-y-hidden xl:grid-cols-[180px_minmax(300px,1fr)_minmax(300px,360px)] 2xl:grid-cols-[230px_minmax(620px,1fr)_minmax(460px,540px)]">
+            <div className="grid h-full min-h-0 w-full overflow-y-auto lg:grid-cols-[160px_minmax(300px,1fr)_minmax(300px,360px)] lg:overflow-x-hidden lg:overflow-y-hidden xl:grid-cols-[180px_minmax(360px,1fr)_minmax(320px,420px)] 2xl:grid-cols-[230px_minmax(620px,1fr)_minmax(460px,540px)]">
               <StyleNavigation query={query} setQuery={setQuery} groupedNodes={groupedNodes} activeStyleId={activeStyleId} setActiveStyleId={setActiveStyleId} />
-              <StyleProperties selectedStyle={selectedStyle} draft={currentDraft} updateDraft={updateDraft} patchDraft={patchDraft} isLoading={isLoading} />
+              <StyleProperties selectedStyle={selectedStyle} draft={currentDraft} markdownFeatures={styleConfig.markdownFeatures} updateDraft={updateDraft} patchDraft={patchDraft} patchMarkdownFeatures={patchMarkdownFeatures} isLoading={isLoading} />
               <PreviewColumn selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} setZoom={setZoom} />
             </div>
           ) : null}
           {activeTab === "basic" ? <TabScrollArea><BasicInfoPanel template={template} /></TabScrollArea> : null}
           {activeTab === "page" ? <TabScrollArea><PageSettingsPanel pageSettings={styleConfig.pageSettings} patchPageSettings={patchPageSettings} /></TabScrollArea> : null}
-          {activeTab === "mapping" ? <TabScrollArea><MappingPanel /></TabScrollArea> : null}
-          {activeTab === "diagnostics" ? <TabScrollArea><DiagnosticsPanel /></TabScrollArea> : null}
-          {activeTab === "advanced" ? <TabScrollArea><BatchPanel /></TabScrollArea> : null}
+          {activeTab === "mapping" ? <TabScrollArea><MappingPanel markdownFeatures={styleConfig.markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} /></TabScrollArea> : null}
         </div>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/96 px-5 py-2.5 xl:px-7">
-          <SoftActionButton className="h-9 rounded-[10px] px-4 text-slate-500" disabled title="真实 DOCX 写回能力接入后启用">
-            <FileText className="size-4" />
-            Word/WPS 深度编辑（待接入）
-          </SoftActionButton>
-          <div className="flex flex-wrap items-center gap-2 xl:gap-4">
-            <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", hasChanges ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700")}>{hasChanges ? "有未保存更改" : "已保存"}</span>
-            <Button variant="ghost" className="text-slate-500" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>重置当前样式</Button>
-            <SoftActionButton className="h-9 rounded-[10px]" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>重置模板</SoftActionButton>
-            <PrimaryActionButton className="h-9 rounded-[10px] px-5 font-semibold" onClick={() => void handleSaveStyleConfig()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存模板样式"}</PrimaryActionButton>
-          </div>
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/96 px-5 py-2.5 xl:gap-4 xl:px-7">
+          <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", hasChanges ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700")}>{hasChanges ? "有未保存更改" : "已保存"}</span>
+          <Button variant="ghost" className="text-slate-500" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>重置当前样式</Button>
+          <SoftActionButton className="h-9 rounded-[10px]" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>重置模板</SoftActionButton>
+          <PrimaryActionButton className="h-9 rounded-[10px] px-5 font-semibold" onClick={() => void handleSaveStyleConfig()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存模板样式"}</PrimaryActionButton>
         </footer>
       </div>
     );
@@ -295,7 +329,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
 
   if (embedded) {
     return (
-      <AppSurface className="flex h-full min-h-0 min-w-0 overflow-hidden max-xl:h-auto max-xl:overflow-visible" padding="none" radius="md">
+      <AppSurface className="flex h-full min-h-0 min-w-0 w-full overflow-hidden max-lg:h-auto max-lg:overflow-visible" padding="none" radius="md">
         {renderEditorContent()}
         {renderConfirmDialog()}
       </AppSurface>
@@ -335,7 +369,7 @@ function StyleNavigation({
   }
 
   return (
-    <aside className="min-h-0 overflow-hidden border-r border-slate-200 bg-white max-xl:order-2 max-xl:max-h-[220px] max-xl:border-b max-xl:border-r-0">
+    <aside className="min-h-0 overflow-hidden border-r border-slate-200 bg-white max-lg:order-2 max-lg:max-h-[220px] max-lg:border-b max-lg:border-r-0">
       <div className="border-b border-slate-200 p-3.5">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
@@ -373,20 +407,7 @@ function StyleNavigation({
               {!collapsed ? (
                 <div className="ml-4 space-y-1 border-l border-slate-200 pl-3">
                   {nodes.map((node) => (
-                    <button
-                      key={node.id}
-                      className={cn(
-                        "flex min-h-10 w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
-                        activeStyleId === node.id ? "bg-indigo-50 font-semibold text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
-                      )}
-                      onClick={() => setActiveStyleId(node.id)}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className={cn("block truncate", node.kind === "heading" && "font-bold", node.kind === "code" && "font-mono", node.kind === "paragraph" && "font-normal")}>{node.displayName}</span>
-                        <span className="block truncate text-[11px] font-normal text-slate-400">{node.name}</span>
-                      </span>
-                      <span className="ml-3 shrink-0 text-xs text-slate-400">{node.markdown}</span>
-                    </button>
+                    <StyleNavigationItem key={node.id} node={node} active={activeStyleId === node.id} onSelect={() => setActiveStyleId(node.id)} />
                   ))}
                 </div>
               ) : null}
@@ -398,17 +419,45 @@ function StyleNavigation({
   );
 }
 
+function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; active: boolean; onSelect: () => void }) {
+  const NodeIcon = getStyleNodeIcon(node);
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+        active ? "bg-indigo-50 font-semibold text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+      )}
+      onClick={onSelect}
+      title={`${node.displayName} · ${node.name} · ${node.markdown}`}
+    >
+      <span className="min-w-0 flex-1">
+        <span className={cn("block truncate", node.kind === "heading" && "font-bold", node.kind === "code" && "font-mono", node.kind === "paragraph" && "font-normal")}>{node.displayName}</span>
+        <span className="block truncate text-[11px] font-normal text-slate-400">{node.name}</span>
+      </span>
+      <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600" : "border-slate-200 bg-white/70 text-slate-400")}>
+        <NodeIcon className="size-3.5" />
+      </span>
+    </button>
+  );
+}
+
 function StyleProperties({
   selectedStyle,
   draft,
+  markdownFeatures,
   updateDraft,
   patchDraft,
+  patchMarkdownFeatures,
   isLoading,
 }: {
   selectedStyle: StyleNode;
   draft: StyleDraft;
+  markdownFeatures: MarkdownFeatureSettings;
   updateDraft: <K extends keyof StyleDraft>(key: K, value: StyleDraft[K]) => void;
   patchDraft: (patch: Partial<StyleDraft>) => void;
+  patchMarkdownFeatures: (patch: Partial<MarkdownFeatureSettings>) => void;
   isLoading: boolean;
 }) {
   const isHeading = selectedStyle.kind === "heading";
@@ -436,47 +485,50 @@ function StyleProperties({
   }
 
   return (
-    <section className="min-h-0 overflow-auto border-r border-slate-200 bg-white px-5 py-5 max-xl:order-3 max-xl:overflow-visible max-xl:border-b max-xl:border-r-0">
+    <section className="min-h-0 overflow-auto border-r border-slate-200 bg-white px-5 py-5 max-lg:order-3 max-lg:overflow-visible max-lg:border-b max-lg:border-r-0">
       <div className="mb-5">
         <p className="text-sm font-bold text-indigo-600">当前样式</p>
         <h3 className="mt-1.5 text-[26px] font-bold tracking-[-0.03em] text-slate-950">{selectedStyle.name}</h3>
         <p className="mt-1.5 text-sm leading-6 text-slate-500">{selectedStyle.description}</p>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">{selectedStyle.displayName}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">Markdown: {selectedStyle.markdown}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">{isLoading ? "加载中" : "可编辑"}</span>
+        </div>
       </div>
 
       <div className="space-y-4">
-        <AppSurface variant="plain" radius="sm" padding="none" className="px-4 py-3 text-sm leading-6 text-slate-600">
-          {isLoading ? "正在加载模板样式..." : "样式会保存到本机模板配置，可修改系统模板并随时重置为内置默认。当前保存会影响编辑器和预览；DOCX 写回后续接入。"}
-        </AppSurface>
-        <PropertyCard title={`Word 样式摘要（${selectedStyle.displayName}）`}>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 bg-white p-3"><div className="text-xs text-slate-400">样式名</div><div className="mt-1 font-semibold text-slate-900">{selectedStyle.name}</div></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3"><div className="text-xs text-slate-400">应用范围</div><div className="mt-1 font-semibold text-slate-900">{selectedStyle.markdown}</div></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3"><div className="text-xs text-slate-400">当前状态</div><div className="mt-1 font-semibold text-slate-900">{isLoading ? "加载中" : "可编辑"}</div></div>
-          </div>
-        </PropertyCard>
-
-        <PropertyCard title={`基础信息（${selectedStyle.displayName}）`}>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="样式名称 (Style Name)"><Input className="h-11 rounded-lg bg-slate-50" value={selectedStyle.name} readOnly /></Field>
-            <Field label="显示名称 (Display Name)"><Input className="h-11 rounded-lg bg-slate-50" value={selectedStyle.displayName} readOnly /></Field>
-            <Field label="应用于 Markdown (Applied to)"><Input className="h-11 rounded-lg bg-slate-50" value={selectedStyle.markdown} readOnly /></Field>
-            <Field label="基于样式 (Based on Style)"><Select value="Normal"><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Normal">Normal</SelectItem></SelectContent></Select></Field>
-            <Field label="后续段落样式 (Next Paragraph Style)"><Select value="Normal"><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Normal">Normal</SelectItem></SelectContent></Select></Field>
-          </div>
-        </PropertyCard>
+        <MarkdownFeatureStyleSwitch selectedStyleId={selectedStyle.id} markdownFeatures={markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} />
 
         <PropertyCard title={isCode ? "代码块样式 (Code Block)" : isTable ? "基础文本样式" : "文本属性 (Typography)"}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="中文字体 (CJK Font)"><Select value={draft.chineseFont} onValueChange={(value) => updateDraft("chineseFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
             <Field label="英文字体 (English Font)"><Select value={isCode ? "JetBrains Mono" : draft.latinFont} onValueChange={(value) => updateDraft("latinFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
-            <Field label="字号 (Size pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.fontSize} onChange={(event) => updateDraft("fontSize", Number(event.target.value))} /></Field>
-            <Field label="颜色 (Color)"><div className="flex gap-2"><Input className="h-11 w-12 rounded-lg p-1" type="color" value={draft.color} onChange={(event) => updateDraft("color", event.target.value)} /><Input className="h-11 rounded-lg bg-slate-50" value={draft.color} onChange={(event) => updateDraft("color", event.target.value)} /></div></Field>
+            <Field label="字号"><WordFontSizeSelect value={draft.fontSize} onChange={(value) => updateDraft("fontSize", value)} /></Field>
+            <Field label="颜色 (Color)"><WordColorPicker value={draft.color} onChange={(value) => updateDraft("color", value)} autoColor="#111827" /></Field>
           </div>
-          <div className="mt-4 grid grid-cols-4 gap-2">
-            <Button className="h-10 rounded-lg bg-indigo-100 font-bold text-indigo-700 hover:bg-indigo-200" variant="ghost">B</Button>
-            <Button className="h-10 rounded-lg italic" variant="outline">I</Button>
-            <Button className="h-10 rounded-lg underline" variant="outline">U</Button>
-            <Button className="h-10 rounded-lg" variant="outline">Weight: {draft.fontWeight}</Button>
+          <div className="mt-4 grid gap-3 md:grid-cols-[120px_minmax(0,1fr)]">
+            <Button
+              className={cn(
+                "h-11 rounded-lg font-bold",
+                Number(draft.fontWeight) >= 700 ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white",
+              )}
+              variant={Number(draft.fontWeight) >= 700 ? "ghost" : "outline"}
+              aria-pressed={Number(draft.fontWeight) >= 700}
+              onClick={() => updateDraft("fontWeight", Number(draft.fontWeight) >= 700 ? "400" : "700")}
+            >
+              B 加粗
+            </Button>
+            <Field label="字重 (Weight)">
+              <Select value={draft.fontWeight} onValueChange={(value) => updateDraft("fontWeight", value)}>
+                <SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {fontWeightOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </PropertyCard>
 
@@ -534,14 +586,14 @@ function StyleProperties({
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="边框线样式"><Select value={draft.borderStyle} onValueChange={(value) => updateDraft("borderStyle", value as StyleDraft["borderStyle"])}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent>{borderStyleOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></Field>
                 <Field label="边框粗细 (px)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={6} step={0.5} value={draft.borderWidth} onChange={(event) => updateDraft("borderWidth", Number(event.target.value))} /></Field>
-                <Field label="边框颜色"><div className="flex gap-2"><Input className="h-11 w-12 rounded-lg p-1" type="color" value={draft.borderColor} onChange={(event) => updateDraft("borderColor", event.target.value)} /><Input className="h-11 rounded-lg bg-slate-50" value={draft.borderColor} onChange={(event) => updateDraft("borderColor", event.target.value)} /></div></Field>
+                <Field label="边框颜色"><WordColorPicker value={draft.borderColor} onChange={(value) => updateDraft("borderColor", value)} autoColor="#CBD5E1" /></Field>
                 <Field label="上边框粗细"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={8} step={0.5} value={draft.borderTopWidth} onChange={(event) => updateDraft("borderTopWidth", Number(event.target.value))} /></Field>
                 <Field label="右边框粗细"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={8} step={0.5} value={draft.borderRightWidth} onChange={(event) => updateDraft("borderRightWidth", Number(event.target.value))} /></Field>
                 <Field label="下边框粗细"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={8} step={0.5} value={draft.borderBottomWidth} onChange={(event) => updateDraft("borderBottomWidth", Number(event.target.value))} /></Field>
                 <Field label="左边框粗细"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={8} step={0.5} value={draft.borderLeftWidth} onChange={(event) => updateDraft("borderLeftWidth", Number(event.target.value))} /></Field>
-                <Field label="表头边框颜色"><div className="flex gap-2"><Input className="h-11 w-12 rounded-lg p-1" type="color" value={draft.headerBorderColor} onChange={(event) => updateDraft("headerBorderColor", event.target.value)} /><Input className="h-11 rounded-lg bg-slate-50" value={draft.headerBorderColor} onChange={(event) => updateDraft("headerBorderColor", event.target.value)} /></div></Field>
+                <Field label="表头边框颜色"><WordColorPicker value={draft.headerBorderColor} onChange={(value) => updateDraft("headerBorderColor", value)} autoColor="#CBD5E1" /></Field>
                 <Field label="表头边框粗细"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={8} step={0.5} value={draft.headerBorderWidth} onChange={(event) => updateDraft("headerBorderWidth", Number(event.target.value))} /></Field>
-                <Field label="表体边框颜色"><div className="flex gap-2"><Input className="h-11 w-12 rounded-lg p-1" type="color" value={draft.bodyBorderColor} onChange={(event) => updateDraft("bodyBorderColor", event.target.value)} /><Input className="h-11 rounded-lg bg-slate-50" value={draft.bodyBorderColor} onChange={(event) => updateDraft("bodyBorderColor", event.target.value)} /></div></Field>
+                <Field label="表体边框颜色"><WordColorPicker value={draft.bodyBorderColor} onChange={(value) => updateDraft("bodyBorderColor", value)} autoColor="#CBD5E1" /></Field>
                 <Field label="表体边框粗细"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={8} step={0.5} value={draft.bodyBorderWidth} onChange={(event) => updateDraft("bodyBorderWidth", Number(event.target.value))} /></Field>
                 <SettingSwitch label="外边框加粗" checked={draft.outerBorderStrong} onCheckedChange={(checked) => updateDraft("outerBorderStrong", checked)} />
                 <SettingSwitch label="显示内竖线" checked={draft.showInnerVerticalBorder} onCheckedChange={(checked) => updateDraft("showInnerVerticalBorder", checked)} />
@@ -555,9 +607,9 @@ function StyleProperties({
                   <SettingSwitch label="表头加粗" checked={draft.headerBold} onCheckedChange={(checked) => updateDraft("headerBold", checked)} />
                   <Field label="表头水平对齐"><SimpleAlignSelect value={draft.headerAlign} onChange={(value) => updateDraft("headerAlign", value)} /></Field>
                   <Field label="表头垂直对齐"><VerticalAlignSelect value={draft.headerVerticalAlign} onChange={(value) => updateDraft("headerVerticalAlign", value)} /></Field>
-                  <Field label="表头字号 (pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.headerFontSize} onChange={(event) => updateDraft("headerFontSize", Number(event.target.value))} /></Field>
+                  <Field label="表头字号"><WordFontSizeSelect value={draft.headerFontSize} onChange={(value) => updateDraft("headerFontSize", value)} /></Field>
                   <Field label="表头行高"><Input className="h-11 rounded-lg bg-slate-50" value={draft.headerLineHeight} onChange={(event) => updateDraft("headerLineHeight", event.target.value)} /></Field>
-                  <Field label="表头背景色"><div className="flex gap-2"><Input className="h-11 w-12 rounded-lg p-1" type="color" value={draft.headerBackgroundColor} onChange={(event) => updateDraft("headerBackgroundColor", event.target.value)} /><Input className="h-11 rounded-lg bg-slate-50" value={draft.headerBackgroundColor} onChange={(event) => updateDraft("headerBackgroundColor", event.target.value)} /></div></Field>
+                  <Field label="表头背景色"><WordColorPicker value={draft.headerBackgroundColor} onChange={(value) => updateDraft("headerBackgroundColor", value)} autoColor="#EEF2FF" /></Field>
                 </div>
               </PropertyCard>
             ) : null}
@@ -567,9 +619,9 @@ function StyleProperties({
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="表格体水平对齐"><SimpleAlignSelect value={draft.bodyAlign} onChange={(value) => updateDraft("bodyAlign", value)} /></Field>
                   <Field label="表格体垂直对齐"><VerticalAlignSelect value={draft.bodyVerticalAlign} onChange={(value) => updateDraft("bodyVerticalAlign", value)} /></Field>
-                  <Field label="表格体字号 (pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.bodyFontSize} onChange={(event) => updateDraft("bodyFontSize", Number(event.target.value))} /></Field>
+                  <Field label="表格体字号"><WordFontSizeSelect value={draft.bodyFontSize} onChange={(value) => updateDraft("bodyFontSize", value)} /></Field>
                   <Field label="表格体行高"><Input className="h-11 rounded-lg bg-slate-50" value={draft.bodyLineHeight} onChange={(event) => updateDraft("bodyLineHeight", event.target.value)} /></Field>
-                  <Field label="表格体底色"><div className="flex gap-2"><Input className="h-11 w-12 rounded-lg p-1" type="color" value={draft.bodyBackgroundColor} onChange={(event) => updateDraft("bodyBackgroundColor", event.target.value)} /><Input className="h-11 rounded-lg bg-slate-50" value={draft.bodyBackgroundColor} onChange={(event) => updateDraft("bodyBackgroundColor", event.target.value)} /></div></Field>
+                  <Field label="表格体底色"><WordColorPicker value={draft.bodyBackgroundColor} onChange={(value) => updateDraft("bodyBackgroundColor", value)} autoColor="#FFFFFF" /></Field>
                 </div>
               </PropertyCard>
             ) : null}
@@ -595,8 +647,6 @@ function StyleProperties({
                 {draft.numberFormat !== getDefaultNumberFormat(draft.styleId) ? <Button type="button" variant="link" className="ml-1 h-auto p-0 text-xs font-semibold text-indigo-700" onClick={applyHeadingLevelNumbering}>恢复层级编号</Button> : null}
               </div>
             ) : null}
-            <SettingSwitch label="下划线装饰" checked={false} disabled />
-            <SettingSwitch label="启用节分隔符" checked={false} disabled />
           </PropertyCard>
         ) : null}
       </div>
@@ -604,31 +654,98 @@ function StyleProperties({
   );
 }
 
+function MarkdownFeatureStyleSwitch({
+  selectedStyleId,
+  markdownFeatures,
+  patchMarkdownFeatures,
+}: {
+  selectedStyleId: string;
+  markdownFeatures: MarkdownFeatureSettings;
+  patchMarkdownFeatures: (patch: Partial<MarkdownFeatureSettings>) => void;
+}) {
+  if (selectedStyleId === "source-code") {
+    return (
+      <PropertyCard title="Markdown 开关">
+        <SettingSwitch label="启用代码块样式" checked={markdownFeatures.codeBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ codeBlock: checked })} />
+      </PropertyCard>
+    );
+  }
+
+  if (selectedStyleId === "quote") {
+    return (
+      <PropertyCard title="Markdown 开关">
+        <SettingSwitch label="启用引用块样式" checked={markdownFeatures.quoteBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ quoteBlock: checked })} />
+      </PropertyCard>
+    );
+  }
+
+  if (selectedStyleId === "inline-code") {
+    return (
+      <PropertyCard title="Markdown 开关">
+        <SettingSwitch label="启用行内代码样式" checked={markdownFeatures.inlineCode} onCheckedChange={(checked) => patchMarkdownFeatures({ inlineCode: checked })} />
+      </PropertyCard>
+    );
+  }
+
+  return null;
+}
+
+const previewZoomMin = 40;
+const previewZoomMax = 200;
+const previewZoomStep = 10;
+
+function clampPreviewZoom(value: number) {
+  return Math.min(previewZoomMax, Math.max(previewZoomMin, value));
+}
+
 function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selectedStyle: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void }) {
+  function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setZoom((value) => clampPreviewZoom(value + direction * previewZoomStep));
+  }
+
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden bg-slate-50/80 px-4 py-4 max-xl:order-1 max-xl:min-h-[430px] max-xl:border-b max-xl:border-slate-200">
+    <aside className="flex min-h-0 flex-col overflow-hidden bg-slate-50/80 px-4 py-4 max-lg:order-1 max-lg:min-h-[430px] max-lg:border-b max-lg:border-slate-200">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
         <p className="text-sm font-semibold text-slate-400">实时预览（A4 视图）</p>
         <div className="flex shrink-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm">
-          <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => Math.max(80, value - 10))}><ZoomOut className="size-4 text-slate-500" /></Button>
+          <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} title="缩小预览" aria-label="缩小预览"><ZoomOut className="size-4 text-slate-500" /></Button>
           <span className="w-10 text-center text-xs font-bold text-slate-500">{zoom}%</span>
-          <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => Math.min(120, value + 10))}><ZoomIn className="size-4 text-slate-500" /></Button>
+          <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} title="放大预览" aria-label="放大预览"><ZoomIn className="size-4 text-slate-500" /></Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1">
-        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} />
+      <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
+        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} interactiveViewport />
       </div>
     </aside>
   );
 }
 
 function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChange: (value: HorizontalAlign) => void }) {
+  const options: Array<{ value: HorizontalAlign; label: string; icon: LucideIcon }> = [
+    { value: "left", label: "左对齐", icon: AlignLeft },
+    { value: "center", label: "居中对齐", icon: AlignCenter },
+    { value: "right", label: "右对齐", icon: AlignRight },
+    { value: "justify", label: "两端对齐", icon: AlignJustify },
+  ];
+
   return (
     <div className="grid h-11 grid-cols-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-      <button type="button" className={cn("flex items-center justify-center", value === "left" ? "bg-indigo-100 text-indigo-700" : "text-slate-400")} onClick={() => onChange("left")}><AlignLeft className="size-4" /></button>
-      <button type="button" className={cn("flex items-center justify-center", value === "center" ? "bg-indigo-100 text-indigo-700" : "text-slate-400")} onClick={() => onChange("center")}><AlignCenter className="size-4" /></button>
-      <button type="button" className={cn("flex items-center justify-center", value === "right" ? "bg-indigo-100 text-indigo-700" : "text-slate-400")} onClick={() => onChange("right")}><AlignRight className="size-4" /></button>
-      <button type="button" className={cn("flex items-center justify-center text-xs font-semibold", value === "justify" ? "bg-indigo-100 text-indigo-700" : "text-slate-400")} onClick={() => onChange("justify")}>两端</button>
+      {options.map(({ value: optionValue, label, icon: Icon }) => (
+        <button
+          key={optionValue}
+          type="button"
+          className={cn("flex items-center justify-center border-r border-slate-200 last:border-r-0", value === optionValue ? "bg-indigo-100 text-indigo-700" : "text-slate-400 hover:bg-white hover:text-slate-700")}
+          onClick={() => onChange(optionValue)}
+          title={label}
+          aria-label={label}
+          aria-pressed={value === optionValue}
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
     </div>
   );
 }
@@ -688,24 +805,32 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <PanelCard title="纸张">
+        <div className="grid gap-4 sm:grid-cols-2">
         <Field label="纸张大小">
           <Select value={pageSettings.paperSize} onValueChange={(value) => patchPageSettings({ paperSize: value as PageSettingsDraft["paperSize"] })}>
-            <SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-11 w-full rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="A4">A4</SelectItem>
-              <SelectItem value="Letter">Letter</SelectItem>
+              {paperSizeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <span className="flex w-full items-center justify-between gap-4">
+                    <span>{option.label}</span>
+                    <span className="text-xs text-slate-400">{option.description}</span>
+                  </span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </Field>
         <Field label="方向">
           <Select value={pageSettings.orientation} onValueChange={(value) => patchPageSettings({ orientation: value as PageSettingsDraft["orientation"] })}>
-            <SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-11 w-full rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="portrait">纵向</SelectItem>
               <SelectItem value="landscape">横向</SelectItem>
             </SelectContent>
           </Select>
         </Field>
+        </div>
       </PanelCard>
 
       <PanelCard title="页边距">
@@ -719,8 +844,64 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
 
       <PanelCard title="页眉页脚">
         <SettingSwitch label="启用页眉" checked={pageSettings.headerEnabled} onCheckedChange={(checked) => patchPageSettings({ headerEnabled: checked })} />
+        {pageSettings.headerEnabled ? (
+          <Field label="页眉内容">
+            <Input
+              className="h-11 rounded-lg bg-slate-50"
+              placeholder="例如：项目报告 / 公司名称"
+              value={pageSettings.headerText}
+              onChange={(event) => patchPageSettings({ headerText: event.target.value })}
+            />
+          </Field>
+        ) : null}
         <SettingSwitch label="启用页脚" checked={pageSettings.footerEnabled} onCheckedChange={(checked) => patchPageSettings({ footerEnabled: checked })} />
-        <p className="text-xs leading-5 text-slate-500">当前预览仅显示页码；真实 DOCX 写回页眉内容会在后续接入。</p>
+        {pageSettings.footerEnabled ? (
+          <>
+            <Field label="页脚文本">
+              <Input
+                className="h-11 rounded-lg bg-slate-50"
+                placeholder="可留空，仅显示页码"
+                value={pageSettings.footerText}
+                onChange={(event) => patchPageSettings({ footerText: event.target.value })}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px_130px]">
+              <Field label="页码格式">
+                <Select value={pageSettings.footerPageNumberFormat} onValueChange={(value) => patchPageSettings({ footerPageNumberFormat: value as PageSettingsDraft["footerPageNumberFormat"] })}>
+                  <SelectTrigger className="h-11 w-full rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {footerPageNumberFormats.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="从第几页显示">
+                <Input
+                  className="h-11 rounded-lg bg-slate-50"
+                  type="number"
+                  min={1}
+                  max={999}
+                  step={1}
+                  value={pageSettings.footerShowFromPage}
+                  onChange={(event) => patchPageSettings({ footerShowFromPage: Number(event.target.value) })}
+                />
+              </Field>
+              <Field label="起始页码">
+                <Input
+                  className="h-11 rounded-lg bg-slate-50"
+                  type="number"
+                  min={1}
+                  max={999}
+                  step={1}
+                  value={pageSettings.footerStartPage}
+                  onChange={(event) => patchPageSettings({ footerStartPage: Number(event.target.value) })}
+                />
+              </Field>
+            </div>
+          </>
+        ) : null}
+        <p className="text-xs leading-5 text-slate-500">页眉为空时不显示文字；页脚文本可和页码一起显示。</p>
       </PanelCard>
 
       <PanelCard title="目录">
@@ -737,20 +918,36 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
           </Select>
         </Field>
       </PanelCard>
+
     </div>
   );
 }
 
-function MappingPanel() {
-  return <AppSurface variant="plain" radius="sm" padding="none" className="p-5"><h3 className="text-xl font-bold">Markdown → Word 样式映射</h3><div className="mt-5 grid gap-3 md:grid-cols-2">{markdownMappings.map(([from, to]) => <div key={from} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm"><code className="text-indigo-700">{from}</code><span className="text-slate-400">→</span><span className="font-semibold">{to}</span></div>)}</div></AppSurface>;
-}
+function MappingPanel({ markdownFeatures, patchMarkdownFeatures }: { markdownFeatures: MarkdownFeatureSettings; patchMarkdownFeatures: (patch: Partial<MarkdownFeatureSettings>) => void }) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <AppSurface variant="plain" radius="sm" padding="none" className="p-5">
+        <h3 className="text-xl font-bold">Markdown → Word 样式映射</h3>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {markdownMappings.map(([from, to]) => (
+            <div key={from} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <code className="text-indigo-700">{from}</code>
+              <span className="text-slate-400">→</span>
+              <span className="font-semibold">{to}</span>
+            </div>
+          ))}
+        </div>
+      </AppSurface>
 
-function DiagnosticsPanel() {
-  return <AppSurface variant="plain" radius="sm" padding="none" className="p-5"><h3 className="text-xl font-bold">样式诊断</h3><div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">真实 DOCX 样式诊断尚未接入。当前仅展示可配置的样式清单，不显示伪造检测结果。</div><div className="mt-5 grid gap-3 md:grid-cols-2">{styleNodes.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm"><span className="font-medium text-slate-900">{item.name}</span><span className="ml-2 text-slate-500">{item.displayName}</span></div>)}</div></AppSurface>;
-}
-
-function BatchPanel() {
-  return <AppSurface variant="plain" radius="sm" padding="none" className="p-5"><h3 className="flex items-center gap-3 text-xl font-bold"><Wand2 className="size-5 text-indigo-600" />批量操作</h3><div className="mt-5 flex flex-wrap gap-3">{batchActions.map((action) => <SoftActionButton key={action} className="h-10 rounded-lg text-sm" onClick={() => toast.info(`${action} 将在样式写回能力接入后生效`)}>{action}</SoftActionButton>)}</div><div className="mt-6 rounded-lg border border-indigo-100 bg-indigo-50 p-4"><div className="flex items-center gap-2 font-semibold text-indigo-900"><Palette className="size-4" />批量调整标题样式</div><p className="mt-2 text-sm leading-6 text-indigo-900/70">统一标题字体、按层级自动缩放字号、复制 Heading 2 到 Heading 3-6。</p></div></AppSurface>;
+      <PanelCard title="Markdown 特殊样式">
+        <SettingSwitch label="启用行内代码样式" checked={markdownFeatures.inlineCode} onCheckedChange={(checked) => patchMarkdownFeatures({ inlineCode: checked })} />
+        <SettingSwitch label="启用代码块样式" checked={markdownFeatures.codeBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ codeBlock: checked })} />
+        <SettingSwitch label="启用引用块样式" checked={markdownFeatures.quoteBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ quoteBlock: checked })} />
+        <SettingSwitch label="保留分割线" checked={markdownFeatures.horizontalRule} onCheckedChange={(checked) => patchMarkdownFeatures({ horizontalRule: checked })} />
+        <p className="text-xs leading-5 text-slate-500">关闭后，导出 Word 时对应 Markdown 结构会按普通正文处理；分割线默认不保留。</p>
+      </PanelCard>
+    </div>
+  );
 }
 
 function PanelCard({ title, children }: { title: string; children: ReactNode }) {

@@ -31,7 +31,8 @@ pub fn list_history_items() -> Vec<HistoryItem> {
 
 pub fn save_history_items(items: Vec<HistoryItem>) -> Result<Vec<HistoryItem>, String> {
     let path = history_path().map_err(|error| format!("获取历史路径失败：{error}"))?;
-    let content = serde_json::to_string_pretty(&items).map_err(|error| format!("序列化历史失败：{error}"))?;
+    let content =
+        serde_json::to_string_pretty(&items).map_err(|error| format!("序列化历史失败：{error}"))?;
     fs::write(path, content).map_err(|error| format!("写入历史失败：{error}"))?;
     Ok(items)
 }

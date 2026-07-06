@@ -1,13 +1,18 @@
 use serde::Serialize;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
+use std::thread;
+use std::time::Duration;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 
 use crate::core::config::load_config;
 
 const BUNDLED_PANDOC_RESOURCE_PATH: &str = "pandoc/windows/pandoc.exe";
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +45,16 @@ enum PandocSource {
 
 pub fn check_pandoc_available(app: &AppHandle) -> PandocStatus {
     let resolved = resolve_pandoc_path(app);
-    match Command::new(&resolved.path).arg("--version").output() {
+    check_resolved_pandoc_available(resolved)
+}
+
+pub fn check_pandoc_available_cli() -> PandocStatus {
+    let resolved = resolve_pandoc_path_cli();
+    check_resolved_pandoc_available(resolved)
+}
+
+fn check_resolved_pandoc_available(resolved: ResolvedPandocPath) -> PandocStatus {
+    match run_pandoc_version_with_retry(&resolved.path) {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let version = stdout.lines().next().map(str::to_string);
@@ -59,7 +73,12 @@ pub fn check_pandoc_available(app: &AppHandle) -> PandocStatus {
             version: None,
             path: Some(resolved.path.to_string_lossy().to_string()),
             error_code: Some("PANDOC_EXIT_FAILED".to_string()),
-            message: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+            message: Some(format_process_output(
+                output.status.code(),
+                &resolved.path,
+                &String::from_utf8_lossy(&output.stdout),
+                &String::from_utf8_lossy(&output.stderr),
+            )),
         },
         Err(error) => PandocStatus {
             available: false,
@@ -74,6 +93,34 @@ pub fn check_pandoc_available(app: &AppHandle) -> PandocStatus {
     }
 }
 
+fn run_pandoc_version_with_retry(path: &Path) -> io::Result<Output> {
+    let mut last_output = pandoc_command(path).arg("--version").output()?;
+    for _ in 0..2 {
+        if !is_retryable_pandoc_start_failure(&last_output) {
+            return Ok(last_output);
+        }
+        thread::sleep(Duration::from_millis(900));
+        last_output = pandoc_command(path).arg("--version").output()?;
+    }
+    Ok(last_output)
+}
+
+fn pandoc_command(path: &Path) -> Command {
+    let mut command = Command::new(path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+fn is_retryable_pandoc_start_failure(output: &Output) -> bool {
+    matches!(output.status.code(), Some(-1073741502))
+        && output.stdout.is_empty()
+        && output.stderr.is_empty()
+}
+
 pub fn run_pandoc_to_docx(
     app: &AppHandle,
     input_path: &Path,
@@ -81,7 +128,25 @@ pub fn run_pandoc_to_docx(
     reference_docx_path: Option<&Path>,
 ) -> io::Result<PandocExecution> {
     let resolved = resolve_pandoc_path(app);
-    let mut command = Command::new(&resolved.path);
+    run_resolved_pandoc_to_docx(&resolved.path, input_path, output_path, reference_docx_path)
+}
+
+pub fn run_pandoc_to_docx_cli(
+    input_path: &Path,
+    output_path: &Path,
+    reference_docx_path: Option<&Path>,
+) -> io::Result<PandocExecution> {
+    let resolved = resolve_pandoc_path_cli();
+    run_resolved_pandoc_to_docx(&resolved.path, input_path, output_path, reference_docx_path)
+}
+
+fn run_resolved_pandoc_to_docx(
+    pandoc_path: &Path,
+    input_path: &Path,
+    output_path: &Path,
+    reference_docx_path: Option<&Path>,
+) -> io::Result<PandocExecution> {
+    let mut command = pandoc_command(pandoc_path);
     let input_arg = absolutize_path(input_path);
     let output_arg = absolutize_path(output_path);
 
@@ -115,16 +180,55 @@ pub fn run_pandoc_to_docx(
     })
 }
 
+fn format_process_output(
+    status_code: Option<i32>,
+    program_path: &Path,
+    stdout: &str,
+    stderr: &str,
+) -> String {
+    let detail = stderr.trim();
+    if !detail.is_empty() {
+        return detail.to_string();
+    }
+
+    let stdout = stdout.trim();
+    if !stdout.is_empty() {
+        return stdout.to_string();
+    }
+
+    format!(
+        "{} 退出但没有输出错误详情，状态码：{}",
+        program_path.to_string_lossy(),
+        status_code
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    )
+}
+
 fn absolutize_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| {
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .map(|current_dir| current_dir.join(path))
-                .unwrap_or_else(|_| path.to_path_buf())
-        }
-    })
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|current_dir| current_dir.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+
+    strip_windows_extended_path_prefix(&absolute)
+}
+
+fn strip_windows_extended_path_prefix(path: &Path) -> PathBuf {
+    let value = path.to_string_lossy();
+
+    if let Some(stripped) = value.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{stripped}"));
+    }
+
+    if let Some(stripped) = value.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+
+    path.to_path_buf()
 }
 
 fn resolve_pandoc_path(app: &AppHandle) -> ResolvedPandocPath {
@@ -137,7 +241,7 @@ fn resolve_pandoc_path(app: &AppHandle) -> ResolvedPandocPath {
         .filter(|path| !path.is_empty())
     {
         return ResolvedPandocPath {
-            path: PathBuf::from(custom_path),
+            path: strip_windows_extended_path_prefix(Path::new(custom_path)),
             source: PandocSource::Custom,
         };
     }
@@ -145,7 +249,37 @@ fn resolve_pandoc_path(app: &AppHandle) -> ResolvedPandocPath {
     if config.use_bundled_pandoc {
         if let Some(bundled_path) = bundled_pandoc_path(app) {
             return ResolvedPandocPath {
-                path: bundled_path,
+                path: strip_windows_extended_path_prefix(&bundled_path),
+                source: PandocSource::Bundled,
+            };
+        }
+    }
+
+    ResolvedPandocPath {
+        path: PathBuf::from("pandoc"),
+        source: PandocSource::System,
+    }
+}
+
+fn resolve_pandoc_path_cli() -> ResolvedPandocPath {
+    let config = load_config();
+
+    if let Some(custom_path) = config
+        .pandoc_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        return ResolvedPandocPath {
+            path: strip_windows_extended_path_prefix(Path::new(custom_path)),
+            source: PandocSource::Custom,
+        };
+    }
+
+    if config.use_bundled_pandoc {
+        if let Some(bundled_path) = bundled_pandoc_path_cli() {
+            return ResolvedPandocPath {
+                path: strip_windows_extended_path_prefix(&bundled_path),
                 source: PandocSource::Bundled,
             };
         }
@@ -172,6 +306,31 @@ fn bundled_pandoc_path(app: &AppHandle) -> Option<PathBuf> {
         })
 }
 
+fn bundled_pandoc_path_cli() -> Option<PathBuf> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+
+    exe_dir
+        .as_ref()
+        .map(|dir| dir.join(BUNDLED_PANDOC_RESOURCE_PATH))
+        .filter(|path| path.exists() && path.is_file())
+        .or_else(|| {
+            exe_dir
+                .as_ref()
+                .map(|dir| dir.join("pandoc.exe"))
+                .filter(|path| path.exists() && path.is_file())
+        })
+        .or_else(|| {
+            let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("pandoc")
+                .join("windows")
+                .join("pandoc.exe");
+            dev_path.exists().then_some(dev_path)
+        })
+}
+
 impl PandocSource {
     fn label(self) -> &'static str {
         match self {
@@ -179,5 +338,37 @@ impl PandocSource {
             PandocSource::Custom => "自定义路径的",
             PandocSource::System => "系统",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_windows_extended_path_prefix;
+    use std::path::Path;
+
+    #[test]
+    fn strips_windows_extended_path_prefixes_for_pandoc() {
+        assert_eq!(
+            strip_windows_extended_path_prefix(Path::new(r"\\?\C:\Users\gyx\file.docx"))
+                .to_string_lossy(),
+            r"C:\Users\gyx\file.docx"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix(Path::new(r"\\?\UNC\server\share\file.docx"))
+                .to_string_lossy(),
+            r"\\server\share\file.docx"
+        );
+    }
+
+    #[test]
+    fn strips_windows_extended_path_prefix_from_pandoc_executable() {
+        let path = strip_windows_extended_path_prefix(Path::new(
+            r"\\?\D:\Code\Project\AI\md-king\pandoc.exe",
+        ));
+
+        assert_eq!(
+            path.to_string_lossy(),
+            r"D:\Code\Project\AI\md-king\pandoc.exe"
+        );
     }
 }

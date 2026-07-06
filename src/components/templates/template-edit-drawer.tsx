@@ -1,102 +1,189 @@
-import { Copy, ExternalLink, FileText, Save, Trash2, TriangleAlert } from "lucide-react";
+import { FileText, Loader2, Palette, Save, TriangleAlert, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
+import { PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { selectDocxFile } from "@/lib/tauri";
 import type { Template } from "@/types";
 
 type TemplateEditDrawerProps = {
   open: boolean;
   template?: Template;
+  groups: string[];
   onOpenChange: (open: boolean) => void;
+  onSave: (template: Template) => Promise<void>;
+  onSetDefault: (template: Template) => Promise<void>;
   onOpenStyleManager: (template?: Template) => void;
 };
 
-export function TemplateEditDrawer({ open, template, onOpenChange, onOpenStyleManager }: TemplateEditDrawerProps) {
+export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSave, onSetDefault, onOpenStyleManager }: TemplateEditDrawerProps) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [tagsText, setTagsText] = useState("");
+  const [description, setDescription] = useState("");
+  const [referenceDocxPath, setReferenceDocxPath] = useState("");
+  const [isDefault, setIsDefault] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const canEditMetadata = Boolean(template && !template.isBuiltIn);
+  const categoryOptions = useMemo(() => groups.filter((group) => group !== "全部" && group !== "系统"), [groups]);
+  const hasChanges = template ? (
+    name.trim() !== template.name ||
+    description.trim() !== (template.description ?? "") ||
+    referenceDocxPath.trim() !== template.referenceDocxPath ||
+    isDefault !== template.isDefault ||
+    normalizeTags(category, tagsText).join("\n") !== template.tags.join("\n")
+  ) : false;
+
+  useEffect(() => {
+    if (!open || !template) return;
+    const [firstTag = "未分组", ...restTags] = template.tags;
+    setName(template.name);
+    setCategory(firstTag);
+    setTagsText(restTags.join(" / "));
+    setDescription(template.description ?? "");
+    setReferenceDocxPath(template.referenceDocxPath);
+    setIsDefault(template.isDefault);
+  }, [open, template]);
+
+  async function handleSelectReferenceDocx() {
+    try {
+      const selected = await selectDocxFile();
+      if (!selected) return;
+      setReferenceDocxPath(selected);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "选择 reference.docx 失败");
+    }
+  }
+
+  async function handleSetDefault() {
+    if (!template || isDefault) return;
+    setIsDefault(true);
+    if (canEditMetadata) return;
+
+    setIsSaving(true);
+    try {
+      await onSetDefault(template);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!template || !canEditMetadata) return;
+    const nextName = name.trim();
+    if (!nextName) {
+      toast.error("请填写模板名称");
+      return;
+    }
+    const nextReferenceDocxPath = referenceDocxPath.trim();
+    if (nextReferenceDocxPath && !nextReferenceDocxPath.toLowerCase().endsWith(".docx")) {
+      toast.error("reference.docx 路径必须指向 .docx 文件");
+      return;
+    }
+
+    const nextTemplate: Template = {
+      ...template,
+      name: nextName,
+      description: description.trim() || undefined,
+      referenceDocxPath: nextReferenceDocxPath,
+      tags: normalizeTags(category, tagsText),
+      isDefault,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setIsSaving(true);
+    try {
+      await onSave(nextTemplate);
+      toast.success(`已保存「${nextTemplate.name}」`);
+      onOpenChange(false);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="left-auto right-0 top-0 h-screen max-h-screen w-[560px] max-w-[calc(100vw-1rem)] translate-x-0 translate-y-0 overflow-hidden rounded-l-xl rounded-r-none p-0 sm:max-w-[560px]" showCloseButton={false}>
+      <DialogContent className="left-auto right-0 top-0 h-screen max-h-screen w-[480px] max-w-[calc(100vw-0.75rem)] translate-x-0 translate-y-0 overflow-hidden rounded-l-[8px] rounded-r-none border-l border-slate-200 p-0 sm:max-w-[480px]" showCloseButton={false}>
         <div className="flex h-full flex-col bg-white">
-          <DialogHeader className="border-b border-slate-200 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <DialogTitle className="text-xl font-bold">编辑模板</DialogTitle>
-                <DialogDescription className="mt-1">修改模板信息，或用 Word/WPS 编辑真实 DOCX 样式。</DialogDescription>
+          <DialogHeader className="border-b border-slate-200 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <DialogTitle className="truncate text-base font-semibold text-slate-950">编辑模板</DialogTitle>
+                <DialogDescription className="mt-1 truncate text-xs text-slate-500">{template?.name ?? "未选择模板"}</DialogDescription>
               </div>
-              <SoftActionButton onClick={() => onOpenChange(false)}>关闭</SoftActionButton>
+              <Button variant="ghost" size="icon-sm" className="rounded-[8px]" onClick={() => onOpenChange(false)} aria-label="关闭">
+                <X className="size-4" />
+              </Button>
             </div>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-5 overflow-auto p-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4">
             {template?.isBuiltIn ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                <div className="flex items-center gap-2 font-semibold"><TriangleAlert className="size-4" />编辑内置模板</div>
-                <p className="mt-2 leading-6">内置模板不能直接覆盖。你可以复制一份作为自定义模板，然后编辑它。</p>
+              <div className="flex items-center gap-2 rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                <TriangleAlert className="size-4 shrink-0" />
+                <span className="min-w-0">内置模板信息已锁定，可设为默认或进入样式管理器。</span>
               </div>
             ) : null}
 
-            <AppSurface as="section" variant="plain" radius="sm" padding="none" className="p-4">
-              <h3 className="font-semibold text-slate-950">模板预览</h3>
-              <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
-                <div className="h-28 rounded-xl bg-gradient-to-br from-indigo-50 to-slate-100 p-4">
-                  <div className="h-3 w-24 rounded-full bg-indigo-200" />
-                  <div className="mt-3 space-y-2"><div className="h-2 rounded bg-slate-200" /><div className="h-2 w-3/4 rounded bg-slate-200" /></div>
-                </div>
-              </div>
-            </AppSurface>
-
-            <section className="space-y-3">
-              <h3 className="font-semibold text-slate-950">基础信息</h3>
+            <section className="space-y-3 rounded-[8px] border border-slate-200 bg-white p-3">
+              <SectionTitle>模板信息</SectionTitle>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="模板名称"><Input defaultValue={template?.name ?? ""} /></Field>
-                <Field label="分类"><Input defaultValue={template?.tags[0] ?? ""} /></Field>
+                <Field label="模板名称"><Input value={name} onChange={(event) => setName(event.target.value)} disabled={!canEditMetadata || isSaving} /></Field>
+                <Field label="分组">
+                  <Input value={category} list="template-edit-groups" onChange={(event) => setCategory(event.target.value)} disabled={!canEditMetadata || isSaving} />
+                  <datalist id="template-edit-groups">
+                    {categoryOptions.map((group) => <option key={group} value={group} />)}
+                  </datalist>
+                </Field>
               </div>
-              <Field label="标签"><Input defaultValue={template?.tags.join(" / ") ?? ""} /></Field>
-              <Field label="说明"><Textarea defaultValue={template?.description ?? ""} /></Field>
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3"><span className="text-sm font-medium">设为默认模板</span><Switch checked={template?.isDefault ?? false} /></div>
+              <Field label="标签"><Input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="多个标签用 / 或逗号分隔" disabled={!canEditMetadata || isSaving} /></Field>
+              <Field label="说明"><Textarea className="min-h-20 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} disabled={!canEditMetadata || isSaving} /></Field>
+              <div className="flex items-center justify-between gap-3 rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-sm font-medium text-slate-800">默认模板</span>
+                {isDefault ? (
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">当前默认</span>
+                ) : (
+                  <Button variant="outline" size="sm" className="h-7 rounded-[8px]" disabled={isSaving} onClick={() => void handleSetDefault()}>
+                    设为默认
+                  </Button>
+                )}
+              </div>
             </section>
 
-            <Separator />
-
-            <section className="space-y-3">
-              <h3 className="font-semibold text-slate-950">模板文件</h3>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                <p className="flex items-center gap-2 font-medium text-slate-800"><FileText className="size-4 text-indigo-600" />当前文件</p>
-                <p className="mt-1 break-all text-slate-500">{template?.referenceDocxPath || "内置模板暂未绑定真实 reference.docx"}</p>
-                <p className="mt-3 text-xs leading-5 text-slate-500">你可以用 Word/WPS 打开这个模板，修改标题、正文、表格、代码块、页边距、页眉页脚等样式。</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <SoftActionButton size="sm" onClick={() => toast.info("将打开 Word/WPS 编辑模板文件") }><ExternalLink className="size-4" />用 Word/WPS 打开编辑</SoftActionButton>
-                  <SoftActionButton size="sm" disabled title="替换文件入口接入后启用">替换 DOCX 文件</SoftActionButton>
-                  <Button size="sm" variant="ghost" onClick={() => onOpenStyleManager(template)}>打开样式管理器</Button>
+            <section className="space-y-3 rounded-[8px] border border-slate-200 bg-white p-3">
+              <SectionTitle>模板文件</SectionTitle>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><FileText className="size-3.5" />Reference DOCX</Label>
+                <div className="flex gap-2">
+                  <Input value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="选择或填写 .docx 文件路径" disabled={!canEditMetadata || isSaving} />
+                  <SoftActionButton className="h-8 rounded-[8px]" size="sm" disabled={!canEditMetadata || isSaving} onClick={handleSelectReferenceDocx}>
+                    <Upload className="size-4" />
+                    选择
+                  </SoftActionButton>
                 </div>
               </div>
-            </section>
-
-            <section className="space-y-3">
-              <h3 className="font-semibold text-slate-950">样式诊断</h3>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                真实 DOCX 样式诊断尚未接入。当前不会显示伪造的检测结果。
-              </div>
-              <SoftActionButton size="sm" disabled title="真实诊断接入后启用">重新诊断</SoftActionButton>
-            </section>
-
-            <section className="rounded-lg border border-red-100 bg-red-50 p-4">
-              <h3 className="font-semibold text-red-700">危险操作</h3>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="outline" size="sm"><Copy className="size-4" />复制模板</Button>
-                <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700"><Trash2 className="size-4" />删除模板</Button>
+              <div className="flex items-center justify-between gap-3 rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-sm font-medium text-slate-800">样式设置</span>
+                <Button size="sm" variant="outline" className="h-7 rounded-[8px]" onClick={() => onOpenStyleManager(template)}>
+                  <Palette className="size-4" />
+                  打开
+                </Button>
               </div>
             </section>
+
           </div>
 
-          <DialogFooter className="border-t border-slate-200 p-4">
-            <SoftActionButton onClick={() => onOpenChange(false)}>取消</SoftActionButton>
-            <PrimaryActionButton disabled title="模板元信息写回接入后启用"><Save className="size-4" />保存元信息</PrimaryActionButton>
+          <DialogFooter className="m-0 flex-row justify-end gap-2 rounded-none border-t border-slate-200 bg-white px-4 py-3">
+            <SoftActionButton className="h-8 rounded-[8px]" onClick={() => onOpenChange(false)}>取消</SoftActionButton>
+            <PrimaryActionButton className="h-8 rounded-[8px]" disabled={!canEditMetadata || !hasChanges || isSaving} onClick={() => void handleSave()}>
+              {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              保存
+            </PrimaryActionButton>
           </DialogFooter>
         </div>
       </DialogContent>
@@ -104,6 +191,20 @@ export function TemplateEditDrawer({ open, template, onOpenChange, onOpenStyleMa
   );
 }
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-sm font-semibold text-slate-950">{children}</h3>;
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-2"><Label>{label}</Label>{children}</div>;
+  return <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-500">{label}</Label>{children}</div>;
+}
+
+function normalizeTags(category: string, tagsText: string) {
+  const group = category.trim() || "未分组";
+  const tags = tagsText
+    .split(/[\/,，、]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .filter((tag) => tag !== group);
+  return Array.from(new Set([group, ...tags]));
 }

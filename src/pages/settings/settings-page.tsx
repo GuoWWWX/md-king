@@ -132,7 +132,7 @@ export function SettingsPage() {
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">历史记录：{history.length} 条</div>
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">Pandoc：{pandocStatus?.available ? "已检测可用" : "等待检测"}</div>
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">系统集成：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray].filter(Boolean).length}/3 已启用</div>
-              <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5" title={draft.defaultOutputDir?.trim() || "与 Markdown 同目录"}>默认目录：{draft.defaultOutputDir?.trim() || "与 Markdown 同目录"}</div>
+              <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5" title={draft.defaultOutputDir?.trim() || "文档/MD King"}>默认目录：{draft.defaultOutputDir?.trim() || "文档/MD King"}</div>
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
@@ -154,7 +154,7 @@ export function SettingsPage() {
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500">默认输出目录</Label>
             <div className="flex gap-2">
-              <Input value={draft.defaultOutputDir ?? ""} onChange={(event) => updateDraft("defaultOutputDir", event.target.value || undefined)} placeholder="与源 Markdown 同目录" />
+              <Input value={draft.defaultOutputDir ?? ""} onChange={(event) => updateDraft("defaultOutputDir", event.target.value || undefined)} placeholder="文档/MD King" />
               <Button variant="outline" size="sm" onClick={handleSelectOutputDir}>
                 <FolderOpen className="size-4" />
                 更改
@@ -166,7 +166,7 @@ export function SettingsPage() {
               <Label className="text-xs text-slate-500">语言</Label>
               <Select value={draft.language ?? "zh"} onValueChange={(value) => updateDraft("language", value as AppConfig["language"])}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="zh">简体中文</SelectItem><SelectItem value="en">English（界面文本后续扩展）</SelectItem></SelectContent>
+                <SelectContent><SelectItem value="zh">简体中文</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
@@ -265,14 +265,14 @@ export function SettingsPage() {
           </div>
         </SettingsSection>
 
-        <SettingsSection title="系统集成" description="悬浮球已可用；右键菜单和托盘属于安装包/系统级接入。" icon={MousePointer2}>
-          <SettingRow label="添加到右键菜单" description="需要安装包写入 Windows 右键菜单，本页先保留偏好，后续安装器接入后生效。" checked={draft.enableContextMenu} badge="待系统注册" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
+        <SettingsSection title="系统集成" description="悬浮球、Windows 右键菜单和系统托盘已可用。" icon={MousePointer2}>
+          <SettingRow label="添加到右键菜单" description="开启并保存后，.md/.markdown 文件右键可直接转换为 Word，桌面空白处右键可打开 MD King。" checked={draft.enableContextMenu} badge="已接入" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
           <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入多个 Markdown 文件或文本批量转换。" checked={draft.enableFloatingBall} badge="已接入" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
-          <SettingRow label="系统托盘" description="需要 Tauri 托盘插件与关闭窗口行为配合，本页先保留偏好。" checked={draft.enableTray} badge="待托盘接入" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
+          <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="已接入" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
           <div className="grid gap-2 text-sm text-slate-500">
-            <InfoLine icon={MousePointer2} text={`右键菜单：${draft.enableContextMenu ? "已记录偏好，待安装包注册" : "未开启"}`} />
+            <InfoLine icon={MousePointer2} text={`右键菜单：${draft.enableContextMenu ? "保存后写入当前用户 Windows 右键菜单" : "未开启"}`} />
             <InfoLine icon={PanelTop} text={`悬浮球：${draft.enableFloatingBall ? "保存后显示在右下角" : "未显示"}`} />
-            <InfoLine icon={PanelTop} text={`系统托盘：${draft.enableTray ? "已记录偏好，待托盘接入" : "未开启"}`} />
+            <InfoLine icon={PanelTop} text={`系统托盘：${draft.enableTray ? "保存后显示托盘图标" : "未开启"}`} />
           </div>
         </SettingsSection>
 

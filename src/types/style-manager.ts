@@ -1,6 +1,6 @@
-export type StyleGroupKey = "headings" | "blocks" | "lists" | "tables" | "custom";
+export type StyleGroupKey = "headings" | "blocks" | "lists" | "tables";
 
-export type StyleNodeKind = "heading" | "paragraph" | "block" | "code" | "list" | "table" | "custom";
+export type StyleNodeKind = "heading" | "paragraph" | "block" | "code" | "list" | "table";
 
 export type HorizontalAlign = "left" | "center" | "right" | "justify";
 export type VerticalAlign = "top" | "middle" | "bottom";
@@ -79,22 +79,38 @@ export type StyleDraft = {
   tablePreset: TablePresetKey;
 };
 
+export type PaperSize = "A3" | "A4" | "A5" | "B4" | "B5" | "Letter" | "Legal" | "Executive";
+export type FooterPageNumberFormat = "page" | "page-total" | "dash" | "none";
+
 export type PageSettingsDraft = {
-  paperSize: "A4" | "Letter";
+  paperSize: PaperSize;
   orientation: "portrait" | "landscape";
   marginTop: number;
   marginBottom: number;
   marginLeft: number;
   marginRight: number;
   headerEnabled: boolean;
+  headerText: string;
   footerEnabled: boolean;
+  footerText: string;
+  footerPageNumberFormat: FooterPageNumberFormat;
+  footerShowFromPage: number;
+  footerStartPage: number;
   tocEnabled: boolean;
   tocDepth: string;
+};
+
+export type MarkdownFeatureSettings = {
+  inlineCode: boolean;
+  codeBlock: boolean;
+  quoteBlock: boolean;
+  horizontalRule: boolean;
 };
 
 export type TemplateStyleConfig = {
   templateId: string;
   styles: Record<string, StyleDraft>;
   pageSettings: PageSettingsDraft;
+  markdownFeatures: MarkdownFeatureSettings;
   updatedAt: string;
 };

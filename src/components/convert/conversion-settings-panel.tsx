@@ -1,5 +1,5 @@
-import { ArrowRight, FileText, FolderOpen, Loader2, Settings2 } from "lucide-react";
-import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
+import { ArrowRight, FileText, Loader2, Settings2 } from "lucide-react";
+import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ type ConversionSettingsPanelProps = {
   className?: string;
 };
 
-export function ConversionSettingsPanel({ templates, templateId, appConfig, disabled = false, canConvert, onTemplateChange, onConvert, showConvert = true, outputName = "未命名文档.docx", className }: ConversionSettingsPanelProps) {
+export function ConversionSettingsPanel({ templates, templateId, appConfig, disabled = false, canConvert, onTemplateChange, onConvert, showConvert = true, outputName = "untitled.docx", className }: ConversionSettingsPanelProps) {
   return (
     <AppSurface as="aside" className={cn("min-w-0 overflow-hidden space-y-2.5", className)} padding="sm">
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -63,11 +63,8 @@ export function ConversionSettingsPanel({ templates, templateId, appConfig, disa
 
       <div className="min-w-0 space-y-1">
         <Label className="text-xs font-bold text-blue-900/62">输出位置</Label>
-        <div className="flex min-w-0 items-center justify-between gap-2 overflow-hidden rounded-[10px] border border-white/80 bg-white/70 p-2 text-sm">
+        <div className="flex min-w-0 items-center overflow-hidden rounded-[10px] border border-white/80 bg-white/70 px-3 py-2 text-sm">
           <p className="min-w-0 truncate text-xs text-slate-600">{appConfig?.defaultOutputDir ?? "与源 Markdown 同目录"}</p>
-          <SoftActionButton className="h-7 rounded-[8px] border-white/80 bg-white/76 text-xs" size="sm" disabled title="目录选择器接入后启用">
-            <FolderOpen className="size-3.5" />
-          </SoftActionButton>
         </div>
       </div>
 

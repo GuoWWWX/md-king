@@ -1,14 +1,15 @@
-import { ArrowRight, CheckCircle2, ClipboardPaste, ExternalLink, FileText, Loader2, Replace, UploadCloud } from "lucide-react";
+import { ArrowRight, CheckCircle2, ClipboardPaste, FileText, FolderOpen, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
-import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
+import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { buildDocxOutputName, buildOutputPath } from "@/lib/convert-utils";
+import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveHistory, convertMarkdown, getTemplateStyleConfig } from "@/lib/tauri";
+import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, selectDirectory, selectMarkdownFiles } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
@@ -28,16 +29,17 @@ const fallbackTemplate: Template = {
 };
 
 export function ConvertPage() {
-  const { appConfig, templates, history, currentTemplateId, setHistory, setCurrentTemplateId } = useAppStore();
+  const { appConfig, templates, history, currentTemplateId, setAppConfig, setHistory, setCurrentTemplateId } = useAppStore();
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
   const [markdown, setMarkdown] = useState("");
+  const autoOutputName = useMemo(() => buildDocxOutputName(markdown), [markdown]);
+  const [outputNameDraft, setOutputNameDraft] = useState(() => buildDocxOutputName(""));
+  const [outputNameEdited, setOutputNameEdited] = useState(false);
   const [mode, setMode] = useState<ConvertMode>("markdown");
   const [isConverting, setIsConverting] = useState(false);
   const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(templateId));
-  const [openAfterConvert, setOpenAfterConvert] = useState(appConfig?.openAfterConvert ?? true);
-  const [overwriteOutput, setOverwriteOutput] = useState(true);
   const conversionVersionRef = useRef(0);
 
   useEffect(() => {
@@ -61,6 +63,10 @@ export function ConvertPage() {
   }, [markdown, mode]);
 
   useEffect(() => {
+    if (!outputNameEdited) setOutputNameDraft(autoOutputName);
+  }, [autoOutputName, outputNameEdited]);
+
+  useEffect(() => {
     let cancelled = false;
     setPreviewStyleConfig(mergeTemplateStyleConfig(templateId));
     void getTemplateStyleConfig(templateId)
@@ -75,11 +81,6 @@ export function ConvertPage() {
       cancelled = true;
     };
   }, [templateId]);
-
-  useEffect(() => {
-    setOpenAfterConvert(appConfig?.openAfterConvert ?? true);
-    setOverwriteOutput((appConfig?.defaultConflictStrategy ?? "overwrite") === "overwrite");
-  }, [appConfig?.defaultConflictStrategy, appConfig?.openAfterConvert]);
 
   async function persistHistory(nextHistory: HistoryItem[]) {
     setHistory(nextHistory);
@@ -105,8 +106,8 @@ export function ConvertPage() {
         input,
         output: buildOutputPath(appConfig?.defaultOutputDir, outputName),
         templateId,
-        openAfterConvert,
-        overwrite: overwriteOutput,
+        openAfterConvert: appConfig?.openAfterConvert ?? true,
+        conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
       });
       if (conversionVersion !== conversionVersionRef.current) return;
       setConvertResult(result);
@@ -120,6 +121,53 @@ export function ConvertPage() {
       setConvertResult(result);
       await persistHistory([buildHistoryItem(result), ...history].slice(0, 20));
       toast.error(message);
+    } finally {
+      setIsConverting(false);
+    }
+  }
+
+  async function runBatchImport() {
+    if (isConverting) return;
+
+    let paths: string[];
+    try {
+      paths = await selectMarkdownFiles();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "选择文件失败");
+      return;
+    }
+
+    if (paths.length === 0) return;
+
+    setMode("file");
+    setIsConverting(true);
+    setConvertResult(null);
+
+    const results: ConvertResult[] = [];
+    try {
+      for (const path of paths) {
+        const outputName = buildDocxOutputNameFromPath(path);
+        const result = await convertMarkdown({
+          input: path,
+          output: buildOutputPath(appConfig?.defaultOutputDir, outputName),
+          templateId,
+          openAfterConvert: false,
+          conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
+        });
+        results.push(result);
+      }
+
+      const nextHistory = [...results.map(buildHistoryItem), ...history].slice(0, 20);
+      await persistHistory(nextHistory);
+      const successCount = results.filter((result) => result.ok && !result.simulated).length;
+      const failedCount = results.length - successCount;
+      setConvertResult(results.length > 0 ? results[results.length - 1] : null);
+      toast[failedCount > 0 ? "error" : "success"](`批量转换完成：成功 ${successCount} 个，失败 ${failedCount} 个`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量转换失败");
+      if (results.length > 0) {
+        await persistHistory([...results.map(buildHistoryItem), ...history].slice(0, 20));
+      }
     } finally {
       setIsConverting(false);
     }
@@ -146,21 +194,40 @@ export function ConvertPage() {
     }
   }
 
+  async function handleSelectOutputDir() {
+    if (!appConfig) {
+      toast.error("设置尚未加载完成，稍后再选择输出目录");
+      return;
+    }
+
+    try {
+      const selected = await selectDirectory();
+      if (!selected) return;
+      const saved = await saveAppConfig({ ...appConfig, defaultOutputDir: selected });
+      setAppConfig(saved);
+      toast.success("已更新输出目录");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "选择输出目录失败");
+    }
+  }
+
   const words = markdown.trim() ? markdown.trim().length : 0;
   const lines = markdown ? markdown.split(/\r?\n/).length : 0;
-  const outputName = buildDocxOutputName(markdown);
+  const outputName = normalizeOutputName(outputNameDraft);
+  const outputDirLabel = appConfig?.defaultOutputDir?.trim() || "与源 Markdown 同目录";
+  const outputPath = buildOutputPath(appConfig?.defaultOutputDir, outputName);
 
   return (
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_88px] gap-3 overflow-hidden max-[1100px]:h-auto max-[1100px]:min-h-full max-[1100px]:grid-rows-[auto_auto_auto] max-[1100px]:overflow-visible">
-      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-white/60 bg-white/28 p-1 max-[760px]:grid-cols-1">
+    <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1">
         <ModeTile active={mode === "markdown"} icon={FileText} title="Markdown 输入" onClick={() => setMode("markdown")} />
         <ModeTile active={mode === "file"} icon={UploadCloud} title="导入文件" onClick={() => setMode("file")} />
         <ModeTile icon={ClipboardPaste} title="粘贴内容" onClick={() => void handleReadClipboard()} disabled={isConverting} />
       </div>
 
-      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_360px] gap-3 overflow-hidden max-[1100px]:grid-cols-1 max-[1100px]:overflow-visible">
-        <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:overflow-visible">
-          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onReadClipboard={handleReadClipboard} disabled={isConverting} />
+      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_360px] gap-3 overflow-hidden max-[1100px]:flex max-[1100px]:min-h-0 max-[1100px]:flex-col max-[1100px]:overflow-y-auto max-[1100px]:overflow-x-hidden max-[1100px]:pb-3">
+        <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
+          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
         </div>
 
         <AppSurface as="aside" padding="none" radius="md" className="min-h-0 min-w-0 overflow-hidden p-3 max-[1100px]:hidden">
@@ -177,7 +244,7 @@ export function ConvertPage() {
           />
         </AppSurface>
 
-        <AppSurface as="aside" padding="none" radius="md" className="hidden min-h-[460px] min-w-0 overflow-hidden p-3 max-[1100px]:block">
+        <AppSurface as="aside" padding="none" radius="md" className="hidden min-h-[460px] min-w-0 overflow-hidden p-3 max-[1100px]:block max-[1100px]:shrink-0">
           <WordPreviewPage
             markdown={markdown}
             styleConfig={previewStyleConfig}
@@ -192,25 +259,23 @@ export function ConvertPage() {
         </AppSurface>
       </div>
 
-      <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(520px,auto)] items-center gap-4 rounded-[12px] border-t border-blue-100/70 bg-white/24 px-4 max-[1100px]:grid-cols-1 max-[1100px]:py-3">
-        <div className="flex min-w-0 items-center gap-4 overflow-hidden">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-blue-600 text-white shadow-[0_12px_28px_rgba(37,99,235,0.24)]">
-            <CheckCircle2 className="size-5" />
+      <section className="flex min-h-0 flex-col justify-center gap-2 rounded-[12px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92">
+        <div className="flex min-w-0 items-center gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80">
+          <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
+            <CheckCircle2 className="size-3.5" />
           </div>
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="text-sm font-black text-blue-950">{convertResult?.simulated ? "浏览器预览完成" : convertResult?.ok ? "DOCX 已生成" : "当前输入"}</p>
-            <p className="mt-0.5 truncate text-xs text-blue-900/55">
-              {convertResult?.output ?? `${words} 字符 · ${lines} 行 · ${outputName}`}
-            </p>
-          </div>
+          <span className="shrink-0 text-blue-950 dark:text-zinc-100">{convertResult?.simulated ? "预览完成" : convertResult?.ok ? "已生成" : "当前输入"}</span>
+          <span className="shrink-0">{words} 字符</span>
+          <span className="shrink-0">{lines} 行</span>
+          <span className="min-w-0 truncate" title={convertResult?.output ?? outputPath}>{convertResult?.output ?? outputPath}</span>
         </div>
 
-        <div className="grid min-w-0 grid-cols-[180px_minmax(180px,1fr)_40px_40px_150px] items-center gap-2 max-[760px]:grid-cols-1">
+        <div className="grid min-w-0 grid-cols-[180px_minmax(320px,1fr)_150px] items-center gap-2 max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(220px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1">
           <Select value={templateId} onValueChange={(value) => {
             setTemplateId(value);
             setCurrentTemplateId(value);
           }}>
-            <SelectTrigger className="h-10 min-w-0 rounded-[10px] border-white/80 bg-white/78 text-xs font-bold text-blue-800 shadow-sm">
+            <SelectTrigger className="h-10 w-full min-w-0 rounded-[10px] border-slate-200 bg-white text-xs font-bold text-blue-800 shadow-none data-[size=default]:h-10">
               <SelectValue placeholder="选择模板" />
             </SelectTrigger>
             <SelectContent>
@@ -221,13 +286,31 @@ export function ConvertPage() {
               ))}
             </SelectContent>
           </Select>
-          <SoftActionButton className="min-w-0 justify-start rounded-[10px] border-white/80 bg-white/70 text-blue-700" title={outputName}>
-            <FileText className="size-4 shrink-0" />
-            <span className="min-w-0 truncate">{outputName}</span>
-          </SoftActionButton>
-          <StripToggleButton active={openAfterConvert} icon={ExternalLink} title={openAfterConvert ? "转换后自动打开：开" : "转换后自动打开：关"} onClick={() => setOpenAfterConvert((value) => !value)} />
-          <StripToggleButton active={overwriteOutput} icon={Replace} title={overwriteOutput ? "同名文件直接覆盖：开" : "同名文件直接覆盖：关"} onClick={() => setOverwriteOutput((value) => !value)} />
-          <PrimaryActionButton className="h-10 rounded-[10px] text-sm font-black" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
+          <div className="grid min-w-0 grid-cols-[minmax(132px,0.9fr)_minmax(150px,1fr)] overflow-hidden rounded-[10px] border border-slate-200 bg-white text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100">
+            <button
+              type="button"
+              className="flex h-10 min-w-0 items-center gap-2 border-r border-slate-200 px-3 text-left text-xs font-bold text-blue-800 transition hover:bg-slate-50 dark:border-zinc-700/70 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
+              onClick={() => void handleSelectOutputDir()}
+              title={outputDirLabel}
+            >
+              <FolderOpen className="size-4 shrink-0" />
+              <span className="min-w-0 truncate">{outputDirLabel}</span>
+            </button>
+            <div className="flex h-10 min-w-0 items-center gap-2 px-3" title={outputPath}>
+              <FileText className="size-4 shrink-0" />
+              <Input
+                value={outputNameDraft}
+                onChange={(event) => {
+                  setOutputNameEdited(true);
+                  setOutputNameDraft(event.target.value);
+                }}
+                onBlur={(event) => setOutputNameDraft(normalizeOutputName(event.target.value))}
+                aria-label="输出文件名"
+                className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-blue-800 shadow-none outline-none placeholder:text-blue-900/35 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent dark:text-zinc-50 dark:placeholder:text-zinc-500"
+              />
+            </div>
+          </div>
+          <PrimaryActionButton className="h-10 rounded-[10px] text-sm font-black max-[760px]:min-w-[116px] max-[640px]:min-w-[104px]" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
             {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
             {isConverting ? "转换中" : "开始转换"}
           </PrimaryActionButton>
@@ -238,17 +321,9 @@ export function ConvertPage() {
   );
 }
 
-function StripToggleButton({ active, icon: Icon, title, onClick }: { active: boolean; icon: typeof FileText; title: string; onClick: () => void }) {
-  return (
-    <SoftActionButton
-      className={active ? "h-10 rounded-[10px] border-blue-200 bg-blue-50 px-0 text-blue-700" : "h-10 rounded-[10px] border-white/80 bg-white/70 px-0 text-blue-400"}
-      title={title}
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      <Icon className="size-4" />
-    </SoftActionButton>
-  );
+function normalizeOutputName(value: string) {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]/g, "-") || "untitled.docx";
+  return cleaned.toLowerCase().endsWith(".docx") ? cleaned : `${cleaned}.docx`;
 }
 
 function ModeTile({ active = false, disabled = false, icon: Icon, title, onClick }: { active?: boolean; disabled?: boolean; icon: typeof FileText; title: string; onClick: () => void }) {
@@ -257,7 +332,7 @@ function ModeTile({ active = false, disabled = false, icon: Icon, title, onClick
       type="button"
       className={cn(
         "flex h-11 items-center justify-center gap-2 rounded-[10px] text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-        active ? "bg-blue-600 text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)]" : "text-blue-800 hover:bg-white/58 hover:text-blue-700",
+        active ? "bg-blue-600 text-white shadow-none" : "text-blue-800 hover:bg-slate-50 hover:text-blue-700",
       )}
       onClick={onClick}
       disabled={disabled}

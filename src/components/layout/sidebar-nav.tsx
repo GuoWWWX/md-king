@@ -1,8 +1,7 @@
-import { HelpCircle, Library, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
-import type { AppStatus, Template } from "@/types";
+import { Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Sun, type LucideIcon } from "lucide-react";
+import type { AppStatus, Template, ThemeMode } from "@/types";
 import { PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 export type NavigationItem = {
@@ -17,8 +16,11 @@ type SidebarNavProps = {
   currentTemplate?: Template;
   appStatus?: AppStatus;
   collapsed?: boolean;
+  themeMode?: ThemeMode;
   onNavigate: (page: string) => void;
   onToggleCollapsed?: () => void;
+  onToggleThemeMode?: () => void;
+  onThemeModeChange?: (mode: ThemeMode) => void;
 };
 
 export function SidebarNav({
@@ -27,13 +29,16 @@ export function SidebarNav({
   currentTemplate,
   appStatus,
   collapsed = false,
+  themeMode,
   onNavigate,
   onToggleCollapsed,
+  onToggleThemeMode,
+  onThemeModeChange,
 }: SidebarNavProps) {
   return (
     <aside
       className={cn(
-        "mk-sidebar-panel flex h-full shrink-0 flex-col overflow-hidden rounded-[16px] p-4 transition-[width,padding] duration-200 max-[980px]:w-[76px] max-[980px]:px-3",
+        "mk-sidebar-panel flex h-full shrink-0 flex-col overflow-hidden rounded-[10px] p-4 transition-[width,padding] duration-200 max-[980px]:w-[76px] max-[980px]:px-3",
         collapsed ? "w-[76px] px-3" : "w-[220px]",
       )}
     >
@@ -43,28 +48,35 @@ export function SidebarNav({
         appStatus={appStatus}
         collapsed={collapsed}
         currentTemplate={currentTemplate}
+        themeMode={themeMode}
         onNavigate={onNavigate}
         onToggleCollapsed={onToggleCollapsed}
+        onToggleThemeMode={onToggleThemeMode}
+        onThemeModeChange={onThemeModeChange}
       />
     </aside>
   );
 }
 
-function SidebarContent({ navigation, activePage, currentTemplate, appStatus, collapsed = false, onNavigate, onToggleCollapsed }: SidebarNavProps) {
+function SidebarContent({ navigation, activePage, currentTemplate, appStatus, collapsed = false, themeMode, onNavigate, onToggleCollapsed, onToggleThemeMode, onThemeModeChange }: SidebarNavProps) {
   const textHiddenClass = collapsed ? "hidden" : "max-[980px]:hidden";
-  const centeredWhenCollapsed = collapsed ? "justify-center px-0" : "justify-start gap-3 px-4 max-[980px]:justify-center max-[980px]:px-0";
-  const navButtonLayout = collapsed ? "justify-center px-0" : "justify-start gap-3 px-3 max-[980px]:justify-center max-[980px]:px-0";
+  const centeredWhenCollapsed = collapsed ? "mx-auto size-11 justify-center rounded-[12px] px-0" : "justify-start gap-3 px-4 max-[980px]:mx-auto max-[980px]:size-11 max-[980px]:justify-center max-[980px]:rounded-[12px] max-[980px]:px-0";
+  const navRailLayout = collapsed
+    ? "mx-auto mt-5 flex w-12 flex-col items-center gap-2 rounded-[12px] bg-white/28 p-1.5 shadow-inner shadow-blue-100/40"
+    : "mt-6 rounded-[10px] bg-white/36 p-2 shadow-inner shadow-blue-100/50 max-[980px]:mx-auto max-[980px]:mt-5 max-[980px]:flex max-[980px]:w-12 max-[980px]:flex-col max-[980px]:items-center max-[980px]:gap-2 max-[980px]:rounded-[12px] max-[980px]:bg-white/28 max-[980px]:p-1.5";
+  const navButtonBase = collapsed ? "mk-nav-collapsed size-10 rounded-[12px] p-0" : "h-11 w-full rounded-[9px] max-[980px]:size-10 max-[980px]:rounded-[12px] max-[980px]:p-0";
+  const navButtonLayout = collapsed ? "justify-center" : "justify-start gap-3 px-3 max-[980px]:justify-center max-[980px]:px-0";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PrimaryActionButton className={cn("h-11 rounded-[12px] text-sm font-bold shadow-blue-500/25", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
+      <PrimaryActionButton className={cn("h-11 rounded-[10px] text-sm font-bold shadow-blue-500/25", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
         <Plus className="size-4" />
         <span className={textHiddenClass}>新建转换</span>
       </PrimaryActionButton>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-4">
-        <div className="mt-6 rounded-[14px] bg-white/36 p-2 shadow-inner shadow-blue-100/50">
-          <nav className="space-y-1">
+        <div className={navRailLayout}>
+          <nav className={collapsed ? "flex flex-col items-center gap-2" : "space-y-1"}>
             {navigation.map((item) => {
               const Icon = item.icon;
               const isActive = activePage === item.id;
@@ -72,7 +84,8 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
                 <Button
                   key={item.id}
                   className={cn(
-                    "h-11 w-full rounded-[12px] text-sm font-bold transition",
+                    "mk-nav-auto-collapsed text-sm font-bold transition",
+                    navButtonBase,
                     navButtonLayout,
                     isActive ? "mk-nav-active text-white" : "mk-nav-idle",
                   )}
@@ -89,34 +102,13 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
           </nav>
         </div>
 
-        <div className={cn("mt-5 space-y-1 rounded-[14px] bg-white/28 p-2", collapsed ? "hidden" : "max-[980px]:hidden")}>
-          <p className="px-3 text-[11px] font-black uppercase tracking-[0.18em] text-blue-900/42">工作区</p>
-          <Button className="h-10 w-full justify-start gap-3 rounded-[10px] px-3 text-slate-400" variant="ghost" disabled aria-label="控制台（规划中）">
-            <Sparkles className="size-4" />
-            控制台
-            <span className="ml-auto rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-500">规划中</span>
-          </Button>
-          <Button className="h-10 w-full justify-start gap-3 rounded-[10px] px-3 text-slate-400" variant="ghost" disabled aria-label="工作流（规划中）">
-            <Library className="size-4" />
-            工作流
-            <span className="ml-auto rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-500">规划中</span>
-          </Button>
-        </div>
-
-        <div className={cn("mk-sidebar-promo mt-10 rounded-[14px] p-4", collapsed ? "hidden" : "max-[980px]:hidden")}>
-          <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-[12px] bg-gradient-to-br from-blue-300 to-blue-600 text-white shadow-[0_18px_42px_rgba(37,99,235,0.35)]">
-            <ShieldCheck className="size-7" />
-          </div>
-          <div className="text-sm font-black text-blue-950">AI Markdown</div>
-          <p className="mt-1 text-xs leading-5 text-blue-900/68">一键转换专业 Word 文档</p>
-          <div className="mt-3 text-xs font-bold text-blue-600">了解更多</div>
-        </div>
       </div>
 
       <div className="shrink-0 space-y-4 border-t border-blue-100/50 pt-3">
+        <ThemeModeButton collapsed={collapsed} themeMode={themeMode} onToggleThemeMode={onToggleThemeMode} onThemeModeChange={onThemeModeChange} />
         <Button
           variant="outline"
-          className={cn("h-9 w-full rounded-[12px] border-white/70 bg-white/62 text-xs font-bold text-blue-900/70 hover:bg-white/82", collapsed && "px-0")}
+          className={cn("h-9 w-full rounded-[10px] border-white/70 bg-white/62 text-xs font-bold text-blue-900/70 hover:bg-white/82", collapsed && "px-0")}
           onClick={onToggleCollapsed}
           title={collapsed ? "展开侧边栏" : "收起侧边栏"}
           aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
@@ -124,15 +116,88 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           <span className={textHiddenClass}>{collapsed ? "展开侧栏" : "收起侧栏"}</span>
         </Button>
-        <div className="flex items-center justify-between px-2 text-xs text-slate-400 max-[980px]:justify-center">
+        <div className={cn("flex items-center justify-between px-2 text-xs text-slate-400 max-[980px]:justify-center", collapsed && "justify-center px-0")}>
           <span className={textHiddenClass}>{appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}</span>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2" title="本地运行">
             <ShieldCheck className="size-4 text-blue-600" />
-            <Separator orientation="vertical" className={cn("h-4 bg-blue-200", collapsed ? "hidden" : "max-[980px]:hidden")} />
-            <HelpCircle className="size-4" />
+            <span className={cn("text-[11px] font-semibold text-slate-400", textHiddenClass)}>本地</span>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function ThemeModeButton({
+  collapsed,
+  themeMode = "light",
+  onToggleThemeMode,
+  onThemeModeChange,
+}: {
+  collapsed?: boolean;
+  themeMode?: ThemeMode;
+  onToggleThemeMode?: () => void;
+  onThemeModeChange?: (mode: ThemeMode) => void;
+}) {
+  const modes: Array<{ mode: ThemeMode; label: string; shortLabel: string; icon: LucideIcon }> = [
+    { mode: "light", label: "浅色模式", shortLabel: "浅色", icon: Sun },
+    { mode: "dark", label: "深色模式", shortLabel: "深色", icon: Moon },
+    { mode: "system", label: "跟随系统", shortLabel: "系统", icon: Monitor },
+  ];
+  const activeIndex = Math.max(0, modes.findIndex((item) => item.mode === themeMode));
+  const activeMode = modes[activeIndex] ?? modes[0];
+  const ActiveIcon = activeMode.icon;
+
+  if (collapsed) {
+    return (
+      <Button
+        variant="outline"
+        className="mk-theme-cycle-button h-9 w-full rounded-[10px] px-0"
+        onClick={onToggleThemeMode}
+        title={activeMode.label}
+        aria-label={`切换外观主题，当前：${activeMode.label}`}
+        disabled={!onToggleThemeMode}
+      >
+        <ActiveIcon className="size-4" />
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <div
+        className={cn("mk-theme-cycle-button flex h-10 w-full items-center justify-center rounded-[10px] px-3 text-sm font-bold max-[980px]:hidden", !onThemeModeChange && "pointer-events-none opacity-50")}
+        role="group"
+        aria-label={`外观主题，当前：${activeMode.label}`}
+        title={`当前：${activeMode.label}`}
+      >
+        <span className="mk-theme-cycle-track">
+          <span className="mk-theme-cycle-thumb" style={{ transform: `translateX(${activeIndex * 28}px)` }} />
+          {modes.map(({ mode, icon: Icon, label }) => (
+            <button
+              key={mode}
+              type="button"
+              className={cn("mk-theme-cycle-icon", themeMode === mode && "is-active")}
+              title={label}
+              aria-label={label}
+              aria-pressed={themeMode === mode}
+              onClick={() => onThemeModeChange?.(mode)}
+            >
+              <Icon className="size-4" />
+            </button>
+          ))}
+        </span>
+      </div>
+      <Button
+        variant="outline"
+        className="mk-theme-cycle-button hidden h-9 w-full rounded-[10px] px-0 max-[980px]:inline-flex"
+        onClick={onToggleThemeMode}
+        title={activeMode.label}
+        aria-label={`切换外观主题，当前：${activeMode.label}`}
+        disabled={!onToggleThemeMode}
+      >
+        <ActiveIcon className="size-4" />
+      </Button>
+    </>
   );
 }

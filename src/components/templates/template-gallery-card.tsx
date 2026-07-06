@@ -18,14 +18,16 @@ type TemplateGalleryCardProps = {
   onToggleSelect: (template: Template) => void;
   onUse: (template: Template) => void;
   onSetDefault: (template: Template) => void;
+  onEdit: (template: Template) => void;
   onStyleManager: (template: Template) => void;
   onDelete: (template: Template) => void;
 };
 
-export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onStyleManager, onDelete }: TemplateGalleryCardProps) {
+export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onEdit, onDelete }: TemplateGalleryCardProps) {
   const category = getTemplateCategory(template.tags, template.isBuiltIn);
   const previewStyleConfig = mergeTemplateStyleConfig(template.id);
   const previewMarkdown = createTemplatePreviewMarkdown(template, category);
+  const visibleTags = template.isBuiltIn ? [] : template.tags.filter((tag) => tag !== category && tag !== "内置").slice(0, 4);
 
   return (
     <AppSurface
@@ -40,10 +42,7 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
       onClick={() => onPreview(template)}
     >
       {isPreviewed ? (
-        <>
-          <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70" />
-          <span className="pointer-events-none absolute right-3 top-3 z-10 rounded-full border border-blue-100 bg-white px-2 py-0.5 text-[10px] font-bold text-blue-700 shadow-sm">预览中</span>
-        </>
+        <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70" />
       ) : null}
 
       <div className="mk-template-card-preview mb-3 h-44 overflow-hidden rounded-[10px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70">
@@ -95,7 +94,7 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
 
       <div className="mt-2 flex flex-wrap gap-1.5">
         <Badge variant="secondary" className="rounded-full bg-blue-50 text-blue-700">{category}</Badge>
-        {template.tags.filter((tag) => tag !== category && tag !== "内置").slice(0, 4).map((tag) => (
+        {visibleTags.map((tag) => (
           <Badge key={tag} variant="secondary" className="rounded-full bg-white/70 text-slate-500">{tag}</Badge>
         ))}
       </div>
@@ -106,7 +105,7 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onStyleManager(template); }}><Edit3 className="size-4" />编辑</SoftActionButton>
+        <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />编辑</SoftActionButton>
         <Button
           variant="ghost"
           size="sm"

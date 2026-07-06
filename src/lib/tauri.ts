@@ -12,7 +12,7 @@ const PANDOC_BROWSER_MESSAGE = "浏览器预览无法验证内置 Pandoc，请�
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "0.1.0",
+  version: "0.1.7",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -22,7 +22,7 @@ const browserAppConfig: AppConfig = {
   pandocPath: undefined,
   useBundledPandoc: true,
   defaultTemplateId: "default-report",
-  defaultOutputDir: undefined,
+  defaultOutputDir: "Documents/MD King",
   openAfterConvert: false,
   enableContextMenu: false,
   enableFloatingBall: false,
@@ -80,6 +80,27 @@ let browserTemplates = builtInTemplates;
 let browserHistory: HistoryItem[] = [];
 let browserTemplateStyleConfigs: Record<string, TemplateStyleConfig> = {};
 
+function normalizeBrowserTemplateDefaults(templates: Template[]) {
+  if (templates.some((template) => template.id === browserConfig.defaultTemplateId)) {
+    return templates.map((template) => ({ ...template, isDefault: template.id === browserConfig.defaultTemplateId }));
+  }
+
+  let foundDefault = false;
+  const normalized = templates.map((template) => {
+    if (template.isDefault && !foundDefault) {
+      foundDefault = true;
+      return { ...template, isDefault: true };
+    }
+    return { ...template, isDefault: false };
+  });
+
+  if (!foundDefault && normalized[0]) {
+    normalized[0] = { ...normalized[0], isDefault: true };
+  }
+
+  return normalized;
+}
+
 function isTauriEnvironment() {
   if (typeof window === "undefined") {
     return false;
@@ -94,6 +115,11 @@ function normalizeDialogSelection(selected: string | string[] | null) {
     return selected[0];
   }
   return selected ?? undefined;
+}
+
+function normalizeDialogSelections(selected: string | string[] | null) {
+  if (!selected) return [];
+  return Array.isArray(selected) ? selected : [selected];
 }
 
 export async function selectDirectory() {
@@ -114,6 +140,19 @@ export async function selectDocxFile() {
     multiple: false,
     title: "选择 reference.docx 模板文件",
     filters: [{ name: "Word 文档", extensions: ["docx"] }],
+  }));
+}
+
+export async function selectMarkdownFiles() {
+  if (!isTauriEnvironment()) {
+    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+  }
+
+  return normalizeDialogSelections(await open({
+    directory: false,
+    multiple: true,
+    title: "选择 Markdown 文件",
+    filters: [{ name: "Markdown 文档", extensions: ["md", "markdown"] }],
   }));
 }
 
@@ -159,6 +198,7 @@ export function listTemplates() {
     return invoke<Template[]>("list_templates");
   }
 
+  browserTemplates = normalizeBrowserTemplateDefaults(browserTemplates);
   return Promise.resolve(browserTemplates);
 }
 
@@ -179,7 +219,10 @@ export function importTemplate(request: ImportTemplateRequest) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  browserTemplates = request.isDefault ? browserTemplates.map((item) => ({ ...item, isDefault: false })).concat(template) : browserTemplates.concat(template);
+  if (request.isDefault) {
+    browserConfig = { ...browserConfig, defaultTemplateId: template.id };
+  }
+  browserTemplates = normalizeBrowserTemplateDefaults(browserTemplates.concat(template));
   return Promise.resolve(template);
 }
 
@@ -189,7 +232,7 @@ export function saveTemplates(templates: Template[]) {
   }
 
   const builtIns = browserTemplates.filter((template) => template.isBuiltIn);
-  browserTemplates = builtIns.concat(templates.filter((template) => !template.isBuiltIn));
+  browserTemplates = normalizeBrowserTemplateDefaults(builtIns.concat(templates.filter((template) => !template.isBuiltIn)));
   return Promise.resolve(browserTemplates);
 }
 
@@ -263,7 +306,7 @@ export function convertMarkdown(request: ConvertRequest) {
     ok: true,
     simulated: true,
     input: request.input,
-    output: request.output ?? "浏览器预览：未生成实际 DOCX 文件",
+    output: "浏览器预览：未生成实际 DOCX 文件",
     templateId: request.templateId,
     durationMs: 0,
     warnings: [PREVIEW_WARNING],

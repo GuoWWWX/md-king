@@ -4,10 +4,168 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>md-king</title>
+    <script>
+      (function () {
+        var fallbackTheme = "dark";
+        var themeMode = fallbackTheme;
+        var accentColor = "blue";
+        var isFloatingWindow = new URLSearchParams(window.location.search).get("floating") === "1";
+
+        try {
+          var cached = JSON.parse(window.localStorage.getItem("md-king-appearance") || "{}");
+          if (cached.themeMode === "light" || cached.themeMode === "dark" || cached.themeMode === "system") {
+            themeMode = cached.themeMode;
+          }
+          if (typeof cached.accentColor === "string") {
+            accentColor = cached.accentColor;
+          }
+        } catch (_) {
+          themeMode = fallbackTheme;
+        }
+
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var isDark = themeMode === "dark" || (themeMode === "system" && prefersDark);
+        var root = document.documentElement;
+
+        root.classList.toggle("dark", isDark);
+        root.dataset.accentColor = accentColor;
+        root.dataset.bootTheme = isDark ? "dark" : "light";
+        root.dataset.floatingWindow = isFloatingWindow ? "true" : "false";
+        root.style.backgroundColor = isFloatingWindow ? "transparent" : isDark ? "#111111" : "#f6f8fb";
+        root.style.colorScheme = isDark ? "dark" : "light";
+      })();
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        background: #111111;
+      }
+
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(219, 234, 254, 0.72), transparent 24rem),
+          linear-gradient(135deg, #f8fafc 0%, #eef4fb 100%);
+      }
+
+      html[data-boot-theme="dark"],
+      html[data-boot-theme="dark"] body,
+      html[data-boot-theme="dark"] #root {
+        background:
+          radial-gradient(circle at 18% 12%, rgba(37, 99, 235, 0.14), transparent 24rem),
+          linear-gradient(135deg, #0f0f10 0%, #171717 100%);
+      }
+
+      html[data-floating-window="true"],
+      html[data-floating-window="true"] body,
+      html[data-floating-window="true"] #root {
+        background: transparent;
+      }
+
+      html[data-floating-window="true"] .app-boot-screen {
+        display: none;
+      }
+
+      .app-boot-screen {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        color: #0f172a;
+      }
+
+      .app-boot-card {
+        display: flex;
+        width: min(420px, calc(100vw - 56px));
+        align-items: center;
+        gap: 16px;
+        padding: 20px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), 0 20px 48px rgba(15, 23, 42, 0.12);
+      }
+
+      .app-boot-logo-wrap {
+        display: grid;
+        width: 64px;
+        height: 64px;
+        flex: 0 0 auto;
+        place-items: center;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 16px 34px rgba(37, 99, 235, 0.18);
+      }
+
+      .app-boot-logo {
+        width: 54px;
+        height: 54px;
+        object-fit: contain;
+      }
+
+      .app-boot-title {
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .app-boot-subtitle {
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #475569;
+      }
+
+      .app-boot-caption {
+        margin-top: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.5;
+        color: #64748b;
+      }
+
+      html[data-boot-theme="dark"] .app-boot-screen {
+        color: #f8fafc;
+      }
+
+      html[data-boot-theme="dark"] .app-boot-card {
+        border-color: rgba(63, 63, 70, 0.82);
+        background: rgba(24, 24, 27, 0.92);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 22px 54px rgba(0, 0, 0, 0.36);
+      }
+
+      html[data-boot-theme="dark"] .app-boot-logo-wrap {
+        background: rgba(39, 39, 42, 0.9);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 16px 34px rgba(0, 0, 0, 0.28);
+      }
+
+      html[data-boot-theme="dark"] .app-boot-subtitle {
+        color: #d4d4d8;
+      }
+
+      html[data-boot-theme="dark"] .app-boot-caption {
+        color: #a1a1aa;
+      }
+    </style>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-boot-screen" aria-label="MD King 正在启动">
+        <div class="app-boot-card">
+          <div class="app-boot-logo-wrap">
+            <img class="app-boot-logo" src="/md-king-logo.png" alt="" />
+          </div>
+          <div>
+            <div class="app-boot-title">MD King</div>
+            <div class="app-boot-subtitle">正在准备转换工作台</div>
+            <div class="app-boot-caption">本地优先的 Markdown 转 Word/WPS 工具</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

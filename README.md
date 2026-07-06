@@ -14,7 +14,7 @@
 
 桌面端已按 MVP 路线接入 bundled Pandoc，打包应用默认优先使用内置 Pandoc，普通用户无需单独安装；只有需要强制指定其他版本时才填写自定义 `pandocPath`。浏览器预览（例如 `http://localhost:1420`）不具备真实 Tauri/Rust/Pandoc 能力，Pandoc 检测与转换会明确标记为模拟结果，不生成真实 DOCX；验证真实转换、打开输出文件、配置持久化和内置 Pandoc 时，请使用 `pnpm tauri dev`。
 
-当前已落地的桌面能力包括：Markdown → DOCX 转换、默认输出目录配置、模板导入/管理、历史记录写入/清空、打开输出文件、表格样式前端编辑与 Word 预览增强。模板样式编辑器目前主要用于前端草稿和预览，尚未把样式完整写回 `reference.docx`。Windows 右键菜单、悬浮球、系统托盘、CLI/MCP Server 与完整批量队列仍是规划能力，界面中应保持禁用或明确标注“规划中”。
+当前已落地的桌面能力包括：Markdown → DOCX 转换、默认输出目录配置、模板导入/管理、历史记录写入/清空、打开输出文件、表格样式前端编辑与 Word 预览增强。CLI 已具备第一版 `md-king-cli convert` 与 `md-king-cli templates list` 命令，可输出 JSON 并复用现有 Rust 转换核心。模板样式编辑器目前主要用于前端草稿和预览，尚未把样式完整写回 `reference.docx`。Windows 右键菜单、悬浮球、系统托盘、MCP Server 与完整批量队列仍是规划能力，界面中应保持禁用或明确标注“规划中”。
 
 ## 1. 项目背景
 
@@ -141,41 +141,21 @@
 1. **控制类命令**：发起转换、批量转换、选择模板、清理历史、打开输出目录；
 2. **查看类命令**：查看模板列表、查看转换任务状态、查看历史记录、查看配置、查看最近输出结果。
 
-建议 CLI 命令形态：
+当前已接入的 CLI 命令形态：
 
 ```bash
 # 单文件转换
-md-king convert ./input.md -o ./output.docx --template report
-
-# 批量转换
-md-king batch ./docs --out ./dist --template official
-
-# 从剪贴板转换
-md-king clipboard --template default --open
+md-king-cli convert ./input.md -o ./output.docx --template default-report
 
 # 查看模板列表
-md-king templates list
-
-# 查看默认模板
-md-king templates default
-
-# 设置默认模板
-md-king templates use official-report
-
-# 查看转换历史
-md-king history list
-
-# 查看最近一次转换结果
-md-king history latest
-
-# 查看任务状态
-md-king status
+md-king-cli templates list
 
 # 输出机器可读 JSON，方便 AI 智能体解析
-md-king status --json
-md-king templates list --json
-md-king convert ./input.md --template report --json
+md-king-cli templates list --json
+md-king-cli convert ./input.md -o ./output.docx --template default-report --json
 ```
+
+批量转换、剪贴板转换、历史查询、状态查询、MCP 和本地 HTTP API 仍是规划能力。
 
 为了方便 AI 智能体调用，CLI 应满足：
 

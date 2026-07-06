@@ -1,7 +1,7 @@
 const TEMPLATE_GROUP_STORAGE_KEY = "md-king.custom-template-groups";
 const templateMetaTags = new Set(["内置", "系统", "自定义"]);
 
-export const systemTemplateCategories = ["全部", "系统", "报告", "论文", "公文", "技术文档", "商务", "简历"] as const;
+export const systemTemplateCategories = ["全部", "系统"] as const;
 export const fixedTemplateGroups = [...systemTemplateCategories, "未分组"] as const;
 
 function normalizeGroupName(value: string) {
@@ -34,7 +34,7 @@ export function getTemplateGroups(templates: Array<{ tags: string[]; isBuiltIn: 
     groups.push(normalized);
   };
 
-  fixedTemplateGroups.forEach(appendGroup);
+  systemTemplateCategories.forEach(appendGroup);
 
   for (const template of templates) {
     const category = getTemplateCategory(template.tags, template.isBuiltIn);

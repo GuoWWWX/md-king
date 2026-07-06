@@ -69,23 +69,20 @@ export function AppTitlebar() {
   }
 
   return (
-    <div className="mk-titlebar flex h-[72px] shrink-0 select-none items-center border-b border-white/70 bg-white/58 text-slate-700 backdrop-blur-xl">
-      <div className="flex h-full w-[208px] items-center gap-3 px-5" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
-        <MdKingLogo className="size-10 shrink-0 rounded-[12px] shadow-[0_14px_28px_rgba(37,99,235,0.22)]" />
+    <div className="mk-titlebar flex h-11 shrink-0 select-none items-center border-b border-white/70 bg-white/72 text-slate-700 backdrop-blur-xl">
+      <div className="flex h-full w-[208px] items-center gap-2.5 px-4" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
+        <MdKingLogo className="size-7 shrink-0" />
         <div className="min-w-0 leading-none" data-tauri-drag-region>
-          <div className="text-lg font-black tracking-tight text-slate-950" data-tauri-drag-region>MD King</div>
-          <div className="mt-1 text-[11px] font-semibold text-blue-900/42" data-tauri-drag-region>AI Markdown to Word</div>
+          <div className="text-[15px] font-black tracking-tight text-slate-950" data-tauri-drag-region>MD King</div>
         </div>
       </div>
 
       <div
-        className="flex h-full min-w-0 flex-1 items-center justify-end gap-3 px-4 text-xs font-bold text-blue-900/55"
+        className="flex h-full min-w-0 flex-1 items-center justify-end gap-3 px-4 text-xs font-semibold text-slate-500"
         data-tauri-drag-region
         onDoubleClick={handleDoubleClick}
       >
-        <span className="rounded-full bg-blue-50/80 px-3 py-1.5 text-blue-700 shadow-sm" data-tauri-drag-region>专业版</span>
-        <span className="hidden rounded-full bg-white/62 px-3 py-1.5 shadow-sm md:inline" data-tauri-drag-region>已同步</span>
-        <span className="hidden rounded-full bg-white/62 px-3 py-1.5 shadow-sm xl:inline" data-tauri-drag-region>帮助</span>
+        <span className="hidden md:inline" data-tauri-drag-region>本地工作区就绪</span>
       </div>
 
       <div className="flex h-full shrink-0 items-center">
@@ -110,7 +107,7 @@ function TitlebarButton({ label, danger = false, onClick, children }: { label: s
       aria-label={label}
       title={label}
       className={cn(
-        "mk-titlebar-button relative z-10 flex h-[72px] w-12 items-center justify-center text-slate-500 transition hover:bg-white/60 hover:text-slate-950",
+        "mk-titlebar-button relative z-10 flex h-11 w-11 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950",
         danger && "mk-titlebar-button-danger hover:bg-red-500 hover:text-white",
       )}
       onPointerDown={(event) => event.stopPropagation()}

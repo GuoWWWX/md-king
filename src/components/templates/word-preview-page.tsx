@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import MarkdownIt from "markdown-it";
 import { AppSurface } from "@/components/ui/app-surface";
 import { createDefaultStyleDraft } from "@/lib/style-manager-data";
 import { cn } from "@/lib/utils";
-import type { StyleDraft, StyleNode, TemplateStyleConfig } from "@/types/style-manager";
+import type { MarkdownFeatureSettings, StyleDraft, StyleNode, TemplateStyleConfig } from "@/types/style-manager";
 
 type WordPreviewPageProps = {
   selectedStyle?: StyleNode;
@@ -18,6 +18,7 @@ type WordPreviewPageProps = {
   pageMinHeight?: number;
   paginate?: boolean;
   showPageFooter?: boolean;
+  interactiveViewport?: boolean;
   className?: string;
   viewportClassName?: string;
 };
@@ -27,18 +28,33 @@ type PreviewBlock =
   | { type: "paragraph"; text: string }
   | { type: "quote"; text: string }
   | { type: "code"; text: string }
+  | { type: "hr" }
   | { type: "list"; ordered: boolean; items: string[] }
   | { type: "table"; caption?: string; rows: string[][] };
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false });
+const defaultMarkdownFeatures: MarkdownFeatureSettings = { inlineCode: true, codeBlock: true, quoteBlock: true, horizontalRule: false };
 const PT_TO_PX = 4 / 3;
 const CSS_DPI = 96;
 const PAPER_SIZE_PX = {
+  A3: { width: 1123, height: 1587 },
   A4: { width: 794, height: 1123 },
+  A5: { width: 559, height: 794 },
+  B4: { width: 945, height: 1337 },
+  B5: { width: 665, height: 943 },
   Letter: { width: 816, height: 1056 },
+  Legal: { width: 816, height: 1344 },
+  Executive: { width: 696, height: 1008 },
 } as const;
+
+function formatPreviewPageNumber(format: TemplateStyleConfig["pageSettings"]["footerPageNumberFormat"], pageNumber: number, totalPages: number) {
+  if (format === "none") return "";
+  if (format === "page-total") return `第 ${pageNumber} / ${totalPages} 页`;
+  if (format === "dash") return `- ${pageNumber} -`;
+  return `第 ${pageNumber} 页`;
+}
 
 function ptToPx(value: number) {
   return value * PT_TO_PX;
@@ -174,6 +190,11 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
       continue;
     }
 
+    if (token.type === "hr") {
+      blocks.push({ type: "hr" });
+      continue;
+    }
+
     if (token.type === "blockquote_open") {
       const parts: string[] = [];
       index += 1;
@@ -258,6 +279,10 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
     return drafts.code.beforeSpacing + 18 + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code) + drafts.code.afterSpacing;
   }
 
+  if (block.type === "hr") {
+    return 28;
+  }
+
   if (block.type === "list") {
     return 12 + block.items.reduce((total, item) => total + estimateTextLines(item, estimateCharsPerLine(contentWidth - 28, drafts.normal)) * resolveLineHeightPx(drafts.normal), 0);
   }
@@ -295,6 +320,8 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
     if (block.type === "code") {
       return splitTextByLength(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62) * 24).map((text) => ({ ...block, text }));
     }
+
+    if (block.type === "hr") return [block];
 
     if (block.type === "list") {
       const pages: PreviewBlock[] = [];
@@ -371,8 +398,18 @@ function createFallbackBlocks(tableCaption: string): PreviewBlock[] {
     { type: "paragraph", text: "这是一段正文，用于预览正文样式、行距、字号、对齐方式和段落间距。md-king 会把 AI 生成的 Markdown 转换成可继续编辑的 Word/WPS 文档，并尽量保留清晰的文档结构。inline code 也会在这里展示行内代码效果。" },
     { type: "quote", text: "这里展示引用块样式，内容仅用于观察缩进、边框、字体和背景效果。" },
     { type: "code", text: "md-king convert ./input.md --template default --json" },
+    { type: "hr" },
     { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "用于章节层级"], ["正文", "常规", "用于段落内容"], ["表格", "按页面宽度铺满", "自动换行"]] },
   ];
+}
+
+function applyMarkdownFeatureSettings(blocks: PreviewBlock[], features: MarkdownFeatureSettings): PreviewBlock[] {
+  return blocks.map((block) => {
+    if (block.type === "quote" && !features.quoteBlock) return { type: "paragraph", text: block.text };
+    if (block.type === "code" && !features.codeBlock) return { type: "paragraph", text: block.text };
+    if (block.type === "hr" && !features.horizontalRule) return undefined;
+    return block;
+  }).filter((block): block is PreviewBlock => Boolean(block));
 }
 
 function renderMarkdownBlocks({
@@ -434,6 +471,11 @@ function renderMarkdownBlocks({
       return;
     }
 
+    if (block.type === "hr") {
+      rendered.push(<hr key={index} className="my-4 border-0 border-t border-slate-300" />);
+      return;
+    }
+
     if (block.type === "list") {
       const ListTag = block.ordered ? "ol" : "ul";
       rendered.push(
@@ -471,15 +513,23 @@ function renderMarkdownBlocks({
   return rendered;
 }
 
-export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showPageFooter = true, className, viewportClassName }: WordPreviewPageProps) {
+export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showPageFooter = true, interactiveViewport = false, className, viewportClassName }: WordPreviewPageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef({ dragging: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const requestedScale = zoom / 100;
   const pageSettings = styleConfig?.pageSettings;
-  const basePaperSize = PAPER_SIZE_PX[pageSettings?.paperSize ?? "A4"];
+  const basePaperSize = PAPER_SIZE_PX[pageSettings?.paperSize ?? "A4"] ?? PAPER_SIZE_PX.A4;
   const resolvedPaperSize = pageSettings?.orientation === "landscape" ? { width: basePaperSize.height, height: basePaperSize.width } : basePaperSize;
   const paperWidth = pageWidth ?? resolvedPaperSize.width;
   const paperHeight = pageMinHeight ?? resolvedPaperSize.height;
+  const headerEnabled = pageSettings?.headerEnabled ?? false;
+  const footerEnabled = showPageFooter && (pageSettings?.footerEnabled ?? true);
+  const headerText = pageSettings?.headerText?.trim() ?? "";
+  const footerText = pageSettings?.footerText?.trim() ?? "";
+  const footerShowFromPage = Number.isFinite(pageSettings?.footerShowFromPage) ? Math.max(1, Math.trunc(pageSettings?.footerShowFromPage ?? 1)) : 1;
+  const footerStartPage = Number.isFinite(pageSettings?.footerStartPage) ? Math.max(1, Math.trunc(pageSettings?.footerStartPage ?? 1)) : 1;
   const pageMargins = {
     top: cmToPx(pageSettings?.marginTop ?? 2.54),
     right: cmToPx(pageSettings?.marginRight ?? 3.18),
@@ -545,23 +595,68 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const markdownBlocks = markdown?.trim() ? parseMarkdownPreview(markdown) : [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
   const fallbackBlocks = createFallbackBlocks(table.captionNumbering ? "表 1-1  表格样式预览" : "表格样式预览");
-  const activeBlocks = hasMarkdownPreview ? markdownBlocks : fallbackBlocks;
+  const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures);
   const previewDrafts = { "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code };
-  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - 36);
+  const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
+  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight);
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(activeBlocks, previewDrafts);
   const previewBlocks = shouldPaginate ? splitLargeBlocks(numberedBlocks, pageContentHeight, previewDrafts, table, contentWidth) : numberedBlocks;
   const previewPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth) : [previewBlocks];
-  const scale = viewportWidth > 0 ? Math.min(requestedScale, Math.max(0.25, (viewportWidth - 12) / paperWidth)) : requestedScale;
+  const scale = interactiveViewport
+    ? requestedScale
+    : viewportWidth > 0
+      ? Math.min(requestedScale, Math.max(0.25, (viewportWidth - 12) / paperWidth))
+      : requestedScale;
   const effectiveZoom = Math.round(scale * 100);
   const previewHeaderSubtitle = headerSubtitle ?? `类 Word 页面 · ${effectiveZoom}%`;
   const previewBadgeText = badgeText ?? `当前：${selectedStyle?.name ?? "Heading 2"}`;
   const pageScaleStyle: CSSProperties = { position: "relative", width: paperWidth * scale, height: paperHeight * scale };
   const pageStyle: CSSProperties = { position: "absolute", inset: 0, width: paperWidth, height: paperHeight, padding: `${pageMargins.top}px ${pageMargins.right}px ${pageMargins.bottom}px ${pageMargins.left}px`, transform: `scale(${scale})`, transformOrigin: "top left" };
 
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (!interactiveViewport) return;
+    if (event.button !== 0) return;
+    const element = viewportRef.current;
+    if (!element) return;
+    const canDrag = element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight;
+    if (!canDrag) return;
+
+    dragStateRef.current = {
+      dragging: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: element.scrollLeft,
+      scrollTop: element.scrollTop,
+    };
+    element.setPointerCapture(event.pointerId);
+    setIsDraggingPreview(true);
+    event.preventDefault();
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!interactiveViewport) return;
+    const element = viewportRef.current;
+    const dragState = dragStateRef.current;
+    if (!element || !dragState.dragging) return;
+
+    element.scrollLeft = dragState.scrollLeft - (event.clientX - dragState.startX);
+    element.scrollTop = dragState.scrollTop - (event.clientY - dragState.startY);
+  }
+
+  function stopPreviewDrag(event: PointerEvent<HTMLDivElement>) {
+    if (!interactiveViewport) return;
+    if (!dragStateRef.current.dragging) return;
+    dragStateRef.current.dragging = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setIsDraggingPreview(false);
+  }
+
   useEffect(() => {
     const element = viewportRef.current;
-    if (!element) return undefined;
+    if (!element || interactiveViewport) return undefined;
 
     const updateWidth = () => {
       const style = window.getComputedStyle(element);
@@ -574,7 +669,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     const observer = new ResizeObserver(updateWidth);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [interactiveViewport]);
 
   return (
     <AppSurface variant="plain" radius="sm" padding="none" className={cn("flex h-full max-h-[min(780px,calc(100dvh-220px))] min-h-0 min-w-0 flex-col overflow-hidden p-3 max-xl:max-h-none", className)}>
@@ -587,18 +682,36 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs text-slate-500">{previewBadgeText}</span>
       </div>
       ) : null}
-      <div ref={viewportRef} className={cn("min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-lg bg-slate-200/60 p-3 2xl:p-4", viewportClassName)}>
+      <div
+        ref={viewportRef}
+        className={cn(
+          "min-h-0 flex-1 rounded-lg bg-slate-200/60 p-3 2xl:p-4",
+          interactiveViewport ? "cursor-grab select-none overflow-auto active:cursor-grabbing" : "overflow-y-auto overflow-x-hidden",
+          interactiveViewport && isDraggingPreview && "cursor-grabbing",
+          viewportClassName,
+        )}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopPreviewDrag}
+        onPointerCancel={stopPreviewDrag}
+        onPointerLeave={stopPreviewDrag}
+      >
         {previewPages.map((pageBlocks, pageIndex) => (
         <div key={pageIndex} className={cn("mx-auto", pageIndex > 0 && "mt-5")} style={pageScaleStyle}>
-        <div className="mk-word-preview-page overflow-hidden rounded-sm bg-white text-slate-900 shadow-xl shadow-slate-300/70 ring-1 ring-slate-200" style={pageStyle}>
-          <div className="mb-5 border-b border-slate-200 pb-2 text-[9px] text-slate-400">md-king · Word 样式预览</div>
+        <div className="mk-word-preview-page overflow-hidden rounded-sm bg-white text-slate-900 shadow-none ring-1 ring-slate-200" style={pageStyle}>
+          {headerEnabled && headerText ? <div className="mb-5 border-b border-slate-200 pb-2 text-[9px] text-slate-400">{headerText}</div> : null}
           {renderMarkdownBlocks({
             blocks: pageBlocks,
             selectedStyle,
             drafts: previewDrafts,
             tableStyle: { headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders } },
           })}
-          {showPageFooter ? <div className="absolute bottom-5 left-0 right-0 text-center text-[9px] text-slate-300">第 {pageIndex + 1} / {previewPages.length} 页</div> : null}
+          {footerEnabled && pageIndex + 1 >= footerShowFromPage ? (() => {
+            const pageNumber = footerStartPage + pageIndex - footerShowFromPage + 1;
+            const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page-total", pageNumber, previewPages.length);
+            const footerContent = [footerText, pageNumberText].filter(Boolean).join(" · ");
+            return footerContent ? <div className="absolute bottom-5 left-0 right-0 px-8 text-center text-[9px] text-slate-300">{footerContent}</div> : null;
+          })() : null}
         </div>
         </div>
         ))}

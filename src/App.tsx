@@ -1,8 +1,9 @@
-import { FileText, History, Info, LayoutTemplate, MousePointer2, Settings, Terminal } from "lucide-react";
-import { useEffect } from "react";
+import { FileText, History, Info, LayoutTemplate, Settings, Terminal } from "lucide-react";
+import { useEffect, useState } from "react";
 import { applyAppearance } from "@/lib/appearance";
 import { SystemFloatingWindowManager } from "@/components/floating/system-floating-window-manager";
 import { FloatingConverter } from "@/components/floating/floating-converter";
+import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import type { PageMeta } from "@/components/layout/page-header";
@@ -10,7 +11,6 @@ import { AboutPage } from "@/pages/about/about-page";
 import { CliPage } from "@/pages/cli/cli-page";
 import { ConvertPage } from "@/pages/convert/convert-page";
 import { HistoryPage } from "@/pages/history/history-page";
-import { QuickEntryPage } from "@/pages/quick-entry/quick-entry-page";
 import { SettingsPage } from "@/pages/settings/settings-page";
 import { TemplatesPage } from "@/pages/templates/templates-page";
 import { checkPandoc, getAppConfig, getAppStatus, listHistory, listTemplates } from "@/lib/tauri";
@@ -20,7 +20,6 @@ const navigation = [
   { id: "convert", label: "转换", icon: FileText },
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
   { id: "history", label: "转换历史", icon: History },
-  { id: "quick-entry", label: "快速入口", icon: MousePointer2 },
   { id: "cli", label: "CLI / Agent", icon: Terminal },
   { id: "settings", label: "设置", icon: Settings },
   { id: "about", label: "关于", icon: Info },
@@ -45,12 +44,6 @@ const pageMeta: Record<string, PageMeta> = {
     description: "查看最近生成的 DOCX，快速复制输出路径、定位失败原因，或重新触发转换流程。",
     tags: ["成功 / 失败", "模板追踪", "错误详情"],
   },
-  "quick-entry": {
-    eyebrow: "Quick Access",
-    title: "快速入口",
-    description: "把悬浮球、快捷键、右键菜单和托盘变成无感转换入口。",
-    tags: ["悬浮球", "快捷键", "右键菜单"],
-  },
   cli: {
     eyebrow: "CLI / Agent Interface",
     title: "CLI / Agent",
@@ -72,7 +65,8 @@ const pageMeta: Record<string, PageMeta> = {
 };
 
 function App() {
-  const { activePage, appConfig, setAppStatus, setAppConfig, setTemplates, setHistory, setPandocStatus } = useAppStore();
+  const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, setPandocStatus } = useAppStore();
+  const [bootReady, setBootReady] = useState(false);
 
   useEffect(() => {
     const previousBodyMinWidth = document.body.style.minWidth;
@@ -95,12 +89,15 @@ function App() {
       if (templatesResult.status === "fulfilled") setTemplates(templatesResult.value);
       if (historyResult.status === "fulfilled") setHistory(historyResult.value);
       if (pandocResult.status === "fulfilled") setPandocStatus(pandocResult.value);
+      setBootReady(true);
     });
   }, [setAppConfig, setAppStatus, setHistory, setPandocStatus, setTemplates]);
 
   useEffect(() => {
-    const themeMode = appConfig?.themeMode ?? "light";
-    const accentColor = appConfig?.accentColor ?? "blue";
+    if (!appConfig) return undefined;
+
+    const themeMode = appConfig.themeMode ?? "light";
+    const accentColor = appConfig.accentColor ?? "blue";
     applyAppearance(themeMode, accentColor);
 
     if (themeMode !== "system") return undefined;
@@ -112,13 +109,19 @@ function App() {
   }, [appConfig?.accentColor, appConfig?.themeMode]);
 
   const isFloatingWindow = new URLSearchParams(window.location.search).get("floating") === "1";
-  document.documentElement.dataset.floatingWindow = isFloatingWindow ? "true" : "false";
 
   useEffect(() => {
+    document.documentElement.dataset.floatingWindow = isFloatingWindow ? "true" : "false";
     return () => {
       delete document.documentElement.dataset.floatingWindow;
     };
   }, [isFloatingWindow]);
+
+  useEffect(() => {
+    if (!navigation.some((item) => item.id === activePage)) {
+      setActivePage("convert");
+    }
+  }, [activePage, setActivePage]);
 
   const renderPage = () => {
     switch (activePage) {
@@ -126,8 +129,6 @@ function App() {
         return <TemplatesPage />;
       case "history":
         return <HistoryPage />;
-      case "quick-entry":
-        return <QuickEntryPage />;
       case "cli":
         return <CliPage />;
       case "settings":
@@ -148,14 +149,35 @@ function App() {
     );
   }
 
+  if (!bootReady) {
+    return <AppBootScreen />;
+  }
+
   return (
     <>
       <SystemFloatingWindowManager />
       <AppShell navigation={navigation} pageMeta={pageMeta[activePage] ?? pageMeta.convert}>
         {renderPage()}
       </AppShell>
-      <Toaster richColors />
+      <Toaster position="top-center" closeButton visibleToasts={3} />
     </>
+  );
+}
+
+function AppBootScreen() {
+  return (
+    <div className="app-boot-screen" aria-label="MD King 正在启动">
+      <div className="app-boot-card">
+        <div className="app-boot-logo-wrap">
+          <MdKingLogo className="app-boot-logo" />
+        </div>
+        <div>
+          <div className="app-boot-title">MD King</div>
+          <div className="app-boot-subtitle">正在准备转换工作台</div>
+          <div className="app-boot-caption">本地优先的 Markdown 转 Word/WPS 工具</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

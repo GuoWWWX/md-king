@@ -1,4 +1,4 @@
-import { Bot, ClipboardPaste, Cpu, FileText, Layers3, MousePointer2, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Bot, ClipboardPaste, Cpu, FileText, Layers3, ShieldCheck, type LucideIcon } from "lucide-react";
 import { AppSurface } from "@/components/ui/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/stores/app-store";
@@ -29,7 +29,6 @@ export function AboutPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Capability icon={ClipboardPaste} title="粘贴转换" text="复制 AI 对话内容后快速生成 DOCX。" />
           <Capability icon={Layers3} title="模板样式" text="复用 reference.docx 控制 Word 样式。" />
-          <Capability icon={MousePointer2} title="快速入口" text="悬浮球、右键菜单、快捷键逐步接入。" />
           <Capability icon={Bot} title="Agent/CLI" text="为自动化和智能体保留稳定契约。" />
         </div>
 
@@ -65,7 +64,7 @@ export function AboutPage() {
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">版本</span>
-              <span>{appStatus?.version ?? "0.1.0"}</span>
+              <span>{appStatus?.version ?? "0.1.7"}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">平台</span>
@@ -84,8 +83,8 @@ export function AboutPage() {
           <div className="space-y-3 text-sm">
             <Status label="Pandoc 引擎" value="已接入检测" />
             <Status label="本地隐私" value="默认本机处理" />
-            <Status label="右键菜单" value="规划中" />
-            <Status label="CLI / MCP" value="规划中" />
+            <Status label="右键菜单" value="已接入" />
+            <Status label="CLI" value="已接入" />
           </div>
         </AppSurface>
       </aside>
@@ -107,7 +106,7 @@ function Capability({ icon: Icon, title, text }: { icon: LucideIcon; title: stri
 
 function Status({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/70 bg-white/58 px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-[10px] border border-white/70 bg-white/58 px-4 py-3">
       <span className="font-semibold text-slate-700">{label}</span>
       <span className="text-xs font-bold text-blue-700">{value}</span>
     </div>
