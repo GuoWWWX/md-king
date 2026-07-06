@@ -63,6 +63,16 @@ struct MarkdownFeatureConfig {
     horizontal_rule: bool,
 }
 
+#[derive(Clone)]
+struct PageSettingsConfig {
+    paper_size: String,
+    orientation: String,
+    margin_top: f64,
+    margin_right: f64,
+    margin_bottom: f64,
+    margin_left: f64,
+}
+
 #[derive(Clone, Copy)]
 enum ConflictStrategy {
     Overwrite,
@@ -224,6 +234,7 @@ fn convert_existing_file(
                 should_apply_default_template_postprocess(&request),
                 heading_numbering_config(&request).as_ref(),
                 &markdown_feature_config(&request),
+                page_settings_config(&request).as_ref(),
             ) {
                 warnings.push(format!("调整 DOCX 样式失败：{error}"));
             }
@@ -385,6 +396,7 @@ fn convert_text_input(
                 should_apply_default_template_postprocess(&request),
                 heading_numbering_config(&request).as_ref(),
                 &markdown_feature_config(&request),
+                page_settings_config(&request).as_ref(),
             ) {
                 warnings.push(format!("调整 DOCX 样式失败：{error}"));
             }
@@ -711,6 +723,18 @@ fn markdown_feature_config(request: &ConvertRequest) -> MarkdownFeatureConfig {
         .unwrap_or_else(default_markdown_feature_config)
 }
 
+fn page_settings_config(request: &ConvertRequest) -> Option<PageSettingsConfig> {
+    let template_id = request.template_id.as_deref().map(str::trim)?;
+    if template_id.is_empty() {
+        return None;
+    }
+
+    get_template_style_config(template_id.to_string())
+        .ok()
+        .flatten()
+        .and_then(|config| page_settings_config_from_value(&config))
+}
+
 fn default_markdown_feature_config() -> MarkdownFeatureConfig {
     MarkdownFeatureConfig {
         inline_code: false,
@@ -718,6 +742,34 @@ fn default_markdown_feature_config() -> MarkdownFeatureConfig {
         quote_block: true,
         horizontal_rule: false,
     }
+}
+
+fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig> {
+    let settings = config.get("pageSettings")?;
+    let read_number = |key: &str, default_value: f64| {
+        settings
+            .get(key)
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .unwrap_or(default_value)
+    };
+
+    Some(PageSettingsConfig {
+        paper_size: settings
+            .get("paperSize")
+            .and_then(Value::as_str)
+            .unwrap_or("A4")
+            .to_string(),
+        orientation: settings
+            .get("orientation")
+            .and_then(Value::as_str)
+            .unwrap_or("portrait")
+            .to_string(),
+        margin_top: read_number("marginTop", 2.54),
+        margin_right: read_number("marginRight", 3.18),
+        margin_bottom: read_number("marginBottom", 2.54),
+        margin_left: read_number("marginLeft", 3.18),
+    })
 }
 
 fn markdown_feature_config_from_value(config: &Value) -> MarkdownFeatureConfig {
@@ -964,6 +1016,7 @@ fn normalize_docx(
     apply_default_template_style: bool,
     heading_numbering: Option<&HeadingNumberingConfig>,
     markdown_features: &MarkdownFeatureConfig,
+    page_settings: Option<&PageSettingsConfig>,
 ) -> Result<(), String> {
     let original = fs::read(path).map_err(|error| format!("读取 DOCX 失败：{error}"))?;
     let reader = Cursor::new(original);
@@ -989,13 +1042,13 @@ fn normalize_docx(
         if name == "word/document.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 document.xml 失败：{error}"))?;
-            data = normalize_document_xml(
+            let xml = normalize_document_xml(
                 &xml,
                 apply_default_template_style,
                 heading_numbering,
                 markdown_features,
-            )
-            .into_bytes();
+            );
+            data = apply_page_settings_to_document_xml(&xml, page_settings).into_bytes();
         } else if name == "word/styles.xml" && apply_default_template_style {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 styles.xml 失败：{error}"))?;
@@ -1062,6 +1115,121 @@ fn normalize_document_xml(
     } else {
         xml
     }
+}
+
+fn apply_page_settings_to_document_xml(
+    xml: &str,
+    page_settings: Option<&PageSettingsConfig>,
+) -> String {
+    let Some(page_settings) = page_settings else {
+        return xml.to_string();
+    };
+
+    let section = Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#).expect("valid sectPr regex");
+    if section.is_match(xml) {
+        return section
+            .replace_all(xml, |captures: &Captures| {
+                normalize_section_page_settings(&captures[0], page_settings)
+            })
+            .to_string();
+    }
+
+    let insert_at = Regex::new(r#"</w:body>"#).expect("valid body closing regex");
+    let section_xml = normalize_section_page_settings("<w:sectPr></w:sectPr>", page_settings);
+    insert_at
+        .replace(xml, format!("{section_xml}</w:body>"))
+        .to_string()
+}
+
+fn normalize_section_page_settings(
+    section_xml: &str,
+    page_settings: &PageSettingsConfig,
+) -> String {
+    let section_parts = Regex::new(r#"(?s)^(<w:sectPr\b[^>]*>)(.*)(</w:sectPr>)$"#)
+        .expect("valid sectPr parts regex");
+    let Some(captures) = section_parts.captures(section_xml) else {
+        return section_xml.to_string();
+    };
+
+    let start = captures
+        .get(1)
+        .map(|value| value.as_str())
+        .unwrap_or("<w:sectPr>");
+    let body = captures.get(2).map(|value| value.as_str()).unwrap_or("");
+    let end = captures
+        .get(3)
+        .map(|value| value.as_str())
+        .unwrap_or("</w:sectPr>");
+    let page_size = page_size_xml(page_settings);
+    let page_margins = page_margins_xml(page_settings);
+    let page_size_re = Regex::new(r#"(?s)<w:pgSz\b[^>]*/>"#).expect("valid page size regex");
+    let page_margins_re = Regex::new(r#"(?s)<w:pgMar\b[^>]*/>"#).expect("valid page margins regex");
+    let body = page_size_re.replace_all(body, "");
+    let body = page_margins_re.replace_all(&body, "");
+
+    format!("{start}{page_size}{page_margins}{body}{end}")
+}
+
+fn page_size_xml(page_settings: &PageSettingsConfig) -> String {
+    let (mut width, mut height) = paper_size_twips(&page_settings.paper_size);
+    let landscape = page_settings
+        .orientation
+        .trim()
+        .eq_ignore_ascii_case("landscape");
+    if landscape {
+        std::mem::swap(&mut width, &mut height);
+    }
+    let orientation = if landscape {
+        r#" w:orient="landscape""#
+    } else {
+        ""
+    };
+    format!(r#"<w:pgSz w:w="{width}" w:h="{height}"{orientation} />"#)
+}
+
+fn page_margins_xml(page_settings: &PageSettingsConfig) -> String {
+    let top = cm_to_twips(page_settings.margin_top);
+    let right = cm_to_twips(page_settings.margin_right);
+    let bottom = cm_to_twips(page_settings.margin_bottom);
+    let left = cm_to_twips(page_settings.margin_left);
+
+    format!(
+        r#"<w:pgMar w:top="{top}" w:right="{right}" w:bottom="{bottom}" w:left="{left}" w:header="720" w:footer="720" w:gutter="0" />"#
+    )
+}
+
+fn paper_size_twips(paper_size: &str) -> (u32, u32) {
+    match paper_size.trim() {
+        "A3" => cm_pair_to_twips(29.7, 42.0),
+        "A5" => cm_pair_to_twips(14.8, 21.0),
+        "A6" => cm_pair_to_twips(10.5, 14.8),
+        "B4" => cm_pair_to_twips(25.0, 35.3),
+        "B5" => cm_pair_to_twips(17.6, 25.0),
+        "B6" => cm_pair_to_twips(12.5, 17.6),
+        "Letter" => inch_pair_to_twips(8.5, 11.0),
+        "Legal" => inch_pair_to_twips(8.5, 14.0),
+        "Executive" => inch_pair_to_twips(7.25, 10.5),
+        "Tabloid" => inch_pair_to_twips(11.0, 17.0),
+        "K16" => cm_pair_to_twips(18.4, 26.0),
+        "K32" => cm_pair_to_twips(13.0, 18.4),
+        _ => cm_pair_to_twips(21.0, 29.7),
+    }
+}
+
+fn cm_pair_to_twips(width: f64, height: f64) -> (u32, u32) {
+    (cm_to_twips(width), cm_to_twips(height))
+}
+
+fn inch_pair_to_twips(width: f64, height: f64) -> (u32, u32) {
+    (inch_to_twips(width), inch_to_twips(height))
+}
+
+fn cm_to_twips(value: f64) -> u32 {
+    inch_to_twips(value / 2.54)
+}
+
+fn inch_to_twips(value: f64) -> u32 {
+    (value * 1440.0).round().max(1.0) as u32
 }
 
 fn normalize_default_report_styles_xml(
@@ -1881,11 +2049,12 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_conflict_strategy, create_heading_numbering_xml, default_markdown_feature_config,
-        default_report_heading_numbering_config, heading_numbering_config_from_value,
-        markdown_feature_config_from_value, normalize_default_report_styles_xml,
-        normalize_document_xml, normalize_docx, preprocess_markdown_for_word,
-        ConvertRequest, HeadingNumberingConfig, MarkdownFeatureConfig,
+        apply_conflict_strategy, apply_page_settings_to_document_xml, create_heading_numbering_xml,
+        default_markdown_feature_config, default_report_heading_numbering_config,
+        heading_numbering_config_from_value, markdown_feature_config_from_value,
+        normalize_default_report_styles_xml, normalize_document_xml, normalize_docx,
+        page_settings_config_from_value, preprocess_markdown_for_word, ConvertRequest,
+        HeadingNumberingConfig, MarkdownFeatureConfig,
     };
     use serde_json::json;
     use std::fs;
@@ -2112,6 +2281,53 @@ mod tests {
     }
 
     #[test]
+    fn reads_page_settings_from_template_config() {
+        let value = json!({
+            "pageSettings": {
+                "paperSize": "B5",
+                "orientation": "landscape",
+                "marginTop": 1.2,
+                "marginRight": 2.3,
+                "marginBottom": 3.4,
+                "marginLeft": 4.5
+            }
+        });
+
+        let settings = page_settings_config_from_value(&value).unwrap();
+
+        assert_eq!(settings.paper_size, "B5");
+        assert_eq!(settings.orientation, "landscape");
+        assert_eq!(settings.margin_top, 1.2);
+        assert_eq!(settings.margin_right, 2.3);
+        assert_eq!(settings.margin_bottom, 3.4);
+        assert_eq!(settings.margin_left, 4.5);
+    }
+
+    #[test]
+    fn applies_page_settings_to_document_section() {
+        let input = r#"<w:document><w:body><w:p /><w:sectPr><w:pgSz w:w="1" w:h="2" /><w:pgMar w:top="1" w:right="1" w:bottom="1" w:left="1" /><w:cols w:space="720" /></w:sectPr></w:body></w:document>"#;
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A5",
+                "orientation": "landscape",
+                "marginTop": 1.0,
+                "marginRight": 2.0,
+                "marginBottom": 3.0,
+                "marginLeft": 4.0
+            }
+        }))
+        .unwrap();
+
+        let output = apply_page_settings_to_document_xml(input, Some(&settings));
+
+        assert!(output.contains(r#"<w:pgSz w:w="11906" w:h="8391" w:orient="landscape" />"#));
+        assert!(output.contains(r#"<w:pgMar w:top="567" w:right="1134" w:bottom="1701" w:left="2268" w:header="720" w:footer="720" w:gutter="0" />"#));
+        assert!(output.contains(r#"<w:cols w:space="720" />"#));
+        assert_eq!(output.matches("<w:pgSz").count(), 1);
+        assert_eq!(output.matches("<w:pgMar").count(), 1);
+    }
+
+    #[test]
     fn converts_formula_fenced_code_to_math_blocks_for_pandoc() {
         let input = "正文\n\n```math\nE = mc^2\n```\n\n```latex\n\\frac{a}{b}\n```\n\n```rust\nlet value = 1;\n```\n";
 
@@ -2233,7 +2449,7 @@ mod tests {
             inline_code: true,
             ..default_markdown_feature_config()
         };
-        normalize_docx(&path, true, Some(&config), &inline_enabled).unwrap();
+        normalize_docx(&path, true, Some(&config), &inline_enabled, None).unwrap();
 
         let data = fs::read(&path).unwrap();
         let mut archive = ZipArchive::new(Cursor::new(data)).unwrap();
@@ -2286,7 +2502,7 @@ mod tests {
             inline_code: true,
             ..default_markdown_feature_config()
         };
-        normalize_docx(&path, true, Some(&config), &inline_enabled).unwrap();
+        normalize_docx(&path, true, Some(&config), &inline_enabled, None).unwrap();
 
         let data = fs::read(&path).unwrap();
         let mut archive = ZipArchive::new(Cursor::new(data)).unwrap();
@@ -2343,10 +2559,8 @@ mod tests {
 
     #[test]
     fn conflict_strategy_ask_rejects_existing_output_path() {
-        let path = std::env::temp_dir().join(format!(
-            "md-king-conflict-ask-{}.docx",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("md-king-conflict-ask-{}.docx", std::process::id()));
         let _ = fs::remove_file(&path);
         fs::write(&path, b"existing").unwrap();
 
