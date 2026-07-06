@@ -31,6 +31,12 @@ pub struct PandocExecution {
     pub stderr: String,
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct PandocDocumentOptions {
+    pub toc: bool,
+    pub toc_depth: Option<u8>,
+}
+
 struct ResolvedPandocPath {
     path: PathBuf,
     source: PandocSource,
@@ -126,18 +132,32 @@ pub fn run_pandoc_to_docx(
     input_path: &Path,
     output_path: &Path,
     reference_docx_path: Option<&Path>,
+    options: &PandocDocumentOptions,
 ) -> io::Result<PandocExecution> {
     let resolved = resolve_pandoc_path(app);
-    run_resolved_pandoc_to_docx(&resolved.path, input_path, output_path, reference_docx_path)
+    run_resolved_pandoc_to_docx(
+        &resolved.path,
+        input_path,
+        output_path,
+        reference_docx_path,
+        options,
+    )
 }
 
 pub fn run_pandoc_to_docx_cli(
     input_path: &Path,
     output_path: &Path,
     reference_docx_path: Option<&Path>,
+    options: &PandocDocumentOptions,
 ) -> io::Result<PandocExecution> {
     let resolved = resolve_pandoc_path_cli();
-    run_resolved_pandoc_to_docx(&resolved.path, input_path, output_path, reference_docx_path)
+    run_resolved_pandoc_to_docx(
+        &resolved.path,
+        input_path,
+        output_path,
+        reference_docx_path,
+        options,
+    )
 }
 
 fn run_resolved_pandoc_to_docx(
@@ -145,6 +165,7 @@ fn run_resolved_pandoc_to_docx(
     input_path: &Path,
     output_path: &Path,
     reference_docx_path: Option<&Path>,
+    options: &PandocDocumentOptions,
 ) -> io::Result<PandocExecution> {
     let mut command = pandoc_command(pandoc_path);
     let input_arg = absolutize_path(input_path);
@@ -169,6 +190,9 @@ fn run_resolved_pandoc_to_docx(
             .arg("--reference-doc")
             .arg(absolutize_path(reference_docx_path));
     }
+    for arg in pandoc_document_option_args(options) {
+        command.arg(arg);
+    }
 
     let output = command.output()?;
 
@@ -178,6 +202,18 @@ fn run_resolved_pandoc_to_docx(
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     })
+}
+
+fn pandoc_document_option_args(options: &PandocDocumentOptions) -> Vec<String> {
+    if !options.toc {
+        return Vec::new();
+    }
+
+    let mut args = vec!["--toc".to_string()];
+    if let Some(depth) = options.toc_depth.filter(|depth| (1..=6).contains(depth)) {
+        args.push(format!("--toc-depth={depth}"));
+    }
+    args
 }
 
 fn format_process_output(
@@ -343,8 +379,21 @@ impl PandocSource {
 
 #[cfg(test)]
 mod tests {
-    use super::strip_windows_extended_path_prefix;
+    use super::{
+        pandoc_document_option_args, strip_windows_extended_path_prefix, PandocDocumentOptions,
+    };
     use std::path::Path;
+
+    #[test]
+    fn builds_toc_arguments_from_document_options() {
+        let args = pandoc_document_option_args(&PandocDocumentOptions {
+            toc: true,
+            toc_depth: Some(3),
+        });
+
+        assert_eq!(args, vec!["--toc", "--toc-depth=3"]);
+        assert!(pandoc_document_option_args(&PandocDocumentOptions::default()).is_empty());
+    }
 
     #[test]
     fn strips_windows_extended_path_prefixes_for_pandoc() {

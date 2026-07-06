@@ -15,7 +15,7 @@ use zip::{ZipArchive, ZipWriter};
 use crate::core::config::load_config;
 use crate::core::pandoc::{
     check_pandoc_available, check_pandoc_available_cli, run_pandoc_to_docx, run_pandoc_to_docx_cli,
-    PandocExecution, PandocStatus,
+    PandocDocumentOptions, PandocExecution, PandocStatus,
 };
 use crate::core::template::find_template;
 use crate::core::template_style::get_template_style_config;
@@ -221,6 +221,7 @@ fn convert_existing_file(
         &pandoc_input_path,
         &output_path,
         template_resolution.reference_docx_path.as_deref(),
+        &pandoc_document_options(&request),
     );
 
     if let Some(path) = temp_preprocessed_input {
@@ -388,6 +389,7 @@ fn convert_text_input(
         &temp_input_path,
         &output_path,
         template_resolution.reference_docx_path.as_deref(),
+        &pandoc_document_options(&request),
     ) {
         Ok(execution) if execution.success => {
             let _ = fs::remove_file(&temp_input_path);
@@ -497,12 +499,15 @@ fn run_pandoc_to_docx_for(
     input_path: &Path,
     output_path: &Path,
     reference_docx_path: Option<&Path>,
+    options: &PandocDocumentOptions,
 ) -> std::io::Result<PandocExecution> {
     match runtime {
         ConvertRuntime::Tauri(app) => {
-            run_pandoc_to_docx(app, input_path, output_path, reference_docx_path)
+            run_pandoc_to_docx(app, input_path, output_path, reference_docx_path, options)
         }
-        ConvertRuntime::Cli => run_pandoc_to_docx_cli(input_path, output_path, reference_docx_path),
+        ConvertRuntime::Cli => {
+            run_pandoc_to_docx_cli(input_path, output_path, reference_docx_path, options)
+        }
     }
 }
 
@@ -723,6 +728,21 @@ fn markdown_feature_config(request: &ConvertRequest) -> MarkdownFeatureConfig {
         .unwrap_or_else(default_markdown_feature_config)
 }
 
+fn pandoc_document_options(request: &ConvertRequest) -> PandocDocumentOptions {
+    let Some(template_id) = request.template_id.as_deref().map(str::trim) else {
+        return PandocDocumentOptions::default();
+    };
+    if template_id.is_empty() {
+        return PandocDocumentOptions::default();
+    }
+
+    get_template_style_config(template_id.to_string())
+        .ok()
+        .flatten()
+        .map(|config| pandoc_document_options_from_value(&config))
+        .unwrap_or_default()
+}
+
 fn page_settings_config(request: &ConvertRequest) -> Option<PageSettingsConfig> {
     let template_id = request.template_id.as_deref().map(str::trim)?;
     if template_id.is_empty() {
@@ -742,6 +762,30 @@ fn default_markdown_feature_config() -> MarkdownFeatureConfig {
         quote_block: true,
         horizontal_rule: false,
     }
+}
+
+fn pandoc_document_options_from_value(config: &Value) -> PandocDocumentOptions {
+    let Some(settings) = config.get("pageSettings") else {
+        return PandocDocumentOptions::default();
+    };
+    let toc = settings
+        .get("tocEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let toc_depth = settings
+        .get("tocDepth")
+        .and_then(Value::as_str)
+        .and_then(parse_toc_depth);
+
+    PandocDocumentOptions { toc, toc_depth }
+}
+
+fn parse_toc_depth(value: &str) -> Option<u8> {
+    value
+        .rsplit('-')
+        .next()
+        .and_then(|part| part.trim().parse::<u8>().ok())
+        .filter(|depth| (1..=6).contains(depth))
 }
 
 fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig> {
@@ -2053,8 +2097,9 @@ mod tests {
         default_markdown_feature_config, default_report_heading_numbering_config,
         heading_numbering_config_from_value, markdown_feature_config_from_value,
         normalize_default_report_styles_xml, normalize_document_xml, normalize_docx,
-        page_settings_config_from_value, preprocess_markdown_for_word, ConvertRequest,
-        HeadingNumberingConfig, MarkdownFeatureConfig,
+        page_settings_config_from_value, pandoc_document_options_from_value,
+        preprocess_markdown_for_word, ConvertRequest, HeadingNumberingConfig,
+        MarkdownFeatureConfig,
     };
     use serde_json::json;
     use std::fs;
@@ -2301,6 +2346,31 @@ mod tests {
         assert_eq!(settings.margin_right, 2.3);
         assert_eq!(settings.margin_bottom, 3.4);
         assert_eq!(settings.margin_left, 4.5);
+    }
+
+    #[test]
+    fn reads_toc_options_from_template_page_settings() {
+        let value = json!({
+            "pageSettings": {
+                "tocEnabled": true,
+                "tocDepth": "1-4"
+            }
+        });
+
+        let options = pandoc_document_options_from_value(&value);
+
+        assert!(options.toc);
+        assert_eq!(options.toc_depth, Some(4));
+
+        let disabled = pandoc_document_options_from_value(&json!({
+            "pageSettings": {
+                "tocEnabled": false,
+                "tocDepth": "1-6"
+            }
+        }));
+
+        assert!(!disabled.toc);
+        assert_eq!(disabled.toc_depth, Some(6));
     }
 
     #[test]
