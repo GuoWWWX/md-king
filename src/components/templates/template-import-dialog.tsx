@@ -91,7 +91,7 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
-            {isImport ? <FileUp className="size-5 text-indigo-600" /> : <FilePlus className="size-5 text-indigo-600" />}
+            {isImport ? <FileUp className="size-5 text-indigo-600 dark:text-indigo-300" /> : <FilePlus className="size-5 text-indigo-600 dark:text-indigo-300" />}
             {isImport ? "导入 Word/WPS 样式模板" : "创建自定义模板"}
           </DialogTitle>
           <DialogDescription>
@@ -122,17 +122,17 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
                 <Input id="reference-docx-path" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="D:/Documents/report-style.docx" />
                 <SoftActionButton type="button" onClick={handleSelectReferenceDocx}>选择文件</SoftActionButton>
               </div>
-              <p className="text-xs text-slate-500">请选择包含目标标题、正文、表格等样式的 .docx 文件，导入后可继续在样式管理器中微调。</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">请选择包含目标标题、正文、表格等样式的 .docx 文件，导入后可继续在样式管理器中微调。</p>
             </div>
           ) : null}
           <div className="space-y-2">
             <Label htmlFor="template-description">模板说明</Label>
             <Textarea id="template-description" value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-20" />
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
             <div>
-              <p className="text-sm font-medium text-slate-900">设为默认模板</p>
-              <p className="text-xs text-slate-500">保存后转换页默认使用这个模板。</p>
+              <p className="text-sm font-medium text-slate-900 dark:text-zinc-50">设为默认模板</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">保存后转换页默认使用这个模板。</p>
             </div>
             <Switch checked={isDefault} onCheckedChange={setIsDefault} />
           </div>
