@@ -33,7 +33,7 @@ const pageMeta: Record<string, PageMeta> = {
   templates: {
     eyebrow: "Word/WPS 模板中心",
     title: "模板中心",
-    description: "管理 Word/WPS 样式模板，让同一份 Markdown 生成报告、公文、技术文档等不同视觉风格。",
+    description: "管理 Word/WPS 样式模板，让同一份 Markdown 按不同模板生成稳定统一的文档效果。",
     tags: ["参考 DOCX", "样式诊断", "样式管理器"],
   },
   history: {

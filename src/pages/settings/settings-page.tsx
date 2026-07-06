@@ -264,10 +264,10 @@ export function SettingsPage() {
             <Select value={draft.logLevel ?? "info"} onValueChange={(value) => updateDraft("logLevel", value as AppConfig["logLevel"])}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="error">仅错误 (error)</SelectItem>
-                <SelectItem value="warn">警告及错误 (warn)</SelectItem>
-                <SelectItem value="info">常规信息 (info)</SelectItem>
-                <SelectItem value="debug">详细调试 (debug)</SelectItem>
+                <SelectItem value="error">仅错误</SelectItem>
+                <SelectItem value="warn">警告及错误</SelectItem>
+                <SelectItem value="info">常规信息</SelectItem>
+                <SelectItem value="debug">详细调试</SelectItem>
               </SelectContent>
             </Select>
           </div>
