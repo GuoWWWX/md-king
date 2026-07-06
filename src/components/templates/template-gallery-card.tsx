@@ -23,7 +23,7 @@ type TemplateGalleryCardProps = {
   onDelete: (template: Template) => void;
 };
 
-export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onEdit, onDelete }: TemplateGalleryCardProps) {
+export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onEdit, onStyleManager, onDelete }: TemplateGalleryCardProps) {
   const category = getTemplateCategory(template.tags, template.isBuiltIn);
   const previewStyleConfig = mergeTemplateStyleConfig(template.id);
   const previewMarkdown = createTemplatePreviewMarkdown(template, category);
@@ -88,7 +88,6 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           {template.isDefault ? <Badge className="rounded-full bg-blue-600 text-white hover:bg-blue-600">默认</Badge> : null}
-          {template.isBuiltIn ? <Badge variant="secondary" className="rounded-full bg-white/70 text-slate-600">内置</Badge> : null}
         </div>
       </div>
 
@@ -104,23 +103,29 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
         <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); return template.isDefault ? toast.info("当前已经是默认模板") : onSetDefault(template); }}>{template.isDefault ? "已默认" : "设默认"}</SoftActionButton>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />编辑</SoftActionButton>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn("justify-center", template.isBuiltIn ? "text-slate-400 hover:bg-transparent hover:text-slate-400" : "text-red-600 hover:bg-red-50 hover:text-red-700")}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete(template);
-          }}
-          disabled={template.isBuiltIn}
-          title={template.isBuiltIn ? "内置模板不能删除" : "删除模板"}
-        >
-          <Trash2 className="size-4" />
-          删除
-        </Button>
-      </div>
+      {template.isBuiltIn ? (
+        <SoftActionButton className="mt-2 h-9 w-full rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onStyleManager(template); }}>
+          <Edit3 className="size-4" />
+          编辑样式
+        </SoftActionButton>
+      ) : (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <SoftActionButton className="h-9 rounded-[9px]" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />模板信息</SoftActionButton>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-center text-red-600 hover:bg-red-50 hover:text-red-700"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(template);
+            }}
+            title="删除模板"
+          >
+            <Trash2 className="size-4" />
+            删除
+          </Button>
+        </div>
+      )}
     </AppSurface>
   );
 }
