@@ -49,9 +49,9 @@ export function HistoryPage() {
   const filteredHistoryIds = useMemo(() => filteredHistory.map((item) => item.id), [filteredHistory]);
   const selectedFilteredCount = selectedIds.filter((id) => filteredHistoryIds.includes(id)).length;
   const isCurrentFilterAllSelected = filteredHistoryIds.length > 0 && filteredHistoryIds.every((id) => selectedIds.includes(id));
-  const successCount = history.filter((item) => item.status === "success").length;
-  const failedCount = history.filter((item) => item.status === "failed").length;
-  const pendingCount = history.filter((item) => item.status === "pending").length;
+  const successCount = filteredHistory.filter((item) => item.status === "success").length;
+  const failedCount = filteredHistory.filter((item) => item.status === "failed").length;
+  const pendingCount = filteredHistory.filter((item) => item.status === "pending").length;
   const selectedRecord = filteredHistory.find((item) => item.id === selectedHistoryId) ?? filteredHistory[0];
   const selectedTemplateName = selectedRecord ? templates.find((template) => template.id === selectedRecord.templateId)?.name ?? selectedRecord.templateId ?? "未指定模板" : "";
   const hasActiveFilters = query.trim() !== "" || status !== "all" || templateId !== "all";
@@ -151,6 +151,7 @@ export function HistoryPage() {
               <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="success">成功</SelectItem>
               <SelectItem value="failed">失败</SelectItem>
+              <SelectItem value="pending">处理中</SelectItem>
             </SelectContent>
           </Select>
           <Select value={templateId} onValueChange={setTemplateId}>
@@ -241,12 +242,12 @@ export function HistoryPage() {
         <AppSurface as="section">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-black text-blue-950">统计概览</h3>
-            <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-blue-700">近 7 天</span>
+            <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-blue-700">当前筛选</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <StatCard icon={CheckCircle2} label="成功" value={String(successCount)} tone="text-emerald-600" compact />
             <StatCard icon={XCircle} label="失败" value={String(failedCount)} tone="text-red-600" compact />
-            <StatCard icon={Clock3} label="筛选" value={String(filteredHistory.length)} tone="text-blue-600" compact />
+            <StatCard icon={Clock3} label="总数" value={String(filteredHistory.length)} tone="text-blue-600" compact />
             <StatCard icon={Clock3} label="处理中" value={String(pendingCount)} tone="text-amber-500" compact />
           </div>
         </AppSurface>
