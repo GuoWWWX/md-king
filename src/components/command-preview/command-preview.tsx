@@ -2,6 +2,7 @@ import { Copy, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { clipboardWriteErrorMessage } from "@/lib/clipboard-errors";
 
 type CommandPreviewProps = {
   title: string;
@@ -13,7 +14,7 @@ async function copyCommand(command: string) {
     await navigator.clipboard.writeText(command);
     toast.success("命令已复制到剪贴板");
   } catch (error) {
-    toast.error(error instanceof Error ? `复制失败：${error.message}` : "复制失败，请手动复制命令");
+    toast.error(clipboardWriteErrorMessage(error));
   }
 }
 

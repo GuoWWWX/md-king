@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
+import { clipboardWriteErrorMessage } from "@/lib/clipboard-errors";
 import { openOutputPath } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { HistoryItem, Template } from "@/types";
@@ -27,7 +28,7 @@ async function copyText(text?: string, message = "已复制") {
     await navigator.clipboard.writeText(text);
     toast.success(message);
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "复制失败");
+    toast.error(clipboardWriteErrorMessage(error));
   }
 }
 

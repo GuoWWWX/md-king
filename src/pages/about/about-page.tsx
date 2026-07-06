@@ -1,9 +1,6 @@
 import { Bot, ClipboardPaste, Cpu, FileText, Layers3, ShieldCheck, type LucideIcon } from "lucide-react";
 import { AppSurface } from "@/components/ui/app-surface";
-import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/stores/app-store";
-
-const stack = ["Tauri 2", "React", "TypeScript", "shadcn/ui", "Rust", "Pandoc"];
 
 export function AboutPage() {
   const { appStatus } = useAppStore();
@@ -33,22 +30,6 @@ export function AboutPage() {
           <Capability icon={Layers3} title="模板样式" text="复用参考 DOCX 控制 Word 样式。" />
           <Capability icon={Bot} title="命令行自动化" text="提供稳定命令和 JSON 输出，方便脚本调用。" />
         </div>
-
-        <AppSurface as="section" className="space-y-3">
-          <div>
-            <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950">
-              <Layers3 className="size-4" />
-              技术栈
-            </h3>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {stack.map((item) => (
-              <Badge key={item} variant="secondary">
-                {item}
-              </Badge>
-            ))}
-          </div>
-        </AppSurface>
       </section>
 
       <aside className="min-w-0 space-y-5">

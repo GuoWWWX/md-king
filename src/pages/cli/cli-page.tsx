@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { CommandPreview } from "@/components/command-preview/command-preview";
 import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
+import { clipboardWriteErrorMessage } from "@/lib/clipboard-errors";
 
 const commandSpec = `md-king CLI 使用说明
 
@@ -16,7 +17,7 @@ async function copyCommandSpec() {
     await navigator.clipboard.writeText(commandSpec);
     toast.success("CLI 使用说明已复制到剪贴板");
   } catch (error) {
-    toast.error(error instanceof Error ? `复制失败：${error.message}` : "复制失败，请手动复制 CLI 使用说明");
+    toast.error(clipboardWriteErrorMessage(error));
   }
 }
 

@@ -6,6 +6,7 @@ import { WordPreviewPage } from "@/components/templates/word-preview-page";
 import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
@@ -190,7 +191,7 @@ export function ConvertPage() {
       setMode("markdown");
       toast.success(text.trim() ? "已从剪贴板读取到编辑区" : "剪贴板为空，已清空编辑区");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取剪贴板失败，请检查权限");
+      toast.error(clipboardReadErrorMessage(error));
     }
   }
 
