@@ -488,11 +488,11 @@ function StyleProperties({
     <section className="min-h-0 overflow-auto border-r border-slate-200 bg-white px-5 py-5 max-lg:order-3 max-lg:overflow-visible max-lg:border-b max-lg:border-r-0">
       <div className="mb-5">
         <p className="text-sm font-bold text-indigo-600">当前样式</p>
-        <h3 className="mt-1.5 text-[26px] font-bold tracking-[-0.03em] text-slate-950">{selectedStyle.name}</h3>
+        <h3 className="mt-1.5 text-[26px] font-bold tracking-[-0.03em] text-slate-950">{selectedStyle.displayName}</h3>
         <p className="mt-1.5 text-sm leading-6 text-slate-500">{selectedStyle.description}</p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">{selectedStyle.displayName}</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">Markdown: {selectedStyle.markdown}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">Word 样式：{selectedStyle.name}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">Markdown 标记：{selectedStyle.markdown}</span>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">{isLoading ? "加载中" : "可编辑"}</span>
         </div>
       </div>
@@ -500,12 +500,12 @@ function StyleProperties({
       <div className="space-y-4">
         <MarkdownFeatureStyleSwitch selectedStyleId={selectedStyle.id} markdownFeatures={markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} />
 
-        <PropertyCard title={isCode ? "代码块样式 (Code Block)" : isTable ? "基础文本样式" : "文本属性 (Typography)"}>
+        <PropertyCard title={isCode ? "代码块样式" : isTable ? "基础文本样式" : "文本属性"}>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="中文字体 (CJK Font)"><Select value={draft.chineseFont} onValueChange={(value) => updateDraft("chineseFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
-            <Field label="英文字体 (English Font)"><Select value={isCode ? "JetBrains Mono" : draft.latinFont} onValueChange={(value) => updateDraft("latinFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
+            <Field label="中文字体"><Select value={draft.chineseFont} onValueChange={(value) => updateDraft("chineseFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
+            <Field label="英文字体"><Select value={isCode ? "JetBrains Mono" : draft.latinFont} onValueChange={(value) => updateDraft("latinFont", value)}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
             <Field label="字号"><WordFontSizeSelect value={draft.fontSize} onChange={(value) => updateDraft("fontSize", value)} /></Field>
-            <Field label="颜色 (Color)"><WordColorPicker value={draft.color} onChange={(value) => updateDraft("color", value)} autoColor="#111827" /></Field>
+            <Field label="文字颜色"><WordColorPicker value={draft.color} onChange={(value) => updateDraft("color", value)} autoColor="#111827" /></Field>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-[120px_minmax(0,1fr)]">
             <Button
@@ -519,7 +519,7 @@ function StyleProperties({
             >
               B 加粗
             </Button>
-            <Field label="字重 (Weight)">
+            <Field label="字重">
               <Select value={draft.fontWeight} onValueChange={(value) => updateDraft("fontWeight", value)}>
                 <SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -532,13 +532,13 @@ function StyleProperties({
           </div>
         </PropertyCard>
 
-        <PropertyCard title="段落与间距 (Paragraph)">
+        <PropertyCard title="段落与间距">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="行高 (Line Spacing)"><Input className="h-11 rounded-lg bg-slate-50" value={draft.lineHeight} onChange={(event) => updateDraft("lineHeight", event.target.value)} /></Field>
+            <Field label="行高"><Input className="h-11 rounded-lg bg-slate-50" value={draft.lineHeight} onChange={(event) => updateDraft("lineHeight", event.target.value)} /></Field>
             <Field label="首行缩进 (字符)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0} max={4} step={0.5} value={draft.firstLineIndent} onChange={(event) => updateDraft("firstLineIndent", Number(event.target.value))} /></Field>
-            <Field label="对齐方式 (Alignment)"><AlignButtonGroup value={draft.align} onChange={(value) => updateDraft("align", value)} /></Field>
-            <Field label="段前间距 (Space Before pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.beforeSpacing} onChange={(event) => updateDraft("beforeSpacing", Number(event.target.value))} /></Field>
-            <Field label="段后间距 (Space After pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.afterSpacing} onChange={(event) => updateDraft("afterSpacing", Number(event.target.value))} /></Field>
+            <Field label="对齐方式"><AlignButtonGroup value={draft.align} onChange={(value) => updateDraft("align", value)} /></Field>
+            <Field label="段前间距 (pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.beforeSpacing} onChange={(event) => updateDraft("beforeSpacing", Number(event.target.value))} /></Field>
+            <Field label="段后间距 (pt)"><Input className="h-11 rounded-lg bg-slate-50" type="number" value={draft.afterSpacing} onChange={(event) => updateDraft("afterSpacing", Number(event.target.value))} /></Field>
           </div>
         </PropertyCard>
 
@@ -638,7 +638,7 @@ function StyleProperties({
         ) : null}
 
         {isHeading || selectedStyle.kind === "list" ? (
-          <PropertyCard title="编号与层级 (Numbering)">
+          <PropertyCard title="编号与层级">
             <SettingSwitch label="自动编号" checked={draft.autoNumbering} onCheckedChange={handleAutoNumberingChange} />
             <Field label="编号格式"><Select value={draft.numberFormat} onValueChange={handleNumberFormatChange}><SelectTrigger className="h-11 rounded-lg bg-slate-50"><SelectValue /></SelectTrigger><SelectContent>{numberFormatOptions.map((format) => <SelectItem key={format} value={format}>{format}</SelectItem>)}</SelectContent></Select></Field>
             {isHeading ? (
@@ -665,7 +665,7 @@ function MarkdownFeatureStyleSwitch({
 }) {
   if (selectedStyleId === "source-code") {
     return (
-      <PropertyCard title="Markdown 开关">
+      <PropertyCard title="代码块映射">
         <SettingSwitch label="启用代码块样式" checked={markdownFeatures.codeBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ codeBlock: checked })} />
       </PropertyCard>
     );
@@ -673,7 +673,7 @@ function MarkdownFeatureStyleSwitch({
 
   if (selectedStyleId === "quote") {
     return (
-      <PropertyCard title="Markdown 开关">
+      <PropertyCard title="引用块映射">
         <SettingSwitch label="启用引用块样式" checked={markdownFeatures.quoteBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ quoteBlock: checked })} />
       </PropertyCard>
     );
@@ -681,7 +681,7 @@ function MarkdownFeatureStyleSwitch({
 
   if (selectedStyleId === "inline-code") {
     return (
-      <PropertyCard title="Markdown 开关">
+      <PropertyCard title="行内代码映射">
         <SettingSwitch label="启用行内代码样式" checked={markdownFeatures.inlineCode} onCheckedChange={(checked) => patchMarkdownFeatures({ inlineCode: checked })} />
       </PropertyCard>
     );
@@ -717,7 +717,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selected
         </div>
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
-        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} interactiveViewport />
+        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} badgeText={`当前：${selectedStyle.displayName}`} interactiveViewport />
       </div>
     </aside>
   );
@@ -835,10 +835,10 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
 
       <PanelCard title="页边距">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="上 cm"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginTop} onChange={(event) => patchPageSettings({ marginTop: Number(event.target.value) })} /></Field>
-          <Field label="下 cm"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginBottom} onChange={(event) => patchPageSettings({ marginBottom: Number(event.target.value) })} /></Field>
-          <Field label="左 cm"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginLeft} onChange={(event) => patchPageSettings({ marginLeft: Number(event.target.value) })} /></Field>
-          <Field label="右 cm"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginRight} onChange={(event) => patchPageSettings({ marginRight: Number(event.target.value) })} /></Field>
+          <Field label="上边距 (cm)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginTop} onChange={(event) => patchPageSettings({ marginTop: Number(event.target.value) })} /></Field>
+          <Field label="下边距 (cm)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginBottom} onChange={(event) => patchPageSettings({ marginBottom: Number(event.target.value) })} /></Field>
+          <Field label="左边距 (cm)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginLeft} onChange={(event) => patchPageSettings({ marginLeft: Number(event.target.value) })} /></Field>
+          <Field label="右边距 (cm)"><Input className="h-11 rounded-lg bg-slate-50" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginRight} onChange={(event) => patchPageSettings({ marginRight: Number(event.target.value) })} /></Field>
         </div>
       </PanelCard>
 
