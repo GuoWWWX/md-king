@@ -6,7 +6,6 @@ import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/
 import { Button } from "@/components/ui/button";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateCategory } from "@/lib/template-categories";
-import { createTemplatePreviewMarkdown } from "@/lib/template-preview";
 import { cn } from "@/lib/utils";
 import type { Template, TemplateStyleConfig } from "@/types";
 
@@ -29,7 +28,6 @@ type TemplateGalleryCardProps = {
 export function TemplateGalleryCard({ template, previewMarkdown, previewStyleConfig, isCurrent, isPreviewed, isSelected, onPreview, onToggleSelect, onUse, onSetDefault, onEdit, onStyleManager, onDelete }: TemplateGalleryCardProps) {
   const category = getTemplateCategory(template.tags, template.isBuiltIn);
   const cardPreviewStyleConfig = previewStyleConfig ?? mergeTemplateStyleConfig(template.id);
-  const cardPreviewMarkdown = previewMarkdown ?? createTemplatePreviewMarkdown(template);
   const visibleTags = template.isBuiltIn ? [] : template.tags.filter((tag) => tag !== category && tag !== "内置").slice(0, 4);
 
   return (
@@ -55,7 +53,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
         ) : (
           <WordPreviewPage
             styleConfig={cardPreviewStyleConfig}
-            markdown={cardPreviewMarkdown}
+            markdown={previewMarkdown}
             showHeader={false}
             zoom={60}
             className="pointer-events-none h-full max-h-none rounded-none border-0 bg-transparent p-0 shadow-none"

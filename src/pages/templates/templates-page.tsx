@@ -23,7 +23,6 @@ import { Label } from "@/components/ui/label";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
 import { getTemplateCategory, getTemplateGroups, isFixedTemplateGroup, loadCustomTemplateGroups, saveCustomTemplateGroups, toTemplateGroupName } from "@/lib/template-categories";
-import { createTemplatePreviewMarkdown } from "@/lib/template-preview";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ImportTemplateRequest, Template, TemplateStyleConfig } from "@/types";
@@ -560,7 +559,6 @@ export function TemplatesPage() {
               <TemplateGalleryCard
                 key={template.id}
                 template={template}
-                previewMarkdown={createTemplatePreviewMarkdown(template)}
                 previewStyleConfig={cardPreviewStyleConfigs[template.id]}
                 isCurrent={currentTemplateId === template.id}
                 isPreviewed={highlightedTemplate?.id === template.id}
