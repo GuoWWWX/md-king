@@ -809,9 +809,39 @@ select {
     display: none !important;
   }
 
+  .mk-sidebar-panel[data-collapsed="true"] .mk-sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .mk-sidebar-panel[data-collapsed="true"] .mk-sidebar-icon-button {
+    width: 2.25rem !important;
+    min-width: 2.25rem !important;
+    height: 2.25rem !important;
+    padding-inline: 0 !important;
+    margin-inline: auto !important;
+    justify-content: center !important;
+  }
+
   @media (max-width: 980px) {
     .mk-sidebar-panel .mk-sidebar-label {
       display: none !important;
+    }
+
+    .mk-sidebar-panel .mk-sidebar-footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .mk-sidebar-panel .mk-sidebar-icon-button {
+      width: 2.25rem !important;
+      min-width: 2.25rem !important;
+      height: 2.25rem !important;
+      padding-inline: 0 !important;
+      margin-inline: auto !important;
+      justify-content: center !important;
     }
   }
 

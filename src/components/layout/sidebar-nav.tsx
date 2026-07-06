@@ -105,12 +105,12 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
 
       </div>
 
-      <div className="shrink-0 space-y-4 border-t border-blue-100/50 pt-3">
+      <div className={cn("mk-sidebar-footer shrink-0 space-y-4 border-t border-blue-100/50 pt-3", collapsed && "items-center")}>
         <ThemeModeButton collapsed={collapsed} themeMode={themeMode} onToggleThemeMode={onToggleThemeMode} onThemeModeChange={onThemeModeChange} />
         <Button
           variant="outline"
           className={cn(
-            "h-9 justify-center overflow-hidden rounded-[10px] border-white/70 bg-white/62 text-xs font-bold whitespace-nowrap text-blue-900/70 hover:bg-white/82",
+            "mk-sidebar-icon-button h-9 justify-center overflow-hidden rounded-[10px] border-white/70 bg-white/62 text-xs font-bold whitespace-nowrap text-blue-900/70 hover:bg-white/82",
             collapsed ? "mx-auto w-9 px-0" : "w-full gap-2 px-2 max-[980px]:mx-auto max-[980px]:w-9 max-[980px]:px-0",
           )}
           onClick={onToggleCollapsed}
@@ -156,7 +156,7 @@ function ThemeModeButton({
     return (
       <Button
         variant="outline"
-        className="mk-theme-cycle-button mx-auto h-9 w-9 justify-center rounded-[10px] px-0"
+        className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto h-9 w-9 justify-center rounded-[10px] px-0"
         onClick={onToggleThemeMode}
         title={activeMode.label}
         aria-label={`切换外观主题，当前：${activeMode.label}`}
@@ -194,7 +194,7 @@ function ThemeModeButton({
       </div>
       <Button
         variant="outline"
-        className="mk-theme-cycle-button mx-auto hidden h-9 w-9 justify-center rounded-[10px] px-0 max-[980px]:inline-flex"
+        className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto hidden h-9 w-9 justify-center rounded-[10px] px-0 max-[980px]:inline-flex"
         onClick={onToggleThemeMode}
         title={activeMode.label}
         aria-label={`切换外观主题，当前：${activeMode.label}`}
