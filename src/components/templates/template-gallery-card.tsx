@@ -39,7 +39,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
       className={cn(
         "mk-template-card group relative cursor-pointer overflow-hidden transition",
         isPreviewed && "mk-template-card-previewed border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)]",
-        isSelected && "bg-white/88",
+        isSelected && "bg-white/88 dark:bg-zinc-900/74",
       )}
       onClick={() => onPreview(template)}
     >
@@ -66,7 +66,10 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
-          className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border text-white", isSelected ? "border-blue-600 bg-blue-600" : "border-blue-200 bg-white/70")}
+          className={cn(
+            "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border text-white",
+            isSelected ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500" : "border-blue-200 bg-white/70 dark:border-zinc-600 dark:bg-zinc-900/72",
+          )}
           onClick={(event) => {
             event.stopPropagation();
             onPreview(template);
@@ -79,10 +82,10 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-slate-950">{template.name}</h3>
+            <h3 className="truncate text-sm font-semibold text-slate-950 dark:text-zinc-50">{template.name}</h3>
             {isCurrent ? <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" /> : null}
           </div>
-          <p className="mt-0.5 line-clamp-1 text-xs leading-4 text-slate-500">{template.description ?? "Word/WPS 参考样式模板"}</p>
+          <p className="mt-0.5 line-clamp-1 text-xs leading-4 text-slate-500 dark:text-zinc-400">{template.description ?? "Word/WPS 参考样式模板"}</p>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -91,9 +94,9 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
-        <Badge variant="secondary" className="rounded-full bg-blue-50 text-blue-700">{category}</Badge>
+        <Badge variant="secondary" className="rounded-full bg-blue-50 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">{category}</Badge>
         {visibleTags.map((tag) => (
-          <Badge key={tag} variant="secondary" className="rounded-full bg-white/70 text-slate-500">{tag}</Badge>
+          <Badge key={tag} variant="secondary" className="rounded-full bg-white/70 text-slate-500 dark:bg-zinc-800/76 dark:text-zinc-400">{tag}</Badge>
         ))}
       </div>
 
@@ -113,7 +116,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 justify-center rounded-[8px] text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+            className="h-8 justify-center rounded-[8px] text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-950/35 dark:hover:text-red-200"
             onClick={(event) => {
               event.stopPropagation();
               onDelete(template);
