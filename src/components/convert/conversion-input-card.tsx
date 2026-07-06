@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 
 type ConversionInputCardProps = {
@@ -60,7 +61,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
       const { text } = await readMarkdownFile(file);
       onFileTextLoad(text, file);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取文件失败");
+      toast.error(userFacingErrorMessage(error, "读取文件失败"));
     }
   }
 

@@ -5,6 +5,7 @@ import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { clipboardWriteErrorMessage } from "@/lib/clipboard-errors";
 import { openOutputPath } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import type { HistoryItem, Template } from "@/types";
 
@@ -42,7 +43,7 @@ async function openFile(path?: string) {
     await openOutputPath(path);
     toast.success("已请求系统打开文件");
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "打开文件失败");
+    toast.error(userFacingErrorMessage(error, "打开文件失败"));
   }
 }
 

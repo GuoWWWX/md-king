@@ -11,6 +11,7 @@ import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } fro
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, selectDirectory, selectMarkdownFiles } from "@/lib/tauri";
+import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
@@ -117,7 +118,7 @@ export function ConvertPage() {
       toast[result.ok && !result.simulated ? "success" : result.simulated ? "info" : "error"](result.message ?? (result.ok ? "转换完成" : "转换失败"));
     } catch (error) {
       if (conversionVersion !== conversionVersionRef.current) return;
-      const message = error instanceof Error ? error.message : "转换调用失败";
+      const message = userFacingErrorMessage(error, "转换调用失败");
       const result: ConvertResult = { ok: false, input, templateId, durationMs: 0, warnings: [], errorCode: "INVOKE_FAILED", message };
       setConvertResult(result);
       await persistHistory([buildHistoryItem(result), ...history].slice(0, 20));
@@ -134,7 +135,7 @@ export function ConvertPage() {
     try {
       paths = await selectMarkdownFiles();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择文件失败");
+      toast.error(userFacingErrorMessage(error, "选择文件失败"));
       return;
     }
 
@@ -165,7 +166,7 @@ export function ConvertPage() {
       setConvertResult(results.length > 0 ? results[results.length - 1] : null);
       toast[failedCount > 0 ? "error" : "success"](`批量转换完成：成功 ${successCount} 个，失败 ${failedCount} 个`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "批量转换失败");
+      toast.error(userFacingErrorMessage(error, "批量转换失败"));
       if (results.length > 0) {
         await persistHistory([...results.map(buildHistoryItem), ...history].slice(0, 20));
       }
@@ -208,7 +209,7 @@ export function ConvertPage() {
       setAppConfig(saved);
       toast.success("已更新输出目录");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择输出目录失败");
+      toast.error(userFacingErrorMessage(error, "选择输出目录失败"));
     }
   }
 
