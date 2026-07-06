@@ -1,11 +1,21 @@
 import { Bot, ClipboardPaste, Cpu, FileText, Layers3, ShieldCheck, type LucideIcon } from "lucide-react";
 import { AppSurface } from "@/components/ui/app-surface";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 
 export function AboutPage() {
-  const { appStatus } = useAppStore();
+  const { appConfig, appStatus, pandocStatus } = useAppStore();
   const appVersion = appStatus?.version ?? "0.1.8";
   const platformLabel = getPlatformLabel(appStatus?.platform);
+  const isBrowserPreview = appStatus?.platform === "browser-preview";
+  const pandocValue = isBrowserPreview
+    ? "桌面端检测"
+    : pandocStatus
+      ? pandocStatus.available ? "可用" : "不可用"
+      : "未检测";
+  const pandocTone = isBrowserPreview || !pandocStatus ? "muted" : pandocStatus.available ? "success" : "danger";
+  const contextMenuValue = isBrowserPreview ? "桌面端功能" : appConfig ? appConfig.enableContextMenu ? "已启用" : "未启用" : "加载中";
+  const floatingBallValue = isBrowserPreview ? "桌面端功能" : appConfig ? appConfig.enableFloatingBall ? "已启用" : "未启用" : "加载中";
 
   return (
     <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -64,10 +74,10 @@ export function AboutPage() {
             </h3>
           </div>
           <div className="space-y-3 text-sm">
-            <Status label="Pandoc 引擎" value="检测可用" />
-            <Status label="本地隐私" value="默认本机处理" />
-            <Status label="右键菜单" value="可用" />
-            <Status label="CLI" value="可用" />
+            <Status label="Pandoc 引擎" value={pandocValue} tone={pandocTone} />
+            <Status label="本地处理" value={isBrowserPreview ? "预览模式" : "本机转换"} tone={isBrowserPreview ? "muted" : "success"} />
+            <Status label="右键菜单" value={contextMenuValue} tone={appConfig?.enableContextMenu ? "success" : "muted"} />
+            <Status label="悬浮球" value={floatingBallValue} tone={appConfig?.enableFloatingBall ? "success" : "muted"} />
           </div>
         </AppSurface>
       </aside>
@@ -89,20 +99,29 @@ function getPlatformLabel(platform?: string) {
 function Capability({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
   return (
     <AppSurface as="article" padding="lg">
-      <div className="flex size-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+      <div className="flex size-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">
         <Icon className="size-5" />
       </div>
-      <h3 className="mt-4 font-black text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-5 text-slate-500">{text}</p>
+      <h3 className="mt-4 font-black text-slate-950 dark:text-zinc-50">{title}</h3>
+      <p className="mt-2 text-sm leading-5 text-slate-500 dark:text-zinc-400">{text}</p>
     </AppSurface>
   );
 }
 
-function Status({ label, value }: { label: string; value: string }) {
+function Status({ label, value, tone = "muted" }: { label: string; value: string; tone?: "success" | "danger" | "muted" }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[10px] border border-white/70 bg-white/58 px-4 py-3">
-      <span className="font-semibold text-slate-700">{label}</span>
-      <span className="text-xs font-bold text-blue-700">{value}</span>
+    <div className="flex items-center justify-between gap-3 rounded-[10px] border border-white/70 bg-white/58 px-4 py-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
+      <span className="font-semibold text-slate-700 dark:text-zinc-300">{label}</span>
+      <span
+        className={cn(
+          "text-xs font-bold",
+          tone === "success" && "text-emerald-600 dark:text-emerald-300",
+          tone === "danger" && "text-red-600 dark:text-red-300",
+          tone === "muted" && "text-blue-700 dark:text-zinc-400",
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }
