@@ -235,7 +235,7 @@ export function SettingsPage() {
               placeholder={draft.useBundledPandoc ? "留空则使用内置 Pandoc" : "例如：C:/Tools/pandoc/pandoc.exe"}
             />
             <p className="text-xs leading-5 text-slate-500">
-              {draft.useBundledPandoc ? "当前启用内置 Pandoc。只有你想强制改用其他版本时，才需要填写这里。" : "当前已关闭内置 Pandoc，将优先使用这里填写的路径；留空时回退系统 pandoc。"}
+              {draft.useBundledPandoc ? "当前启用内置 Pandoc。只有你想强制改用其他版本时，才需要填写这里。" : "当前已关闭内置 Pandoc，将优先使用这里填写的路径；留空时回退系统 Pandoc。"}
             </p>
           </div>
           <Button variant="outline" className="w-full" onClick={handleCheckPandoc} disabled={isChecking}>
@@ -264,10 +264,10 @@ export function SettingsPage() {
             <Select value={draft.logLevel ?? "info"} onValueChange={(value) => updateDraft("logLevel", value as AppConfig["logLevel"])}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="error">error</SelectItem>
-                <SelectItem value="warn">warn</SelectItem>
-                <SelectItem value="info">info</SelectItem>
-                <SelectItem value="debug">debug</SelectItem>
+                <SelectItem value="error">仅错误 (error)</SelectItem>
+                <SelectItem value="warn">警告及错误 (warn)</SelectItem>
+                <SelectItem value="info">常规信息 (info)</SelectItem>
+                <SelectItem value="debug">详细调试 (debug)</SelectItem>
               </SelectContent>
             </Select>
           </div>
