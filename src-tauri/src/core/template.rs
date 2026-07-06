@@ -48,7 +48,7 @@ pub fn built_in_templates() -> Vec<Template> {
         Template {
             id: "official-document".to_string(),
             name: "正式公文模板".to_string(),
-            description: Some("为正式材料预留的标题层级、正文缩进和页边距样式。".to_string()),
+            description: Some("适合正式材料的标题层级、正文缩进和页边距样式。".to_string()),
             reference_docx_path: "".to_string(),
             preview_image_path: None,
             tags: vec!["公文".to_string(), "正式".to_string(), "内置".to_string()],

@@ -52,7 +52,7 @@ const builtInTemplates: Template[] = [
   {
     id: "official-document",
     name: "正式公文模板",
-    description: "为正式材料预留的标题层级、正文缩进和页边距样式。",
+    description: "适合正式材料的标题层级、正文缩进和页边距样式。",
     referenceDocxPath: "",
     previewImagePath: undefined,
     tags: ["公文", "正式", "内置"],

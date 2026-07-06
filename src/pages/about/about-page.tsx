@@ -31,7 +31,7 @@ export function AboutPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Capability icon={ClipboardPaste} title="粘贴转换" text="复制 AI 对话内容后快速生成 DOCX。" />
           <Capability icon={Layers3} title="模板样式" text="复用 reference.docx 控制 Word 样式。" />
-          <Capability icon={Bot} title="Agent/CLI" text="为自动化和智能体保留稳定契约。" />
+          <Capability icon={Bot} title="Agent/CLI" text="提供稳定命令和 JSON 输出，方便自动化调用。" />
         </div>
 
         <AppSurface as="section" className="space-y-3">

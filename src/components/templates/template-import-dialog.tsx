@@ -122,7 +122,7 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
                 <Input id="reference-docx-path" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="D:/Documents/report-reference.docx" />
                 <SoftActionButton type="button" onClick={handleSelectReferenceDocx}>选择文件</SoftActionButton>
               </div>
-              <p className="text-xs text-slate-500">桌面端可点击按钮选择 .docx；浏览器预览下仍可手动填写路径用于界面调试。</p>
+              <p className="text-xs text-slate-500">桌面端可直接选择 .docx 文件；浏览器预览下可手动填写路径查看表单效果。</p>
             </div>
           ) : null}
           <div className="space-y-2">

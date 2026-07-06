@@ -44,6 +44,14 @@ export function SettingsPage() {
   }
 
   const hasChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(appConfig), [appConfig, draft]);
+  const pandocAvailable = pandocStatus?.available === true;
+  const pandocSummaryLabel = pandocStatus ? (pandocAvailable ? "已检测可用" : "不可用") : "未检测";
+  const pandocBadgeClass = pandocAvailable
+    ? "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+    : pandocStatus
+      ? "rounded-full bg-red-50 text-red-700 hover:bg-red-50"
+      : "rounded-full bg-slate-100 text-slate-600 hover:bg-slate-100";
+  const pandocBadgeLabel = pandocAvailable ? "可用" : pandocStatus ? "不可用" : "未检测";
 
   function handleReset() {
     setDraft(appConfig);
@@ -130,7 +138,7 @@ export function SettingsPage() {
             </div>
             <div className="mt-3 flex flex-col gap-2 text-sm text-slate-600 lg:flex-row lg:flex-wrap">
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">历史记录：{history.length} 条</div>
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">Pandoc：{pandocStatus?.available ? "已检测可用" : "等待检测"}</div>
+              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">Pandoc：{pandocSummaryLabel}</div>
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5">系统集成：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray].filter(Boolean).length}/3 已启用</div>
               <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5" title={draft.defaultOutputDir?.trim() || "文档/MD King"}>默认目录：{draft.defaultOutputDir?.trim() || "文档/MD King"}</div>
             </div>
@@ -207,7 +215,7 @@ export function SettingsPage() {
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium text-slate-900">引擎状态</span>
-              <Badge className={pandocStatus?.available ? "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50" : "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50"}>{pandocStatus?.available ? "可用" : "待检测"}</Badge>
+              <Badge className={pandocBadgeClass}>{pandocBadgeLabel}</Badge>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500">{pandocStatus?.message ?? "尚未检测 Pandoc。"}</p>
             {pandocStatus?.version ? <p className="mt-2 truncate font-mono text-xs text-slate-500">{pandocStatus.version}</p> : null}
