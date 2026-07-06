@@ -41,9 +41,9 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
       const selected = await selectDocxFile();
       if (!selected) return;
       setReferenceDocxPath(selected);
-      toast.success("已选择 reference.docx 文件");
+      toast.success("已选择参考 DOCX 文件");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择 reference.docx 失败");
+      toast.error(error instanceof Error ? error.message : "选择参考 DOCX 失败");
     }
   }
 
@@ -53,11 +53,11 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
       return;
     }
     if (mode === "import" && !referenceDocxPath.trim()) {
-      toast.error("请填写 reference.docx 文件路径");
+      toast.error("请填写参考 DOCX 文件路径");
       return;
     }
     if (mode === "import" && !referenceDocxPath.trim().toLowerCase().endsWith(".docx")) {
-      toast.error("reference.docx 路径必须指向 .docx 文件");
+      toast.error("参考 DOCX 路径必须指向 .docx 文件");
       return;
     }
 
@@ -96,7 +96,7 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
           </DialogTitle>
           <DialogDescription>
             {isImport
-              ? "选择一个 .docx 文件作为 Pandoc reference.docx。模板正文不会进入新文档，系统主要使用其中的样式。"
+              ? "选择一个 .docx 文件作为参考样式。模板正文不会进入新文档，系统主要使用其中的标题、正文、表格等样式。"
               : "无需先准备 DOCX，你可以先创建模板信息，再进入样式管理器自定义标题、正文、代码块和页面设置。"}
           </DialogDescription>
         </DialogHeader>
@@ -117,12 +117,12 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
           </div>
           {isImport ? (
             <div className="space-y-2">
-              <Label htmlFor="reference-docx-path">reference.docx 路径</Label>
+              <Label htmlFor="reference-docx-path">参考 DOCX 路径</Label>
               <div className="flex gap-2">
-                <Input id="reference-docx-path" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="D:/Documents/report-reference.docx" />
+                <Input id="reference-docx-path" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="D:/Documents/report-style.docx" />
                 <SoftActionButton type="button" onClick={handleSelectReferenceDocx}>选择文件</SoftActionButton>
               </div>
-              <p className="text-xs text-slate-500">桌面端可直接选择 .docx 文件；浏览器预览下可手动填写路径查看表单效果。</p>
+              <p className="text-xs text-slate-500">请选择包含目标标题、正文、表格等样式的 .docx 文件，导入后可继续在样式管理器中微调。</p>
             </div>
           ) : null}
           <div className="space-y-2">

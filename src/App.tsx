@@ -33,10 +33,10 @@ const pageMeta: Record<string, PageMeta> = {
     tags: ["本地转换", "Word/WPS", "模板样式可复用"],
   },
   templates: {
-    eyebrow: "Reference DOCX Template Center",
+    eyebrow: "Word/WPS Template Center",
     title: "模板中心",
     description: "管理 Word/WPS 样式模板，让同一份 Markdown 生成报告、公文、技术文档等不同视觉风格。",
-    tags: ["reference.docx", "样式诊断", "样式管理器"],
+    tags: ["参考 DOCX", "样式诊断", "样式管理器"],
   },
   history: {
     eyebrow: "Conversion Records",

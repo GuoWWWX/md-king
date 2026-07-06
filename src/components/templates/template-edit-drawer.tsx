@@ -56,7 +56,7 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
       if (!selected) return;
       setReferenceDocxPath(selected);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "选择 reference.docx 失败");
+      toast.error(error instanceof Error ? error.message : "选择参考 DOCX 失败");
     }
   }
 
@@ -82,7 +82,7 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
     }
     const nextReferenceDocxPath = referenceDocxPath.trim();
     if (nextReferenceDocxPath && !nextReferenceDocxPath.toLowerCase().endsWith(".docx")) {
-      toast.error("reference.docx 路径必须指向 .docx 文件");
+      toast.error("参考 DOCX 路径必须指向 .docx 文件");
       return;
     }
 
@@ -158,7 +158,7 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
             <section className="space-y-3 rounded-[8px] border border-slate-200 bg-white p-3">
               <SectionTitle>模板文件</SectionTitle>
               <div className="space-y-2">
-                <Label className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><FileText className="size-3.5" />Reference DOCX</Label>
+                <Label className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><FileText className="size-3.5" />参考 DOCX</Label>
                 <div className="flex gap-2">
                   <Input value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="选择或填写 .docx 文件路径" disabled={!canEditMetadata || isSaving} />
                   <SoftActionButton className="h-8 rounded-[8px]" size="sm" disabled={!canEditMetadata || isSaving} onClick={handleSelectReferenceDocx}>

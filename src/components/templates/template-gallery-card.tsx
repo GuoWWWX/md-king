@@ -83,7 +83,7 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
             <h3 className="truncate font-semibold text-slate-950">{template.name}</h3>
             {isCurrent ? <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" /> : null}
           </div>
-          <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-slate-500">{template.description ?? "Word/WPS reference.docx 样式模板"}</p>
+          <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-slate-500">{template.description ?? "Word/WPS 参考样式模板"}</p>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -133,7 +133,7 @@ export function TemplateGalleryCard({ template, isCurrent, isPreviewed, isSelect
 function createTemplatePreviewMarkdown(template: Template, category: string) {
   const text = `${template.name} ${category} ${template.tags.join(" ")}`;
   if (/技术|代码|开发|API/i.test(text)) {
-    return "# 技术方案\n\n## 接口概览\n\n- Markdown 解析\n- Word 样式映射\n\n```ts\nconvert(markdown, template)\n```\n\n| 模块 | 状态 |\n| --- | --- |\n| 预览 | 已接入 |";
+    return "# 技术方案\n\n## 接口概览\n\n- Markdown 解析\n- Word 样式映射\n\n```ts\nconvert(markdown, template)\n```\n\n| 模块 | 状态 |\n| --- | --- |\n| 预览 | 正常 |";
   }
 
   if (/公文|正式|政务|通知/i.test(text)) {

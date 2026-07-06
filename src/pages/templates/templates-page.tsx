@@ -380,7 +380,7 @@ export function TemplatesPage() {
         <div className="mb-3 flex shrink-0 items-end justify-between gap-4">
           <div>
             <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950">模板中心</h2>
-            <p className="mt-1 text-sm text-blue-900/58">选择 reference.docx 模板，让报告、公文和技术文档保持稳定格式。</p>
+            <p className="mt-1 text-sm text-blue-900/58">选择参考 DOCX 模板，让报告、公文和技术文档保持稳定格式。</p>
           </div>
           <PrimaryActionButton className="rounded-[14px]" onClick={() => openDialog("import")}>
             <Upload className="size-4" />
