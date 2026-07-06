@@ -31,7 +31,9 @@ export function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
 
-  useEffect(() => setDraft(appConfig), [appConfig]);
+  useEffect(() => {
+    setDraft(appConfig ? normalizeSettingsDraft(appConfig) : undefined);
+  }, [appConfig]);
 
   function updateDraft<K extends keyof AppConfig>(key: K, value: AppConfig[K]) {
     setDraft((current) => {
@@ -243,12 +245,11 @@ export function SettingsPage() {
             <Select value={draft.defaultConflictStrategy ?? "overwrite"} onValueChange={(value) => updateDraft("defaultConflictStrategy", value as AppConfig["defaultConflictStrategy"])}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="overwrite">直接覆盖（当前默认）</SelectItem>
+                <SelectItem value="overwrite">直接覆盖</SelectItem>
                 <SelectItem value="rename">自动重命名</SelectItem>
-                <SelectItem value="ask">每次询问</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">单次转换和批量转换都会默认采用这里的处理策略。</p>
+            <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">单次转换、右键菜单和批量转换都会采用这里的处理策略。</p>
           </div>
         </SettingsSection>
 
@@ -276,6 +277,13 @@ export function SettingsPage() {
       </div>
     </div>
   );
+}
+
+function normalizeSettingsDraft(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    defaultConflictStrategy: config.defaultConflictStrategy === "ask" ? "overwrite" : config.defaultConflictStrategy,
+  };
 }
 
 function InfoLine({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
