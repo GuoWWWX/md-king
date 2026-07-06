@@ -4,20 +4,19 @@ import { CommandPreview } from "@/components/command-preview/command-preview";
 import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 
-const commandSpec = `md-king CLI 命令规范
+const commandSpec = `md-king CLI 使用说明
 
 1. 自动化命令默认支持 --json，并输出稳定 JSON 结构。
 2. 当前可用转换命令：md-king-cli convert <input.md> -o <output.docx> --template <template-id> --json。
 3. 当前可用模板命令：md-king-cli templates list --json。
-4. 转换失败时返回稳定 errorCode，便于 Agent 判断重试、降级或提示用户。
-5. 批量转换与服务化入口会沿用相同输入输出契约。`;
+4. 转换失败时返回 errorCode，便于 Agent 判断重试、降级或提示用户。`;
 
 async function copyCommandSpec() {
   try {
     await navigator.clipboard.writeText(commandSpec);
-    toast.success("命令规范已复制到剪贴板");
+    toast.success("CLI 使用说明已复制到剪贴板");
   } catch (error) {
-    toast.error(error instanceof Error ? `复制失败：${error.message}` : "复制失败，请手动复制命令规范");
+    toast.error(error instanceof Error ? `复制失败：${error.message}` : "复制失败，请手动复制 CLI 使用说明");
   }
 }
 
@@ -26,7 +25,7 @@ export function CliPage() {
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_150px] gap-3 overflow-hidden">
       <section className="shrink-0">
         <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950">Agent 与命令行</h2>
-        <p className="mt-1 text-sm text-blue-900/58">通过 CLI 或本地服务，让 AI Agent 把 Markdown 稳定交给 MD King。</p>
+        <p className="mt-1 text-sm text-blue-900/58">通过 CLI 让脚本和 AI Agent 把 Markdown 稳定交给 MD King。</p>
       </section>
 
       <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_310px] gap-3 overflow-hidden max-[1080px]:grid-cols-1">
@@ -36,7 +35,7 @@ export function CliPage() {
               <Terminal className="size-4" />
               终端
             </span>
-            <Button size="icon-sm" variant="ghost" className="rounded-lg border border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/10 hover:text-white" onClick={copyCommandSpec} aria-label="复制命令规范">
+            <Button size="icon-sm" variant="ghost" className="rounded-lg border border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/10 hover:text-white" onClick={copyCommandSpec} aria-label="复制 CLI 使用说明">
               <Copy className="size-4" />
             </Button>
           </div>
@@ -53,22 +52,22 @@ export function CliPage() {
         <aside className="grid min-h-0 grid-rows-[1fr_auto] gap-3 overflow-hidden max-[1080px]:hidden">
           <div className="grid min-h-0 gap-3">
             <CommandPreview title="模板列表" command="md-king-cli templates list --json" />
-            <CommandPreview title="JSON 契约草案" command={`{\n  "ok": true,\n  "output": "<实际输出路径>",\n  "durationMs": "<转换耗时>"\n}`} />
+            <CommandPreview title="JSON 输出示例" command={`{\n  "ok": true,\n  "output": "<实际输出路径>",\n  "durationMs": "<转换耗时>"\n}`} />
           </div>
 
           <AppSurface as="section" className="space-y-2">
             <div>
               <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950">
                 <Bot className="size-4" />
-                本地服务
+                CLI 自动化
               </h3>
             </div>
             <div className="space-y-2 text-sm text-slate-600">
               <StatusLine icon={CheckCircle2} label="CLI 命令" value="可用" />
-              <StatusLine icon={FileCode2} label="JSON 输出" value="稳定契约" />
+              <StatusLine icon={FileCode2} label="JSON 输出" value="稳定格式" />
               <SoftActionButton className="w-full" onClick={copyCommandSpec}>
                 <Copy className="size-4" />
-                复制规范
+                复制说明
               </SoftActionButton>
             </div>
           </AppSurface>
