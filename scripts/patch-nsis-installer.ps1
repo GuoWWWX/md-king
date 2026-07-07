@@ -6,6 +6,7 @@ $installerScript = Join-Path $nsisDir "installer.nsi"
 $utilsScript = Join-Path $nsisDir "utils.nsh"
 $outputExe = Join-Path $nsisDir "nsis-output.exe"
 $bundleDir = Join-Path $projectRoot "src-tauri\target\release\bundle\nsis"
+$installedIconName = "md-king.ico"
 
 if (!(Test-Path $installerScript)) {
   throw "Missing generated NSIS script. Run tauri build first: $installerScript"
@@ -57,6 +58,50 @@ if ($content -notlike "*Function RefreshExistingShortcutIcons*") {
   $content = $content.Replace($shortcutAnchor, "$shortcutAnchor$refreshCall")
 }
 
+$mainBinaryCopy = '  File "${MAINBINARYSRCPATH}"'
+$iconCopy = "  File `"/oname=$installedIconName`" `"`${INSTALLERICON}`""
+if ($content -notlike "*$installedIconName*") {
+  if (!$content.Contains($mainBinaryCopy)) {
+    throw "Could not find the NSIS main binary copy line."
+  }
+
+  $content = $content.Replace($mainBinaryCopy, "$mainBinaryCopy`r`n$iconCopy")
+}
+
+$displayIconExe = '  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayIcon" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\""'
+$displayIconIco = '  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayIcon" "$\"$INSTDIR\' + $installedIconName + '$\""'
+if ($content.Contains($displayIconExe)) {
+  $content = $content.Replace($displayIconExe, $displayIconIco)
+}
+
+$deleteMainBinary = '  Delete "$INSTDIR\${MAINBINARYNAME}.exe"'
+$deleteIcon = "  Delete `"`$INSTDIR\$installedIconName`""
+if ($content -notlike "*$deleteIcon*") {
+  if (!$content.Contains($deleteMainBinary)) {
+    throw "Could not find the NSIS main binary delete line."
+  }
+
+  $content = $content.Replace($deleteMainBinary, "$deleteMainBinary`r`n$deleteIcon")
+}
+
+$startMenuShortcutWithFolder = '    CreateShortcut "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"'
+$startMenuTargetWithFolder = '    !insertmacro SetShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"'
+if ($content.Contains($startMenuShortcutWithFolder) -and !$content.Contains("$startMenuShortcutWithFolder`r`n$startMenuTargetWithFolder")) {
+  $content = $content.Replace($startMenuShortcutWithFolder, "$startMenuShortcutWithFolder`r`n$startMenuTargetWithFolder")
+}
+
+$startMenuShortcut = '    CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"'
+$startMenuTarget = '    !insertmacro SetShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"'
+if ($content.Contains($startMenuShortcut) -and !$content.Contains("$startMenuShortcut`r`n$startMenuTarget")) {
+  $content = $content.Replace($startMenuShortcut, "$startMenuShortcut`r`n$startMenuTarget")
+}
+
+$desktopShortcut = '  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"'
+$desktopTarget = '  !insertmacro SetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"'
+if ($content.Contains($desktopShortcut) -and !$content.Contains("$desktopShortcut`r`n$desktopTarget")) {
+  $content = $content.Replace($desktopShortcut, "$desktopShortcut`r`n$desktopTarget")
+}
+
 $refreshFunction = @'
 
 Function RefreshExistingShortcutIcons
@@ -77,6 +122,8 @@ Function RefreshExistingShortcutIcons
   IfFileExists "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk" 0 +3
     !insertmacro SetShortcutTarget "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
     !insertmacro SetLnkAppUserModelId "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk"
+
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 FunctionEnd
 '@
 $functionAnchor = @'
@@ -94,7 +141,12 @@ Set-Content -LiteralPath $installerScript -Value $content -NoNewline -Encoding U
 
 $utilsContent = Get-Content -LiteralPath $utilsScript -Raw
 $setPathNeedle = '      ${IShellLink::SetPath} $0 ''(w "${target}")'''
-$setIconLine = '      ${IShellLink::SetIconLocation} $0 ''(w "${target}", 0)'''
+$setIconLine = "      `${IShellLink::SetIconLocation} `$0 '(w `"`$INSTDIR\$installedIconName`", 0)'"
+$oldSetTargetIconLine = '      ${IShellLink::SetIconLocation} $0 ''(w "${target}", 0)'''
+if ($utilsContent.Contains($oldSetTargetIconLine)) {
+  $utilsContent = $utilsContent.Replace($oldSetTargetIconLine, $setIconLine)
+  Set-Content -LiteralPath $utilsScript -Value $utilsContent -NoNewline -Encoding UTF8
+}
 if ($utilsContent -notlike "*SetIconLocation*") {
   if (!$utilsContent.Contains($setPathNeedle)) {
     throw "Could not find the NSIS SetShortcutTarget SetPath line."
