@@ -702,10 +702,18 @@ select {
   height: 10px;
 }
 
-*::-webkit-scrollbar-button {
-  display: none;
-  width: 0;
-  height: 0;
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:single-button,
+*::-webkit-scrollbar-button:vertical,
+*::-webkit-scrollbar-button:horizontal,
+*::-webkit-scrollbar-button:increment,
+*::-webkit-scrollbar-button:decrement {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  -webkit-appearance: none;
 }
 
 *::-webkit-scrollbar-track {
