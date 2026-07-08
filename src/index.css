@@ -677,19 +677,19 @@ select {
 }
 
 :root {
-  --mk-scrollbar-thumb: color-mix(in srgb, var(--app-primary) 30%, #94a3b8);
-  --mk-scrollbar-thumb-hover: color-mix(in srgb, var(--app-primary) 50%, #64748b);
+  --mk-scrollbar-thumb: rgba(100, 116, 139, 0.44);
+  --mk-scrollbar-thumb-hover: rgba(71, 85, 105, 0.68);
   --mk-scrollbar-track: rgba(255, 255, 255, 0.18);
   --mk-scrollbar-track-border: rgba(255, 255, 255, 0.36);
-  --mk-scrollbar-glow: color-mix(in srgb, var(--app-primary) 22%, transparent);
+  --mk-scrollbar-glow: rgba(15, 23, 42, 0.1);
 }
 
 .dark {
-  --mk-scrollbar-thumb: color-mix(in srgb, var(--app-primary) 38%, #71717a);
-  --mk-scrollbar-thumb-hover: color-mix(in srgb, var(--app-primary) 58%, #a1a1aa);
+  --mk-scrollbar-thumb: rgba(148, 163, 184, 0.34);
+  --mk-scrollbar-thumb-hover: rgba(203, 213, 225, 0.58);
   --mk-scrollbar-track: rgba(255, 255, 255, 0.055);
   --mk-scrollbar-track-border: rgba(255, 255, 255, 0.12);
-  --mk-scrollbar-glow: color-mix(in srgb, var(--app-primary) 30%, transparent);
+  --mk-scrollbar-glow: rgba(255, 255, 255, 0.09);
 }
 
 * {
@@ -700,6 +700,12 @@ select {
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 *::-webkit-scrollbar-track {
