@@ -120,6 +120,7 @@ export type StyleDraft = {
   quoteBorderWidth: number;
   codeBlockPreset: CodeBlockPresetKey;
   codeBorderColor: string;
+  codeBorderRadius: number;
   codePaddingX: number;
   codePaddingY: number;
   tableLayout: TableLayoutMode;

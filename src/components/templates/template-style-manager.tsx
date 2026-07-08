@@ -964,6 +964,30 @@ function StyleProperties({
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="代码底色"><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F8FAFC" /></Field>
                 <Field label="边框颜色"><WordColorPicker value={draft.codeBorderColor} onChange={(value) => updateDraft("codeBorderColor", value)} autoColor="#E2E8F0" /></Field>
+                <Field label="边角样式">
+                  <div className="grid h-10 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
+                    {[
+                      { label: "直角", value: 0 },
+                      { label: "圆角", value: Math.max(8, draft.codeBorderRadius || 0) },
+                    ].map((option) => {
+                      const active = option.value === 0 ? draft.codeBorderRadius <= 0 : draft.codeBorderRadius > 0;
+                      return (
+                        <button
+                          key={option.label}
+                          type="button"
+                          className={cn(
+                            "flex items-center justify-center border-r border-slate-200 text-sm font-semibold last:border-r-0 dark:border-zinc-700",
+                            active ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+                          )}
+                          onClick={() => updateDraft("codeBorderRadius", option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
+                <Field label="圆角弧度 (px)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={32} step={1} value={draft.codeBorderRadius} onChange={(event) => updateDraft("codeBorderRadius", Number(event.target.value))} /></Field>
                 <Field label="左右内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingX} onChange={(event) => updateDraft("codePaddingX", Number(event.target.value))} /></Field>
                 <Field label="上下内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingY} onChange={(event) => updateDraft("codePaddingY", Number(event.target.value))} /></Field>
               </div>

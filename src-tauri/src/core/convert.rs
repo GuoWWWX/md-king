@@ -3006,8 +3006,9 @@ fn normalize_code_runs(paragraph_xml: &str, style: Option<&CodeBlockStyleConfig>
 }
 
 fn normalize_code_run_xml(run_xml: &str, style: Option<&CodeBlockStyleConfig>) -> String {
-    let has_token_style = has_syntax_token_run_style(run_xml);
-    let properties = code_run_properties_xml(style, has_token_style);
+    let token_style = syntax_token_run_style(run_xml);
+    let has_token_style = token_style.is_some();
+    let properties = code_run_properties_xml(style, token_style.as_deref());
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
 
@@ -3015,7 +3016,7 @@ fn normalize_code_run_xml(run_xml: &str, style: Option<&CodeBlockStyleConfig>) -
         return run_properties
             .replace(run_xml, |captures: &Captures| {
                 let removable = if has_token_style {
-                    Regex::new(r#"<w:(?:rFonts|noProof|sz|szCs|b|bCs|i|iCs)\b[^>]*/>"#)
+                    Regex::new(r#"<w:(?:rFonts|noProof|color|sz|szCs|b|bCs|i|iCs)\b[^>]*/>"#)
                         .expect("valid syntax highlighted code run cleanup regex")
                 } else {
                     Regex::new(
@@ -3032,10 +3033,18 @@ fn normalize_code_run_xml(run_xml: &str, style: Option<&CodeBlockStyleConfig>) -
     insert_run_properties(run_xml, &properties)
 }
 
-fn has_syntax_token_run_style(run_xml: &str) -> bool {
+fn syntax_token_run_style(run_xml: &str) -> Option<String> {
     Regex::new(r#"<w:rStyle\s+w:val="[^"]*Tok"\s*/>"#)
         .expect("valid syntax token run style regex")
-        .is_match(run_xml)
+        .captures(run_xml)
+        .and_then(|captures| captures.get(0))
+        .and_then(|style_xml| {
+            Regex::new(r#"w:val="([^"]+)""#)
+                .expect("valid syntax token style value regex")
+                .captures(style_xml.as_str())
+                .and_then(|captures| captures.get(1))
+                .map(|value| value.as_str().to_string())
+        })
 }
 
 fn normalize_quote_paragraph(paragraph_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
@@ -3146,7 +3155,7 @@ fn code_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String
     )
 }
 
-fn code_run_properties_xml(style: Option<&CodeBlockStyleConfig>, preserve_token_color: bool) -> String {
+fn code_run_properties_xml(style: Option<&CodeBlockStyleConfig>, token_style: Option<&str>) -> String {
     let latin_font = style
         .map(|value| value.latin_font.as_str())
         .unwrap_or("Consolas");
@@ -3156,8 +3165,11 @@ fn code_run_properties_xml(style: Option<&CodeBlockStyleConfig>, preserve_token_
     let color = style.map(|value| value.color.as_str()).unwrap_or("111827");
     let size = font_size_half_points(style.map(|value| value.font_size).unwrap_or(9.0));
     let bold = bool_val(style.is_some_and(|value| value.bold));
-    let color_xml = if preserve_token_color {
-        String::new()
+    let color_xml = if let Some(token_style) = token_style {
+        format!(
+            r#"<w:color w:val="{}" />"#,
+            syntax_token_color(token_style, style)
+        )
     } else {
         format!(r#"<w:color w:val="{color}" />"#)
     };
@@ -3165,6 +3177,58 @@ fn code_run_properties_xml(style: Option<&CodeBlockStyleConfig>, preserve_token_
     format!(
         r#"<w:rFonts w:ascii="{latin_font}" w:eastAsia="{chinese_font}" w:hAnsi="{latin_font}" w:cs="{latin_font}" /><w:noProof />{color_xml}<w:b w:val="{bold}" /><w:bCs w:val="{bold}" /><w:i w:val="0" /><w:iCs w:val="0" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" />"#
     )
+}
+
+fn syntax_token_color(token_style: &str, style: Option<&CodeBlockStyleConfig>) -> &'static str {
+    let background = style
+        .map(|value| value.background_color.as_str())
+        .unwrap_or("F8FAFC");
+    let dark = is_dark_hex_color(background);
+    match token_style {
+        "KeywordTok" | "ControlFlowTok" | "ImportTok" | "ExtensionTok" | "PreprocessorTok" => {
+            if dark { "C084FC" } else { "7C3AED" }
+        }
+        "DataTypeTok" | "DecValTok" | "BaseNTok" | "FloatTok" | "ConstantTok" => {
+            if dark { "FBBF24" } else { "B45309" }
+        }
+        "CharTok" | "StringTok" | "SpecialStringTok" | "VerbatimStringTok" => {
+            if dark { "86EFAC" } else { "15803D" }
+        }
+        "CommentTok" | "DocumentationTok" | "AnnotationTok" | "CommentVarTok" => {
+            if dark { "94A3B8" } else { "64748B" }
+        }
+        "FunctionTok" => {
+            if dark { "67E8F9" } else { "0369A1" }
+        }
+        "OperatorTok" | "SpecialCharTok" | "VariableTok" | "AttributeTok" => {
+            if dark { "F9A8D4" } else { "BE185D" }
+        }
+        "AlertTok" | "ErrorTok" => {
+            if dark { "F87171" } else { "DC2626" }
+        }
+        _ => {
+            if dark { "E2E8F0" } else { "111827" }
+        }
+    }
+}
+
+fn is_dark_hex_color(value: &str) -> bool {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return false;
+    }
+    let Ok(red) = u8::from_str_radix(&hex[0..2], 16) else {
+        return false;
+    };
+    let Ok(green) = u8::from_str_radix(&hex[2..4], 16) else {
+        return false;
+    };
+    let Ok(blue) = u8::from_str_radix(&hex[4..6], 16) else {
+        return false;
+    };
+    let luminance =
+        0.2126 * f64::from(red) / 255.0 + 0.7152 * f64::from(green) / 255.0 + 0.0722 * f64::from(blue) / 255.0;
+    luminance < 0.45
 }
 
 fn quote_paragraph_properties_xml(style: Option<&QuoteBlockStyleConfig>, is_list: bool) -> String {
@@ -4729,6 +4793,8 @@ mod tests {
 
         assert!(output.contains(r#"<w:rStyle w:val="KeywordTok" />"#));
         assert!(output.contains(r#"<w:rStyle w:val="StringTok" />"#));
+        assert!(output.contains(r#"<w:color w:val="7C3AED" />"#));
+        assert!(output.contains(r#"<w:color w:val="15803D" />"#));
         assert!(output.contains(r#"<w:rFonts w:ascii="Consolas""#));
     }
 

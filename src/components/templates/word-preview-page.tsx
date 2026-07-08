@@ -754,6 +754,7 @@ function renderMarkdownBlocks({
             textIndent: 0,
             backgroundColor,
             border: codeBlockBorder(drafts.code),
+            borderRadius: Math.max(0, drafts.code.codeBorderRadius),
             padding: `${Math.max(0, drafts.code.codePaddingY) + (languageLabel ? 22 : 0)}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
           }}
         >

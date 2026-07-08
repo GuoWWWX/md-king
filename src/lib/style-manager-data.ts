@@ -173,6 +173,7 @@ export const defaultStyleDraft: StyleDraft = {
   quoteBorderWidth: 4,
   codeBlockPreset: "document",
   codeBorderColor: "#E2E8F0",
+  codeBorderRadius: 8,
   codePaddingX: 12,
   codePaddingY: 10,
   tableLayout: "auto",
@@ -386,6 +387,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#111827",
       backgroundColor: "#F8FAFC",
       codeBorderColor: "#E2E8F0",
+      codeBorderRadius: 8,
       lineHeight: "1.55",
       beforeSpacing: 8,
       afterSpacing: 8,
@@ -404,6 +406,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#E2E8F0",
       backgroundColor: "#111827",
       codeBorderColor: "#334155",
+      codeBorderRadius: 10,
       lineHeight: "1.6",
       beforeSpacing: 10,
       afterSpacing: 10,
@@ -422,6 +425,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#0F172A",
       backgroundColor: "#EFF6FF",
       codeBorderColor: "#93C5FD",
+      codeBorderRadius: 10,
       lineHeight: "1.6",
       beforeSpacing: 10,
       afterSpacing: 10,
@@ -440,6 +444,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#1F2937",
       backgroundColor: "#F3F4F6",
       codeBorderColor: "#D1D5DB",
+      codeBorderRadius: 4,
       lineHeight: "1.5",
       beforeSpacing: 6,
       afterSpacing: 6,
@@ -542,6 +547,7 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       backgroundColor: styleId === "source-code" ? "#111827" : "#F1F5F9",
       codeBlockPreset: styleId === "source-code" ? "terminal" : "document",
       codeBorderColor: styleId === "source-code" ? "#334155" : "#CBD5E1",
+      codeBorderRadius: styleId === "source-code" ? 10 : 4,
       codePaddingX: styleId === "source-code" ? 14 : 4,
       codePaddingY: styleId === "source-code" ? 12 : 1,
       lineHeight: "1.55",
@@ -662,6 +668,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       backgroundColor: "#F8FAFC",
       codeBlockPreset: "document",
       codeBorderColor: "#E2E8F0",
+      codeBorderRadius: 8,
       lineHeight: "1.55",
     };
     styles["inline-code"] = {
@@ -672,6 +679,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       color: "#111827",
       backgroundColor: "#F1F5F9",
       codeBorderColor: "#CBD5E1",
+      codeBorderRadius: 4,
       codePaddingX: 4,
       codePaddingY: 1,
       lineHeight: "1.35",
@@ -713,7 +721,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles["heading-1"] = { ...styles["heading-1"], fontSize: 20, color: "#1D4ED8", align: "left" };
     styles["heading-2"] = { ...styles["heading-2"], fontSize: 16, color: "#1D4ED8" };
     styles.normal = { ...styles.normal, fontSize: 11, lineHeight: "1.7", firstLineIndent: 0, align: "left" };
-    styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codePaddingX: 14, codePaddingY: 12 };
+    styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codeBorderRadius: 10, codePaddingX: 14, codePaddingY: 12 };
     styles.table = { ...styles.table, tablePreset: "grid", tableLayout: "fixed", rowStripe: false, borderColor: "#64748B", headerBackgroundColor: "#F1F5F9", headerBorderColor: "#64748B", bodyBorderColor: "#64748B" };
   }
 
