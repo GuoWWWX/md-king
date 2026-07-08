@@ -37,7 +37,7 @@ export function WordFontSizeSelect({ value, onChange, className }: WordFontSizeS
 
   return (
     <Select value={selectedValue} onValueChange={(nextValue) => onChange(Number(nextValue))}>
-      <SelectTrigger className={className ?? "h-11 w-full rounded-lg bg-slate-50"}>
+      <SelectTrigger className={className ?? "h-10 w-full rounded-lg bg-slate-50 data-[size=default]:h-10 dark:bg-zinc-900/72"}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent className="max-h-80">

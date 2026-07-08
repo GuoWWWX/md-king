@@ -275,6 +275,11 @@ export function TemplatesPage() {
     setEditingTemplate(undefined);
   }
 
+  async function saveTemplateFromStyleManager(template: Template) {
+    await saveTemplateEdit(template);
+    setStyleTemplate(template);
+  }
+
   async function handleImport(request: ImportTemplateRequest) {
     const template = await importTemplate(request);
     if (request.isDefault && appConfig) {
@@ -405,7 +410,7 @@ export function TemplatesPage() {
   if (styleTemplate) {
     return (
       <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
-        <TemplateStyleManager embedded template={styleTemplate} onRequestClose={() => setStyleTemplate(undefined)} />
+        <TemplateStyleManager embedded template={styleTemplate} groups={groups} onSaveTemplate={saveTemplateFromStyleManager} onRequestClose={() => setStyleTemplate(undefined)} />
       </div>
     );
   }

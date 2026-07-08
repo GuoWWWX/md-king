@@ -20,6 +20,7 @@ type WordColorPickerProps = {
   onChange: (value: string) => void;
   autoColor?: string;
   autoLabel?: string;
+  className?: string;
 };
 
 const themeColorColumns: ColorColumn[] = [
@@ -56,7 +57,7 @@ const standardColors: ColorOption[] = [
   { name: "紫色", value: "#7030A0" },
 ];
 
-export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLabel = "自动" }: WordColorPickerProps) {
+export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLabel = "自动", className }: WordColorPickerProps) {
   const [open, setOpen] = useState(false);
   const normalizedValue = normalizeColor(value);
   const normalizedAuto = normalizeColor(autoColor);
@@ -77,7 +78,7 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
         <Button
           type="button"
           variant="outline"
-          className="h-11 w-full justify-between rounded-lg border-slate-200 bg-slate-50 px-3 text-slate-900 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-50 dark:hover:bg-zinc-800"
+          className={cn("h-10 w-full justify-between rounded-lg border-slate-200 bg-slate-50 px-3 text-slate-900 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-50 dark:hover:bg-zinc-800", className)}
         >
           <span className="flex min-w-0 items-center gap-2.5">
             <ColorSwatch color={normalizedValue} selected={false} />
@@ -153,7 +154,7 @@ function SwatchButton({ color, label, selected, onClick }: { color: string; labe
 function ColorSwatch({ color, selected }: { color: string; selected: boolean }) {
   return (
     <span
-      className={cn("relative size-6 shrink-0 rounded-[5px] border border-slate-300 shadow-sm dark:border-zinc-600", selected && "ring-2 ring-slate-900 dark:ring-zinc-100")}
+      className={cn("relative size-5 shrink-0 rounded-[5px] border border-slate-300 shadow-sm dark:border-zinc-600", selected && "ring-2 ring-slate-900 dark:ring-zinc-100")}
       style={{ backgroundColor: color }}
     />
   );

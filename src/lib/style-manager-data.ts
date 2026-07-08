@@ -1,28 +1,29 @@
-import type { BorderStyleMode, MarkdownFeatureSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
+import type { BorderStyleMode, CaptionPosition, CodeBlockPresetKey, ImageWidthMode, ListLevelType, ListMarkerStyle, ListNumberingMode, ListWrapMode, MarkdownFeatureSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
 
 export const styleGroupLabels: Record<StyleGroupKey, string> = {
-  headings: "标题样式",
-  blocks: "正文与块级样式",
-  lists: "列表样式",
+  basic: "基础样式",
+  images: "图片类",
   tables: "表格样式",
+  blocks: "扩展样式",
 };
 
 export const styleNodes: StyleNode[] = [
-  { id: "heading-1", name: "Heading 1", displayName: "一级标题", group: "headings", kind: "heading", markdown: "#", description: "文档主标题，通常映射为 Word Heading 1" },
-  { id: "heading-2", name: "Heading 2", displayName: "二级标题", group: "headings", kind: "heading", markdown: "##", description: "章节标题，常用于报告主体结构" },
-  { id: "heading-3", name: "Heading 3", displayName: "三级标题", group: "headings", kind: "heading", markdown: "###", description: "小节标题" },
-  { id: "heading-4", name: "Heading 4", displayName: "四级标题", group: "headings", kind: "heading", markdown: "####", description: "深层级标题" },
-  { id: "heading-5", name: "Heading 5", displayName: "五级标题", group: "headings", kind: "heading", markdown: "#####", description: "深层级标题" },
-  { id: "heading-6", name: "Heading 6", displayName: "六级标题", group: "headings", kind: "heading", markdown: "######", description: "最深层级标题" },
-  { id: "normal", name: "Normal", displayName: "正文", group: "blocks", kind: "paragraph", markdown: "paragraph", description: "普通正文段落" },
-  { id: "body-text", name: "Body Text", displayName: "正文增强", group: "blocks", kind: "paragraph", markdown: "body", description: "增强正文样式" },
+  { id: "heading-1", name: "Heading 1", displayName: "一级标题", group: "basic", kind: "heading", markdown: "#", description: "文档主标题，通常映射为 Word Heading 1" },
+  { id: "heading-2", name: "Heading 2", displayName: "二级标题", group: "basic", kind: "heading", markdown: "##", description: "章节标题，常用于报告主体结构" },
+  { id: "heading-3", name: "Heading 3", displayName: "三级标题", group: "basic", kind: "heading", markdown: "###", description: "小节标题" },
+  { id: "heading-4", name: "Heading 4", displayName: "四级标题", group: "basic", kind: "heading", markdown: "####", description: "深层级标题" },
+  { id: "heading-5", name: "Heading 5", displayName: "五级标题", group: "basic", kind: "heading", markdown: "#####", description: "深层级标题" },
+  { id: "heading-6", name: "Heading 6", displayName: "六级标题", group: "basic", kind: "heading", markdown: "######", description: "最深层级标题" },
+  { id: "normal", name: "Normal", displayName: "正文", group: "basic", kind: "paragraph", markdown: "paragraph", description: "普通正文段落" },
+  { id: "body-text", name: "Body Text", displayName: "正文增强", group: "basic", kind: "paragraph", markdown: "body", description: "增强正文样式" },
   { id: "quote", name: "Quote", displayName: "引用块", group: "blocks", kind: "block", markdown: ">", description: "Markdown 引用内容" },
   { id: "source-code", name: "Source Code", displayName: "代码块", group: "blocks", kind: "code", markdown: "```", description: "围栏代码块", warning: "建议设置等宽字体和底纹" },
   { id: "inline-code", name: "Inline Code", displayName: "行内代码", group: "blocks", kind: "code", markdown: "`code`", description: "行内代码样式" },
-  { id: "caption", name: "Caption", displayName: "题注", group: "blocks", kind: "paragraph", markdown: "caption", description: "图片或表格题注" },
-  { id: "bullet-list", name: "Bullet List", displayName: "无序列表", group: "lists", kind: "list", markdown: "-", description: "项目符号列表" },
-  { id: "numbered-list", name: "Numbered List", displayName: "有序列表", group: "lists", kind: "list", markdown: "1.", description: "编号列表" },
-  { id: "nested-list", name: "Nested List", displayName: "多级列表", group: "lists", kind: "list", markdown: "  -", description: "嵌套列表" },
+  { id: "image", name: "Image", displayName: "图片样式", group: "images", kind: "image", markdown: "![alt](url)", description: "控制 Markdown 图片的宽度和对齐方式" },
+  { id: "caption", name: "Caption", displayName: "图片题注", group: "images", kind: "paragraph", markdown: "caption", description: "控制图片下方或上方的说明文字" },
+  { id: "bullet-list", name: "Bullet List", displayName: "无序列表", group: "basic", kind: "list", markdown: "-", description: "项目符号列表" },
+  { id: "numbered-list", name: "Numbered List", displayName: "有序列表", group: "basic", kind: "list", markdown: "1.", description: "编号列表" },
+  { id: "nested-list", name: "Nested List", displayName: "多级列表", group: "basic", kind: "list", markdown: "  -", description: "嵌套列表" },
   { id: "table", name: "Table", displayName: "表格整体", group: "tables", kind: "table", markdown: "table", description: "控制表格宽度、布局、自适应和整体边框" },
   { id: "table-header", name: "Table Header", displayName: "表头", group: "tables", kind: "table", markdown: "thead", description: "控制表头加粗、居中、背景色、边框与字号" },
   { id: "table-body", name: "Table Body", displayName: "表格体", group: "tables", kind: "table", markdown: "tbody", description: "控制表格体字体字号、水平/垂直对齐与隔行底色" },
@@ -35,6 +36,48 @@ export const borderStyleOptions: { value: BorderStyleMode; label: string }[] = [
   { value: "dotted", label: "点线" },
   { value: "double", label: "双线" },
   { value: "none", label: "无边框" },
+];
+
+export const listMarkerOptions: { value: ListMarkerStyle; label: string; marker: string }[] = [
+  { value: "disc", label: "实心圆点", marker: "•" },
+  { value: "circle", label: "空心圆", marker: "○" },
+  { value: "square", label: "方块", marker: "■" },
+  { value: "triangle", label: "三角", marker: "▸" },
+  { value: "dash", label: "短横", marker: "-" },
+  { value: "check", label: "对勾", marker: "✓" },
+  { value: "bar", label: "竖条", marker: "|" },
+  { value: "double-bar", label: "双竖条", marker: "||" },
+  { value: "triple-bar", label: "三竖条", marker: "|||" },
+];
+
+export const listLevelTypeOptions: { value: ListLevelType; label: string }[] = [
+  { value: "bullet", label: "无序" },
+  { value: "number", label: "有序" },
+];
+
+export const listNumberFormatOptions = ["1.", "1)", "(1)", "01.", "A.", "A)", "a.", "a)", "I.", "I)", "i.", "i)", "一、", "（一）"] as const;
+
+export const listWrapModeOptions: { value: ListWrapMode; label: string; description: string }[] = [
+  { value: "hanging", label: "文字对齐", description: "换行后与列表文字起点对齐" },
+  { value: "flat", label: "不悬挂", description: "换行后回到列表左侧起点" },
+];
+
+export const listNumberingModeOptions: { value: ListNumberingMode; label: string; description: string }[] = [
+  { value: "restart", label: "每组重新开始", description: "新的有序列表从 1 开始" },
+  { value: "continue", label: "延续上一组", description: "后续有序列表继续累计编号" },
+];
+
+export const captionPositionOptions: { value: CaptionPosition; label: string; description: string }[] = [
+  { value: "above", label: "对象上方", description: "题注显示在图片或表格上方" },
+  { value: "below", label: "对象下方", description: "题注显示在图片或表格下方" },
+];
+
+export const captionNumberFormatOptions = ["图 1", "图 1-1", "Figure 1", "1.", "表 1", "表 1-1", "Table 1"] as const;
+
+export const imageWidthModeOptions: { value: ImageWidthMode; label: string; description: string }[] = [
+  { value: "content", label: "铺满正文宽度", description: "图片宽度等于去掉页边距后的内容宽度" },
+  { value: "original", label: "保留原始宽度", description: "不主动缩放图片尺寸" },
+  { value: "custom", label: "自定义比例", description: "按正文宽度百分比设置图片宽度" },
 ];
 
 export const defaultStyleDraft: StyleDraft = {
@@ -51,7 +94,87 @@ export const defaultStyleDraft: StyleDraft = {
   align: "left",
   autoNumbering: true,
   numberFormat: "1.1",
+  listMarkerStyle: "disc",
+  listIndent: 2,
+  listTextIndent: 1.5,
+  listWrapMode: "hanging",
+  listNumberingMode: "restart",
+  nestedLevel2MarkerStyle: "circle",
+  nestedLevel3MarkerStyle: "square",
+  nestedLevel2NumberFormat: "1)",
+  nestedLevel3NumberFormat: "(1)",
+  listLevel1Type: "bullet",
+  listLevel2Type: "bullet",
+  listLevel3Type: "bullet",
+  listLevel4Type: "bullet",
+  listLevel1MarkerStyle: "disc",
+  listLevel2MarkerStyle: "circle",
+  listLevel3MarkerStyle: "square",
+  listLevel4MarkerStyle: "dash",
+  listLevel1NumberFormat: "1.",
+  listLevel2NumberFormat: "A.",
+  listLevel3NumberFormat: "a.",
+  listLevel4NumberFormat: "I.",
+  listLevel1ChineseFont: "微软雅黑",
+  listLevel2ChineseFont: "微软雅黑",
+  listLevel3ChineseFont: "微软雅黑",
+  listLevel4ChineseFont: "微软雅黑",
+  listLevel1LatinFont: "Times New Roman",
+  listLevel2LatinFont: "Times New Roman",
+  listLevel3LatinFont: "Times New Roman",
+  listLevel4LatinFont: "Times New Roman",
+  listLevel1FontSize: 12,
+  listLevel2FontSize: 12,
+  listLevel3FontSize: 12,
+  listLevel4FontSize: 12,
+  listLevel1FontWeight: "400",
+  listLevel2FontWeight: "400",
+  listLevel3FontWeight: "400",
+  listLevel4FontWeight: "400",
+  listLevel1Color: "#111827",
+  listLevel2Color: "#111827",
+  listLevel3Color: "#111827",
+  listLevel4Color: "#111827",
+  listLevel1LineHeight: "1.65",
+  listLevel2LineHeight: "1.65",
+  listLevel3LineHeight: "1.65",
+  listLevel4LineHeight: "1.65",
+  listLevel1BeforeSpacing: 0,
+  listLevel2BeforeSpacing: 0,
+  listLevel3BeforeSpacing: 0,
+  listLevel4BeforeSpacing: 0,
+  listLevel1AfterSpacing: 6,
+  listLevel2AfterSpacing: 6,
+  listLevel3AfterSpacing: 6,
+  listLevel4AfterSpacing: 6,
+  listLevel1Align: "left",
+  listLevel2Align: "left",
+  listLevel3Align: "left",
+  listLevel4Align: "left",
+  listLevel1Indent: 2,
+  listLevel2Indent: 4,
+  listLevel3Indent: 6,
+  listLevel4Indent: 8,
+  listLevel1TextIndent: 1.5,
+  listLevel2TextIndent: 1.5,
+  listLevel3TextIndent: 1.5,
+  listLevel4TextIndent: 1.5,
+  listLevel1WrapMode: "hanging",
+  listLevel2WrapMode: "hanging",
+  listLevel3WrapMode: "hanging",
+  listLevel4WrapMode: "hanging",
+  listLevel1NumberingMode: "restart",
+  listLevel2NumberingMode: "restart",
+  listLevel3NumberingMode: "restart",
+  listLevel4NumberingMode: "restart",
+  nestedIndentStep: 2,
   backgroundColor: "transparent",
+  quoteBorderColor: "#94A3B8",
+  quoteBorderWidth: 4,
+  codeBlockPreset: "document",
+  codeBorderColor: "#E2E8F0",
+  codePaddingX: 12,
+  codePaddingY: 10,
   tableLayout: "auto",
   fitToPageWidth: true,
   tableWidthPercent: 100,
@@ -60,7 +183,6 @@ export const defaultStyleDraft: StyleDraft = {
   firstColumnWidth: 34,
   secondColumnWidth: 33,
   thirdColumnWidth: 33,
-  cellVerticalAlign: "middle",
   cellPaddingX: 10,
   cellPaddingY: 8,
   cellWrap: true,
@@ -93,8 +215,86 @@ export const defaultStyleDraft: StyleDraft = {
   bodyBackgroundColor: "#FFFFFF",
   captionAlign: "center",
   captionNumbering: true,
+  captionPosition: "above",
+  captionNumberFormat: "表 1-1",
+  imageAlign: "center",
+  imageWidthMode: "content",
+  imageWidthPercent: 100,
   tablePreset: "business",
 };
+
+function withSyncedListLevelDefaults(draft: StyleDraft): StyleDraft {
+  return {
+    ...draft,
+    listLevel1ChineseFont: draft.chineseFont,
+    listLevel2ChineseFont: draft.chineseFont,
+    listLevel3ChineseFont: draft.chineseFont,
+    listLevel4ChineseFont: draft.chineseFont,
+    listLevel1LatinFont: draft.latinFont,
+    listLevel2LatinFont: draft.latinFont,
+    listLevel3LatinFont: draft.latinFont,
+    listLevel4LatinFont: draft.latinFont,
+    listLevel1FontSize: draft.fontSize,
+    listLevel2FontSize: draft.fontSize,
+    listLevel3FontSize: draft.fontSize,
+    listLevel4FontSize: draft.fontSize,
+    listLevel1FontWeight: draft.fontWeight,
+    listLevel2FontWeight: draft.fontWeight,
+    listLevel3FontWeight: draft.fontWeight,
+    listLevel4FontWeight: draft.fontWeight,
+    listLevel1Color: draft.color,
+    listLevel2Color: draft.color,
+    listLevel3Color: draft.color,
+    listLevel4Color: draft.color,
+    listLevel1LineHeight: draft.lineHeight,
+    listLevel2LineHeight: draft.lineHeight,
+    listLevel3LineHeight: draft.lineHeight,
+    listLevel4LineHeight: draft.lineHeight,
+    listLevel1BeforeSpacing: draft.beforeSpacing,
+    listLevel2BeforeSpacing: draft.beforeSpacing,
+    listLevel3BeforeSpacing: draft.beforeSpacing,
+    listLevel4BeforeSpacing: draft.beforeSpacing,
+    listLevel1AfterSpacing: draft.afterSpacing,
+    listLevel2AfterSpacing: draft.afterSpacing,
+    listLevel3AfterSpacing: draft.afterSpacing,
+    listLevel4AfterSpacing: draft.afterSpacing,
+    listLevel1Align: draft.align,
+    listLevel2Align: draft.align,
+    listLevel3Align: draft.align,
+    listLevel4Align: draft.align,
+    listLevel1Indent: draft.listIndent,
+    listLevel2Indent: draft.listIndent + draft.nestedIndentStep,
+    listLevel3Indent: draft.listIndent + draft.nestedIndentStep * 2,
+    listLevel4Indent: draft.listIndent + draft.nestedIndentStep * 3,
+    listLevel1TextIndent: draft.listTextIndent,
+    listLevel2TextIndent: draft.listTextIndent,
+    listLevel3TextIndent: draft.listTextIndent,
+    listLevel4TextIndent: draft.listTextIndent,
+    listLevel1WrapMode: draft.listWrapMode,
+    listLevel2WrapMode: draft.listWrapMode,
+    listLevel3WrapMode: draft.listWrapMode,
+    listLevel4WrapMode: draft.listWrapMode,
+    listLevel1NumberingMode: draft.listNumberingMode,
+    listLevel2NumberingMode: draft.listNumberingMode,
+    listLevel3NumberingMode: draft.listNumberingMode,
+    listLevel4NumberingMode: draft.listNumberingMode,
+  };
+}
+
+function inheritListTextFromBody(draft: StyleDraft, body: StyleDraft): StyleDraft {
+  return withSyncedListLevelDefaults({
+    ...draft,
+    chineseFont: body.chineseFont,
+    latinFont: body.latinFont,
+    fontSize: body.fontSize,
+    fontWeight: body.fontWeight,
+    color: body.color,
+    lineHeight: body.lineHeight,
+    beforeSpacing: body.beforeSpacing,
+    afterSpacing: body.afterSpacing,
+    align: body.align,
+  });
+}
 
 export const tablePresets: { key: TablePresetKey; label: string; description: string; patch: Partial<StyleDraft> }[] = [
   {
@@ -173,6 +373,82 @@ export const tablePresets: { key: TablePresetKey; label: string; description: st
     },
   },
 ];
+
+export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; description: string; patch: Partial<StyleDraft> }[] = [
+  {
+    key: "document",
+    label: "浅色文档",
+    description: "白底浅边框，适合正式文档和打印。",
+    patch: {
+      codeBlockPreset: "document",
+      latinFont: "Consolas",
+      chineseFont: "Microsoft YaHei UI",
+      color: "#111827",
+      backgroundColor: "#F8FAFC",
+      codeBorderColor: "#E2E8F0",
+      lineHeight: "1.55",
+      beforeSpacing: 8,
+      afterSpacing: 8,
+      codePaddingX: 12,
+      codePaddingY: 10,
+    },
+  },
+  {
+    key: "terminal",
+    label: "深色终端",
+    description: "深底高对比，适合展示命令和日志。",
+    patch: {
+      codeBlockPreset: "terminal",
+      latinFont: "JetBrains Mono",
+      chineseFont: "Microsoft YaHei UI",
+      color: "#E2E8F0",
+      backgroundColor: "#111827",
+      codeBorderColor: "#334155",
+      lineHeight: "1.6",
+      beforeSpacing: 10,
+      afterSpacing: 10,
+      codePaddingX: 14,
+      codePaddingY: 12,
+    },
+  },
+  {
+    key: "blueprint",
+    label: "蓝色科技",
+    description: "蓝灰底和蓝色边线，适合技术方案。",
+    patch: {
+      codeBlockPreset: "blueprint",
+      latinFont: "JetBrains Mono",
+      chineseFont: "Microsoft YaHei UI",
+      color: "#0F172A",
+      backgroundColor: "#EFF6FF",
+      codeBorderColor: "#93C5FD",
+      lineHeight: "1.6",
+      beforeSpacing: 10,
+      afterSpacing: 10,
+      codePaddingX: 14,
+      codePaddingY: 11,
+    },
+  },
+  {
+    key: "minimal",
+    label: "灰色专业",
+    description: "低饱和灰底，适合论文和说明书。",
+    patch: {
+      codeBlockPreset: "minimal",
+      latinFont: "Consolas",
+      chineseFont: "Microsoft YaHei UI",
+      color: "#1F2937",
+      backgroundColor: "#F3F4F6",
+      codeBorderColor: "#D1D5DB",
+      lineHeight: "1.5",
+      beforeSpacing: 6,
+      afterSpacing: 6,
+      codePaddingX: 12,
+      codePaddingY: 8,
+    },
+  },
+];
+
 export const defaultPageSettings: PageSettingsDraft = {
   paperSize: "A4",
   orientation: "portrait",
@@ -184,10 +460,12 @@ export const defaultPageSettings: PageSettingsDraft = {
   headerText: "md-king · Word 样式预览",
   footerEnabled: true,
   footerText: "",
-  footerPageNumberFormat: "page-total",
+  footerPageNumberFormat: "page",
   footerStartPage: 1,
   tocEnabled: true,
   tocDepth: "1-3",
+  tocLeader: "dot",
+  tocShowPageNumbers: true,
 };
 
 export const defaultMarkdownFeatures: MarkdownFeatureSettings = {
@@ -262,6 +540,10 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       fontWeight: "400",
       color: styleId === "source-code" ? "#E2E8F0" : "#111827",
       backgroundColor: styleId === "source-code" ? "#111827" : "#F1F5F9",
+      codeBlockPreset: styleId === "source-code" ? "terminal" : "document",
+      codeBorderColor: styleId === "source-code" ? "#334155" : "#CBD5E1",
+      codePaddingX: styleId === "source-code" ? 14 : 4,
+      codePaddingY: styleId === "source-code" ? 12 : 1,
       lineHeight: "1.55",
       firstLineIndent: 0,
       autoNumbering: false,
@@ -275,6 +557,8 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       fontWeight: "400",
       color: "#475569",
       backgroundColor: "#F8FAFC",
+      quoteBorderColor: "#94A3B8",
+      quoteBorderWidth: 4,
       lineHeight: "1.7",
       firstLineIndent: 0,
       autoNumbering: false,
@@ -282,19 +566,42 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
   }
 
   if (node?.kind === "list") {
-    return {
+    const isNumbered = styleId === "numbered-list";
+    const isNested = styleId === "nested-list";
+    return withSyncedListLevelDefaults({
       ...draft,
       fontSize: 12,
       fontWeight: "400",
       color: "#111827",
       lineHeight: "1.65",
       firstLineIndent: 0,
-      autoNumbering: styleId !== "bullet-list",
-      numberFormat: styleId === "numbered-list" ? "1.1" : "无编号",
+      autoNumbering: isNumbered,
+      numberFormat: isNumbered ? "1." : "无编号",
+      listMarkerStyle: isNested ? "circle" : "disc",
+      listIndent: isNested ? 4 : 2,
+      listTextIndent: 1.5,
+      listWrapMode: "hanging",
+      listNumberingMode: "restart",
+      nestedLevel2MarkerStyle: "circle",
+      nestedLevel3MarkerStyle: "square",
+      nestedLevel2NumberFormat: "1)",
+      nestedLevel3NumberFormat: "(1)",
+      nestedIndentStep: 2,
+    });
+  }
+
+  if (styleId === "image") {
+    return {
+      ...draft,
+      imageAlign: "center",
+      imageWidthMode: "content",
+      imageWidthPercent: 100,
+      autoNumbering: false,
     };
   }
 
   if (styleId === "table-caption" || styleId === "caption") {
+    const isTableCaption = styleId === "table-caption";
     return {
       ...draft,
       fontSize: 10,
@@ -304,6 +611,8 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       firstLineIndent: 0,
       captionAlign: "center",
       captionNumbering: true,
+      captionPosition: isTableCaption ? "above" : "below",
+      captionNumberFormat: isTableCaption ? "表 1-1" : "图 1-1",
       autoNumbering: false,
     };
   }
@@ -336,42 +645,23 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       firstLineIndent: 2,
       color: "#111827",
     };
-    styles["bullet-list"] = {
+    styles["bullet-list"] = inheritListTextFromBody({
       ...styles["bullet-list"],
-      chineseFont: "宋体",
-      latinFont: "Times New Roman",
-      fontSize: 12,
-      lineHeight: "1.25",
-      beforeSpacing: 0,
-      afterSpacing: 0,
-      color: "#111827",
-    };
-    styles["numbered-list"] = {
+    }, styles.normal);
+    styles["numbered-list"] = inheritListTextFromBody({
       ...styles["numbered-list"],
-      chineseFont: "宋体",
-      latinFont: "Times New Roman",
-      fontSize: 12,
-      lineHeight: "1.25",
-      beforeSpacing: 0,
-      afterSpacing: 0,
-      color: "#111827",
-    };
-    styles["nested-list"] = {
+    }, styles.normal);
+    styles["nested-list"] = inheritListTextFromBody({
       ...styles["nested-list"],
-      chineseFont: "宋体",
-      latinFont: "Times New Roman",
-      fontSize: 12,
-      lineHeight: "1.25",
-      beforeSpacing: 0,
-      afterSpacing: 0,
-      color: "#111827",
-    };
+    }, styles.normal);
     styles["source-code"] = {
       ...styles["source-code"],
       latinFont: "Consolas",
       fontSize: 9,
       color: "#111827",
       backgroundColor: "#F8FAFC",
+      codeBlockPreset: "document",
+      codeBorderColor: "#E2E8F0",
       lineHeight: "1.55",
     };
     styles["inline-code"] = {
@@ -381,6 +671,9 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       fontSize: 10.5,
       color: "#111827",
       backgroundColor: "#F1F5F9",
+      codeBorderColor: "#CBD5E1",
+      codePaddingX: 4,
+      codePaddingY: 1,
       lineHeight: "1.35",
       firstLineIndent: 0,
     };
@@ -389,6 +682,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       fontSize: 10.5,
       color: "#475569",
       backgroundColor: "#F8FAFC",
+      quoteBorderColor: "#94A3B8",
       lineHeight: "1.7",
     };
     styles.table = {
@@ -419,9 +713,13 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles["heading-1"] = { ...styles["heading-1"], fontSize: 20, color: "#1D4ED8", align: "left" };
     styles["heading-2"] = { ...styles["heading-2"], fontSize: 16, color: "#1D4ED8" };
     styles.normal = { ...styles.normal, fontSize: 11, lineHeight: "1.7", firstLineIndent: 0, align: "left" };
-    styles["source-code"] = { ...styles["source-code"], fontSize: 9, backgroundColor: "#0F172A", color: "#E2E8F0" };
+    styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codePaddingX: 14, codePaddingY: 12 };
     styles.table = { ...styles.table, tablePreset: "grid", tableLayout: "fixed", rowStripe: false, borderColor: "#64748B", headerBackgroundColor: "#F1F5F9", headerBorderColor: "#64748B", bodyBorderColor: "#64748B" };
   }
+
+  styles["bullet-list"] = inheritListTextFromBody(styles["bullet-list"], styles.normal);
+  styles["numbered-list"] = inheritListTextFromBody(styles["numbered-list"], styles.normal);
+  styles["nested-list"] = inheritListTextFromBody(styles["nested-list"], styles.normal);
 
   styles["table-header"] = { ...styles.table, styleId: "table-header" };
   styles["table-body"] = { ...styles.table, styleId: "table-body" };
@@ -436,8 +734,65 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
   };
 }
 
-function normalizeLegacyStyleDraft(styleId: string, draft: StyleDraft): StyleDraft {
-  let normalized = { ...draft, firstLineIndent: draft.firstLineIndent ?? createDefaultStyleDraft(styleId).firstLineIndent };
+function normalizeLegacyStyleDraft(styleId: string, draft: Partial<StyleDraft>, fallback = createDefaultStyleDraft(styleId)): StyleDraft {
+  let normalized: StyleDraft = { ...fallback, ...draft, styleId, firstLineIndent: draft.firstLineIndent ?? fallback.firstLineIndent };
+  if (styleNodes.find((node) => node.id === styleId)?.kind === "list") {
+    normalized = {
+      ...normalized,
+      listLevel1ChineseFont: draft.listLevel1ChineseFont ?? normalized.chineseFont,
+      listLevel2ChineseFont: draft.listLevel2ChineseFont ?? normalized.chineseFont,
+      listLevel3ChineseFont: draft.listLevel3ChineseFont ?? normalized.chineseFont,
+      listLevel4ChineseFont: draft.listLevel4ChineseFont ?? normalized.chineseFont,
+      listLevel1LatinFont: draft.listLevel1LatinFont ?? normalized.latinFont,
+      listLevel2LatinFont: draft.listLevel2LatinFont ?? normalized.latinFont,
+      listLevel3LatinFont: draft.listLevel3LatinFont ?? normalized.latinFont,
+      listLevel4LatinFont: draft.listLevel4LatinFont ?? normalized.latinFont,
+      listLevel1FontSize: draft.listLevel1FontSize ?? normalized.fontSize,
+      listLevel2FontSize: draft.listLevel2FontSize ?? normalized.fontSize,
+      listLevel3FontSize: draft.listLevel3FontSize ?? normalized.fontSize,
+      listLevel4FontSize: draft.listLevel4FontSize ?? normalized.fontSize,
+      listLevel1FontWeight: draft.listLevel1FontWeight ?? normalized.fontWeight,
+      listLevel2FontWeight: draft.listLevel2FontWeight ?? normalized.fontWeight,
+      listLevel3FontWeight: draft.listLevel3FontWeight ?? normalized.fontWeight,
+      listLevel4FontWeight: draft.listLevel4FontWeight ?? normalized.fontWeight,
+      listLevel1Color: draft.listLevel1Color ?? normalized.color,
+      listLevel2Color: draft.listLevel2Color ?? normalized.color,
+      listLevel3Color: draft.listLevel3Color ?? normalized.color,
+      listLevel4Color: draft.listLevel4Color ?? normalized.color,
+      listLevel1LineHeight: draft.listLevel1LineHeight ?? normalized.lineHeight,
+      listLevel2LineHeight: draft.listLevel2LineHeight ?? normalized.lineHeight,
+      listLevel3LineHeight: draft.listLevel3LineHeight ?? normalized.lineHeight,
+      listLevel4LineHeight: draft.listLevel4LineHeight ?? normalized.lineHeight,
+      listLevel1BeforeSpacing: draft.listLevel1BeforeSpacing ?? normalized.beforeSpacing,
+      listLevel2BeforeSpacing: draft.listLevel2BeforeSpacing ?? normalized.beforeSpacing,
+      listLevel3BeforeSpacing: draft.listLevel3BeforeSpacing ?? normalized.beforeSpacing,
+      listLevel4BeforeSpacing: draft.listLevel4BeforeSpacing ?? normalized.beforeSpacing,
+      listLevel1AfterSpacing: draft.listLevel1AfterSpacing ?? normalized.afterSpacing,
+      listLevel2AfterSpacing: draft.listLevel2AfterSpacing ?? normalized.afterSpacing,
+      listLevel3AfterSpacing: draft.listLevel3AfterSpacing ?? normalized.afterSpacing,
+      listLevel4AfterSpacing: draft.listLevel4AfterSpacing ?? normalized.afterSpacing,
+      listLevel1Align: draft.listLevel1Align ?? normalized.align,
+      listLevel2Align: draft.listLevel2Align ?? normalized.align,
+      listLevel3Align: draft.listLevel3Align ?? normalized.align,
+      listLevel4Align: draft.listLevel4Align ?? normalized.align,
+      listLevel1Indent: draft.listLevel1Indent ?? normalized.listIndent,
+      listLevel2Indent: draft.listLevel2Indent ?? normalized.listIndent + normalized.nestedIndentStep,
+      listLevel3Indent: draft.listLevel3Indent ?? normalized.listIndent + normalized.nestedIndentStep * 2,
+      listLevel4Indent: draft.listLevel4Indent ?? normalized.listIndent + normalized.nestedIndentStep * 3,
+      listLevel1TextIndent: draft.listLevel1TextIndent ?? normalized.listTextIndent,
+      listLevel2TextIndent: draft.listLevel2TextIndent ?? normalized.listTextIndent,
+      listLevel3TextIndent: draft.listLevel3TextIndent ?? normalized.listTextIndent,
+      listLevel4TextIndent: draft.listLevel4TextIndent ?? normalized.listTextIndent,
+      listLevel1WrapMode: draft.listLevel1WrapMode ?? normalized.listWrapMode,
+      listLevel2WrapMode: draft.listLevel2WrapMode ?? normalized.listWrapMode,
+      listLevel3WrapMode: draft.listLevel3WrapMode ?? normalized.listWrapMode,
+      listLevel4WrapMode: draft.listLevel4WrapMode ?? normalized.listWrapMode,
+      listLevel1NumberingMode: draft.listLevel1NumberingMode ?? normalized.listNumberingMode,
+      listLevel2NumberingMode: draft.listLevel2NumberingMode ?? normalized.listNumberingMode,
+      listLevel3NumberingMode: draft.listLevel3NumberingMode ?? normalized.listNumberingMode,
+      listLevel4NumberingMode: draft.listLevel4NumberingMode ?? normalized.listNumberingMode,
+    };
+  }
   if (!styleId.startsWith("heading-")) return normalized;
 
   const defaultFormat = getDefaultNumberFormat(styleId);
@@ -456,7 +811,7 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
     Object.entries({
       ...defaults.styles,
       ...(config?.styles ?? {}),
-    }).map(([styleId, draft]) => [styleId, normalizeLegacyStyleDraft(styleId, draft)]),
+    }).map(([styleId, draft]) => [styleId, normalizeLegacyStyleDraft(styleId, draft, defaults.styles[styleId] ?? createDefaultStyleDraft(styleId))]),
   );
 
   return {

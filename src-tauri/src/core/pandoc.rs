@@ -31,10 +31,11 @@ pub struct PandocExecution {
     pub stderr: String,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct PandocDocumentOptions {
     pub toc: bool,
     pub toc_depth: Option<u8>,
+    pub resource_path: Option<PathBuf>,
 }
 
 struct ResolvedPandocPath {
@@ -182,6 +183,7 @@ fn run_resolved_pandoc_to_docx(
         .arg(input_arg)
         .arg("--from")
         .arg("markdown+tex_math_dollars+tex_math_single_backslash")
+        .arg("--highlight-style=tango")
         .arg("-o")
         .arg(output_arg);
 
@@ -205,11 +207,18 @@ fn run_resolved_pandoc_to_docx(
 }
 
 fn pandoc_document_option_args(options: &PandocDocumentOptions) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(resource_path) = options.resource_path.as_ref() {
+        args.push(format!(
+            "--resource-path={}",
+            absolutize_path(resource_path).to_string_lossy()
+        ));
+    }
     if !options.toc {
-        return Vec::new();
+        return args;
     }
 
-    let mut args = vec!["--toc".to_string()];
+    args.push("--toc".to_string());
     if let Some(depth) = options.toc_depth.filter(|depth| (1..=6).contains(depth)) {
         args.push(format!("--toc-depth={depth}"));
     }
@@ -389,10 +398,22 @@ mod tests {
         let args = pandoc_document_option_args(&PandocDocumentOptions {
             toc: true,
             toc_depth: Some(3),
+            resource_path: None,
         });
 
         assert_eq!(args, vec!["--toc", "--toc-depth=3"]);
         assert!(pandoc_document_option_args(&PandocDocumentOptions::default()).is_empty());
+    }
+
+    #[test]
+    fn builds_resource_path_argument_from_document_options() {
+        let args = pandoc_document_option_args(&PandocDocumentOptions {
+            toc: false,
+            toc_depth: None,
+            resource_path: Some(Path::new(r"C:\docs\assets").to_path_buf()),
+        });
+
+        assert_eq!(args, vec![r"--resource-path=C:\docs\assets"]);
     }
 
     #[test]

@@ -77,17 +77,32 @@ struct PageSettingsConfig {
     footer_text: String,
     footer_page_number_format: String,
     footer_start_page: u32,
+    toc_enabled: bool,
+    toc_depth: String,
+    toc_leader: String,
+    toc_show_page_numbers: bool,
 }
 
 #[derive(Clone)]
 struct TableStyleConfig {
     width_twips: u32,
     layout: String,
+    horizontal_align: String,
+    column_widths: Vec<u32>,
     border_style: String,
     border_color: String,
     border_width: f64,
+    border_top_width: f64,
+    border_right_width: f64,
+    border_bottom_width: f64,
+    border_left_width: f64,
     show_inner_vertical_border: bool,
     show_inner_horizontal_border: bool,
+    cell_padding_x: f64,
+    cell_padding_y: f64,
+    min_row_height: f64,
+    row_stripe: bool,
+    cell_wrap: bool,
     header: TableCellStyleConfig,
     body: TableCellStyleConfig,
 }
@@ -102,8 +117,106 @@ struct TableCellStyleConfig {
     background_color: String,
     horizontal_align: String,
     vertical_align: String,
+    line_height: f64,
     border_color: String,
     border_width: f64,
+}
+
+#[derive(Clone)]
+struct ImageStyleConfig {
+    align: String,
+    width_mode: String,
+    width_percent: f64,
+}
+
+#[derive(Clone)]
+struct DocumentStyleConfig {
+    styles: HashMap<String, TextStyleConfig>,
+}
+
+#[derive(Clone)]
+struct TextStyleConfig {
+    chinese_font: String,
+    latin_font: String,
+    font_size: f64,
+    bold: bool,
+    color: String,
+    line_height: f64,
+    before_spacing: f64,
+    after_spacing: f64,
+    first_line_indent: f64,
+    align: String,
+    is_list: bool,
+    list_numbering_mode: String,
+    list_level_type_overrides: [Option<String>; 4],
+    list_level_marker_styles: [String; 4],
+    list_level_number_formats: [String; 4],
+    list_level_styles: [ListLevelStyleConfig; 4],
+}
+
+#[derive(Clone)]
+struct ListLevelStyleConfig {
+    chinese_font: String,
+    latin_font: String,
+    font_size: f64,
+    bold: bool,
+    color: String,
+    line_height: f64,
+    before_spacing: f64,
+    after_spacing: f64,
+    align: String,
+    indent: f64,
+    text_indent: f64,
+    wrap_mode: String,
+    numbering_mode: String,
+}
+
+#[derive(Clone)]
+struct BlockStyleConfig {
+    code: CodeBlockStyleConfig,
+    quote: QuoteBlockStyleConfig,
+    inline_code: InlineCodeStyleConfig,
+}
+
+#[derive(Clone)]
+struct CodeBlockStyleConfig {
+    chinese_font: String,
+    latin_font: String,
+    font_size: f64,
+    bold: bool,
+    color: String,
+    background_color: String,
+    border_color: String,
+    line_height: f64,
+    before_spacing: f64,
+    after_spacing: f64,
+    padding_x: f64,
+    padding_y: f64,
+}
+
+#[derive(Clone)]
+struct QuoteBlockStyleConfig {
+    chinese_font: String,
+    latin_font: String,
+    font_size: f64,
+    bold: bool,
+    color: String,
+    background_color: String,
+    border_color: String,
+    border_width: f64,
+    line_height: f64,
+    before_spacing: f64,
+    after_spacing: f64,
+}
+
+#[derive(Clone)]
+struct InlineCodeStyleConfig {
+    chinese_font: String,
+    latin_font: String,
+    font_size: f64,
+    bold: bool,
+    color: String,
+    background_color: String,
 }
 
 #[derive(Clone, Copy)]
@@ -249,12 +362,15 @@ fn convert_existing_file(
             }
         };
 
+    let mut pandoc_options = pandoc_document_options(&request);
+    pandoc_options.resource_path = input_path.parent().map(Path::to_path_buf);
+
     let conversion = run_pandoc_to_docx_for(
         runtime,
         &pandoc_input_path,
         &output_path,
         template_resolution.reference_docx_path.as_deref(),
-        &pandoc_document_options(&request),
+        &pandoc_options,
     );
 
     if let Some(path) = temp_preprocessed_input {
@@ -270,6 +386,9 @@ fn convert_existing_file(
                 &markdown_feature_config(&request),
                 page_settings_config(&request).as_ref(),
                 table_style_config(&request).as_ref(),
+                image_style_config(&request).as_ref(),
+                document_style_config(&request).as_ref(),
+                block_style_config(&request).as_ref(),
             ) {
                 warnings.push(format!("调整 DOCX 样式失败：{error}"));
             }
@@ -418,12 +537,15 @@ fn convert_text_input(
         temp_input_path.to_string_lossy()
     ));
 
+    let mut pandoc_options = pandoc_document_options(&request);
+    pandoc_options.resource_path = output_path.parent().map(Path::to_path_buf);
+
     match run_pandoc_to_docx_for(
         runtime,
         &temp_input_path,
         &output_path,
         template_resolution.reference_docx_path.as_deref(),
-        &pandoc_document_options(&request),
+        &pandoc_options,
     ) {
         Ok(execution) if execution.success => {
             let _ = fs::remove_file(&temp_input_path);
@@ -434,6 +556,9 @@ fn convert_text_input(
                 &markdown_feature_config(&request),
                 page_settings_config(&request).as_ref(),
                 table_style_config(&request).as_ref(),
+                image_style_config(&request).as_ref(),
+                document_style_config(&request).as_ref(),
+                block_style_config(&request).as_ref(),
             ) {
                 warnings.push(format!("调整 DOCX 样式失败：{error}"));
             }
@@ -802,6 +927,42 @@ fn table_style_config(request: &ConvertRequest) -> Option<TableStyleConfig> {
         .and_then(|config| table_style_config_from_value(&config))
 }
 
+fn image_style_config(request: &ConvertRequest) -> Option<ImageStyleConfig> {
+    let template_id = request.template_id.as_deref().map(str::trim)?;
+    if template_id.is_empty() {
+        return None;
+    }
+
+    get_template_style_config(template_id.to_string())
+        .ok()
+        .flatten()
+        .and_then(|config| image_style_config_from_value(&config))
+}
+
+fn document_style_config(request: &ConvertRequest) -> Option<DocumentStyleConfig> {
+    let template_id = request.template_id.as_deref().map(str::trim)?;
+    if template_id.is_empty() {
+        return None;
+    }
+
+    get_template_style_config(template_id.to_string())
+        .ok()
+        .flatten()
+        .and_then(|config| document_style_config_from_value(&config))
+}
+
+fn block_style_config(request: &ConvertRequest) -> Option<BlockStyleConfig> {
+    let template_id = request.template_id.as_deref().map(str::trim)?;
+    if template_id.is_empty() {
+        return None;
+    }
+
+    get_template_style_config(template_id.to_string())
+        .ok()
+        .flatten()
+        .and_then(|config| block_style_config_from_value(&config))
+}
+
 fn default_markdown_feature_config() -> MarkdownFeatureConfig {
     MarkdownFeatureConfig {
         inline_code: false,
@@ -824,7 +985,11 @@ fn pandoc_document_options_from_value(config: &Value) -> PandocDocumentOptions {
         .and_then(Value::as_str)
         .and_then(parse_toc_depth);
 
-    PandocDocumentOptions { toc, toc_depth }
+    PandocDocumentOptions {
+        toc,
+        toc_depth,
+        resource_path: None,
+    }
 }
 
 fn parse_toc_depth(value: &str) -> Option<u8> {
@@ -898,9 +1063,27 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
         footer_page_number_format: settings
             .get("footerPageNumberFormat")
             .and_then(Value::as_str)
-            .unwrap_or("page-total")
+            .unwrap_or("page")
             .to_string(),
         footer_start_page: read_page_number("footerStartPage", 1),
+        toc_enabled: settings
+            .get("tocEnabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        toc_depth: settings
+            .get("tocDepth")
+            .and_then(Value::as_str)
+            .unwrap_or("1-3")
+            .to_string(),
+        toc_leader: settings
+            .get("tocLeader")
+            .and_then(Value::as_str)
+            .unwrap_or("dot")
+            .to_string(),
+        toc_show_page_numbers: settings
+            .get("tocShowPageNumbers")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
     })
 }
 
@@ -927,13 +1110,41 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
     } else {
         ((8640.0 * table_width_percent / 100.0).round() as u32).clamp(3456, 8640)
     };
+    let column_widths = if read_style_string(table, "columnWidthMode", "auto") == "custom" {
+        table_column_widths_from_percentages(
+            width_twips,
+            &[
+                read_table_number("firstColumnWidth", 34.0),
+                read_table_number("secondColumnWidth", 33.0),
+                read_table_number("thirdColumnWidth", 33.0),
+            ],
+        )
+    } else {
+        Vec::new()
+    };
+    let border_width = read_table_number("borderWidth", 1.0);
+    let outer_border_width = if table
+        .get("outerBorderStrong")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        border_width + 0.5
+    } else {
+        border_width
+    };
 
     Some(TableStyleConfig {
         width_twips,
+        horizontal_align: read_style_string(table, "tableHorizontalAlign", "center"),
+        column_widths,
         layout: read_style_string(table, "tableLayout", "fixed"),
         border_style: read_style_string(table, "borderStyle", "solid"),
         border_color: read_style_color(table, "borderColor", "CBD5E1"),
-        border_width: read_table_number("borderWidth", 1.0),
+        border_width,
+        border_top_width: read_table_number("borderTopWidth", outer_border_width),
+        border_right_width: read_table_number("borderRightWidth", outer_border_width),
+        border_bottom_width: read_table_number("borderBottomWidth", outer_border_width),
+        border_left_width: read_table_number("borderLeftWidth", outer_border_width),
         show_inner_vertical_border: table
             .get("showInnerVerticalBorder")
             .and_then(Value::as_bool)
@@ -942,9 +1153,53 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
             .get("showInnerHorizontalBorder")
             .and_then(Value::as_bool)
             .unwrap_or(true),
+        cell_padding_x: read_table_number("cellPaddingX", 10.0),
+        cell_padding_y: read_table_number("cellPaddingY", 8.0),
+        min_row_height: read_table_number("minRowHeight", 28.0),
+        row_stripe: table
+            .get("rowStripe")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        cell_wrap: table
+            .get("cellWrap")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
         header: table_cell_style_config(header, table, true),
         body: table_cell_style_config(body, table, false),
     })
+}
+
+fn image_style_config_from_value(config: &Value) -> Option<ImageStyleConfig> {
+    let image = config.get("styles")?.get("image")?;
+    Some(ImageStyleConfig {
+        align: read_style_string(image, "imageAlign", "center"),
+        width_mode: read_style_string(image, "imageWidthMode", "content"),
+        width_percent: read_style_number(image, "imageWidthPercent", 100.0).clamp(20.0, 100.0),
+    })
+}
+
+fn table_column_widths_from_percentages(table_width_twips: u32, percentages: &[f64]) -> Vec<u32> {
+    let total = percentages
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .sum::<f64>();
+    if total <= 0.0 {
+        return Vec::new();
+    }
+
+    let mut widths = percentages
+        .iter()
+        .map(|value| ((table_width_twips as f64 * value.max(0.0) / total).round() as u32).max(1))
+        .collect::<Vec<_>>();
+    let used = widths
+        .iter()
+        .take(widths.len().saturating_sub(1))
+        .sum::<u32>();
+    if let Some(last) = widths.last_mut() {
+        *last = table_width_twips.saturating_sub(used).max(1);
+    }
+    widths
 }
 
 fn table_cell_style_config(style: &Value, table: &Value, is_header: bool) -> TableCellStyleConfig {
@@ -962,6 +1217,11 @@ fn table_cell_style_config(style: &Value, table: &Value, is_header: bool) -> Tab
         "headerVerticalAlign"
     } else {
         "bodyVerticalAlign"
+    };
+    let line_height_key = if is_header {
+        "headerLineHeight"
+    } else {
+        "bodyLineHeight"
     };
     let background_key = if is_header {
         "headerBackgroundColor"
@@ -1000,9 +1260,206 @@ fn table_cell_style_config(style: &Value, table: &Value, is_header: bool) -> Tab
             if is_header { "center" } else { "left" },
         ),
         vertical_align: read_style_string(style, vertical_align_key, "middle"),
+        line_height: read_line_height_key(
+            style,
+            line_height_key,
+            if is_header { 1.4 } else { 1.5 },
+        ),
         border_color: read_style_color(style, border_color_key, "CBD5E1"),
         border_width: read_style_number(style, border_width_key, 1.0),
     }
+}
+
+fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfig> {
+    let styles = config.get("styles")?;
+    let mut mapped_styles = HashMap::new();
+
+    for (style_id, style) in [
+        ("heading-1", styles.get("heading-1")),
+        ("heading-2", styles.get("heading-2")),
+        ("heading-3", styles.get("heading-3")),
+        ("heading-4", styles.get("heading-4")),
+        ("heading-5", styles.get("heading-5")),
+        ("heading-6", styles.get("heading-6")),
+        ("normal", styles.get("normal")),
+        (
+            "body-text",
+            styles.get("body-text").or_else(|| styles.get("normal")),
+        ),
+        ("caption", styles.get("caption")),
+        (
+            "bullet-list",
+            styles.get("bullet-list").or_else(|| styles.get("normal")),
+        ),
+        (
+            "numbered-list",
+            styles.get("numbered-list").or_else(|| styles.get("normal")),
+        ),
+        ("nested-list", styles.get("nested-list")),
+    ] {
+        if let Some(style) = style {
+            mapped_styles.insert(
+                style_id.to_string(),
+                text_style_config_from_value(style_id, style),
+            );
+        }
+    }
+
+    (!mapped_styles.is_empty()).then_some(DocumentStyleConfig {
+        styles: mapped_styles,
+    })
+}
+
+fn text_style_config_from_value(style_id: &str, style: &Value) -> TextStyleConfig {
+    let is_list = matches!(style_id, "bullet-list" | "numbered-list" | "nested-list");
+    let number_format = read_style_string(style, "numberFormat", "1.");
+    let list_marker_style = read_style_string(style, "listMarkerStyle", "disc");
+    let nested_level2_marker_style = read_style_string(style, "nestedLevel2MarkerStyle", "circle");
+    let nested_level3_marker_style = read_style_string(style, "nestedLevel3MarkerStyle", "square");
+    let nested_level2_number_format = read_style_string(style, "nestedLevel2NumberFormat", "1)");
+    let nested_level3_number_format = read_style_string(style, "nestedLevel3NumberFormat", "(1)");
+    TextStyleConfig {
+        chinese_font: read_style_string(style, "chineseFont", "微软雅黑"),
+        latin_font: read_style_string(style, "latinFont", "Times New Roman"),
+        font_size: read_style_number(style, "fontSize", 12.0),
+        bold: read_style_bold(style),
+        color: read_style_color(style, "color", "111827"),
+        line_height: read_line_height(style, 1.5),
+        before_spacing: read_spacing_points(style, "beforeSpacing", 0.0),
+        after_spacing: read_spacing_points(style, "afterSpacing", 0.0),
+        first_line_indent: read_style_indent(style, "firstLineIndent", 0.0),
+        align: if style_id == "caption" {
+            read_style_string(style, "captionAlign", &read_style_string(style, "align", "center"))
+        } else {
+            read_style_string(style, "align", "left")
+        },
+        is_list,
+        list_numbering_mode: read_style_string(style, "listNumberingMode", "restart"),
+        list_level_type_overrides: [
+            read_optional_style_string(style, "listLevel1Type"),
+            read_optional_style_string(style, "listLevel2Type"),
+            read_optional_style_string(style, "listLevel3Type"),
+            read_optional_style_string(style, "listLevel4Type"),
+        ],
+        list_level_marker_styles: [
+            read_style_string(style, "listLevel1MarkerStyle", &list_marker_style),
+            read_style_string(style, "listLevel2MarkerStyle", &nested_level2_marker_style),
+            read_style_string(style, "listLevel3MarkerStyle", &nested_level3_marker_style),
+            read_style_string(style, "listLevel4MarkerStyle", "dash"),
+        ],
+        list_level_number_formats: [
+            read_style_string(style, "listLevel1NumberFormat", &number_format),
+            read_style_string(style, "listLevel2NumberFormat", &nested_level2_number_format),
+            read_style_string(style, "listLevel3NumberFormat", &nested_level3_number_format),
+            read_style_string(style, "listLevel4NumberFormat", "I."),
+        ],
+        list_level_styles: [
+            read_list_level_style_config(style, "listLevel1", 0.0),
+            read_list_level_style_config(style, "listLevel2", 0.0),
+            read_list_level_style_config(style, "listLevel3", 1.0),
+            read_list_level_style_config(style, "listLevel4", 2.0),
+        ],
+    }
+}
+
+fn read_list_level_style_config(style: &Value, prefix: &str, level_offset: f64) -> ListLevelStyleConfig {
+    let font_size = read_style_number(style, "fontSize", 12.0);
+    let line_height = read_line_height(style, 1.5);
+    let list_indent = read_style_indent(style, "listIndent", 2.0);
+    let nested_indent_step = read_style_indent(style, "nestedIndentStep", 2.0);
+    ListLevelStyleConfig {
+        chinese_font: read_style_string(style, &format!("{prefix}ChineseFont"), &read_style_string(style, "chineseFont", "微软雅黑")),
+        latin_font: read_style_string(style, &format!("{prefix}LatinFont"), &read_style_string(style, "latinFont", "Times New Roman")),
+        font_size: read_style_number(style, &format!("{prefix}FontSize"), font_size),
+        bold: read_style_bold_key(style, &format!("{prefix}FontWeight")).unwrap_or_else(|| read_style_bold(style)),
+        color: read_style_color(style, &format!("{prefix}Color"), &read_style_color(style, "color", "111827")),
+        line_height: read_line_height_key(style, &format!("{prefix}LineHeight"), line_height),
+        before_spacing: read_spacing_points(style, &format!("{prefix}BeforeSpacing"), read_spacing_points(style, "beforeSpacing", 0.0)),
+        after_spacing: read_spacing_points(style, &format!("{prefix}AfterSpacing"), read_spacing_points(style, "afterSpacing", 0.0)),
+        align: read_style_string(style, &format!("{prefix}Align"), &read_style_string(style, "align", "left")),
+        indent: read_style_indent(style, &format!("{prefix}Indent"), list_indent + nested_indent_step * level_offset),
+        text_indent: read_style_indent(style, &format!("{prefix}TextIndent"), read_style_indent(style, "listTextIndent", 1.5)),
+        wrap_mode: read_style_string(style, &format!("{prefix}WrapMode"), &read_style_string(style, "listWrapMode", "hanging")),
+        numbering_mode: read_style_string(style, &format!("{prefix}NumberingMode"), &read_style_string(style, "listNumberingMode", "restart")),
+    }
+}
+
+fn block_style_config_from_value(config: &Value) -> Option<BlockStyleConfig> {
+    let styles = config.get("styles")?;
+    let code = styles.get("source-code")?;
+    let quote = styles.get("quote")?;
+    let inline_code = styles.get("inline-code").unwrap_or(code);
+
+    Some(BlockStyleConfig {
+        code: CodeBlockStyleConfig {
+            chinese_font: read_style_string(code, "chineseFont", "Microsoft YaHei UI"),
+            latin_font: read_style_string(code, "latinFont", "Consolas"),
+            font_size: read_style_number(code, "fontSize", 9.0),
+            bold: read_style_bold(code),
+            color: read_style_color(code, "color", "111827"),
+            background_color: read_style_color(code, "backgroundColor", "F8FAFC"),
+            border_color: read_style_color(code, "codeBorderColor", "E2E8F0"),
+            line_height: read_line_height(code, 1.55),
+            before_spacing: read_spacing_points(code, "beforeSpacing", 8.0),
+            after_spacing: read_spacing_points(code, "afterSpacing", 8.0),
+            padding_x: read_spacing_points(code, "codePaddingX", 12.0),
+            padding_y: read_spacing_points(code, "codePaddingY", 10.0),
+        },
+        quote: QuoteBlockStyleConfig {
+            chinese_font: read_style_string(quote, "chineseFont", "微软雅黑"),
+            latin_font: read_style_string(quote, "latinFont", "Times New Roman"),
+            font_size: read_style_number(quote, "fontSize", 10.5),
+            bold: read_style_bold(quote),
+            color: read_style_color(quote, "color", "475569"),
+            background_color: read_style_color(quote, "backgroundColor", "F8FAFC"),
+            border_color: read_style_color(quote, "quoteBorderColor", "94A3B8"),
+            border_width: read_style_number(quote, "quoteBorderWidth", 4.0),
+            line_height: read_line_height(quote, 1.7),
+            before_spacing: read_spacing_points(quote, "beforeSpacing", 4.0),
+            after_spacing: read_spacing_points(quote, "afterSpacing", 4.0),
+        },
+        inline_code: InlineCodeStyleConfig {
+            chinese_font: read_style_string(inline_code, "chineseFont", "Microsoft YaHei UI"),
+            latin_font: read_style_string(inline_code, "latinFont", "Consolas"),
+            font_size: read_style_number(inline_code, "fontSize", 10.5),
+            bold: read_style_bold(inline_code),
+            color: read_style_color(inline_code, "color", "111827"),
+            background_color: read_style_color(inline_code, "backgroundColor", "F1F5F9"),
+        },
+    })
+}
+
+fn read_line_height(style: &Value, default_value: f64) -> f64 {
+    read_line_height_key(style, "lineHeight", default_value)
+}
+
+fn read_line_height_key(style: &Value, key: &str, default_value: f64) -> f64 {
+    style
+        .get(key)
+        .and_then(|value| {
+            value
+                .as_str()
+                .and_then(|text| text.trim().parse::<f64>().ok())
+                .or_else(|| value.as_f64())
+        })
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(default_value)
+}
+
+fn read_spacing_points(style: &Value, key: &str, default_value: f64) -> f64 {
+    style
+        .get(key)
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .unwrap_or(default_value)
+}
+
+fn read_style_indent(style: &Value, key: &str, default_value: f64) -> f64 {
+    style
+        .get(key)
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .unwrap_or(default_value)
 }
 
 fn read_style_string(style: &Value, key: &str, default_value: &str) -> String {
@@ -1015,12 +1472,37 @@ fn read_style_string(style: &Value, key: &str, default_value: &str) -> String {
         .to_string()
 }
 
+fn read_optional_style_string(style: &Value, key: &str) -> Option<String> {
+    style
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
 fn read_style_number(style: &Value, key: &str, default_value: f64) -> f64 {
     style
         .get(key)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite() && *value > 0.0)
         .unwrap_or(default_value)
+}
+
+fn read_style_bold(style: &Value) -> bool {
+    read_style_bold_key(style, "fontWeight").unwrap_or(false)
+}
+
+fn read_style_bold_key(style: &Value, key: &str) -> Option<bool> {
+    style
+        .get(key)
+        .and_then(|value| {
+            value
+                .as_str()
+                .and_then(|text| text.trim().parse::<u16>().ok())
+                .or_else(|| value.as_u64().and_then(|number| u16::try_from(number).ok()))
+        })
+        .map(|weight| weight >= 700)
 }
 
 fn read_style_color(style: &Value, key: &str, default_value: &str) -> String {
@@ -1295,6 +1777,9 @@ fn normalize_docx(
     markdown_features: &MarkdownFeatureConfig,
     page_settings: Option<&PageSettingsConfig>,
     table_style: Option<&TableStyleConfig>,
+    image_style: Option<&ImageStyleConfig>,
+    document_style: Option<&DocumentStyleConfig>,
+    block_style: Option<&BlockStyleConfig>,
 ) -> Result<(), String> {
     let original = fs::read(path).map_err(|error| format!("读取 DOCX 失败：{error}"))?;
     let reader = Cursor::new(original);
@@ -1331,12 +1816,23 @@ fn normalize_docx(
                 heading_numbering,
                 markdown_features,
                 table_style,
+                document_style,
+                block_style,
             );
-            data = apply_page_settings_to_document_xml(&xml, page_settings).into_bytes();
-        } else if name == "word/styles.xml" && apply_default_template_style {
+            let xml = apply_page_settings_to_document_xml(&xml, page_settings);
+            data = normalize_document_images(&xml, page_settings, image_style).into_bytes();
+        } else if name == "word/styles.xml"
+            && (apply_default_template_style || document_style.is_some())
+        {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 styles.xml 失败：{error}"))?;
-            data = normalize_default_report_styles_xml(&xml, markdown_features).into_bytes();
+            data = normalize_template_styles_xml(
+                &xml,
+                markdown_features,
+                document_style,
+                apply_default_template_style,
+            )
+            .into_bytes();
         } else if name == "word/numbering.xml" {
             has_numbering_xml = true;
             if let Some(heading_numbering) = heading_numbering {
@@ -1361,12 +1857,16 @@ fn normalize_docx(
             }
         } else if name == "word/header-mdking.xml" {
             has_header_xml = true;
-            if let Some(settings) = header_footer.filter(|settings| page_settings_has_header(settings)) {
+            if let Some(settings) =
+                header_footer.filter(|settings| page_settings_has_header(settings))
+            {
                 data = create_header_xml(settings).into_bytes();
             }
         } else if name == "word/footer-mdking.xml" {
             has_footer_xml = true;
-            if let Some(settings) = header_footer.filter(|settings| page_settings_has_footer(settings)) {
+            if let Some(settings) =
+                header_footer.filter(|settings| page_settings_has_footer(settings))
+            {
                 data = create_footer_xml(settings).into_bytes();
             }
         }
@@ -1454,6 +1954,8 @@ fn normalize_document_xml(
     heading_numbering: Option<&HeadingNumberingConfig>,
     markdown_features: &MarkdownFeatureConfig,
     table_style: Option<&TableStyleConfig>,
+    document_style: Option<&DocumentStyleConfig>,
+    block_style: Option<&BlockStyleConfig>,
 ) -> String {
     let xml = force_table_width_percent(xml);
     let xml = if markdown_features.horizontal_rule {
@@ -1469,14 +1971,21 @@ fn normalize_document_xml(
     } else {
         xml
     };
-    let xml = if apply_default_table_style {
-        let xml = normalize_code_and_quote_blocks(&xml, markdown_features);
-        let xml = if markdown_features.inline_code {
-            normalize_inline_code_runs(&xml)
+    let xml = {
+        let xml = normalize_code_and_quote_blocks(&xml, markdown_features, block_style);
+        if markdown_features.inline_code {
+            normalize_inline_code_runs(&xml, block_style.map(|style| &style.inline_code))
         } else {
             flatten_inline_code_runs(&xml)
-        };
-        normalize_list_markers(&xml)
+        }
+    };
+    let has_list_style = document_style.is_some_and(|style| {
+        style.styles.contains_key("bullet-list")
+            || style.styles.contains_key("numbered-list")
+            || style.styles.contains_key("nested-list")
+    });
+    let xml = if apply_default_table_style || has_list_style {
+        normalize_list_markers(&xml, document_style)
     } else {
         xml
     };
@@ -1485,6 +1994,198 @@ fn normalize_document_xml(
         normalize_heading_numbering(&xml, heading_numbering)
     } else {
         xml
+    }
+}
+
+fn normalize_document_images(
+    xml: &str,
+    page_settings: Option<&PageSettingsConfig>,
+    image_style: Option<&ImageStyleConfig>,
+) -> String {
+    let content_width_twips = page_settings
+        .map(page_content_width_twips)
+        .unwrap_or_else(|| document_content_width_twips(xml).unwrap_or_else(default_content_width_twips));
+    let width_mode = image_style
+        .map(|style| style.width_mode.as_str())
+        .unwrap_or("content");
+    let width_percent = image_style
+        .map(|style| style.width_percent)
+        .unwrap_or(100.0)
+        .clamp(20.0, 100.0);
+    let target_width_emu = if width_mode == "custom" {
+        ((f64::from(content_width_twips) * width_percent / 100.0).round() as u64) * 635
+    } else {
+        u64::from(content_width_twips) * 635
+    };
+    let align = image_style
+        .map(|style| word_alignment_value(&style.align))
+        .unwrap_or("center");
+    let paragraph_re = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+
+    paragraph_re
+        .replace_all(xml, |captures: &Captures| {
+            let paragraph = &captures[0];
+            if !paragraph.contains("<w:drawing") {
+                return paragraph.to_string();
+            }
+
+            let paragraph = if width_mode == "original" {
+                paragraph.to_string()
+            } else {
+                normalize_image_drawings(paragraph, target_width_emu)
+            };
+            ensure_image_paragraph_aligned(&paragraph, align)
+        })
+        .to_string()
+}
+
+fn normalize_image_drawings(xml: &str, target_width_emu: u64) -> String {
+    let drawing_re =
+        Regex::new(r#"(?s)<w:drawing\b[^>]*>.*?</w:drawing>"#).expect("valid drawing regex");
+
+    drawing_re
+        .replace_all(xml, |captures: &Captures| {
+            let drawing = &captures[0];
+            if !drawing.contains("<a:blip") {
+                return drawing.to_string();
+            }
+
+            let (current_width, current_height) =
+                drawing_extent(drawing).unwrap_or((target_width_emu, target_width_emu));
+            let target_height = scale_dimension(current_height, target_width_emu, current_width);
+            replace_drawing_extents(drawing, target_width_emu, target_height)
+        })
+        .to_string()
+}
+
+fn drawing_extent(xml: &str) -> Option<(u64, u64)> {
+    let extent_re = Regex::new(r#"<(?:wp:extent|a:ext)\b([^>]*)/>"#).expect("valid extent regex");
+    extent_re.captures(xml).and_then(|captures| {
+        let attrs = captures.get(1)?.as_str();
+        Some((numeric_attr(attrs, "cx")?, numeric_attr(attrs, "cy")?))
+    })
+}
+
+fn replace_drawing_extents(xml: &str, width: u64, height: u64) -> String {
+    let extent_re = Regex::new(r#"(<(?:wp:extent|a:ext)\b)([^>]*)/>"#).expect("valid extent regex");
+    extent_re
+        .replace_all(xml, |captures: &Captures| {
+            let tag = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+            let attrs = captures.get(2).map(|value| value.as_str()).unwrap_or("");
+            let attrs = replace_numeric_attr(attrs, "cx", width);
+            let attrs = replace_numeric_attr(&attrs, "cy", height);
+            format!("{tag}{attrs}/>")
+        })
+        .to_string()
+}
+
+fn ensure_image_paragraph_aligned(paragraph: &str, align: &str) -> String {
+    let paragraph_properties_re = Regex::new(r#"(?s)<w:pPr\b[^>]*/>|<w:pPr\b[^>]*>.*?</w:pPr>"#)
+        .expect("valid paragraph properties regex");
+    if paragraph_properties_re.is_match(paragraph) {
+        return paragraph_properties_re
+            .replace(paragraph, |captures: &Captures| {
+                align_paragraph_properties(&captures[0], align)
+            })
+            .to_string();
+    }
+
+    let paragraph_start_re = Regex::new(r#"<w:p\b[^>]*>"#).expect("valid paragraph start regex");
+    paragraph_start_re
+        .replace(paragraph, |captures: &Captures| {
+            format!("{}<w:pPr><w:jc w:val=\"{align}\" /></w:pPr>", &captures[0])
+        })
+        .to_string()
+}
+
+fn align_paragraph_properties(properties: &str, align: &str) -> String {
+    let self_closing_re = Regex::new(r#"(?s)^<w:pPr\b([^>]*)/>$"#)
+        .expect("valid self closing paragraph properties regex");
+    if let Some(captures) = self_closing_re.captures(properties) {
+        let attrs = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+        return format!(r#"<w:pPr{attrs}><w:jc w:val="{align}" /></w:pPr>"#);
+    }
+
+    let jc_re = Regex::new(r#"(?s)<w:jc\b[^>]*/>"#).expect("valid paragraph alignment regex");
+    let without_alignment = jc_re.replace_all(properties, "");
+    without_alignment
+        .replacen("</w:pPr>", &format!(r#"<w:jc w:val="{align}" /></w:pPr>"#), 1)
+        .to_string()
+}
+
+fn document_content_width_twips(xml: &str) -> Option<u32> {
+    let section_re =
+        Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#).expect("valid section regex");
+    let section = section_re.find_iter(xml).last()?.as_str();
+    let size_attrs = Regex::new(r#"<w:pgSz\b([^>]*)/>"#)
+        .expect("valid page size regex")
+        .captures(section)?
+        .get(1)?
+        .as_str()
+        .to_string();
+    let margin_attrs = Regex::new(r#"<w:pgMar\b([^>]*)/>"#)
+        .expect("valid page margins regex")
+        .captures(section)?
+        .get(1)?
+        .as_str()
+        .to_string();
+    let width = numeric_attr(&size_attrs, "w:w")?;
+    let left = numeric_attr(&margin_attrs, "w:left").unwrap_or(0);
+    let right = numeric_attr(&margin_attrs, "w:right").unwrap_or(0);
+    width
+        .saturating_sub(left)
+        .saturating_sub(right)
+        .try_into()
+        .ok()
+}
+
+fn page_content_width_twips(page_settings: &PageSettingsConfig) -> u32 {
+    let (mut width, mut height) = paper_size_twips(&page_settings.paper_size);
+    if page_settings
+        .orientation
+        .trim()
+        .eq_ignore_ascii_case("landscape")
+    {
+        std::mem::swap(&mut width, &mut height);
+    }
+    width
+        .saturating_sub(cm_to_twips(page_settings.margin_left))
+        .saturating_sub(cm_to_twips(page_settings.margin_right))
+        .max(1)
+}
+
+fn default_content_width_twips() -> u32 {
+    let (width, _) = paper_size_twips("A4");
+    width
+        .saturating_sub(cm_to_twips(3.18))
+        .saturating_sub(cm_to_twips(3.18))
+        .max(1)
+}
+
+fn scale_dimension(value: u64, target_width: u64, current_width: u64) -> u64 {
+    if current_width == 0 {
+        return value.max(1);
+    }
+    ((u128::from(value) * u128::from(target_width) / u128::from(current_width)) as u64).max(1)
+}
+
+fn numeric_attr(attrs: &str, name: &str) -> Option<u64> {
+    let pattern = format!(r#"\b{}\s*=\s*"(\d+)""#, regex::escape(name));
+    Regex::new(&pattern)
+        .expect("valid numeric attribute regex")
+        .captures(attrs)
+        .and_then(|captures| captures.get(1))
+        .and_then(|value| value.as_str().parse::<u64>().ok())
+}
+
+fn replace_numeric_attr(attrs: &str, name: &str, value: u64) -> String {
+    let pattern = format!(r#"\b{}\s*=\s*"\d+""#, regex::escape(name));
+    let attr_re = Regex::new(&pattern).expect("valid numeric attribute regex");
+    let replacement = format!(r#"{name}="{value}""#);
+    if attr_re.is_match(attrs) {
+        attr_re.replace(attrs, replacement).to_string()
+    } else {
+        format!(r#"{attrs} {replacement}"#)
     }
 }
 
@@ -1500,6 +2201,7 @@ fn apply_page_settings_to_document_xml(
     } else {
         xml.to_string()
     };
+    let xml = normalize_toc_fields(&xml, page_settings);
 
     let section = Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#).expect("valid sectPr regex");
     if section.is_match(&xml) {
@@ -1529,6 +2231,50 @@ fn ensure_word_relationship_namespace(xml: &str) -> String {
     )
 }
 
+fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String {
+    if !page_settings.toc_enabled {
+        return xml.to_string();
+    }
+
+    let instruction = toc_field_instruction(page_settings);
+    let fld_simple =
+        Regex::new(r#"<w:fldSimple\b([^>]*)\bw:instr="([^"]*TOC[^"]*)"([^>]*)>"#)
+            .expect("valid TOC fldSimple regex");
+    let xml = fld_simple
+        .replace_all(xml, |captures: &Captures| {
+            format!(
+                r#"<w:fldSimple{}w:instr="{}"{}>"#,
+                captures.get(1).map(|value| value.as_str()).unwrap_or(" "),
+                escape_xml_text(&instruction),
+                captures.get(3).map(|value| value.as_str()).unwrap_or("")
+            )
+        })
+        .to_string();
+
+    let instr_text = Regex::new(r#"(?s)<w:instrText\b([^>]*)>\s*TOC\b.*?</w:instrText>"#)
+        .expect("valid TOC instrText regex");
+    instr_text
+        .replace_all(&xml, |captures: &Captures| {
+            format!(
+                r#"<w:instrText{}>{}</w:instrText>"#,
+                captures.get(1).map(|value| value.as_str()).unwrap_or(""),
+                escape_xml_text(&instruction)
+            )
+        })
+        .to_string()
+}
+
+fn toc_field_instruction(page_settings: &PageSettingsConfig) -> String {
+    let depth = parse_toc_depth(&page_settings.toc_depth).unwrap_or(3);
+    let mut instruction = format!(r#"TOC \o "1-{depth}" \h \z \u"#);
+    if !page_settings.toc_show_page_numbers {
+        instruction.push_str(&format!(r#" \n "1-{depth}""#));
+    } else if page_settings.toc_leader.trim() == "space" {
+        instruction.push_str(r#" \p " ""#);
+    }
+    instruction
+}
+
 fn normalize_section_page_settings(
     section_xml: &str,
     page_settings: &PageSettingsConfig,
@@ -1552,10 +2298,9 @@ fn normalize_section_page_settings(
     let page_margins = page_margins_xml(page_settings);
     let page_size_re = Regex::new(r#"(?s)<w:pgSz\b[^>]*/>"#).expect("valid page size regex");
     let page_margins_re = Regex::new(r#"(?s)<w:pgMar\b[^>]*/>"#).expect("valid page margins regex");
-    let header_footer_re = Regex::new(
-        r#"(?s)<w:(?:headerReference|footerReference|pgNumType)\b[^>]*/>"#,
-    )
-    .expect("valid header footer section regex");
+    let header_footer_re =
+        Regex::new(r#"(?s)<w:(?:headerReference|footerReference|pgNumType)\b[^>]*/>"#)
+            .expect("valid header footer section regex");
     let body = page_size_re.replace_all(body, "");
     let body = page_margins_re.replace_all(&body, "");
     let body = header_footer_re.replace_all(&body, "");
@@ -1585,6 +2330,10 @@ fn section_header_footer_references_xml(page_settings: &PageSettingsConfig) -> S
     }
     if page_settings_has_footer(page_settings) {
         xml.push_str(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#);
+    }
+    if page_settings_has_footer(page_settings)
+        || (page_settings.toc_enabled && page_settings.toc_show_page_numbers)
+    {
         xml.push_str(&format!(
             r#"<w:pgNumType w:start="{}" />"#,
             page_settings.footer_start_page.max(1)
@@ -1593,10 +2342,7 @@ fn section_header_footer_references_xml(page_settings: &PageSettingsConfig) -> S
     xml
 }
 
-fn ensure_header_footer_content_types_xml(
-    xml: &str,
-    page_settings: &PageSettingsConfig,
-) -> String {
+fn ensure_header_footer_content_types_xml(xml: &str, page_settings: &PageSettingsConfig) -> String {
     let mut output = xml.to_string();
     if page_settings_has_header(page_settings) && !output.contains("/word/header-mdking.xml") {
         output = output.replace(
@@ -1625,10 +2371,7 @@ fn create_header_footer_content_types_xml(page_settings: &PageSettingsConfig) ->
     xml
 }
 
-fn ensure_header_footer_relationships_xml(
-    xml: &str,
-    page_settings: &PageSettingsConfig,
-) -> String {
+fn ensure_header_footer_relationships_xml(xml: &str, page_settings: &PageSettingsConfig) -> String {
     let mut output = xml.to_string();
     if page_settings_has_header(page_settings)
         && !output.contains(r#"Id="rIdMdKingHeader""#)
@@ -1681,16 +2424,15 @@ fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
             escape_xml_text(text)
         )
     };
-    let separator_xml = if !text_xml.is_empty()
-        && page_settings.footer_page_number_format.trim() != "none"
-    {
-        format!(
-            r#"<w:r><w:rPr>{}</w:rPr><w:t> · </w:t></w:r>"#,
-            footer_run_style_xml()
-        )
-    } else {
-        String::new()
-    };
+    let separator_xml =
+        if !text_xml.is_empty() && page_settings.footer_page_number_format.trim() != "none" {
+            format!(
+                r#"<w:r><w:rPr>{}</w:rPr><w:t> · </w:t></w:r>"#,
+                footer_run_style_xml()
+            )
+        } else {
+            String::new()
+        };
     let page_number_xml = footer_page_number_xml(&page_settings.footer_page_number_format);
 
     format!(
@@ -1701,16 +2443,16 @@ fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
 fn footer_page_number_xml(format: &str) -> String {
     match format.trim() {
         "none" => String::new(),
+        "plain" | "plain-total" => page_field_xml(),
         "dash" => format!(
             r#"<w:r><w:rPr>{style}</w:rPr><w:t>- </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> -</w:t></w:r>"#,
             style = footer_run_style_xml(),
             page = page_field_xml()
         ),
         "page-total" => format!(
-            r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> / </w:t></w:r>{total}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
+            r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
             style = footer_run_style_xml(),
-            page = page_field_xml(),
-            total = num_pages_field_xml()
+            page = page_field_xml()
         ),
         _ => format!(
             r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
@@ -1722,10 +2464,6 @@ fn footer_page_number_xml(format: &str) -> String {
 
 fn page_field_xml() -> String {
     field_xml("PAGE")
-}
-
-fn num_pages_field_xml() -> String {
-    field_xml("NUMPAGES")
 }
 
 fn field_xml(instruction: &str) -> String {
@@ -1811,16 +2549,70 @@ fn inch_to_twips(value: f64) -> u32 {
     (value * 1440.0).round().max(1.0) as u32
 }
 
+#[cfg(test)]
 fn normalize_default_report_styles_xml(
     xml: &str,
     markdown_features: &MarkdownFeatureConfig,
 ) -> String {
+    normalize_template_styles_xml(xml, markdown_features, None, true)
+}
+
+fn normalize_template_styles_xml(
+    xml: &str,
+    markdown_features: &MarkdownFeatureConfig,
+    document_style: Option<&DocumentStyleConfig>,
+    apply_default_template_style: bool,
+) -> String {
     let style = Regex::new(r#"(?s)<w:style\b.*?</w:style>"#).expect("valid style regex");
     style
         .replace_all(xml, |captures: &Captures| {
-            normalize_default_report_style_xml(&captures[0], markdown_features)
+            normalize_template_style_xml(
+                &captures[0],
+                markdown_features,
+                document_style,
+                apply_default_template_style,
+            )
         })
         .to_string()
+}
+
+fn normalize_template_style_xml(
+    style_xml: &str,
+    markdown_features: &MarkdownFeatureConfig,
+    document_style: Option<&DocumentStyleConfig>,
+    apply_default_template_style: bool,
+) -> String {
+    if let Some(template_style_id) =
+        capture_style_id(style_xml).and_then(|style_id| template_style_id_for_word_style(&style_id))
+    {
+        if let Some(style) = document_style.and_then(|config| config.styles.get(template_style_id))
+        {
+            return normalize_text_style_xml(style_xml, style);
+        }
+    }
+
+    if apply_default_template_style {
+        return normalize_default_report_style_xml(style_xml, markdown_features);
+    }
+
+    style_xml.to_string()
+}
+
+fn template_style_id_for_word_style(style_id: &str) -> Option<&'static str> {
+    match style_id {
+        "Heading1" => Some("heading-1"),
+        "Heading2" => Some("heading-2"),
+        "Heading3" => Some("heading-3"),
+        "Heading4" => Some("heading-4"),
+        "Heading5" => Some("heading-5"),
+        "Heading6" => Some("heading-6"),
+        "Normal" | "FirstParagraph" => Some("normal"),
+        "BodyText" => Some("body-text"),
+        "Caption" => Some("caption"),
+        "ListParagraph" | "BulletList" => Some("bullet-list"),
+        "NumberedList" => Some("numbered-list"),
+        _ => None,
+    }
 }
 
 fn normalize_default_report_style_xml(
@@ -1852,9 +2644,15 @@ fn normalize_body_style_xml(style_xml: &str, first_line_indent: bool) -> String 
     ensure_style_run_properties(&style_xml, body_run_properties_xml())
 }
 
+fn normalize_text_style_xml(style_xml: &str, style: &TextStyleConfig) -> String {
+    let style_xml = ensure_style_paragraph_properties_xml(
+        style_xml,
+        &text_style_paragraph_properties_xml(style),
+    );
+    ensure_style_run_properties(&style_xml, &text_style_run_properties_xml(style))
+}
+
 fn ensure_style_paragraph_properties(style_xml: &str, first_line_indent: bool) -> String {
-    let paragraph_properties =
-        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid style paragraph regex");
     let indent = if first_line_indent {
         r#"<w:ind w:firstLine="480" />"#
     } else {
@@ -1863,6 +2661,13 @@ fn ensure_style_paragraph_properties(style_xml: &str, first_line_indent: bool) -
     let properties = format!(
         r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="both" />{indent}</w:pPr>"#
     );
+
+    ensure_style_paragraph_properties_xml(style_xml, &properties)
+}
+
+fn ensure_style_paragraph_properties_xml(style_xml: &str, properties: &str) -> String {
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid style paragraph regex");
 
     if paragraph_properties.is_match(style_xml) {
         paragraph_properties
@@ -1886,6 +2691,84 @@ fn ensure_style_run_properties(style_xml: &str, properties: &str) -> String {
 
 fn body_run_properties_xml() -> &'static str {
     r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" /><w:color w:val="111827" /><w:sz w:val="24" /><w:szCs w:val="24" /><w:b w:val="0" /><w:bCs w:val="0" />"#
+}
+
+fn text_style_paragraph_properties_xml(style: &TextStyleConfig) -> String {
+    let before = points_to_twentieths(style.before_spacing);
+    let after = points_to_twentieths(style.after_spacing);
+    let line = line_height_twips(style.font_size, style.line_height);
+    let align = word_alignment_value(&style.align);
+
+    if style.is_list {
+        let level_style = list_level_style(style, 0);
+        let before = points_to_twentieths(level_style.before_spacing);
+        let after = points_to_twentieths(level_style.after_spacing);
+        let line = line_height_twips(level_style.font_size, level_style.line_height);
+        let align = word_alignment_value(&level_style.align);
+        let indent = list_indent_xml(style);
+        return format!(
+            r#"<w:pPr><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" />{indent}</w:pPr>"#
+        );
+    }
+
+    let first_line = (style.first_line_indent * 240.0).round().clamp(0.0, 2000.0) as u32;
+
+    format!(
+        r#"<w:pPr><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" /><w:ind w:firstLine="{first_line}" /></w:pPr>"#
+    )
+}
+
+fn list_indent_xml(style: &TextStyleConfig) -> String {
+    list_indent_xml_for_level(style, 0)
+}
+
+fn list_level_style(style: &TextStyleConfig, level: usize) -> &ListLevelStyleConfig {
+    &style.list_level_styles[list_level_index(level)]
+}
+
+fn list_indent_xml_for_level(style: &TextStyleConfig, level: usize) -> String {
+    let level_style = list_level_style(style, level);
+    let left = (level_style.indent * 240.0).round().clamp(0.0, 4000.0) as u32;
+    let text = (level_style.text_indent * 240.0).round().clamp(120.0, 1200.0) as u32;
+
+    if level_style.wrap_mode == "flat" {
+        format!(r#"<w:ind w:left="{left}" w:firstLine="0" />"#)
+    } else {
+        let hanging_left = left.saturating_add(text);
+        format!(r#"<w:ind w:left="{hanging_left}" w:hanging="{text}" />"#)
+    }
+}
+
+fn text_style_run_properties_xml(style: &TextStyleConfig) -> String {
+    if style.is_list {
+        return list_level_run_properties_xml(style, 0);
+    }
+
+    let size = font_size_half_points(style.font_size);
+    let bold = bool_val(style.bold);
+    format!(
+        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" />"#,
+        style.latin_font, style.latin_font, style.chinese_font, style.color
+    )
+}
+
+fn list_level_run_properties_xml(style: &TextStyleConfig, level: usize) -> String {
+    let level_style = list_level_style(style, level);
+    let size = font_size_half_points(level_style.font_size);
+    let bold = bool_val(level_style.bold);
+    format!(
+        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" />"#,
+        level_style.latin_font, level_style.latin_font, level_style.chinese_font, level_style.color
+    )
+}
+
+fn word_alignment_value(value: &str) -> &'static str {
+    match value.trim() {
+        "center" => "center",
+        "right" => "right",
+        "justify" => "both",
+        _ => "left",
+    }
 }
 
 fn remove_horizontal_rule_paragraphs(xml: &str) -> String {
@@ -1918,12 +2801,12 @@ fn inline_code_run_properties_xml() -> &'static str {
     r#"<w:rFonts w:ascii="Consolas" w:eastAsia="Microsoft YaHei UI" w:hAnsi="Consolas" w:cs="Consolas" /><w:noProof /><w:color w:val="111827" /><w:shd w:val="clear" w:color="auto" w:fill="F1F5F9" /><w:sz w:val="21" /><w:szCs w:val="21" /><w:b w:val="0" /><w:bCs w:val="0" /><w:i w:val="0" /><w:iCs w:val="0" />"#
 }
 
-fn normalize_inline_code_runs(xml: &str) -> String {
+fn normalize_inline_code_runs(xml: &str, style: Option<&InlineCodeStyleConfig>) -> String {
     let run = Regex::new(r#"(?s)<w:r(?:\s[^>]*)?>.*?</w:r>"#).expect("valid run regex");
     run.replace_all(xml, |captures: &Captures| {
         let run_xml = &captures[0];
         if run_xml.contains(r#"<w:rStyle w:val="VerbatimChar""#) {
-            normalize_inline_code_run_xml(run_xml)
+            normalize_inline_code_run_xml(run_xml, style)
         } else {
             run_xml.to_string()
         }
@@ -1963,8 +2846,10 @@ fn flatten_inline_code_run_xml(run_xml: &str) -> String {
         .to_string()
 }
 
-fn normalize_inline_code_run_xml(run_xml: &str) -> String {
-    let properties = inline_code_run_properties_xml();
+fn normalize_inline_code_run_xml(run_xml: &str, style: Option<&InlineCodeStyleConfig>) -> String {
+    let properties = style
+        .map(inline_code_run_properties_from_style)
+        .unwrap_or_else(|| inline_code_run_properties_xml().to_string());
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
 
@@ -1981,15 +2866,24 @@ fn normalize_inline_code_run_xml(run_xml: &str) -> String {
             .to_string();
     }
 
-    insert_run_properties(run_xml, properties)
+    insert_run_properties(run_xml, &properties)
 }
 
-fn normalize_code_and_quote_blocks(xml: &str, markdown_features: &MarkdownFeatureConfig) -> String {
+fn normalize_code_and_quote_blocks(
+    xml: &str,
+    markdown_features: &MarkdownFeatureConfig,
+    block_style: Option<&BlockStyleConfig>,
+) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
     let mut in_quote_list = false;
     paragraph
         .replace_all(xml, |captures: &Captures| {
-            normalize_code_or_quote_paragraph(&captures[0], &mut in_quote_list, markdown_features)
+            normalize_code_or_quote_paragraph(
+                &captures[0],
+                &mut in_quote_list,
+                markdown_features,
+                block_style,
+            )
         })
         .to_string()
 }
@@ -1998,11 +2892,12 @@ fn normalize_code_or_quote_paragraph(
     paragraph_xml: &str,
     in_quote_list: &mut bool,
     markdown_features: &MarkdownFeatureConfig,
+    block_style: Option<&BlockStyleConfig>,
 ) -> String {
     match capture_paragraph_style_id(paragraph_xml).as_deref() {
         Some("SourceCode") if markdown_features.code_block => {
             *in_quote_list = false;
-            normalize_source_code_paragraph(paragraph_xml)
+            normalize_source_code_paragraph(paragraph_xml, block_style.map(|style| &style.code))
         }
         Some("SourceCode") => {
             *in_quote_list = false;
@@ -2010,7 +2905,7 @@ fn normalize_code_or_quote_paragraph(
         }
         Some("BlockText") if markdown_features.quote_block => {
             *in_quote_list = true;
-            normalize_quote_paragraph(paragraph_xml)
+            normalize_quote_paragraph(paragraph_xml, block_style.map(|style| &style.quote))
         }
         Some("BlockText") => {
             *in_quote_list = false;
@@ -2020,7 +2915,7 @@ fn normalize_code_or_quote_paragraph(
             && *in_quote_list
             && has_list_numbering(paragraph_xml) =>
         {
-            normalize_quote_list_paragraph(paragraph_xml)
+            normalize_quote_list_paragraph(paragraph_xml, block_style.map(|style| &style.quote))
         }
         _ => {
             *in_quote_list = false;
@@ -2032,7 +2927,7 @@ fn normalize_code_or_quote_paragraph(
 fn flatten_special_block_paragraph(paragraph_xml: &str) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
-    let properties = r#"<w:pPr><w:pStyle w:val="Normal" /><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="both" /><w:ind w:firstLine="480" /></w:pPr>"#;
+    let properties = r#"<w:pPr><w:pStyle w:val="Normal" /></w:pPr>"#;
 
     let paragraph_xml = if paragraph_properties.is_match(paragraph_xml) {
         paragraph_properties
@@ -2072,119 +2967,151 @@ fn flatten_special_text_run_xml(run_xml: &str) -> String {
         .to_string()
 }
 
-fn normalize_source_code_paragraph(paragraph_xml: &str) -> String {
-    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml);
-    normalize_code_runs(&paragraph_xml)
+fn normalize_source_code_paragraph(
+    paragraph_xml: &str,
+    style: Option<&CodeBlockStyleConfig>,
+) -> String {
+    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml, style);
+    normalize_code_runs(&paragraph_xml, style)
 }
 
-fn ensure_code_paragraph_properties(paragraph_xml: &str) -> String {
+fn ensure_code_paragraph_properties(
+    paragraph_xml: &str,
+    style: Option<&CodeBlockStyleConfig>,
+) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
-    paragraph_properties
-        .replace(paragraph_xml, |captures: &Captures| {
-            let removable = Regex::new(
-                r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#,
-            )
-            .expect("valid code paragraph cleanup regex");
-            let inner = removable.replace_all(&captures[1], "");
-            format!(
-                r#"<w:pPr>{inner}<w:spacing w:before="120" w:after="120" w:line="300" w:lineRule="auto" /><w:ind w:left="360" w:right="360" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC" /><w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="E2E8F0" /><w:left w:val="single" w:sz="6" w:space="4" w:color="E2E8F0" /><w:bottom w:val="single" w:sz="6" w:space="4" w:color="E2E8F0" /><w:right w:val="single" w:sz="6" w:space="4" w:color="E2E8F0" /></w:pBdr></w:pPr>"#
-            )
-        })
-        .to_string()
+    let properties = code_paragraph_properties_xml(style);
+    if paragraph_properties.is_match(paragraph_xml) {
+        return paragraph_properties
+            .replace(paragraph_xml, |captures: &Captures| {
+                let removable =
+                    Regex::new(r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#)
+                        .expect("valid code paragraph cleanup regex");
+                let inner = removable.replace_all(&captures[1], "");
+                format!(r#"<w:pPr>{inner}{properties}</w:pPr>"#)
+            })
+            .to_string();
+    }
+
+    insert_paragraph_properties(paragraph_xml, &properties)
 }
 
-fn normalize_code_runs(paragraph_xml: &str) -> String {
+fn normalize_code_runs(paragraph_xml: &str, style: Option<&CodeBlockStyleConfig>) -> String {
     let run = Regex::new(r#"(?s)<w:r(?:\s[^>]*)?>.*?</w:r>"#).expect("valid run regex");
     run.replace_all(paragraph_xml, |captures: &Captures| {
-        normalize_code_run_xml(&captures[0])
+        normalize_code_run_xml(&captures[0], style)
     })
     .to_string()
 }
 
-fn normalize_code_run_xml(run_xml: &str) -> String {
-    let properties = r#"<w:rFonts w:ascii="Consolas" w:eastAsia="Microsoft YaHei UI" w:hAnsi="Consolas" w:cs="Consolas" /><w:noProof /><w:color w:val="111827" /><w:b w:val="0" /><w:bCs w:val="0" /><w:i w:val="0" /><w:iCs w:val="0" /><w:sz w:val="18" /><w:szCs w:val="18" />"#;
+fn normalize_code_run_xml(run_xml: &str, style: Option<&CodeBlockStyleConfig>) -> String {
+    let has_token_style = has_syntax_token_run_style(run_xml);
+    let properties = code_run_properties_xml(style, has_token_style);
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
 
     if run_properties.is_match(run_xml) {
         return run_properties
             .replace(run_xml, |captures: &Captures| {
-                let removable =
+                let removable = if has_token_style {
+                    Regex::new(r#"<w:(?:rFonts|noProof|sz|szCs|b|bCs|i|iCs)\b[^>]*/>"#)
+                        .expect("valid syntax highlighted code run cleanup regex")
+                } else {
                     Regex::new(
                         r#"<w:rStyle\b[^>]*/>|<w:(?:rFonts|noProof|color|sz|szCs|b|bCs|i|iCs)\b[^>]*/>"#,
                     )
-                        .expect("valid code run cleanup regex");
+                    .expect("valid code run cleanup regex")
+                };
                 let inner = removable.replace_all(&captures[1], "");
                 format!("<w:rPr>{properties}{inner}</w:rPr>")
             })
             .to_string();
     }
 
-    insert_run_properties(run_xml, properties)
+    insert_run_properties(run_xml, &properties)
 }
 
-fn normalize_quote_paragraph(paragraph_xml: &str) -> String {
-    let paragraph_xml = ensure_quote_paragraph_properties(paragraph_xml);
-    normalize_quote_runs(&paragraph_xml)
+fn has_syntax_token_run_style(run_xml: &str) -> bool {
+    Regex::new(r#"<w:rStyle\s+w:val="[^"]*Tok"\s*/>"#)
+        .expect("valid syntax token run style regex")
+        .is_match(run_xml)
 }
 
-fn normalize_quote_list_paragraph(paragraph_xml: &str) -> String {
-    let paragraph_xml = ensure_quote_list_paragraph_properties(paragraph_xml);
-    normalize_quote_runs(&paragraph_xml)
+fn normalize_quote_paragraph(paragraph_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
+    let paragraph_xml = ensure_quote_paragraph_properties(paragraph_xml, style);
+    normalize_quote_runs(&paragraph_xml, style)
 }
 
-fn ensure_quote_paragraph_properties(paragraph_xml: &str) -> String {
+fn normalize_quote_list_paragraph(
+    paragraph_xml: &str,
+    style: Option<&QuoteBlockStyleConfig>,
+) -> String {
+    let paragraph_xml = ensure_quote_list_paragraph_properties(paragraph_xml, style);
+    normalize_quote_runs(&paragraph_xml, style)
+}
+
+fn ensure_quote_paragraph_properties(
+    paragraph_xml: &str,
+    style: Option<&QuoteBlockStyleConfig>,
+) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
-    paragraph_properties
-        .replace(paragraph_xml, |captures: &Captures| {
-            let removable = Regex::new(
-                r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#,
-            )
-            .expect("valid quote paragraph cleanup regex");
-            let inner = removable.replace_all(&captures[1], "");
-            format!(
-                r#"<w:pPr>{inner}<w:spacing w:before="80" w:after="80" w:line="360" w:lineRule="auto" /><w:ind w:left="360" w:right="240" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC" /><w:pBdr><w:left w:val="single" w:sz="18" w:space="6" w:color="94A3B8" /></w:pBdr></w:pPr>"#
-            )
-        })
-        .to_string()
+    let properties = quote_paragraph_properties_xml(style, false);
+    if paragraph_properties.is_match(paragraph_xml) {
+        return paragraph_properties
+            .replace(paragraph_xml, |captures: &Captures| {
+                let removable =
+                    Regex::new(r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#)
+                        .expect("valid quote paragraph cleanup regex");
+                let inner = removable.replace_all(&captures[1], "");
+                format!(r#"<w:pPr>{inner}{properties}</w:pPr>"#)
+            })
+            .to_string();
+    }
+
+    insert_paragraph_properties(paragraph_xml, &properties)
 }
 
-fn ensure_quote_list_paragraph_properties(paragraph_xml: &str) -> String {
+fn ensure_quote_list_paragraph_properties(
+    paragraph_xml: &str,
+    style: Option<&QuoteBlockStyleConfig>,
+) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
-    paragraph_properties
-        .replace(paragraph_xml, |captures: &Captures| {
-            let removable = Regex::new(
-                r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#,
-            )
-            .expect("valid quote list paragraph cleanup regex");
-            let inner = removable.replace_all(&captures[1], "");
-            format!(
-                r#"<w:pPr>{inner}<w:spacing w:before="40" w:after="40" w:line="330" w:lineRule="auto" /><w:ind w:left="540" w:right="240" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC" /><w:pBdr><w:left w:val="single" w:sz="18" w:space="6" w:color="94A3B8" /></w:pBdr></w:pPr>"#
-            )
-        })
-        .to_string()
+    let properties = quote_paragraph_properties_xml(style, true);
+    if paragraph_properties.is_match(paragraph_xml) {
+        return paragraph_properties
+            .replace(paragraph_xml, |captures: &Captures| {
+                let removable =
+                    Regex::new(r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#)
+                        .expect("valid quote list paragraph cleanup regex");
+                let inner = removable.replace_all(&captures[1], "");
+                format!(r#"<w:pPr>{inner}{properties}</w:pPr>"#)
+            })
+            .to_string();
+    }
+
+    insert_paragraph_properties(paragraph_xml, &properties)
 }
 
-fn normalize_quote_runs(paragraph_xml: &str) -> String {
+fn normalize_quote_runs(paragraph_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
     let run = Regex::new(r#"(?s)<w:r(?:\s[^>]*)?>.*?</w:r>"#).expect("valid run regex");
     run.replace_all(paragraph_xml, |captures: &Captures| {
-        normalize_quote_run_xml(&captures[0])
+        normalize_quote_run_xml(&captures[0], style)
     })
     .to_string()
 }
 
-fn normalize_quote_run_xml(run_xml: &str) -> String {
-    let properties = r#"<w:rFonts w:ascii="Times New Roman" w:eastAsia="微软雅黑" w:hAnsi="Times New Roman" /><w:color w:val="475569" /><w:i /><w:iCs /><w:sz w:val="21" /><w:szCs w:val="21" />"#;
+fn normalize_quote_run_xml(run_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
+    let properties = quote_run_properties_xml(style);
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
 
     if run_properties.is_match(run_xml) {
         return run_properties
             .replace(run_xml, |captures: &Captures| {
-                let removable = Regex::new(r#"<w:(?:rFonts|color|sz|szCs|i|iCs)\b[^>]*/>"#)
+                let removable = Regex::new(r#"<w:(?:rFonts|color|b|bCs|sz|szCs|i|iCs)\b[^>]*/>"#)
                     .expect("valid quote run cleanup regex");
                 let inner = removable.replace_all(&captures[1], "");
                 format!("<w:rPr>{properties}{inner}</w:rPr>")
@@ -2192,7 +3119,146 @@ fn normalize_quote_run_xml(run_xml: &str) -> String {
             .to_string();
     }
 
-    insert_run_properties(run_xml, properties)
+    insert_run_properties(run_xml, &properties)
+}
+
+fn code_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String {
+    let background = style
+        .map(|value| value.background_color.as_str())
+        .unwrap_or("F8FAFC");
+    let border_color = style
+        .map(|value| value.border_color.as_str())
+        .unwrap_or("E2E8F0");
+    let line = style
+        .map(|value| line_height_twips(value.font_size, value.line_height))
+        .unwrap_or(300);
+    let before = points_to_twentieths(style.map(|value| value.before_spacing).unwrap_or(6.0));
+    let after = points_to_twentieths(style.map(|value| value.after_spacing).unwrap_or(6.0));
+    let horizontal_padding =
+        points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
+    let border_space = (style.map(|value| value.padding_y).unwrap_or(10.0) / 2.0)
+        .round()
+        .clamp(0.0, 24.0) as u32;
+    let border = border_xml_with_space("solid", 0.75, border_color, border_space);
+
+    format!(
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:top {border} /><w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
+    )
+}
+
+fn code_run_properties_xml(style: Option<&CodeBlockStyleConfig>, preserve_token_color: bool) -> String {
+    let latin_font = style
+        .map(|value| value.latin_font.as_str())
+        .unwrap_or("Consolas");
+    let chinese_font = style
+        .map(|value| value.chinese_font.as_str())
+        .unwrap_or("Microsoft YaHei UI");
+    let color = style.map(|value| value.color.as_str()).unwrap_or("111827");
+    let size = font_size_half_points(style.map(|value| value.font_size).unwrap_or(9.0));
+    let bold = bool_val(style.is_some_and(|value| value.bold));
+    let color_xml = if preserve_token_color {
+        String::new()
+    } else {
+        format!(r#"<w:color w:val="{color}" />"#)
+    };
+
+    format!(
+        r#"<w:rFonts w:ascii="{latin_font}" w:eastAsia="{chinese_font}" w:hAnsi="{latin_font}" w:cs="{latin_font}" /><w:noProof />{color_xml}<w:b w:val="{bold}" /><w:bCs w:val="{bold}" /><w:i w:val="0" /><w:iCs w:val="0" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" />"#
+    )
+}
+
+fn quote_paragraph_properties_xml(style: Option<&QuoteBlockStyleConfig>, is_list: bool) -> String {
+    let background = style
+        .map(|value| value.background_color.as_str())
+        .unwrap_or("F8FAFC");
+    let border_color = style
+        .map(|value| value.border_color.as_str())
+        .unwrap_or("94A3B8");
+    let font_size = style.map(|value| value.font_size).unwrap_or(10.5);
+    let line_height =
+        style
+            .map(|value| value.line_height)
+            .unwrap_or(if is_list { 1.55 } else { 1.7 });
+    let line = line_height_twips(font_size, line_height);
+    let before = points_to_twentieths(
+        style
+            .map(|value| value.before_spacing)
+            .unwrap_or(if is_list { 2.0 } else { 4.0 }),
+    );
+    let after = points_to_twentieths(
+        style
+            .map(|value| value.after_spacing)
+            .unwrap_or(if is_list { 2.0 } else { 4.0 }),
+    );
+    let left = if is_list { 540 } else { 360 };
+    let border_width = style.map(|value| value.border_width).unwrap_or(4.5);
+    let border = border_xml_with_space("solid", border_width / 2.0, border_color, 6);
+
+    format!(
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{left}" w:right="240" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:left {border} /></w:pBdr>"#
+    )
+}
+
+fn quote_run_properties_xml(style: Option<&QuoteBlockStyleConfig>) -> String {
+    let latin_font = style
+        .map(|value| value.latin_font.as_str())
+        .unwrap_or("Times New Roman");
+    let chinese_font = style
+        .map(|value| value.chinese_font.as_str())
+        .unwrap_or("微软雅黑");
+    let color = style.map(|value| value.color.as_str()).unwrap_or("475569");
+    let size = font_size_half_points(style.map(|value| value.font_size).unwrap_or(10.5));
+    let bold = bool_val(style.is_some_and(|value| value.bold));
+
+    format!(
+        r#"<w:rFonts w:ascii="{latin_font}" w:eastAsia="{chinese_font}" w:hAnsi="{latin_font}" /><w:color w:val="{color}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" /><w:i /><w:iCs /><w:sz w:val="{size}" /><w:szCs w:val="{size}" />"#
+    )
+}
+
+fn inline_code_run_properties_from_style(style: &InlineCodeStyleConfig) -> String {
+    let size = font_size_half_points(style.font_size);
+    let bold = bool_val(style.bold);
+    format!(
+        r#"<w:rFonts w:ascii="{}" w:eastAsia="{}" w:hAnsi="{}" w:cs="{}" /><w:noProof /><w:color w:val="{}" /><w:shd w:val="clear" w:color="auto" w:fill="{}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" /><w:i w:val="0" /><w:iCs w:val="0" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" />"#,
+        style.latin_font,
+        style.chinese_font,
+        style.latin_font,
+        style.latin_font,
+        style.color,
+        style.background_color
+    )
+}
+
+fn bool_val(value: bool) -> &'static str {
+    if value {
+        "1"
+    } else {
+        "0"
+    }
+}
+
+fn font_size_half_points(value: f64) -> u32 {
+    (value * 2.0).round().clamp(12.0, 144.0) as u32
+}
+
+fn points_to_twentieths(value: f64) -> u32 {
+    (value * 20.0).round().clamp(0.0, 2000.0) as u32
+}
+
+fn line_height_twips(font_size: f64, line_height: f64) -> u32 {
+    (font_size * line_height * 20.0)
+        .round()
+        .clamp(120.0, 2000.0) as u32
+}
+
+fn insert_paragraph_properties(paragraph_xml: &str, properties: &str) -> String {
+    let paragraph_start = Regex::new(r#"<w:p(\s[^>]*)?>"#).expect("valid paragraph start regex");
+    paragraph_start
+        .replace(paragraph_xml, |captures: &Captures| {
+            let attributes = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+            format!("<w:p{attributes}><w:pPr>{properties}</w:pPr>")
+        })
+        .to_string()
 }
 
 fn insert_run_properties(run_xml: &str, properties: &str) -> String {
@@ -2205,22 +3271,56 @@ fn insert_run_properties(run_xml: &str, properties: &str) -> String {
         .to_string()
 }
 
-fn normalize_list_markers(xml: &str) -> String {
+fn normalize_list_markers(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
     let mut ordered_counters: HashMap<String, usize> = HashMap::new();
 
     paragraph
         .replace_all(xml, |captures: &Captures| {
-            normalize_list_paragraph(&captures[0], &mut ordered_counters)
+            normalize_list_paragraph(&captures[0], &mut ordered_counters, document_style)
         })
         .to_string()
+}
+
+fn ordered_list_restart_enabled(document_style: Option<&DocumentStyleConfig>) -> bool {
+    document_style
+        .and_then(|style| style.styles.get("numbered-list"))
+        .map(|style| style.list_numbering_mode != "continue")
+        .unwrap_or(true)
+}
+
+fn ordered_list_level_restart_enabled(document_style: Option<&DocumentStyleConfig>, level: usize) -> bool {
+    document_style
+        .and_then(|style| {
+            style
+                .styles
+                .get("nested-list")
+                .or_else(|| style.styles.get("numbered-list"))
+        })
+        .map(|style| list_level_style(style, level).numbering_mode != "continue")
+        .unwrap_or_else(|| ordered_list_restart_enabled(document_style))
+}
+
+fn clear_restart_ordered_counters(
+    ordered_counters: &mut HashMap<String, usize>,
+    document_style: Option<&DocumentStyleConfig>,
+) {
+    ordered_counters.retain(|key, _| {
+        let level = key
+            .rsplit_once(':')
+            .and_then(|(_, level)| level.parse::<usize>().ok())
+            .unwrap_or(0);
+        !ordered_list_level_restart_enabled(document_style, level)
+    });
 }
 
 fn normalize_list_paragraph(
     paragraph_xml: &str,
     ordered_counters: &mut HashMap<String, usize>,
+    document_style: Option<&DocumentStyleConfig>,
 ) -> String {
     if capture_heading_style_id(paragraph_xml).is_some() {
+        clear_restart_ordered_counters(ordered_counters, document_style);
         return paragraph_xml.to_string();
     }
 
@@ -2228,6 +3328,7 @@ fn normalize_list_paragraph(
         Regex::new(r#"(?s)<w:numPr><w:ilvl w:val="(\d+)" /><w:numId w:val="(\d+)" /></w:numPr>"#)
             .expect("valid paragraph numbering regex");
     let Some(captures) = numbering.captures(paragraph_xml) else {
+        clear_restart_ordered_counters(ordered_counters, document_style);
         return paragraph_xml.to_string();
     };
 
@@ -2237,22 +3338,230 @@ fn normalize_list_paragraph(
         .unwrap_or(0);
     let num_id = captures.get(2).map(|value| value.as_str()).unwrap_or("");
     if num_id == "9100" {
+        clear_restart_ordered_counters(ordered_counters, document_style);
         return paragraph_xml.to_string();
     }
 
     let is_ordered = num_id.parse::<usize>().is_ok_and(|value| value >= 1003);
-    let marker = if is_ordered {
-        let counter = ordered_counters.entry(num_id.to_string()).or_insert(0);
-        *counter += 1;
-        format!("{}. ", counter)
-    } else if level > 0 {
-        "◦ ".to_string()
+    if !is_ordered && level == 0 {
+        clear_restart_ordered_counters(ordered_counters, document_style);
+    }
+    let style_id = if level > 0 {
+        "nested-list"
+    } else if is_ordered {
+        "numbered-list"
     } else {
-        "• ".to_string()
+        "bullet-list"
+    };
+    let list_style = document_style.and_then(|style| {
+        style.styles.get("nested-list").or_else(|| {
+            style
+                .styles
+                .get(style_id)
+                .or_else(|| style.styles.get("bullet-list"))
+        })
+    });
+    let marker_is_ordered = list_style
+        .and_then(|style| list_level_type_override(style, level))
+        .map(|value| value == "number")
+        .unwrap_or(is_ordered);
+    let marker = if marker_is_ordered {
+        let counter_key = if is_ordered {
+            format!("{num_id}:{level}")
+        } else {
+            format!("configured:{level}")
+        };
+        let counter = ordered_counters.entry(counter_key).or_insert(0);
+        *counter += 1;
+        ordered_list_marker(*counter, list_style, level)
+    } else if level > 0 {
+        unordered_list_marker(list_style, "circle", level)
+    } else {
+        unordered_list_marker(list_style, "disc", level)
     };
 
     let without_numbering = numbering.replace(paragraph_xml, "").to_string();
-    prefix_first_text_run(&without_numbering, &marker)
+    let with_indent = list_style
+        .map(|style| apply_list_paragraph_properties(&without_numbering, style, level))
+        .unwrap_or(without_numbering);
+    let with_marker = prefix_first_text_run(&with_indent, &format!("{marker} "));
+    list_style
+        .map(|style| apply_list_level_run_style(&with_marker, style, level))
+        .unwrap_or(with_marker)
+}
+
+fn list_level_index(level: usize) -> usize {
+    level.min(3)
+}
+
+fn list_level_type_override(style: &TextStyleConfig, level: usize) -> Option<&str> {
+    style.list_level_type_overrides[list_level_index(level)].as_deref()
+}
+
+fn unordered_list_marker(style: Option<&TextStyleConfig>, fallback: &str, level: usize) -> String {
+    if style.is_none() && fallback == "circle" {
+        return "◦".to_string();
+    }
+
+    let marker_style = style
+        .map(|style| style.list_level_marker_styles[list_level_index(level)].as_str())
+        .unwrap_or(fallback);
+
+    match marker_style {
+        "circle" => "○",
+        "square" => "■",
+        "triangle" => "▸",
+        "dash" => "-",
+        "check" => "✓",
+        "bar" => "|",
+        "double-bar" => "||",
+        "triple-bar" => "|||",
+        _ => "•",
+    }
+    .to_string()
+}
+
+fn ordered_list_marker(index: usize, style: Option<&TextStyleConfig>, level: usize) -> String {
+    let format = style
+        .map(|style| style.list_level_number_formats[list_level_index(level)].as_str())
+        .unwrap_or("1.");
+
+    match format {
+        "1)" => format!("{index})"),
+        "(1)" => format!("({index})"),
+        "01." => format!("{index:02}."),
+        "A." => format!("{}.", alphabetic_marker(index, false)),
+        "A)" => format!("{})", alphabetic_marker(index, false)),
+        "a." => format!("{}.", alphabetic_marker(index, true)),
+        "a)" => format!("{})", alphabetic_marker(index, true)),
+        "I." => format!("{}.", roman_number(index, false)),
+        "I)" => format!("{})", roman_number(index, false)),
+        "i." => format!("{}.", roman_number(index, true)),
+        "i)" => format!("{})", roman_number(index, true)),
+        "一、" => format!("{}、", chinese_number(index)),
+        "（一）" => format!("（{}）", chinese_number(index)),
+        _ => format!("{index}."),
+    }
+}
+
+fn alphabetic_marker(mut value: usize, lowercase: bool) -> String {
+    if value == 0 {
+        return "A".to_string();
+    }
+    let mut chars = Vec::new();
+    while value > 0 {
+        value -= 1;
+        let ch = (b'A' + (value % 26) as u8) as char;
+        chars.push(ch);
+        value /= 26;
+    }
+    let marker: String = chars.into_iter().rev().collect();
+    if lowercase {
+        marker.to_ascii_lowercase()
+    } else {
+        marker
+    }
+}
+
+fn roman_number(mut value: usize, lowercase: bool) -> String {
+    if value == 0 || value > 3999 {
+        return value.to_string();
+    }
+    let mut output = String::new();
+    for (number, roman) in [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ] {
+        while value >= number {
+            output.push_str(roman);
+            value -= number;
+        }
+    }
+    if lowercase {
+        output.to_ascii_lowercase()
+    } else {
+        output
+    }
+}
+
+fn chinese_number(value: usize) -> String {
+    let digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+    if value <= 10 {
+        return if value == 10 {
+            "十".to_string()
+        } else {
+            digits[value].to_string()
+        };
+    }
+    if value < 20 {
+        return format!("十{}", digits[value - 10]);
+    }
+    if value < 100 {
+        let tens = value / 10;
+        let ones = value % 10;
+        return format!(
+            "{}十{}",
+            digits[tens],
+            if ones == 0 { "" } else { digits[ones] }
+        );
+    }
+    value.to_string()
+}
+
+fn list_level_paragraph_properties_xml(style: &TextStyleConfig, level: usize) -> String {
+    let level_style = list_level_style(style, level);
+    let before = points_to_twentieths(level_style.before_spacing);
+    let after = points_to_twentieths(level_style.after_spacing);
+    let line = line_height_twips(level_style.font_size, level_style.line_height);
+    let align = word_alignment_value(&level_style.align);
+    let indent = list_indent_xml_for_level(style, level);
+    format!(
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" />{indent}"#
+    )
+}
+
+fn apply_list_paragraph_properties(paragraph_xml: &str, style: &TextStyleConfig, level: usize) -> String {
+    let properties = list_level_paragraph_properties_xml(style, level);
+    let existing_properties = Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#)
+        .expect("valid paragraph properties regex");
+    if existing_properties.is_match(paragraph_xml) {
+        return existing_properties
+            .replace(paragraph_xml, format!("<w:pPr>{properties}</w:pPr>"))
+            .to_string();
+    }
+
+    insert_paragraph_properties(paragraph_xml, &properties)
+}
+
+fn apply_list_level_run_style(paragraph_xml: &str, style: &TextStyleConfig, level: usize) -> String {
+    let properties = list_level_run_properties_xml(style, level);
+    let run = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("valid run regex");
+    run.replace_all(paragraph_xml, |captures: &Captures| {
+        ensure_run_properties_xml(&captures[0], &properties)
+    })
+    .to_string()
+}
+
+fn ensure_run_properties_xml(run_xml: &str, properties: &str) -> String {
+    let run_properties = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("valid run properties regex");
+    let replacement = format!("<w:rPr>{properties}</w:rPr>");
+
+    if run_properties.is_match(run_xml) {
+        run_properties.replace(run_xml, replacement).to_string()
+    } else {
+        insert_run_properties(run_xml, properties)
+    }
 }
 
 fn has_list_numbering(paragraph_xml: &str) -> bool {
@@ -2361,11 +3670,22 @@ fn default_table_style_config() -> TableStyleConfig {
     TableStyleConfig {
         width_twips: 8640,
         layout: "fixed".to_string(),
+        horizontal_align: "center".to_string(),
+        column_widths: Vec::new(),
         border_style: "solid".to_string(),
         border_color: "CBD5E1".to_string(),
         border_width: 1.0,
+        border_top_width: 1.0,
+        border_right_width: 1.0,
+        border_bottom_width: 1.0,
+        border_left_width: 1.0,
         show_inner_vertical_border: true,
         show_inner_horizontal_border: true,
+        cell_padding_x: 10.0,
+        cell_padding_y: 8.0,
+        min_row_height: 28.0,
+        row_stripe: false,
+        cell_wrap: true,
         header: TableCellStyleConfig {
             chinese_font: "微软雅黑".to_string(),
             latin_font: "Times New Roman".to_string(),
@@ -2375,6 +3695,7 @@ fn default_table_style_config() -> TableStyleConfig {
             background_color: "FFFFFF".to_string(),
             horizontal_align: "center".to_string(),
             vertical_align: "middle".to_string(),
+            line_height: 1.4,
             border_color: "CBD5E1".to_string(),
             border_width: 1.0,
         },
@@ -2387,6 +3708,7 @@ fn default_table_style_config() -> TableStyleConfig {
             background_color: "FFFFFF".to_string(),
             horizontal_align: "left".to_string(),
             vertical_align: "middle".to_string(),
+            line_height: 1.5,
             border_color: "CBD5E1".to_string(),
             border_width: 1.0,
         },
@@ -2408,7 +3730,8 @@ fn normalize_table_xml(table_xml: &str, style: &TableStyleConfig) -> String {
     let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
     let mut row_index = 0usize;
     row.replace_all(&table_xml, |captures: &Captures| {
-        let normalized = normalize_table_row_xml(&captures[0], row_index == 0, column_count, style);
+        let normalized =
+            normalize_table_row_xml(&captures[0], row_index, row_index == 0, column_count, style);
         row_index += 1;
         normalized
     })
@@ -2433,7 +3756,7 @@ fn normalize_table_properties(
         Regex::new(r#"(?s)<w:tblPr>(.*?)</w:tblPr>"#).expect("valid table property regex");
     let table_grid =
         Regex::new(r#"(?s)<w:tblGrid>.*?</w:tblGrid>"#).expect("valid table grid regex");
-    let grid = build_table_grid_xml(column_count, style.width_twips);
+    let grid = build_table_grid_xml(column_count, style);
     let layout = if style.layout.trim().eq_ignore_ascii_case("auto") {
         "autofit"
     } else {
@@ -2443,12 +3766,13 @@ fn normalize_table_properties(
     let table_xml = table_properties
         .replace(table_xml, |captures: &Captures| {
             let removable =
-                Regex::new(r#"(?s)<w:tblBorders>.*?</w:tblBorders>|<w:(?:tblStyle|tblW|tblLayout|tblLook)\b[^>]*/>"#)
+                Regex::new(r#"(?s)<w:tblBorders>.*?</w:tblBorders>|<w:(?:tblStyle|tblW|tblLayout|tblLook|jc)\b[^>]*/>"#)
                 .expect("valid table layout cleanup regex");
             let inner = removable.replace_all(&captures[1], "");
             format!(
-                r#"<w:tblPr>{inner}<w:tblW w:type="dxa" w:w="{}" /><w:tblLayout w:type="{layout}" />{}</w:tblPr>"#,
+                r#"<w:tblPr>{inner}<w:tblW w:type="dxa" w:w="{}" /><w:tblLayout w:type="{layout}" />{}{}</w:tblPr>"#,
                 style.width_twips,
+                table_alignment_xml(&style.horizontal_align),
                 table_borders_xml(style)
             )
         })
@@ -2462,7 +3786,26 @@ fn normalize_table_properties(
 }
 
 fn table_borders_xml(style: &TableStyleConfig) -> String {
-    let outer = border_xml(&style.border_style, style.border_width, &style.border_color);
+    let top = border_xml(
+        &style.border_style,
+        style.border_top_width,
+        &style.border_color,
+    );
+    let right = border_xml(
+        &style.border_style,
+        style.border_right_width,
+        &style.border_color,
+    );
+    let bottom = border_xml(
+        &style.border_style,
+        style.border_bottom_width,
+        &style.border_color,
+    );
+    let left = border_xml(
+        &style.border_style,
+        style.border_left_width,
+        &style.border_color,
+    );
     let inside_h = if style.show_inner_horizontal_border {
         border_xml(&style.border_style, style.border_width, &style.border_color)
     } else {
@@ -2475,11 +3818,19 @@ fn table_borders_xml(style: &TableStyleConfig) -> String {
     };
 
     format!(
-        "<w:tblBorders><w:top {outer} /><w:left {outer} /><w:bottom {outer} /><w:right {outer} /><w:insideH {inside_h} /><w:insideV {inside_v} /></w:tblBorders>"
+        "<w:tblBorders><w:top {top} /><w:left {left} /><w:bottom {bottom} /><w:right {right} /><w:insideH {inside_h} /><w:insideV {inside_v} /></w:tblBorders>"
     )
 }
 
+fn table_alignment_xml(value: &str) -> String {
+    format!(r#"<w:jc w:val="{}" />"#, word_horizontal_align(value))
+}
+
 fn border_xml(style: &str, width: f64, color: &str) -> String {
+    border_xml_with_space(style, width, color, 0)
+}
+
+fn border_xml_with_space(style: &str, width: f64, color: &str, space: u32) -> String {
     let value = match style.trim() {
         "dashed" => "dashed",
         "dotted" => "dotted",
@@ -2492,54 +3843,114 @@ fn border_xml(style: &str, width: f64, color: &str) -> String {
     } else {
         ((width.max(0.5) * 8.0).round() as u32).clamp(1, 48)
     };
-    format!(r#"w:val="{value}" w:sz="{size}" w:space="0" w:color="{color}""#)
+    format!(r#"w:val="{value}" w:sz="{size}" w:space="{space}" w:color="{color}""#)
 }
 
-fn build_table_grid_xml(column_count: usize, table_width_twips: u32) -> String {
-    let width = table_width_twips / column_count.max(1) as u32;
-    let columns = (0..column_count)
-        .map(|_| format!(r#"<w:gridCol w:w="{width}" />"#))
+fn build_table_grid_xml(column_count: usize, style: &TableStyleConfig) -> String {
+    let widths = table_column_widths(column_count, style);
+    let columns = widths
+        .iter()
+        .map(|width| format!(r#"<w:gridCol w:w="{width}" />"#))
         .collect::<Vec<_>>()
         .join("");
     format!("<w:tblGrid>{columns}</w:tblGrid>")
 }
 
+fn table_column_widths(column_count: usize, style: &TableStyleConfig) -> Vec<u32> {
+    let count = column_count.max(1);
+    if style.column_widths.len() == count {
+        return style.column_widths.clone();
+    }
+
+    let width = style.width_twips / count as u32;
+    vec![width; count]
+}
+
 fn normalize_table_row_xml(
     row_xml: &str,
+    row_index: usize,
     is_header: bool,
     column_count: usize,
     style: &TableStyleConfig,
 ) -> String {
+    let row_xml = normalize_table_row_properties(row_xml, style);
     let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
-    cell.replace_all(row_xml, |captures: &Captures| {
-        normalize_table_cell_xml(&captures[0], is_header, column_count, style)
+    let mut cell_index = 0usize;
+    cell.replace_all(&row_xml, |captures: &Captures| {
+        let normalized = normalize_table_cell_xml(
+            &captures[0],
+            row_index,
+            is_header,
+            column_count,
+            cell_index,
+            style,
+        );
+        cell_index += 1;
+        normalized
     })
     .to_string()
 }
 
+fn normalize_table_row_properties(row_xml: &str, style: &TableStyleConfig) -> String {
+    let row_properties =
+        Regex::new(r#"(?s)<w:trPr>(.*?)</w:trPr>"#).expect("valid table row property regex");
+    let height = px_to_twips(style.min_row_height);
+    let height_xml = format!(r#"<w:trHeight w:val="{height}" w:hRule="atLeast" />"#);
+
+    if row_properties.is_match(row_xml) {
+        return row_properties
+            .replace(row_xml, |captures: &Captures| {
+                let removable =
+                    Regex::new(r#"<w:trHeight\b[^>]*/>"#).expect("valid row height cleanup regex");
+                let inner = removable.replace_all(&captures[1], "");
+                format!("<w:trPr>{inner}{height_xml}</w:trPr>")
+            })
+            .to_string();
+    }
+
+    row_xml.replace("<w:tr>", &format!("<w:tr><w:trPr>{height_xml}</w:trPr>"))
+}
+
 fn normalize_table_cell_xml(
     cell_xml: &str,
+    row_index: usize,
     is_header: bool,
     column_count: usize,
+    cell_index: usize,
     style: &TableStyleConfig,
 ) -> String {
-    let cell_xml = normalize_table_cell_properties(cell_xml, is_header, column_count, style);
+    let cell_xml = normalize_table_cell_properties(
+        cell_xml,
+        row_index,
+        is_header,
+        column_count,
+        cell_index,
+        style,
+    );
     let cell_xml = normalize_table_paragraphs(&cell_xml, is_header, style);
     normalize_table_runs(&cell_xml, is_header, style)
 }
 
 fn normalize_table_cell_properties(
     cell_xml: &str,
+    row_index: usize,
     is_header: bool,
     column_count: usize,
+    cell_index: usize,
     style: &TableStyleConfig,
 ) -> String {
-    let cell_width = style.width_twips / column_count.max(1) as u32;
+    let cell_width = table_column_widths(column_count, style)
+        .get(cell_index)
+        .copied()
+        .unwrap_or_else(|| style.width_twips / column_count.max(1) as u32);
     let cell_style = table_cell_style(style, is_header);
+    let fill = cell_fill(style, cell_style, is_header, row_index);
     let cell_properties = format!(
-        r#"<w:tcPr><w:tcW w:type="dxa" w:w="{cell_width}" /><w:vAlign w:val="{}" />{}{}</w:tcPr>"#,
+        r#"<w:tcPr><w:tcW w:type="dxa" w:w="{cell_width}" /><w:vAlign w:val="{}" />{}{}{}{}</w:tcPr>"#,
         word_vertical_align(&cell_style.vertical_align),
-        cell_shading_xml(&cell_style.background_color),
+        cell_margins_xml(style),
+        cell_wrap_xml(style),
+        cell_shading_xml(&fill),
         cell_borders_xml(
             &style.border_style,
             cell_style.border_width,
@@ -2560,13 +3971,15 @@ fn normalize_table_cell_properties(
     existing_cell_properties
         .replace(cell_xml, |captures: &Captures| {
             let removable =
-                Regex::new(r#"(?s)<w:tcBorders>.*?</w:tcBorders>|<w:(?:tcW|vAlign|shd)\b[^>]*/>"#)
+                Regex::new(r#"(?s)<w:tcBorders>.*?</w:tcBorders>|<w:tcMar>.*?</w:tcMar>|<w:(?:tcW|vAlign|shd|noWrap)\b[^>]*/>"#)
                     .expect("valid cell property cleanup regex");
             let inner = removable.replace_all(&captures[1], "");
             let extra = format!(
-                r#"<w:tcW w:type="dxa" w:w="{cell_width}" /><w:vAlign w:val="{}" />{}{}"#,
+                r#"<w:tcW w:type="dxa" w:w="{cell_width}" /><w:vAlign w:val="{}" />{}{}{}{}"#,
                 word_vertical_align(&cell_style.vertical_align),
-                cell_shading_xml(&cell_style.background_color),
+                cell_margins_xml(style),
+                cell_wrap_xml(style),
+                cell_shading_xml(&fill),
                 cell_borders_xml(
                     &style.border_style,
                     cell_style.border_width,
@@ -2590,6 +4003,38 @@ fn cell_shading_xml(fill: &str) -> String {
     format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{fill}" />"#)
 }
 
+fn cell_fill(
+    style: &TableStyleConfig,
+    cell_style: &TableCellStyleConfig,
+    is_header: bool,
+    row_index: usize,
+) -> String {
+    if !is_header && style.row_stripe && row_index % 2 == 0 {
+        return "F8FAFC".to_string();
+    }
+    cell_style.background_color.clone()
+}
+
+fn cell_margins_xml(style: &TableStyleConfig) -> String {
+    let horizontal = px_to_twips(style.cell_padding_x);
+    let vertical = px_to_twips(style.cell_padding_y);
+    format!(
+        r#"<w:tcMar><w:top w:w="{vertical}" w:type="dxa" /><w:left w:w="{horizontal}" w:type="dxa" /><w:bottom w:w="{vertical}" w:type="dxa" /><w:right w:w="{horizontal}" w:type="dxa" /></w:tcMar>"#
+    )
+}
+
+fn px_to_twips(value: f64) -> u32 {
+    (value * 15.0).round().clamp(0.0, 4000.0) as u32
+}
+
+fn cell_wrap_xml(style: &TableStyleConfig) -> &'static str {
+    if style.cell_wrap {
+        ""
+    } else {
+        "<w:noWrap />"
+    }
+}
+
 fn cell_borders_xml(style: &str, width: f64, color: &str) -> String {
     let border = border_xml(style, width, color);
     format!(
@@ -2602,18 +4047,19 @@ fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyl
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
     let cell_style = table_cell_style(style, is_header);
     let alignment = word_horizontal_align(&cell_style.horizontal_align);
+    let line = line_height_twips(cell_style.font_size, cell_style.line_height);
     let output = paragraph_properties
         .replace_all(cell_xml, |captures: &Captures| {
-            let removable =
-                Regex::new(r#"<w:(?:jc|ind)\b[^>]*/>"#).expect("valid paragraph cleanup regex");
+            let removable = Regex::new(r#"<w:(?:jc|ind|spacing)\b[^>]*/>"#)
+                .expect("valid paragraph cleanup regex");
             let inner = removable.replace_all(&captures[1], "");
-            table_paragraph_properties_xml(&inner, alignment)
+            table_paragraph_properties_xml(&inner, alignment, line)
         })
         .to_string();
     let self_closing_properties =
         Regex::new(r#"<w:pPr\s*/>"#).expect("valid self closing paragraph property regex");
     let output = self_closing_properties
-        .replace_all(&output, table_paragraph_properties_xml("", alignment))
+        .replace_all(&output, table_paragraph_properties_xml("", alignment, line))
         .to_string();
 
     if output.contains("<w:pPr") {
@@ -2626,15 +4072,15 @@ fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyl
             format!(
                 "{}{}",
                 &captures[0],
-                table_paragraph_properties_xml("", alignment)
+                table_paragraph_properties_xml("", alignment, line)
             )
         })
         .to_string()
 }
 
-fn table_paragraph_properties_xml(inner: &str, alignment: &str) -> String {
+fn table_paragraph_properties_xml(inner: &str, alignment: &str, line: u32) -> String {
     format!(
-        r#"<w:pPr>{inner}<w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{alignment}" /></w:pPr>"#
+        r#"<w:pPr>{inner}<w:spacing w:line="{line}" w:lineRule="auto" /><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{alignment}" /></w:pPr>"#
     )
 }
 
@@ -2784,13 +4230,16 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_conflict_strategy, apply_page_settings_to_document_xml, create_heading_numbering_xml,
+        apply_conflict_strategy, apply_page_settings_to_document_xml,
+        block_style_config_from_value, create_heading_numbering_xml,
         default_markdown_feature_config, default_report_heading_numbering_config,
-        heading_numbering_config_from_value, markdown_feature_config_from_value,
-        normalize_default_report_styles_xml, normalize_document_xml, normalize_docx,
-        page_settings_config_from_value, pandoc_document_options_from_value,
-        preprocess_markdown_for_word, table_style_config_from_value, ConvertRequest,
-        HeadingNumberingConfig, MarkdownFeatureConfig,
+        document_style_config_from_value, heading_numbering_config_from_value, image_style_config_from_value,
+        footer_page_number_xml, markdown_feature_config_from_value, normalize_default_report_styles_xml,
+        normalize_document_images, normalize_document_xml, normalize_docx,
+        normalize_template_styles_xml, page_content_width_twips, page_settings_config_from_value,
+        pandoc_document_options_from_value, preprocess_markdown_for_word,
+        table_style_config_from_value, ConvertRequest, HeadingNumberingConfig,
+        MarkdownFeatureConfig,
     };
     use serde_json::json;
     use std::fs;
@@ -2808,6 +4257,8 @@ mod tests {
             true,
             Some(&config),
             &default_markdown_feature_config(),
+            None,
+            None,
             None,
         );
 
@@ -2827,28 +4278,106 @@ mod tests {
         assert!(output.contains(
             r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="21" /><w:szCs w:val="21" />"#
         ));
-        assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 1);
+        assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 2);
+    }
+
+    #[test]
+    fn normalizes_markdown_images_to_content_width_and_center_alignment() {
+        let page_settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A4",
+                "orientation": "portrait",
+                "marginLeft": 3.18,
+                "marginRight": 3.18
+            }
+        }))
+        .expect("page settings should parse");
+        let target_width = u64::from(page_content_width_twips(&page_settings)) * 635;
+        let target_height = target_width / 2;
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:jc w:val="left" /></w:pPr><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_images(input, Some(&page_settings), None);
+
+        assert!(output.contains(r#"<w:jc w:val="center" />"#));
+        assert!(!output.contains(r#"<w:jc w:val="left" />"#));
+        assert!(output.contains(&format!(
+            r#"<wp:extent cx="{target_width}" cy="{target_height}"/>"#
+        )));
+        assert!(output.contains(&format!(
+            r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
+        )));
+    }
+
+    #[test]
+    fn applies_saved_image_style_to_markdown_images() {
+        let page_settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A4",
+                "orientation": "portrait",
+                "marginLeft": 3.18,
+                "marginRight": 3.18
+            }
+        }))
+        .expect("page settings should parse");
+        let image_style = image_style_config_from_value(&json!({
+            "styles": {
+                "image": {
+                    "imageAlign": "right",
+                    "imageWidthMode": "custom",
+                    "imageWidthPercent": 50
+                }
+            }
+        }))
+        .expect("image style should parse");
+        let target_width = ((f64::from(page_content_width_twips(&page_settings)) * 0.5).round() as u64) * 635;
+        let target_height = target_width / 2;
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:jc w:val="left" /></w:pPr><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_images(input, Some(&page_settings), Some(&image_style));
+
+        assert!(output.contains(r#"<w:jc w:val="right" />"#));
+        assert!(output.contains(&format!(
+            r#"<wp:extent cx="{target_width}" cy="{target_height}"/>"#
+        )));
+        assert!(output.contains(&format!(
+            r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
+        )));
     }
 
     #[test]
     fn applies_saved_table_substyles_to_document_tables() {
-        let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>字段</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>正文</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
+        let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>字段</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>类型</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>说明</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>正文 A</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>文本</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>第一行</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>正文 B</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>文本</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:pPr /><w:r><w:t>第二行</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
         let style = table_style_config_from_value(&json!({
             "styles": {
                 "table": {
                     "fitToPageWidth": false,
                     "tableWidthPercent": 80,
+                    "tableHorizontalAlign": "right",
                     "tableLayout": "fixed",
+                    "columnWidthMode": "custom",
+                    "firstColumnWidth": 20,
+                    "secondColumnWidth": 30,
+                    "thirdColumnWidth": 50,
                     "borderStyle": "dashed",
                     "borderColor": "#94A3B8",
                     "borderWidth": 1.5,
+                    "borderTopWidth": 3,
+                    "borderRightWidth": 2,
+                    "borderBottomWidth": 1,
+                    "borderLeftWidth": 4,
                     "showInnerVerticalBorder": true,
-                    "showInnerHorizontalBorder": true
+                    "showInnerHorizontalBorder": true,
+                    "cellPaddingX": 16,
+                    "cellPaddingY": 6,
+                    "minRowHeight": 36,
+                    "rowStripe": true,
+                    "cellWrap": false
                 },
                 "table-header": {
                     "chineseFont": "黑体",
                     "latinFont": "Arial",
                     "headerFontSize": 12,
+                    "headerLineHeight": "1.2",
                     "headerBold": true,
                     "color": "#1D4ED8",
                     "headerBackgroundColor": "#DBEAFE",
@@ -2861,8 +4390,9 @@ mod tests {
                     "chineseFont": "宋体",
                     "latinFont": "Times New Roman",
                     "bodyFontSize": 10,
+                    "bodyLineHeight": "1.8",
                     "color": "#334155",
-                    "bodyBackgroundColor": "#F8FAFC",
+                    "bodyBackgroundColor": "#FFFFFF",
                     "bodyAlign": "center",
                     "bodyVerticalAlign": "bottom",
                     "bodyBorderColor": "#CBD5E1",
@@ -2878,13 +4408,34 @@ mod tests {
             None,
             &default_markdown_feature_config(),
             Some(&style),
+            None,
+            None,
         );
 
         assert!(output.contains(r#"<w:tblW w:type="dxa" w:w="6912" />"#));
+        assert!(output.contains(
+            r#"<w:gridCol w:w="1382" /><w:gridCol w:w="2074" /><w:gridCol w:w="3456" />"#
+        ));
+        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="1382" />"#));
+        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="2074" />"#));
+        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="3456" />"#));
+        assert!(output.contains(r#"<w:trHeight w:val="540" w:hRule="atLeast" />"#));
+        assert!(output.contains(r#"<w:tcMar><w:top w:w="90" w:type="dxa" /><w:left w:w="240" w:type="dxa" /><w:bottom w:w="90" w:type="dxa" /><w:right w:w="240" w:type="dxa" /></w:tcMar>"#));
+        assert!(output.contains(r#"<w:noWrap />"#));
+        assert!(output.contains(r#"<w:spacing w:line="288" w:lineRule="auto" />"#));
+        assert!(output.contains(r#"<w:spacing w:line="360" w:lineRule="auto" />"#));
+        assert!(output.contains(r#"<w:tblLayout w:type="fixed" /><w:jc w:val="right" />"#));
         assert!(output.contains(r#"w:val="dashed" w:sz="12" w:space="0" w:color="94A3B8""#));
+        assert!(
+            output.contains(r#"<w:top w:val="dashed" w:sz="24" w:space="0" w:color="94A3B8" />"#)
+        );
+        assert!(
+            output.contains(r#"<w:left w:val="dashed" w:sz="32" w:space="0" w:color="94A3B8" />"#)
+        );
         assert!(output.contains(r#"<w:vAlign w:val="top" />"#));
         assert!(output.contains(r#"<w:vAlign w:val="bottom" />"#));
         assert!(output.contains(r#"w:fill="DBEAFE""#));
+        assert!(output.contains(r#"w:fill="FFFFFF""#));
         assert!(output.contains(r#"w:fill="F8FAFC""#));
         assert!(output.contains(r#"<w:jc w:val="right" />"#));
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
@@ -2905,8 +4456,15 @@ mod tests {
     fn preserves_custom_table_cells_when_default_style_is_disabled() {
         let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:tc><w:tcPr /><w:p><w:pPr><w:pStyle w:val="Compact" /></w:pPr><w:r><w:t>自定义</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
 
-        let output =
-            normalize_document_xml(input, false, None, &default_markdown_feature_config(), None);
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
 
         assert!(output.contains(r#"<w:tblW w:type="pct" w:w="5000" />"#));
         assert!(output.contains("<w:tcPr />"));
@@ -2933,6 +4491,75 @@ mod tests {
     }
 
     #[test]
+    fn applies_saved_text_styles_to_word_style_definitions() {
+        let input = r#"<w:styles><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal" /><w:pPr><w:spacing w:after="120" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:sz w:val="24" /></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2" /><w:pPr /><w:rPr /></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption" /><w:pPr /><w:rPr /></w:style></w:styles>"#;
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "normal": {
+                    "chineseFont": "宋体",
+                    "latinFont": "Times New Roman",
+                    "fontSize": 12,
+                    "fontWeight": "400",
+                    "color": "#111827",
+                    "lineHeight": "1.25",
+                    "beforeSpacing": 0,
+                    "afterSpacing": 0,
+                    "firstLineIndent": 2,
+                    "align": "justify"
+                },
+                "heading-2": {
+                    "chineseFont": "黑体",
+                    "latinFont": "Arial",
+                    "fontSize": 16,
+                    "fontWeight": "700",
+                    "color": "#1D4ED8",
+                    "lineHeight": "1.35",
+                    "beforeSpacing": 12,
+                    "afterSpacing": 6,
+                    "firstLineIndent": 0,
+                    "align": "left"
+                },
+                "caption": {
+                    "chineseFont": "微软雅黑",
+                    "latinFont": "Arial",
+                    "fontSize": 10,
+                    "fontWeight": "500",
+                    "color": "#334155",
+                    "lineHeight": "1.4",
+                    "beforeSpacing": 4,
+                    "afterSpacing": 4,
+                    "firstLineIndent": 0,
+                    "align": "center",
+                    "captionAlign": "right"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_template_styles_xml(
+            input,
+            &default_markdown_feature_config(),
+            Some(&style),
+            false,
+        );
+
+        assert!(output
+            .contains(r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" />"#));
+        assert!(output.contains(r#"<w:jc w:val="both" />"#));
+        assert!(output.contains(r#"<w:ind w:firstLine="480" />"#));
+        assert!(output.contains(
+            r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#
+        ));
+        assert!(
+            output.contains(r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="黑体" />"#)
+        );
+        assert!(output.contains(r#"<w:color w:val="1D4ED8" />"#));
+        assert!(output.contains(r#"<w:b w:val="1" />"#));
+        assert!(output.contains(r#"<w:jc w:val="right" />"#));
+        assert!(output.contains(r#"<w:sz w:val="20" />"#));
+    }
+
+    #[test]
     fn normalizes_inline_code_style_and_runs_to_readable_default_style() {
         let inline_enabled = MarkdownFeatureConfig {
             inline_code: true,
@@ -2954,7 +4581,7 @@ mod tests {
         let document = r#"<w:document><w:body><w:p><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /><w:i /><w:color w:val="E2E8F0" /></w:rPr><w:t>ShipPositionCache.configure()</w:t></w:r></w:p></w:body></w:document>"#;
         let config = default_report_heading_numbering_config();
         let normalized_document =
-            normalize_document_xml(document, true, Some(&config), &inline_enabled, None);
+            normalize_document_xml(document, true, Some(&config), &inline_enabled, None, None, None);
 
         assert!(normalized_document.contains(r#"<w:rStyle w:val="VerbatimChar" />"#));
         assert!(normalized_document.contains(r#"<w:rFonts w:ascii="Consolas""#));
@@ -2975,6 +4602,8 @@ mod tests {
             Some(&config),
             &default_markdown_feature_config(),
             None,
+            None,
+            None,
         );
 
         assert!(output.contains(r#"<w:pStyle w:val="SourceCode" />"#));
@@ -2994,6 +4623,76 @@ mod tests {
     }
 
     #[test]
+    fn applies_saved_code_quote_and_inline_code_styles() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:t>let value = 1;</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="BlockText" /></w:pPr><w:r><w:t>引用内容</w:t></w:r></w:p><w:p><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /></w:rPr><w:t>inline()</w:t></w:r></w:p></w:body></w:document>"#;
+        let style = block_style_config_from_value(&json!({
+            "styles": {
+                "source-code": {
+                    "chineseFont": "宋体",
+                    "latinFont": "Cascadia Mono",
+                    "fontSize": 11,
+                    "fontWeight": "700",
+                    "color": "#E0F2FE",
+                    "backgroundColor": "#0F172A",
+                    "codeBorderColor": "#38BDF8",
+                    "lineHeight": "1.8",
+                    "beforeSpacing": 12,
+                    "afterSpacing": 14,
+                    "codePaddingX": 18,
+                    "codePaddingY": 12
+                },
+                "quote": {
+                    "chineseFont": "仿宋",
+                    "latinFont": "Times New Roman",
+                    "fontSize": 12,
+                    "fontWeight": "700",
+                    "color": "#7C2D12",
+                    "backgroundColor": "#FFEDD5",
+                    "quoteBorderColor": "#F97316",
+                    "quoteBorderWidth": 6,
+                    "lineHeight": "1.6",
+                    "beforeSpacing": 6,
+                    "afterSpacing": 8
+                },
+                "inline-code": {
+                    "chineseFont": "Microsoft YaHei UI",
+                    "latinFont": "Consolas",
+                    "fontSize": 10,
+                    "fontWeight": "700",
+                    "color": "#C026D3",
+                    "backgroundColor": "#FDF4FF"
+                }
+            }
+        }))
+        .unwrap();
+        let features = MarkdownFeatureConfig {
+            inline_code: true,
+            code_block: true,
+            quote_block: true,
+            horizontal_rule: false,
+        };
+
+        let output = normalize_document_xml(input, false, None, &features, None, None, Some(&style));
+
+        assert!(output.contains(r#"<w:rFonts w:ascii="Cascadia Mono" w:eastAsia="宋体""#));
+        assert!(output.contains(r#"<w:b w:val="1" />"#));
+        assert!(output.contains(r#"<w:color w:val="E0F2FE" />"#));
+        assert!(output.contains(r#"w:fill="0F172A""#));
+        assert!(output.contains(r#"w:color="38BDF8""#));
+        assert!(output.contains(
+            r#"<w:spacing w:before="240" w:after="280" w:line="396" w:lineRule="auto" />"#
+        ));
+        assert!(output.contains(r#"<w:ind w:left="360" w:right="360" w:firstLine="0" />"#));
+        assert!(output.contains(r#"w:fill="FFEDD5""#));
+        assert!(output.contains(r#"w:color="F97316""#));
+        assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman" w:eastAsia="仿宋""#));
+        assert!(output.contains(r#"<w:color w:val="7C2D12" />"#));
+        assert!(output.contains(r#"<w:rFonts w:ascii="Consolas" w:eastAsia="Microsoft YaHei UI""#));
+        assert!(output.contains(r#"<w:color w:val="C026D3" />"#));
+        assert!(output.contains(r#"w:fill="FDF4FF""#));
+    }
+
+    #[test]
     fn normalizes_code_runs_with_run_attributes() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r w:rsidRPr="00112233"><w:rPr><w:rStyle w:val="VerbatimChar" /></w:rPr><w:t xml:space="preserve">测试结果:</w:t></w:r><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /></w:rPr><w:t xml:space="preserve"> 6 </w:t></w:r><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /></w:rPr><w:t>通过</w:t></w:r></w:p></w:body></w:document>"#;
 
@@ -3004,12 +4703,33 @@ mod tests {
             Some(&config),
             &default_markdown_feature_config(),
             None,
+            None,
+            None,
         );
 
         assert_eq!(output.matches(r#"<w:color w:val="111827" />"#).count(), 3);
         assert_eq!(output.matches(r#"<w:rFonts w:ascii="Consolas""#).count(), 3);
         assert!(output.contains(r#"<w:r w:rsidRPr="00112233"><w:rPr><w:rFonts"#));
         assert!(!output.contains(r#"<w:rStyle w:val="VerbatimChar""#));
+    }
+
+    #[test]
+    fn preserves_syntax_token_styles_inside_code_blocks() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:rPr><w:rStyle w:val="KeywordTok" /></w:rPr><w:t>function</w:t></w:r><w:r><w:rPr><w:rStyle w:val="NormalTok" /></w:rPr><w:t> value</w:t></w:r><w:r><w:rPr><w:rStyle w:val="StringTok" /></w:rPr><w:t>"ok"</w:t></w:r></w:p></w:body></w:document>"#;
+        let config = default_report_heading_numbering_config();
+        let output = normalize_document_xml(
+            input,
+            true,
+            Some(&config),
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains(r#"<w:rStyle w:val="KeywordTok" />"#));
+        assert!(output.contains(r#"<w:rStyle w:val="StringTok" />"#));
+        assert!(output.contains(r#"<w:rFonts w:ascii="Consolas""#));
     }
 
     #[test]
@@ -3022,7 +4742,7 @@ mod tests {
             horizontal_rule: false,
         };
         let config = default_report_heading_numbering_config();
-        let output = normalize_document_xml(input, true, Some(&config), &features, None);
+        let output = normalize_document_xml(input, true, Some(&config), &features, None, None, None);
 
         assert!(output.contains("<w:t>const value = 1;</w:t>"));
         assert!(output.contains("<w:t>引用内容</w:t>"));
@@ -3047,6 +4767,8 @@ mod tests {
             Some(&config),
             &default_markdown_feature_config(),
             None,
+            None,
+            None,
         );
 
         assert!(removed.contains("<w:t>正文</w:t>"));
@@ -3062,6 +4784,8 @@ mod tests {
                 horizontal_rule: true,
                 ..default_markdown_feature_config()
             },
+            None,
+            None,
             None,
         );
 
@@ -3121,14 +4845,19 @@ mod tests {
         let value = json!({
             "pageSettings": {
                 "tocEnabled": true,
-                "tocDepth": "1-4"
+                "tocDepth": "1-4",
+                "tocLeader": "space",
+                "tocShowPageNumbers": false
             }
         });
 
         let options = pandoc_document_options_from_value(&value);
+        let page_settings = page_settings_config_from_value(&value).unwrap();
 
         assert!(options.toc);
         assert_eq!(options.toc_depth, Some(4));
+        assert_eq!(page_settings.toc_leader, "space");
+        assert!(!page_settings.toc_show_page_numbers);
 
         let disabled = pandoc_document_options_from_value(&json!({
             "pageSettings": {
@@ -3139,6 +4868,33 @@ mod tests {
 
         assert!(!disabled.toc);
         assert_eq!(disabled.toc_depth, Some(6));
+    }
+
+    #[test]
+    fn applies_toc_field_options_and_page_number_start() {
+        let input = r#"<w:document><w:body><w:p><w:fldSimple w:instr="TOC \o &quot;1-3&quot; \h \z \u"><w:r><w:t>目录</w:t></w:r></w:fldSimple></w:p><w:sectPr><w:pgSz w:w="1" w:h="2" /></w:sectPr></w:body></w:document>"#;
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A4",
+                "orientation": "portrait",
+                "footerEnabled": false,
+                "footerStartPage": 4,
+                "tocEnabled": true,
+                "tocDepth": "1-4",
+                "tocLeader": "space",
+                "tocShowPageNumbers": true
+            }
+        }))
+        .unwrap();
+
+        let output = apply_page_settings_to_document_xml(input, Some(&settings));
+
+        assert!(output.contains(r#"TOC \o &quot;1-4&quot; \h \z \u \p &quot; &quot;"#));
+        assert!(output.contains(r#"<w:pgNumType w:start="4" />"#));
+
+        let pandoc_toc = r#"<w:document><w:body><w:sdt><w:sdtContent><w:p><w:r><w:instrText xml:space="preserve">TOC \o &quot;1-3&quot; \h \z \u</w:instrText></w:r></w:p></w:sdtContent></w:sdt><w:sectPr /></w:body></w:document>"#;
+        let output = apply_page_settings_to_document_xml(pandoc_toc, Some(&settings));
+        assert!(output.contains(r#"<w:instrText xml:space="preserve">TOC \o &quot;1-4&quot; \h \z \u \p &quot; &quot;</w:instrText>"#));
     }
 
     #[test]
@@ -3166,9 +4922,24 @@ mod tests {
     }
 
     #[test]
+    fn renders_plain_page_number_without_total_pages() {
+        let output = footer_page_number_xml("plain-total");
+
+        assert!(output.contains("PAGE"));
+        assert!(!output.contains("NUMPAGES"));
+        assert!(!output.contains("<w:t> 共 </w:t>"));
+        assert!(!output.contains("<w:t> / </w:t>"));
+        assert!(!output.contains("<w:t>- </w:t>"));
+        assert!(!output.contains("<w:t> -</w:t>"));
+    }
+
+    #[test]
     fn writes_header_and_footer_parts_into_docx_package() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("md-king-header-footer-test-{}.docx", std::process::id()));
+        let path = dir.join(format!(
+            "md-king-header-footer-test-{}.docx",
+            std::process::id()
+        ));
         let document_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p /><w:sectPr><w:pgSz w:w="1" w:h="2" /></w:sectPr></w:body></w:document>"#;
         let content_types_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" /><Default Extension="xml" ContentType="application/xml" /><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" /></Types>"#;
         let rels_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>"#;
@@ -3212,6 +4983,9 @@ mod tests {
             &default_markdown_feature_config(),
             Some(&settings),
             None,
+            None,
+            None,
+            None,
         )
         .unwrap();
 
@@ -3242,16 +5016,22 @@ mod tests {
             .read_to_string(&mut footer)
             .unwrap();
 
-        assert!(document.contains(r#"xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#));
-        assert!(document.contains(r#"<w:headerReference w:type="default" r:id="rIdMdKingHeader" />"#));
-        assert!(document.contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
+        assert!(document.contains(
+            r#"xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#
+        ));
+        assert!(
+            document.contains(r#"<w:headerReference w:type="default" r:id="rIdMdKingHeader" />"#)
+        );
+        assert!(
+            document.contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#)
+        );
         assert!(document.contains(r#"<w:pgNumType w:start="3" />"#));
         assert!(rels.contains(r#"Target="header-mdking.xml""#));
         assert!(rels.contains(r#"Target="footer-mdking.xml""#));
         assert!(header.contains("项目 &amp; 周报"));
         assert!(footer.contains("内部资料"));
         assert!(footer.contains("PAGE"));
-        assert!(footer.contains("NUMPAGES"));
+        assert!(!footer.contains("NUMPAGES"));
 
         let _ = fs::remove_file(path);
     }
@@ -3278,6 +5058,8 @@ mod tests {
             Some(&config),
             &default_markdown_feature_config(),
             None,
+            None,
+            None,
         );
 
         assert!(!output.contains(r#"<w:pStyle w:val="Heading1" /></w:pPr>"#));
@@ -3301,12 +5083,217 @@ mod tests {
             Some(&config),
             &default_markdown_feature_config(),
             None,
+            None,
+            None,
         );
 
         assert!(output.contains("<w:t>• 无序列表 A</w:t>"));
         assert!(output.contains("<w:t>◦ 嵌套列表 B.1</w:t>"));
         assert!(output.contains("<w:t>1. 有序列表第一项</w:t>"));
         assert!(!output.contains("<w:numPr>"));
+    }
+
+    #[test]
+    fn applies_saved_list_markers_and_indents_to_document_xml() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr></w:pPr><w:r><w:t>无序列表 A</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>有序列表第一项</w:t></w:r></w:p></w:body></w:document>"#;
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "bullet-list": {
+                    "listMarkerStyle": "triangle",
+                    "listIndent": 2,
+                    "listTextIndent": 1.5,
+                    "listWrapMode": "hanging"
+                },
+                "numbered-list": {
+                    "numberFormat": "（一）",
+                    "listIndent": 1,
+                    "listTextIndent": 1.25,
+                    "listWrapMode": "flat"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            Some(&style),
+            None,
+        );
+
+        assert!(output.contains("<w:t>▸ 无序列表 A</w:t>"));
+        assert!(output.contains("<w:t>（一） 有序列表第一项</w:t>"));
+        assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
+        assert!(output.contains(r#"<w:ind w:left="240" w:firstLine="0" />"#));
+        assert!(!output.contains("<w:numPr>"));
+    }
+
+    #[test]
+    fn applies_nested_list_level_styles_to_document_xml() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="1002" /></w:numPr></w:pPr><w:r><w:t>二级无序</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="2" /><w:numId w:val="1002" /></w:numPr></w:pPr><w:r><w:t>三级无序</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>二级有序</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="2" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>三级有序</w:t></w:r></w:p></w:body></w:document>"#;
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "nested-list": {
+                    "nestedLevel2MarkerStyle": "triangle",
+                    "nestedLevel3MarkerStyle": "check",
+                    "nestedLevel2NumberFormat": "1)",
+                    "nestedLevel3NumberFormat": "(1)",
+                    "listIndent": 4,
+                    "listTextIndent": 1.5,
+                    "nestedIndentStep": 2,
+                    "listWrapMode": "hanging"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            Some(&style),
+            None,
+        );
+
+        assert!(output.contains("<w:t>▸ 二级无序</w:t>"));
+        assert!(output.contains("<w:t>✓ 三级无序</w:t>"));
+        assert!(output.contains("<w:t>1) 二级有序</w:t>"));
+        assert!(output.contains("<w:t>(1) 三级有序</w:t>"));
+        assert!(output.contains(r#"<w:ind w:left="1320" w:hanging="360" />"#));
+        assert!(output.contains(r#"<w:ind w:left="1800" w:hanging="360" />"#));
+    }
+
+    #[test]
+    fn applies_per_level_mixed_list_type_overrides() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr></w:pPr><w:r><w:t>一级原始无序</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="1002" /></w:numPr></w:pPr><w:r><w:t>二级原始无序</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="2" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>三级原始有序</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="3" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>四级原始有序</w:t></w:r></w:p></w:body></w:document>"#;
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "nested-list": {
+                    "listLevel1Type": "number",
+                    "listLevel1NumberFormat": "A.",
+                    "listLevel2Type": "bullet",
+                    "listLevel2MarkerStyle": "triple-bar",
+                    "listLevel3Type": "number",
+                    "listLevel3NumberFormat": "i)",
+                    "listLevel4Type": "bullet",
+                    "listLevel4MarkerStyle": "check",
+                    "listIndent": 2,
+                    "listTextIndent": 1.5,
+                    "nestedIndentStep": 2,
+                    "listWrapMode": "hanging"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            Some(&style),
+            None,
+        );
+
+        assert!(output.contains("<w:t>A. 一级原始无序</w:t>"));
+        assert!(output.contains("<w:t>||| 二级原始无序</w:t>"));
+        assert!(output.contains("<w:t>i) 三级原始有序</w:t>"));
+        assert!(output.contains("<w:t>✓ 四级原始有序</w:t>"));
+    }
+
+    #[test]
+    fn applies_per_level_list_text_styles_to_document_xml() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="1002" /></w:numPr></w:pPr><w:r><w:t>二级列表文字</w:t></w:r></w:p></w:body></w:document>"#;
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "nested-list": {
+                    "listLevel2ChineseFont": "黑体",
+                    "listLevel2LatinFont": "Arial",
+                    "listLevel2FontSize": 14,
+                    "listLevel2FontWeight": "700",
+                    "listLevel2Color": "#EF4444",
+                    "listLevel2LineHeight": "2",
+                    "listLevel2BeforeSpacing": 12,
+                    "listLevel2AfterSpacing": 8,
+                    "listLevel2Align": "center",
+                    "listLevel2Indent": 3,
+                    "listLevel2TextIndent": 1,
+                    "listLevel2WrapMode": "flat"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            Some(&style),
+            None,
+        );
+
+        assert!(output.contains(r#"<w:spacing w:before="240" w:after="160" w:line="560" w:lineRule="auto" />"#));
+        assert!(output.contains(r#"<w:jc w:val="center" />"#));
+        assert!(output.contains(r#"<w:ind w:left="720" w:firstLine="0" />"#));
+        assert!(output.contains(r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="黑体" />"#));
+        assert!(output.contains(r#"<w:color w:val="EF4444" />"#));
+        assert!(output.contains(r#"<w:sz w:val="28" />"#));
+        assert!(output.contains(r#"<w:b w:val="1" />"#));
+        assert!(output.contains("<w:t>○ 二级列表文字</w:t>"));
+    }
+
+    #[test]
+    fn restarts_ordered_list_numbering_after_normal_paragraph_by_default() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第一组第一项</w:t></w:r></w:p><w:p><w:r><w:t>普通正文</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第二组第一项</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_xml(
+            input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains("<w:t>1. 第一组第一项</w:t>"));
+        assert!(output.contains("<w:t>1. 第二组第一项</w:t>"));
+        assert!(!output.contains("<w:t>2. 第二组第一项</w:t>"));
+    }
+
+    #[test]
+    fn can_continue_ordered_list_numbering_across_paragraphs_when_configured() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第一组第一项</w:t></w:r></w:p><w:p><w:r><w:t>普通正文</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第二组第一项</w:t></w:r></w:p></w:body></w:document>"#;
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "numbered-list": {
+                    "numberFormat": "1.",
+                    "listNumberingMode": "continue"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            Some(&style),
+            None,
+        );
+
+        assert!(output.contains("<w:t>1. 第一组第一项</w:t>"));
+        assert!(output.contains("<w:t>2. 第二组第一项</w:t>"));
     }
 
     #[test]
@@ -3380,7 +5367,18 @@ mod tests {
             inline_code: true,
             ..default_markdown_feature_config()
         };
-        normalize_docx(&path, true, Some(&config), &inline_enabled, None, None).unwrap();
+        normalize_docx(
+            &path,
+            true,
+            Some(&config),
+            &inline_enabled,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let data = fs::read(&path).unwrap();
         let mut archive = ZipArchive::new(Cursor::new(data)).unwrap();
@@ -3433,7 +5431,18 @@ mod tests {
             inline_code: true,
             ..default_markdown_feature_config()
         };
-        normalize_docx(&path, true, Some(&config), &inline_enabled, None, None).unwrap();
+        normalize_docx(
+            &path,
+            true,
+            Some(&config),
+            &inline_enabled,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let data = fs::read(&path).unwrap();
         let mut archive = ZipArchive::new(Cursor::new(data)).unwrap();

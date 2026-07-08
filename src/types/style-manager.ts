@@ -1,6 +1,6 @@
-export type StyleGroupKey = "headings" | "blocks" | "lists" | "tables";
+export type StyleGroupKey = "basic" | "images" | "blocks" | "tables";
 
-export type StyleNodeKind = "heading" | "paragraph" | "block" | "code" | "list" | "table";
+export type StyleNodeKind = "heading" | "paragraph" | "block" | "code" | "list" | "image" | "table";
 
 export type HorizontalAlign = "left" | "center" | "right" | "justify";
 export type VerticalAlign = "top" | "middle" | "bottom";
@@ -8,6 +8,13 @@ export type TableLayoutMode = "auto" | "fixed";
 export type BorderStyleMode = "solid" | "dashed" | "dotted" | "double" | "none";
 export type ColumnWidthMode = "auto" | "custom";
 export type TablePresetKey = "business" | "official" | "grid" | "striped";
+export type CodeBlockPresetKey = "document" | "terminal" | "blueprint" | "minimal";
+export type ListLevelType = "bullet" | "number";
+export type ListMarkerStyle = "disc" | "circle" | "square" | "triangle" | "dash" | "check" | "bar" | "double-bar" | "triple-bar";
+export type ListWrapMode = "flat" | "hanging";
+export type ListNumberingMode = "restart" | "continue";
+export type CaptionPosition = "above" | "below";
+export type ImageWidthMode = "content" | "original" | "custom";
 
 export type StyleNode = {
   id: string;
@@ -34,7 +41,87 @@ export type StyleDraft = {
   align: HorizontalAlign;
   autoNumbering: boolean;
   numberFormat: string;
+  listMarkerStyle: ListMarkerStyle;
+  listIndent: number;
+  listTextIndent: number;
+  listWrapMode: ListWrapMode;
+  listNumberingMode: ListNumberingMode;
+  nestedLevel2MarkerStyle: ListMarkerStyle;
+  nestedLevel3MarkerStyle: ListMarkerStyle;
+  nestedLevel2NumberFormat: string;
+  nestedLevel3NumberFormat: string;
+  listLevel1Type: ListLevelType;
+  listLevel2Type: ListLevelType;
+  listLevel3Type: ListLevelType;
+  listLevel4Type: ListLevelType;
+  listLevel1MarkerStyle: ListMarkerStyle;
+  listLevel2MarkerStyle: ListMarkerStyle;
+  listLevel3MarkerStyle: ListMarkerStyle;
+  listLevel4MarkerStyle: ListMarkerStyle;
+  listLevel1NumberFormat: string;
+  listLevel2NumberFormat: string;
+  listLevel3NumberFormat: string;
+  listLevel4NumberFormat: string;
+  listLevel1ChineseFont: string;
+  listLevel2ChineseFont: string;
+  listLevel3ChineseFont: string;
+  listLevel4ChineseFont: string;
+  listLevel1LatinFont: string;
+  listLevel2LatinFont: string;
+  listLevel3LatinFont: string;
+  listLevel4LatinFont: string;
+  listLevel1FontSize: number;
+  listLevel2FontSize: number;
+  listLevel3FontSize: number;
+  listLevel4FontSize: number;
+  listLevel1FontWeight: string;
+  listLevel2FontWeight: string;
+  listLevel3FontWeight: string;
+  listLevel4FontWeight: string;
+  listLevel1Color: string;
+  listLevel2Color: string;
+  listLevel3Color: string;
+  listLevel4Color: string;
+  listLevel1LineHeight: string;
+  listLevel2LineHeight: string;
+  listLevel3LineHeight: string;
+  listLevel4LineHeight: string;
+  listLevel1BeforeSpacing: number;
+  listLevel2BeforeSpacing: number;
+  listLevel3BeforeSpacing: number;
+  listLevel4BeforeSpacing: number;
+  listLevel1AfterSpacing: number;
+  listLevel2AfterSpacing: number;
+  listLevel3AfterSpacing: number;
+  listLevel4AfterSpacing: number;
+  listLevel1Align: HorizontalAlign;
+  listLevel2Align: HorizontalAlign;
+  listLevel3Align: HorizontalAlign;
+  listLevel4Align: HorizontalAlign;
+  listLevel1Indent: number;
+  listLevel2Indent: number;
+  listLevel3Indent: number;
+  listLevel4Indent: number;
+  listLevel1TextIndent: number;
+  listLevel2TextIndent: number;
+  listLevel3TextIndent: number;
+  listLevel4TextIndent: number;
+  listLevel1WrapMode: ListWrapMode;
+  listLevel2WrapMode: ListWrapMode;
+  listLevel3WrapMode: ListWrapMode;
+  listLevel4WrapMode: ListWrapMode;
+  listLevel1NumberingMode: ListNumberingMode;
+  listLevel2NumberingMode: ListNumberingMode;
+  listLevel3NumberingMode: ListNumberingMode;
+  listLevel4NumberingMode: ListNumberingMode;
+  nestedIndentStep: number;
   backgroundColor: string;
+  quoteBorderColor: string;
+  quoteBorderWidth: number;
+  codeBlockPreset: CodeBlockPresetKey;
+  codeBorderColor: string;
+  codePaddingX: number;
+  codePaddingY: number;
   tableLayout: TableLayoutMode;
   fitToPageWidth: boolean;
   tableWidthPercent: number;
@@ -43,7 +130,6 @@ export type StyleDraft = {
   firstColumnWidth: number;
   secondColumnWidth: number;
   thirdColumnWidth: number;
-  cellVerticalAlign: VerticalAlign;
   cellPaddingX: number;
   cellPaddingY: number;
   cellWrap: boolean;
@@ -76,11 +162,17 @@ export type StyleDraft = {
   bodyBackgroundColor: string;
   captionAlign: Exclude<HorizontalAlign, "justify">;
   captionNumbering: boolean;
+  captionPosition: CaptionPosition;
+  captionNumberFormat: string;
+  imageAlign: Exclude<HorizontalAlign, "justify">;
+  imageWidthMode: ImageWidthMode;
+  imageWidthPercent: number;
   tablePreset: TablePresetKey;
 };
 
 export type PaperSize = "A3" | "A4" | "A5" | "A6" | "B4" | "B5" | "B6" | "Letter" | "Legal" | "Executive" | "Tabloid" | "K16" | "K32";
-export type FooterPageNumberFormat = "page" | "page-total" | "dash" | "none";
+export type FooterPageNumberFormat = "page" | "plain" | "page-total" | "plain-total" | "dash" | "none";
+export type TocLeaderStyle = "dot" | "space";
 
 export type PageSettingsDraft = {
   paperSize: PaperSize;
@@ -97,6 +189,8 @@ export type PageSettingsDraft = {
   footerStartPage: number;
   tocEnabled: boolean;
   tocDepth: string;
+  tocLeader: TocLeaderStyle;
+  tocShowPageNumbers: boolean;
 };
 
 export type MarkdownFeatureSettings = {
