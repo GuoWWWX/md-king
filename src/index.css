@@ -677,17 +677,17 @@ select {
 }
 
 :root {
-  --mk-scrollbar-thumb: rgba(255, 255, 255, 0.94);
-  --mk-scrollbar-thumb-hover: #ffffff;
-  --mk-scrollbar-thumb-shadow: rgba(15, 23, 42, 0.16);
-  --mk-scrollbar-track: rgba(15, 23, 42, 0.035);
+  --mk-scrollbar-thumb: rgba(148, 163, 184, 0.5);
+  --mk-scrollbar-thumb-hover: rgba(100, 116, 139, 0.64);
+  --mk-scrollbar-thumb-shadow: transparent;
+  --mk-scrollbar-track: rgba(148, 163, 184, 0.12);
 }
 
 .dark {
-  --mk-scrollbar-thumb: rgba(15, 23, 42, 0.76);
-  --mk-scrollbar-thumb-hover: rgba(2, 6, 23, 0.92);
-  --mk-scrollbar-thumb-shadow: rgba(255, 255, 255, 0.12);
-  --mk-scrollbar-track: rgba(255, 255, 255, 0.05);
+  --mk-scrollbar-thumb: rgba(148, 163, 184, 0.5);
+  --mk-scrollbar-thumb-hover: rgba(203, 213, 225, 0.62);
+  --mk-scrollbar-thumb-shadow: transparent;
+  --mk-scrollbar-track: rgba(148, 163, 184, 0.12);
 }
 
 * {
