@@ -1359,7 +1359,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selected
         </div>
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
-        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} badgeText={`当前：${selectedStyle.displayName}`} interactiveViewport />
+        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} badgeText={`当前：${selectedStyle.displayName}`} interactiveViewport viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
       </div>
     </aside>
   );
