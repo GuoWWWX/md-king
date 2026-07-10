@@ -119,6 +119,7 @@ fn run_convert(
 
     let result = convert_markdown_cli(ConvertRequest {
         input,
+        source_path: None,
         output,
         template_id,
         open_after_convert: Some(open_after_convert),

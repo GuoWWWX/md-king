@@ -104,7 +104,7 @@ function normalizeBrowserTemplateDefaults(templates: Template[]) {
   return normalized;
 }
 
-function isTauriEnvironment() {
+export function isTauriEnvironment() {
   if (typeof window === "undefined") {
     return false;
   }
@@ -157,6 +157,38 @@ export async function selectMarkdownFiles() {
     title: "选择 Markdown 文件",
     filters: [{ name: "Markdown 文档", extensions: ["md", "markdown"] }],
   }));
+}
+
+export async function selectMarkdownFile() {
+  if (!isTauriEnvironment()) {
+    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+  }
+
+  return normalizeDialogSelection(await open({
+    directory: false,
+    multiple: false,
+    title: "选择 Markdown 文件",
+    filters: [{ name: "Markdown 文档", extensions: ["md", "markdown"] }],
+  }));
+}
+
+export function readMarkdownFileFromPath(path: string) {
+  if (!isTauriEnvironment()) {
+    return Promise.reject(new Error("浏览器预览无法读取本机 Markdown 文件，请在桌面端使用"));
+  }
+
+  return invoke<string>("read_markdown_file", { path });
+}
+
+export function resolvePreviewImageSource(path: string, sourcePath?: string) {
+  if (/^(?:https?:|data:|blob:)/i.test(path)) {
+    return Promise.resolve(path);
+  }
+  if (!isTauriEnvironment()) {
+    return Promise.resolve<string | undefined>(undefined);
+  }
+
+  return invoke<string>("load_preview_image", { path, sourcePath });
 }
 
 export function getAppStatus() {

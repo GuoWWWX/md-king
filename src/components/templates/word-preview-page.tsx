@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, typ
 import MarkdownIt from "markdown-it";
 import { AppSurface } from "@/components/ui/app-surface";
 import { createDefaultStyleDraft, listMarkerOptions } from "@/lib/style-manager-data";
+import { resolvePreviewImageSource } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, StyleDraft, StyleNode, TemplateStyleConfig } from "@/types/style-manager";
 
@@ -10,6 +11,7 @@ type WordPreviewPageProps = {
   styleConfig?: TemplateStyleConfig;
   zoom?: number;
   markdown?: string;
+  markdownSourcePath?: string;
   showHeader?: boolean;
   headerTitle?: string;
   headerSubtitle?: string;
@@ -25,21 +27,23 @@ type WordPreviewPageProps = {
 
 type PreviewBlock =
   | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string }
+  | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string }> }
   | { type: "paragraph"; segments: PreviewTextSegment[] }
   | { type: "quote"; segments: PreviewTextSegment[] }
   | { type: "code"; text: string; language?: string }
   | { type: "hr" }
   | { type: "list"; items: PreviewListItem[] }
-  | { type: "image"; caption?: string }
+  | { type: "image"; src?: string; alt?: string; caption?: string }
   | { type: "table"; caption?: string; rows: string[][] };
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type PreviewTextSegment = { text: string; code?: boolean };
-type PreviewListItem = { segments: PreviewTextSegment[]; level: number; ordered: boolean; index: number };
+type PreviewListItem = { segments: PreviewTextSegment[]; level: number; ordered: boolean; index: number; task?: "checked" | "unchecked" };
 type MarkdownInlineToken = {
   type: string;
   content?: string;
   info?: string;
+  attrs?: Array<[string, string]> | null;
   children?: MarkdownInlineToken[] | null;
 };
 
@@ -122,6 +126,16 @@ function imageMargin(draft: StyleDraft): CSSProperties["margin"] {
   if (draft.imageAlign === "right") return "0 0 0 auto";
   if (draft.imageAlign === "center") return "0 auto";
   return "0";
+}
+
+function tableColumnWidths(percentages: [number, number, number], columnCount: number) {
+  if (columnCount <= 1) return ["100%"];
+  const raw = columnCount === 2
+    ? percentages.slice(0, 2)
+    : [percentages[0], percentages[1], ...Array.from({ length: columnCount - 2 }, () => percentages[2] / (columnCount - 2))];
+  const total = raw.reduce((sum, value) => sum + Math.max(0, value), 0);
+  if (total <= 0) return [];
+  return raw.map((value) => `${(Math.max(0, value) / total * 100).toFixed(3)}%`);
 }
 
 function codeBlockBorder(draft: StyleDraft) {
@@ -284,6 +298,25 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
   }));
 }
 
+function markdownTokenAttribute(token: MarkdownInlineToken, name: string) {
+  return token.attrs?.find(([key]) => key === name)?.[1];
+}
+
+function inlineImageBlocks(token: MarkdownInlineToken | undefined): Array<Extract<PreviewBlock, { type: "image" }>> {
+  return (token?.children ?? [])
+    .filter((child) => child.type === "image")
+    .map((child) => ({
+      type: "image" as const,
+      src: markdownTokenAttribute(child, "src"),
+      alt: plainText(inlineSegmentsFromToken(child)).trim() || child.content?.trim(),
+    }));
+}
+
+function isImageOnlyInline(token: MarkdownInlineToken | undefined) {
+  const children = token?.children ?? [];
+  return children.length > 0 && children.every((child) => child.type === "image" || child.type === "softbreak" || child.type === "hardbreak");
+}
+
 function joinTextSegmentGroups(groups: PreviewTextSegment[][], separator: string) {
   return mergeTextSegments(groups.flatMap((group, index) => (index === 0 ? group : [{ text: separator }, ...group])));
 }
@@ -396,8 +429,15 @@ function romanMarker(value: number) {
   return result;
 }
 
-function markerTextFromStyle(draft: StyleDraft, item: PreviewListItem, displayIndex = item.index) {
-  return item.ordered ? listNumberText(draft.numberFormat, displayIndex) : listMarkerFromStyle(draft.listMarkerStyle);
+function listMarkerTypeFromStyle(draft: StyleDraft, item: Pick<PreviewListItem, "level" | "ordered">) {
+  const configured = [draft.listLevel1Type, draft.listLevel2Type, draft.listLevel3Type, draft.listLevel4Type][Math.min(3, Math.max(0, item.level))];
+  return configured === "number" || configured === "bullet" ? configured : item.ordered ? "number" : "bullet";
+}
+
+function markerTextFromStyle(draft: StyleDraft, item: PreviewListItem, markerType: "bullet" | "number", displayIndex = item.index) {
+  if (item.task === "checked") return "☑";
+  if (item.task === "unchecked") return "☐";
+  return markerType === "number" ? listNumberText(draft.numberFormat, displayIndex) : listMarkerFromStyle(draft.listMarkerStyle);
 }
 
 function resolveListIndent(draft: StyleDraft, item: Pick<PreviewListItem, "level">) {
@@ -440,6 +480,20 @@ function annotateHeadingNumbers(blocks: PreviewBlock[], drafts: Record<string, S
   });
 }
 
+function tocDepth(value: string | undefined) {
+  const matched = value?.match(/(\d+)\s*-\s*(\d+)/);
+  return matched ? Math.min(6, Math.max(1, Number(matched[2]))) : 3;
+}
+
+function prependPreviewToc(blocks: PreviewBlock[], enabled: boolean, depth: string | undefined): PreviewBlock[] {
+  if (!enabled) return blocks;
+  const maxLevel = tocDepth(depth);
+  const entries = blocks
+    .filter((block): block is Extract<PreviewBlock, { type: "heading" }> => block.type === "heading" && block.level <= maxLevel)
+    .map((block) => ({ level: block.level, text: block.text, number: block.number }));
+  return entries.length > 0 ? [{ type: "toc", entries }, ...blocks] : blocks;
+}
+
 function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index: number, ordered: boolean, level: number) {
   const closeType = ordered ? "ordered_list_close" : "bullet_list_close";
   const items: PreviewListItem[] = [];
@@ -468,7 +522,14 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
       index += 1;
     }
 
-    items.push({ segments: joinTextSegmentGroups(parts, " "), level, ordered, index: itemIndex });
+    const segments = joinTextSegmentGroups(parts, " ");
+    const taskMatch = plainText(segments).match(/^\[([ xX])\]\s*/);
+    const task = taskMatch?.[1].trim() ? "checked" : taskMatch ? "unchecked" : undefined;
+    const taskPrefix = taskMatch?.[0] ?? "";
+    const taskSegments = taskPrefix
+      ? segments.map((segment, segmentIndex) => (segmentIndex === 0 ? { ...segment, text: segment.text.replace(taskPrefix, "") } : segment))
+      : segments;
+    items.push({ segments: taskSegments, level, ordered, index: itemIndex, task });
     items.push(...nestedItems);
     index += 1;
   }
@@ -495,6 +556,11 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
     }
 
     if (token.type === "paragraph_open" && next?.type === "inline") {
+      if (isImageOnlyInline(next)) {
+        blocks.push(...inlineImageBlocks(next));
+        index += 2;
+        continue;
+      }
       blocks.push({ type: "paragraph", segments: inlineSegmentsFromToken(next) });
       index += 2;
       continue;
@@ -568,6 +634,10 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   if (block.type === "heading") {
     const draft = drafts[`heading-${block.level}`];
     return draft.beforeSpacing + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * resolveLineHeightPx(draft) + draft.afterSpacing;
+  }
+
+  if (block.type === "toc") {
+    return 34 + block.entries.length * 22;
   }
 
   if (block.type === "paragraph") {
@@ -732,6 +802,50 @@ function applyMarkdownFeatureSettings(blocks: PreviewBlock[], features: Markdown
   }).filter((block): block is PreviewBlock => Boolean(block));
 }
 
+function PreviewImage({
+  src,
+  alt,
+  markdownSourcePath,
+  className,
+}: {
+  src?: string;
+  alt?: string;
+  markdownSourcePath?: string;
+  className?: string;
+}) {
+  const [resolvedSrc, setResolvedSrc] = useState<string>();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    setResolvedSrc(undefined);
+    if (!src) return undefined;
+
+    void resolvePreviewImageSource(src, markdownSourcePath)
+      .then((value) => {
+        if (!cancelled) setResolvedSrc(value);
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedSrc(undefined);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [markdownSourcePath, src]);
+
+  if (resolvedSrc && !failed) {
+    return <img src={resolvedSrc} alt={alt ?? ""} className={cn("block h-auto w-full max-h-[520px] object-contain", className)} onError={() => setFailed(true)} />;
+  }
+
+  return (
+    <div className={cn("relative flex h-28 items-center justify-center overflow-hidden border border-dashed border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500", className)}>
+      <span>{src ? "图片无法预览" : "图片占位预览"}</span>
+    </div>
+  );
+}
+
 function renderMarkdownBlocks({
   blocks,
   drafts,
@@ -739,12 +853,14 @@ function renderMarkdownBlocks({
   tableStyle,
   inlineCodeDraft,
   inlineCodeEnabled,
+  markdownSourcePath,
 }: {
   blocks: PreviewBlock[];
   drafts: Record<string, StyleDraft>;
   selectedStyle?: StyleNode;
   inlineCodeDraft: StyleDraft;
   inlineCodeEnabled: boolean;
+  markdownSourcePath?: string;
   tableStyle: {
     imageStyle: CSSProperties;
     figureCaptionPosition: StyleDraft["captionPosition"];
@@ -758,7 +874,10 @@ function renderMarkdownBlocks({
     tableLayout: CSSProperties["tableLayout"];
     borderStyle: CSSProperties;
     rowStripe: boolean;
-    columnWidths: string[];
+    columnWidthMode: StyleDraft["columnWidthMode"];
+    columnWidthPercentages: [number, number, number];
+    tocLeader: "dot" | "space";
+    tocShowPageNumbers: boolean;
   };
 }) {
   const rendered: ReactNode[] = [];
@@ -772,6 +891,24 @@ function renderMarkdownBlocks({
           {block.number ? <span>{block.number} </span> : null}
           {block.text}
         </div>,
+      );
+      return;
+    }
+
+    if (block.type === "toc") {
+      rendered.push(
+        <section key={index} className="mb-5">
+          <div className="mb-2 text-sm font-bold text-slate-900">目录</div>
+          <div className="space-y-1">
+            {block.entries.map((entry, entryIndex) => (
+              <div key={`${entry.level}-${entryIndex}-${entry.text}`} className="flex min-w-0 items-end gap-1 text-[10px] leading-5 text-slate-700" style={{ paddingLeft: `${(entry.level - 1) * 1.25}em` }}>
+                <span className="shrink-0">{entry.number ? `${entry.number} ` : ""}{entry.text}</span>
+                {tableStyle.tocLeader === "dot" ? <span className="mb-1 min-w-2 flex-1 border-b border-dotted border-slate-400" /> : <span className="min-w-2 flex-1" />}
+                {tableStyle.tocShowPageNumbers ? <span className="shrink-0 text-slate-500">...</span> : null}
+              </div>
+            ))}
+          </div>
+        </section>,
       );
       return;
     }
@@ -806,13 +943,13 @@ function renderMarkdownBlocks({
       rendered.push(
         <pre
           key={index}
-          className={cn("relative overflow-hidden whitespace-pre-wrap break-words rounded-lg", selectedRing(selectedStyle, "source-code"))}
+          className={cn("relative overflow-hidden whitespace-pre-wrap break-words", selectedRing(selectedStyle, "source-code"))}
           style={{
             ...textStyle(drafts.code),
             textIndent: 0,
             backgroundColor,
             border: codeBlockBorder(drafts.code),
-            borderRadius: Math.max(0, drafts.code.codeBorderRadius),
+            borderRadius: 0,
             padding: `${Math.max(0, drafts.code.codePaddingY) + (languageLabel ? 22 : 0)}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
           }}
         >
@@ -839,11 +976,14 @@ function renderMarkdownBlocks({
       rendered.push(
         <div key={index} className="space-y-1.5">
           {block.items.map((item, itemIndex) => {
-            const listStyleId = "nested-list";
-            const listDraft = resolveListLevelDraft(resolveListBaseDraft(drafts, item) ?? drafts.normal, item);
-            const displayIndex = item.ordered && item.level === 0 && listDraft.listNumberingMode === "continue" ? continuedOrderedListIndex + 1 : item.index;
-            if (item.ordered && item.level === 0 && listDraft.listNumberingMode === "continue") continuedOrderedListIndex = displayIndex;
-            const marker = markerTextFromStyle(listDraft, item, displayIndex);
+            const listStyleId = item.level > 0 ? "nested-list" : item.ordered ? "numbered-list" : "bullet-list";
+            const listBaseDraft = resolveListBaseDraft(drafts, item) ?? drafts.normal;
+            const listDraft = resolveListLevelDraft(listBaseDraft, item);
+            const markerType = listMarkerTypeFromStyle(listBaseDraft, item);
+            const isNumbered = markerType === "number" && !item.task;
+            const displayIndex = isNumbered && item.level === 0 && listDraft.listNumberingMode === "continue" ? continuedOrderedListIndex + 1 : item.index;
+            if (isNumbered && item.level === 0 && listDraft.listNumberingMode === "continue") continuedOrderedListIndex = displayIndex;
+            const marker = markerTextFromStyle(listDraft, item, markerType, displayIndex);
             const markerWidth = `${Math.max(0.5, listDraft.listTextIndent)}em`;
             const itemStyle = {
               ...textStyle(listDraft),
@@ -883,17 +1023,8 @@ function renderMarkdownBlocks({
       rendered.push(
         <figure key={index} className={cn("my-3", selectedRing(selectedStyle, "caption"))}>
           {tableStyle.figureCaptionPosition === "above" ? caption : null}
-          <div className={cn("relative h-28 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-[10px] font-semibold text-slate-400 dark:border-zinc-700 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800 dark:text-zinc-500", selectedRing(selectedStyle, "image"))} style={tableStyle.imageStyle}>
-            <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-white/70 to-transparent dark:from-white/5" />
-            <svg className="absolute inset-x-0 bottom-0 h-full w-full" viewBox="0 0 420 132" preserveAspectRatio="none" aria-hidden="true">
-              <circle cx="318" cy="36" r="14" fill="rgba(96,165,250,0.45)" />
-              <path d="M0 132 L0 92 L78 56 L142 96 L205 42 L322 132 Z" fill="rgba(59,130,246,0.16)" />
-              <path d="M82 132 L170 70 L230 106 L280 82 L420 132 Z" fill="rgba(99,102,241,0.18)" />
-              <path d="M0 132 L120 80 L210 132 Z" fill="rgba(15,23,42,0.08)" />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[10px] font-bold text-slate-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/72 dark:text-zinc-400">图片占位预览</span>
-            </div>
+          <div className={cn("overflow-hidden", selectedRing(selectedStyle, "image"))} style={tableStyle.imageStyle}>
+            <PreviewImage src={block.src} alt={block.alt} markdownSourcePath={markdownSourcePath} />
           </div>
           {tableStyle.figureCaptionPosition === "below" ? caption : null}
         </figure>,
@@ -903,12 +1034,15 @@ function renderMarkdownBlocks({
 
     if (block.type === "table") {
       const [header, ...rows] = block.rows;
+      const columnWidths = tableStyle.columnWidthMode === "custom"
+        ? tableColumnWidths(tableStyle.columnWidthPercentages, Math.max(header?.length ?? 0, ...rows.map((row) => row.length), 1))
+        : [];
       const caption = block.caption ? <div className="text-[10px] font-semibold text-slate-700" style={tableStyle.captionStyle}>{block.caption}</div> : null;
       rendered.push(
         <div key={index}>
           {tableStyle.captionPosition === "above" ? caption : null}
         <table className={cn("my-3 border-collapse text-[10px]", selectedRing(selectedStyle, "table"))} style={{ width: tableStyle.tableWidth, margin: tableStyle.tableMargin, tableLayout: tableStyle.tableLayout, ...tableStyle.borderStyle }}>
-          {tableStyle.columnWidths.length > 0 ? <colgroup>{tableStyle.columnWidths.map((width, widthIndex) => <col key={widthIndex} style={{ width }} />)}</colgroup> : null}
+          {columnWidths.length > 0 ? <colgroup>{columnWidths.map((width, widthIndex) => <col key={widthIndex} style={{ width }} />)}</colgroup> : null}
           {header ? (
             <thead>
               <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{cell}</th>)}</tr>
@@ -942,7 +1076,7 @@ function renderMarkdownBlocks({
   return rendered;
 }
 
-export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showPageFooter = true, interactiveViewport = false, className, viewportClassName }: WordPreviewPageProps) {
+export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, markdownSourcePath, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showPageFooter = true, interactiveViewport = false, className, viewportClassName }: WordPreviewPageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef({ dragging: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
   const [viewportWidth, setViewportWidth] = useState(0);
@@ -987,7 +1121,6 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
 
   const tableWidth = `${table.fitToPageWidth ? 100 : table.tableWidthPercent}%`;
   const tableMargin = table.tableHorizontalAlign === "center" ? "0 auto" : table.tableHorizontalAlign === "right" ? "0 0 0 auto" : "0";
-  const tableColumnWidths = table.columnWidthMode === "custom" ? [`${table.firstColumnWidth}%`, `${table.secondColumnWidth}%`, `${table.thirdColumnWidth}%`] : [];
   const baseBorderWidth = table.outerBorderStrong ? Math.max(1.5, table.borderWidth + 0.5) : table.borderWidth;
   const baseBorder = border(baseBorderWidth, table.borderStyle, table.borderColor);
   const sideBorders = {
@@ -1018,7 +1151,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     marginBottom: caption.captionPosition === "above" ? `${caption.afterSpacing}px` : 0,
   };
   const imageStyle: CSSProperties = {
-    width: `${imageWidthPercent(image)}%`,
+    width: image.imageWidthMode === "original" ? "auto" : `${imageWidthPercent(image)}%`,
+    maxWidth: "100%",
     margin: imageMargin(image),
   };
   const headerStyle: CSSProperties = {
@@ -1059,13 +1193,17 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const markdownBlocks = markdown?.trim() ? parseMarkdownPreview(markdown) : [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
   const fallbackBlocks = createFallbackBlocks(captionText(caption, "图片样式预览"), captionText(tableCaption, "表格样式预览"));
-  const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures);
+  const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures)
+    .map((block) => block.type === "image" && !block.caption && block.alt
+      ? { ...block, caption: captionText(caption, block.alt) }
+      : block);
   const previewDrafts = { "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "inline-code": inlineCode, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
   const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
   const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight);
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(activeBlocks, previewDrafts);
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(numberedBlocks, pageContentHeight, previewDrafts, table, contentWidth) : numberedBlocks;
+  const blocksWithToc = prependPreviewToc(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth);
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(blocksWithToc, pageContentHeight, previewDrafts, table, contentWidth) : blocksWithToc;
   const previewPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth) : [previewBlocks];
   const scale = interactiveViewport
     ? requestedScale
@@ -1169,7 +1307,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             drafts: previewDrafts,
             inlineCodeDraft: inlineCode,
             inlineCodeEnabled: styleConfig?.markdownFeatures.inlineCode ?? defaultMarkdownFeatures.inlineCode,
-            tableStyle: { imageStyle, figureCaptionPosition: caption.captionPosition, figureCaptionStyle, captionPosition: tableCaption.captionPosition, captionStyle, headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders }, rowStripe: table.rowStripe, columnWidths: tableColumnWidths },
+            markdownSourcePath,
+            tableStyle: { imageStyle, figureCaptionPosition: caption.captionPosition, figureCaptionStyle, captionPosition: tableCaption.captionPosition, captionStyle, headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders }, rowStripe: table.rowStripe, columnWidthMode: table.columnWidthMode, columnWidthPercentages: [table.firstColumnWidth, table.secondColumnWidth, table.thirdColumnWidth], tocLeader: pageSettings?.tocLeader ?? "dot", tocShowPageNumbers: pageSettings?.tocShowPageNumbers ?? true },
           })}
           {footerEnabled ? (() => {
             const pageNumber = footerStartPage + pageIndex;

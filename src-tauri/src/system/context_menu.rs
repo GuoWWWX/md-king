@@ -46,6 +46,7 @@ pub fn handle_startup_context_action(app: AppHandle) {
         let output = context_output_path(&input_path, config.default_output_dir.as_deref());
         let request = ConvertRequest {
             input: input_path.to_string_lossy().to_string(),
+            source_path: None,
             output,
             template_id: Some(config.default_template_id),
             open_after_convert: Some(config.open_after_convert),

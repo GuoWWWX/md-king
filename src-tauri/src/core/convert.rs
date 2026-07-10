@@ -28,6 +28,8 @@ const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 #[serde(rename_all = "camelCase")]
 pub struct ConvertRequest {
     pub input: String,
+    #[serde(default)]
+    pub source_path: Option<String>,
     pub output: Option<String>,
     pub template_id: Option<String>,
     pub open_after_convert: Option<bool>,
@@ -91,7 +93,7 @@ struct TableStyleConfig {
     width_twips: u32,
     layout: String,
     horizontal_align: String,
-    column_widths: Vec<u32>,
+    column_width_percentages: Option<[f64; 3]>,
     border_style: String,
     border_color: String,
     border_width: f64,
@@ -135,6 +137,8 @@ struct ImageStyleConfig {
 #[derive(Clone)]
 struct DocumentStyleConfig {
     styles: HashMap<String, TextStyleConfig>,
+    image_caption: Option<CaptionStyleConfig>,
+    table_caption: Option<CaptionStyleConfig>,
 }
 
 #[derive(Clone)]
@@ -172,6 +176,14 @@ struct ListLevelStyleConfig {
     text_indent: f64,
     wrap_mode: String,
     numbering_mode: String,
+}
+
+#[derive(Clone)]
+struct CaptionStyleConfig {
+    text: TextStyleConfig,
+    position: String,
+    numbering: bool,
+    number_format: String,
 }
 
 #[derive(Clone)]
@@ -547,7 +559,13 @@ fn convert_text_input(
     ));
 
     let mut pandoc_options = pandoc_document_options(&request);
-    pandoc_options.resource_path = output_path.parent().map(Path::to_path_buf);
+    pandoc_options.resource_path = request
+        .source_path
+        .as_deref()
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .or_else(|| output_path.parent().map(Path::to_path_buf));
 
     match run_pandoc_to_docx_for(
         runtime,
@@ -1114,23 +1132,28 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
         .get("fitToPageWidth")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    let content_width_twips = page_settings_config_from_value(config)
+        .as_ref()
+        .map(page_content_width_twips)
+        .unwrap_or_else(default_content_width_twips);
     let width_twips = if fit_to_page {
-        8640
+        content_width_twips
     } else {
-        ((8640.0 * table_width_percent / 100.0).round() as u32).clamp(3456, 8640)
+        ((f64::from(content_width_twips) * table_width_percent / 100.0).round() as u32).clamp(
+            (f64::from(content_width_twips) * 0.4).round() as u32,
+            content_width_twips,
+        )
     };
-    let column_widths = if read_style_string(table, "columnWidthMode", "auto") == "custom" {
-        table_column_widths_from_percentages(
-            width_twips,
-            &[
+    let column_width_percentages =
+        if read_style_string(table, "columnWidthMode", "auto") == "custom" {
+            Some([
                 read_table_number("firstColumnWidth", 34.0),
                 read_table_number("secondColumnWidth", 33.0),
                 read_table_number("thirdColumnWidth", 33.0),
-            ],
-        )
-    } else {
-        Vec::new()
-    };
+            ])
+        } else {
+            None
+        };
     let border_width = read_table_number("borderWidth", 1.0);
     let outer_border_width = if table
         .get("outerBorderStrong")
@@ -1145,7 +1168,7 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
     Some(TableStyleConfig {
         width_twips,
         horizontal_align: read_style_string(table, "tableHorizontalAlign", "center"),
-        column_widths,
+        column_width_percentages,
         layout: read_style_string(table, "tableLayout", "fixed"),
         border_style: read_style_string(table, "borderStyle", "solid"),
         border_color: read_style_color(table, "borderColor", "CBD5E1"),
@@ -1297,6 +1320,12 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
         ),
         ("caption", styles.get("caption")),
         (
+            "table-caption",
+            styles
+                .get("table-caption")
+                .or_else(|| styles.get("caption")),
+        ),
+        (
             "bullet-list",
             styles.get("bullet-list").or_else(|| styles.get("normal")),
         ),
@@ -1314,9 +1343,41 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
         }
     }
 
-    (!mapped_styles.is_empty()).then_some(DocumentStyleConfig {
-        styles: mapped_styles,
-    })
+    let image_caption = styles
+        .get("caption")
+        .map(|style| caption_style_config_from_value("caption", style));
+    let table_caption = styles
+        .get("table-caption")
+        .or_else(|| styles.get("caption"))
+        .map(|style| caption_style_config_from_value("table-caption", style));
+
+    (!mapped_styles.is_empty() || image_caption.is_some() || table_caption.is_some()).then_some(
+        DocumentStyleConfig {
+            styles: mapped_styles,
+            image_caption,
+            table_caption,
+        },
+    )
+}
+
+fn caption_style_config_from_value(style_id: &str, style: &Value) -> CaptionStyleConfig {
+    CaptionStyleConfig {
+        text: text_style_config_from_value(style_id, style),
+        position: read_style_string(style, "captionPosition", "below"),
+        numbering: style
+            .get("captionNumbering")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+        number_format: read_style_string(
+            style,
+            "captionNumberFormat",
+            if style_id == "table-caption" {
+                "表 1"
+            } else {
+                "图 1"
+            },
+        ),
+    }
 }
 
 fn text_style_config_from_value(style_id: &str, style: &Value) -> TextStyleConfig {
@@ -1337,7 +1398,7 @@ fn text_style_config_from_value(style_id: &str, style: &Value) -> TextStyleConfi
         before_spacing: read_spacing_points(style, "beforeSpacing", 0.0),
         after_spacing: read_spacing_points(style, "afterSpacing", 0.0),
         first_line_indent: read_style_indent(style, "firstLineIndent", 0.0),
-        align: if style_id == "caption" {
+        align: if matches!(style_id, "caption" | "table-caption") {
             read_style_string(
                 style,
                 "captionAlign",
@@ -1988,6 +2049,7 @@ fn normalize_docx(
                 document_style,
                 block_style,
             );
+            let xml = normalize_document_captions(&xml, document_style);
             let xml = apply_page_settings_to_document_xml(&xml, page_settings);
             data = normalize_document_images(&xml, page_settings, image_style).into_bytes();
         } else if name == "word/styles.xml"
@@ -2134,7 +2196,13 @@ fn normalize_document_xml(
     };
     let active_table_style = table_style
         .cloned()
-        .or_else(|| apply_default_table_style.then(default_table_style_config));
+        .or_else(|| {
+            apply_default_table_style.then(|| {
+                // A built-in template has no saved style config yet. In that case,
+                // retain the document's actual printable width instead of assuming A4.
+                default_table_style_config(document_content_width_twips(&xml))
+            })
+        });
     let xml = if let Some(table_style) = active_table_style.as_ref() {
         normalize_table_cells(&xml, table_style)
     } else {
@@ -2164,6 +2232,216 @@ fn normalize_document_xml(
     } else {
         xml
     }
+}
+
+fn normalize_document_captions(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
+    let Some(document_style) = document_style else {
+        return xml.to_string();
+    };
+    let xml = document_style
+        .image_caption
+        .as_ref()
+        .map(|style| normalize_image_captions(xml, style))
+        .unwrap_or_else(|| xml.to_string());
+    document_style
+        .table_caption
+        .as_ref()
+        .map(|style| normalize_table_captions(&xml, style))
+        .unwrap_or(xml)
+}
+
+fn normalize_image_captions(xml: &str, style: &CaptionStyleConfig) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+    let mut blocks = Vec::new();
+    let mut cursor = 0;
+    for matched in paragraph.find_iter(xml) {
+        blocks.push((
+            xml[cursor..matched.start()].to_string(),
+            matched.as_str().to_string(),
+        ));
+        cursor = matched.end();
+    }
+    if blocks.is_empty() {
+        return xml.to_string();
+    }
+
+    let mut output = String::new();
+    let mut index = 0;
+    let mut number = 0;
+    while index < blocks.len() {
+        let (gap, current) = &blocks[index];
+        output.push_str(gap);
+        let next_is_caption = blocks
+            .get(index + 1)
+            .is_some_and(|(_, next)| is_image_caption_paragraph(next));
+
+        if current.contains("<w:drawing") && next_is_caption {
+            let (caption_gap, caption) = &blocks[index + 1];
+            number += 1;
+            let caption = normalize_caption_paragraph(caption, style, number);
+            if style.position.trim().eq_ignore_ascii_case("above") {
+                output.push_str(&caption);
+                output.push_str(caption_gap);
+                output.push_str(current);
+            } else {
+                output.push_str(current);
+                output.push_str(caption_gap);
+                output.push_str(&caption);
+            }
+            index += 2;
+            continue;
+        }
+
+        if is_image_caption_paragraph(current) {
+            number += 1;
+            output.push_str(&normalize_caption_paragraph(current, style, number));
+        } else {
+            output.push_str(current);
+        }
+        index += 1;
+    }
+    output.push_str(&xml[cursor..]);
+    output
+}
+
+fn normalize_table_captions(xml: &str, style: &CaptionStyleConfig) -> String {
+    let block = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>|<w:tbl>.*?</w:tbl>"#)
+        .expect("valid document block regex");
+    let mut blocks = Vec::new();
+    let mut cursor = 0;
+    for matched in block.find_iter(xml) {
+        blocks.push((
+            xml[cursor..matched.start()].to_string(),
+            matched.as_str().to_string(),
+        ));
+        cursor = matched.end();
+    }
+    if blocks.is_empty() {
+        return xml.to_string();
+    }
+
+    let mut output = String::new();
+    let mut index = 0;
+    let mut number = 0;
+    while index < blocks.len() {
+        let (gap, current) = &blocks[index];
+        output.push_str(gap);
+        let next_is_table = blocks
+            .get(index + 1)
+            .is_some_and(|(_, next)| next.starts_with("<w:tbl>"));
+        let next_is_caption = blocks
+            .get(index + 1)
+            .is_some_and(|(_, next)| is_table_caption_paragraph(next));
+
+        if is_table_caption_paragraph(current) && next_is_table {
+            let (table_gap, table) = &blocks[index + 1];
+            number += 1;
+            let caption = normalize_caption_paragraph(current, style, number);
+            if style.position.trim().eq_ignore_ascii_case("below") {
+                output.push_str(table);
+                output.push_str(table_gap);
+                output.push_str(&caption);
+            } else {
+                output.push_str(&caption);
+                output.push_str(table_gap);
+                output.push_str(table);
+            }
+            index += 2;
+            continue;
+        }
+
+        if current.starts_with("<w:tbl>") && next_is_caption {
+            let (caption_gap, caption) = &blocks[index + 1];
+            number += 1;
+            let caption = normalize_caption_paragraph(caption, style, number);
+            if style.position.trim().eq_ignore_ascii_case("above") {
+                output.push_str(&caption);
+                output.push_str(caption_gap);
+                output.push_str(current);
+            } else {
+                output.push_str(current);
+                output.push_str(caption_gap);
+                output.push_str(&caption);
+            }
+            index += 2;
+            continue;
+        }
+
+        if is_table_caption_paragraph(current) {
+            number += 1;
+            output.push_str(&normalize_caption_paragraph(current, style, number));
+        } else {
+            output.push_str(current);
+        }
+        index += 1;
+    }
+    output.push_str(&xml[cursor..]);
+    output
+}
+
+fn is_image_caption_paragraph(paragraph_xml: &str) -> bool {
+    capture_paragraph_style_id(paragraph_xml).is_some_and(|style_id| style_id == "ImageCaption")
+}
+
+fn is_table_caption_paragraph(paragraph_xml: &str) -> bool {
+    capture_paragraph_style_id(paragraph_xml)
+        .is_some_and(|style_id| matches!(style_id.as_str(), "Caption" | "TableCaption"))
+}
+
+fn normalize_caption_paragraph(
+    paragraph_xml: &str,
+    style: &CaptionStyleConfig,
+    number: usize,
+) -> String {
+    let text = strip_caption_number_prefix(&paragraph_plain_text(paragraph_xml));
+    let text = if style.numbering {
+        format!(
+            "{} {}",
+            caption_number_label(&style.number_format, number),
+            text.trim()
+        )
+    } else {
+        text.trim().to_string()
+    };
+    let paragraph_properties = text_style_paragraph_properties_xml(&style.text);
+    let run_properties = text_style_run_properties_xml(&style.text);
+    let paragraph_start = Regex::new(r#"<w:p(\s[^>]*)?>"#).expect("valid paragraph start regex");
+    let attributes = paragraph_start
+        .captures(paragraph_xml)
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str())
+        .unwrap_or("");
+
+    format!(
+        r#"<w:p{attributes}>{paragraph_properties}<w:r><w:rPr>{run_properties}</w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+        escape_xml_text(&text)
+    )
+}
+
+fn strip_caption_number_prefix(text: &str) -> String {
+    let prefix = Regex::new(r#"^\s*(?:(?:图|表|Figure|Table)\s*)?\d+(?:-\d+)?[.、:：]?\s*"#)
+        .expect("valid caption number prefix regex");
+    prefix.replace(text, "").to_string()
+}
+
+fn caption_number_label(format: &str, number: usize) -> String {
+    let number_pattern = Regex::new(r#"\d+(?:-\d+)?"#).expect("valid caption number regex");
+    let Some(found) = number_pattern.find(format) else {
+        return format!("{} {}", format.trim(), number).trim().to_string();
+    };
+
+    let current = found.as_str();
+    let replacement = if let Some((prefix, _)) = current.rsplit_once('-') {
+        format!("{prefix}-{number}")
+    } else {
+        number.to_string()
+    };
+    format!(
+        "{}{}{}",
+        &format[..found.start()],
+        replacement,
+        &format[found.end()..]
+    )
 }
 
 fn normalize_document_images(
@@ -2782,7 +3060,8 @@ fn template_style_id_for_word_style(style_id: &str) -> Option<&'static str> {
         "Heading6" => Some("heading-6"),
         "Normal" | "FirstParagraph" => Some("normal"),
         "BodyText" => Some("body-text"),
-        "Caption" => Some("caption"),
+        "ImageCaption" => Some("caption"),
+        "Caption" | "TableCaption" => Some("table-caption"),
         "ListParagraph" | "BulletList" => Some("bullet-list"),
         "NumberedList" => Some("numbered-list"),
         _ => None,
@@ -4226,12 +4505,12 @@ fn force_table_width_percent(xml: &str) -> String {
         .to_string()
 }
 
-fn default_table_style_config() -> TableStyleConfig {
+fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleConfig {
     TableStyleConfig {
-        width_twips: 8640,
+        width_twips: content_width_twips.unwrap_or(8640),
         layout: "fixed".to_string(),
         horizontal_align: "center".to_string(),
-        column_widths: Vec::new(),
+        column_width_percentages: None,
         border_style: "solid".to_string(),
         border_color: "CBD5E1".to_string(),
         border_width: 1.0,
@@ -4418,8 +4697,18 @@ fn build_table_grid_xml(column_count: usize, style: &TableStyleConfig) -> String
 
 fn table_column_widths(column_count: usize, style: &TableStyleConfig) -> Vec<u32> {
     let count = column_count.max(1);
-    if style.column_widths.len() == count {
-        return style.column_widths.clone();
+    if let Some(percentages) = style.column_width_percentages {
+        let distribution = if count == 1 {
+            vec![100.0]
+        } else if count == 2 {
+            vec![percentages[0], percentages[1]]
+        } else {
+            let remainder = percentages[2] / (count - 2) as f64;
+            let mut values = vec![percentages[0], percentages[1]];
+            values.extend((0..count - 2).map(|_| remainder));
+            values
+        };
+        return table_column_widths_from_percentages(style.width_twips, &distribution);
     }
 
     let width = style.width_twips / count as u32;
@@ -4796,12 +5085,12 @@ mod tests {
         document_style_config_from_value, footer_page_number_xml,
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
-        normalize_default_report_styles_xml, normalize_document_images, normalize_document_xml,
-        normalize_docx, normalize_template_styles_xml, page_content_width_twips,
-        page_settings_config_from_value, pandoc_document_options_from_value,
-        preprocess_markdown_for_word, table_style_config_from_value,
-        task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        MarkdownFeatureConfig,
+        normalize_default_report_styles_xml, normalize_document_captions,
+        normalize_document_images, normalize_document_xml, normalize_docx,
+        normalize_template_styles_xml, page_content_width_twips, page_settings_config_from_value,
+        pandoc_document_options_from_value, preprocess_markdown_for_word, table_column_widths,
+        table_style_config_from_value, task_list_markers_from_numbering_xml, ConvertRequest,
+        HeadingNumberingConfig, MarkdownFeatureConfig,
     };
     use serde_json::json;
     use std::fs;
@@ -4841,6 +5130,24 @@ mod tests {
             r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="21" /><w:szCs w:val="21" />"#
         ));
         assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 2);
+    }
+
+    #[test]
+    fn derives_default_table_width_from_document_page_settings() {
+        let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:tc><w:tcPr /><w:p><w:r><w:t>字段</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape" /><w:pgMar w:left="1440" w:right="1440" /></w:sectPr></w:body></w:document>"#;
+
+        let output = normalize_document_xml(
+            input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains(r#"<w:tblW w:type="dxa" w:w="13958" />"#));
+        assert!(output.contains(r#"<w:gridCol w:w="13958" />"#));
     }
 
     #[test]
@@ -4975,13 +5282,18 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(r#"<w:tblW w:type="dxa" w:w="6912" />"#));
-        assert!(output.contains(
-            r#"<w:gridCol w:w="1382" /><w:gridCol w:w="2074" /><w:gridCol w:w="3456" />"#
-        ));
-        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="1382" />"#));
-        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="2074" />"#));
-        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="3456" />"#));
+        let widths = table_column_widths(3, &style);
+        assert!(output.contains(&format!(
+            r#"<w:tblW w:type="dxa" w:w="{}" />"#,
+            style.width_twips
+        )));
+        assert!(output.contains(&format!(
+            r#"<w:gridCol w:w="{}" /><w:gridCol w:w="{}" /><w:gridCol w:w="{}" />"#,
+            widths[0], widths[1], widths[2]
+        )));
+        assert!(output.contains(&format!(r#"<w:tcW w:type="dxa" w:w="{}" />"#, widths[0])));
+        assert!(output.contains(&format!(r#"<w:tcW w:type="dxa" w:w="{}" />"#, widths[1])));
+        assert!(output.contains(&format!(r#"<w:tcW w:type="dxa" w:w="{}" />"#, widths[2])));
         assert!(output.contains(r#"<w:trHeight w:val="540" w:hRule="atLeast" />"#));
         assert!(output.contains(r#"<w:tcMar><w:top w:w="90" w:type="dxa" /><w:left w:w="240" w:type="dxa" /><w:bottom w:w="90" w:type="dxa" /><w:right w:w="240" w:type="dxa" /></w:tcMar>"#));
         assert!(output.contains(r#"<w:noWrap />"#));
@@ -5013,6 +5325,88 @@ mod tests {
         assert!(output.contains(r#"<w:color w:val="334155" />"#));
         assert!(output.contains(r#"<w:sz w:val="20" /><w:szCs w:val="20" />"#));
         assert!(output.contains(r#"w:color="2563EB""#));
+    }
+
+    #[test]
+    fn table_width_uses_page_content_width_and_distributes_remaining_columns() {
+        let config = json!({
+            "pageSettings": {
+                "paperSize": "A5",
+                "orientation": "landscape",
+                "marginLeft": 1.5,
+                "marginRight": 2.0
+            },
+            "styles": {
+                "table": {
+                    "fitToPageWidth": true,
+                    "columnWidthMode": "custom",
+                    "firstColumnWidth": 20,
+                    "secondColumnWidth": 30,
+                    "thirdColumnWidth": 50
+                }
+            }
+        });
+        let page = page_settings_config_from_value(&config).expect("page settings should parse");
+        let table = table_style_config_from_value(&config).expect("table style should parse");
+        let widths = table_column_widths(4, &table);
+
+        assert_eq!(table.width_twips, page_content_width_twips(&page));
+        assert_eq!(widths.len(), 4);
+        assert_eq!(widths.iter().sum::<u32>(), table.width_twips);
+        assert!(widths[0] < widths[1]);
+        assert!(widths[2].abs_diff(widths[3]) <= 1);
+    }
+
+    #[test]
+    fn applies_image_and_table_caption_rules_to_docx_content() {
+        let document_style = document_style_config_from_value(&json!({
+            "styles": {
+                "caption": {
+                    "chineseFont": "微软雅黑",
+                    "latinFont": "Arial",
+                    "fontSize": 10,
+                    "fontWeight": "400",
+                    "color": "#334155",
+                    "lineHeight": "1.4",
+                    "beforeSpacing": 2,
+                    "afterSpacing": 2,
+                    "firstLineIndent": 0,
+                    "captionAlign": "center",
+                    "captionPosition": "above",
+                    "captionNumbering": true,
+                    "captionNumberFormat": "图 1-1"
+                },
+                "table-caption": {
+                    "chineseFont": "微软雅黑",
+                    "latinFont": "Arial",
+                    "fontSize": 10,
+                    "fontWeight": "400",
+                    "color": "#334155",
+                    "lineHeight": "1.4",
+                    "beforeSpacing": 2,
+                    "afterSpacing": 2,
+                    "firstLineIndent": 0,
+                    "captionAlign": "center",
+                    "captionPosition": "below",
+                    "captionNumbering": true,
+                    "captionNumberFormat": "表 1"
+                }
+            }
+        }))
+        .expect("document style should parse");
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="CaptionedFigure" /></w:pPr><w:r><w:drawing><wp:inline /></w:drawing></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>流程图</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Caption" /></w:pPr><w:r><w:t>字段说明</w:t></w:r></w:p><w:tbl><w:tblPr /></w:tbl></w:body></w:document>"#;
+
+        let output = normalize_document_captions(input, Some(&document_style));
+
+        assert!(
+            output.find("图 1-1 流程图").expect("image caption")
+                < output.find("<w:drawing").expect("image")
+        );
+        assert!(
+            output.find("<w:tbl>").expect("table")
+                < output.find("表 1 字段说明").expect("table caption")
+        );
+        assert!(output.contains(r#"<w:jc w:val="center" />"#));
     }
 
     #[test]
@@ -6098,6 +6492,7 @@ mod tests {
 
         let request = ConvertRequest {
             input: "# title".to_string(),
+            source_path: None,
             output: Some(path.to_string_lossy().to_string()),
             template_id: None,
             open_after_convert: Some(false),
@@ -6125,6 +6520,7 @@ mod tests {
 
         let request = ConvertRequest {
             input: "# title".to_string(),
+            source_path: None,
             output: Some(path.to_string_lossy().to_string()),
             template_id: None,
             open_after_convert: Some(false),

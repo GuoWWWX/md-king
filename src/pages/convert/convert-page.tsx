@@ -11,7 +11,7 @@ import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, selectDirectory, selectMarkdownFiles } from "@/lib/tauri";
+import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -69,6 +69,7 @@ export function ConvertPage() {
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
   const [markdown, setMarkdown] = useState("");
+  const [markdownSourcePath, setMarkdownSourcePath] = useState<string>();
   const autoOutputName = useMemo(() => buildDocxOutputName(markdown), [markdown]);
   const [outputNameDraft, setOutputNameDraft] = useState(() => buildDocxOutputName(""));
   const [outputNameEdited, setOutputNameEdited] = useState(false);
@@ -164,6 +165,7 @@ export function ConvertPage() {
     try {
       const result = await convertMarkdown({
         input,
+        sourcePath: markdownSourcePath,
         output: buildOutputPath(appConfig?.defaultOutputDir, outputName),
         templateId,
         openAfterConvert: appConfig?.openAfterConvert ?? true,
@@ -235,8 +237,23 @@ export function ConvertPage() {
 
   function handleFileTextLoad(text: string, file: File) {
     setMarkdown(text);
+    setMarkdownSourcePath(undefined);
     setMode("markdown");
     toast.success(`已载入文件：${file.name}`);
+  }
+
+  async function handleNativeMarkdownFileLoad() {
+    try {
+      const path = await selectMarkdownFile();
+      if (!path) return;
+      const text = await readMarkdownFileFromPath(path);
+      setMarkdown(text);
+      setMarkdownSourcePath(path);
+      setMode("markdown");
+      toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "读取文件失败"));
+    }
   }
 
   async function handleReadClipboard() {
@@ -247,6 +264,7 @@ export function ConvertPage() {
     try {
       const text = await navigator.clipboard.readText();
       setMarkdown(text);
+      setMarkdownSourcePath(undefined);
       setMode("markdown");
       toast.success(text.trim() ? "已从剪贴板读取到编辑区" : "剪贴板为空，已清空编辑区");
     } catch (error) {
@@ -393,6 +411,7 @@ export function ConvertPage() {
           />
           <ConvertPreviewPanel
             markdown={markdown}
+            markdownSourcePath={markdownSourcePath}
             outputName={outputName}
             styleConfig={previewStyleConfig}
             zoom={previewZoom}
@@ -422,7 +441,7 @@ export function ConvertPage() {
         style={{ gridTemplateColumns: `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
-          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
+          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
         </div>
 
         <div
@@ -436,6 +455,7 @@ export function ConvertPage() {
 
         <ConvertPreviewPanel
           markdown={markdown}
+          markdownSourcePath={markdownSourcePath}
           outputName={outputName}
           styleConfig={previewStyleConfig}
           zoom={previewZoom}
@@ -446,6 +466,7 @@ export function ConvertPage() {
 
         <ConvertPreviewPanel
           markdown={markdown}
+          markdownSourcePath={markdownSourcePath}
           outputName={outputName}
           styleConfig={previewStyleConfig}
           zoom={previewZoom}
@@ -486,6 +507,7 @@ function ModeTile({ active = false, disabled = false, icon: Icon, title, onClick
 
 function ConvertPreviewPanel({
   markdown,
+  markdownSourcePath,
   outputName,
   styleConfig,
   zoom,
@@ -496,6 +518,7 @@ function ConvertPreviewPanel({
   previewClassName,
 }: {
   markdown: string;
+  markdownSourcePath?: string;
   outputName: string;
   styleConfig: TemplateStyleConfig;
   zoom: number;
@@ -537,6 +560,7 @@ function ConvertPreviewPanel({
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
         <WordPreviewPage
           markdown={markdown}
+          markdownSourcePath={markdownSourcePath}
           styleConfig={styleConfig}
           zoom={zoom}
           paginate

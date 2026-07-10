@@ -2226,6 +2226,7 @@ dependencies = [
 name = "md-king"
 version = "1.1.8"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "clap",
  "regex",

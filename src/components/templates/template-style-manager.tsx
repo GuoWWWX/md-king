@@ -82,7 +82,7 @@ const listNavigationNode: StyleNode = {
   markdown: "- / 1. / 缩进",
   description: "统一配置无序列表、有序列表和多级列表。",
 };
-const basicStyleItemIds = ["normal", "body-text"];
+const basicStyleItemIds = ["normal"];
 
 const listLevelOptions = [1, 2, 3, 4] as const;
 const listLevelTypeKeys = {
@@ -181,15 +181,6 @@ const listLevelNumberingModeKeys = {
   3: "listLevel3NumberingMode",
   4: "listLevel4NumberingMode",
 } as const;
-
-const fontWeightOptions = [
-  { value: "300", label: "300 Light" },
-  { value: "400", label: "400 常规" },
-  { value: "500", label: "500 中等" },
-  { value: "600", label: "600 半粗" },
-  { value: "700", label: "700 加粗" },
-  { value: "800", label: "800 特粗" },
-];
 
 const paperSizeOptions: Array<{ value: PageSettingsDraft["paperSize"]; label: string; description: string }> = [
   { value: "A3", label: "A3", description: "29.7 x 42 cm" },
@@ -765,12 +756,11 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
     <button
       type="button"
       className={cn(
-        "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left font-medium leading-3 transition",
+        "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left text-xs font-medium leading-3 transition",
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
       title={`${node.displayName} · ${node.name} · ${node.markdown}`}
-      style={{ fontSize: 10 }}
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate">{node.displayName}</span>
@@ -965,30 +955,6 @@ function StyleProperties({
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="代码底色"><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F8FAFC" /></Field>
                 <Field label="边框颜色"><WordColorPicker value={draft.codeBorderColor} onChange={(value) => updateDraft("codeBorderColor", value)} autoColor="#E2E8F0" /></Field>
-                <Field label="边角样式">
-                  <div className="grid h-10 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
-                    {[
-                      { label: "直角", value: 0 },
-                      { label: "圆角", value: Math.max(8, draft.codeBorderRadius || 0) },
-                    ].map((option) => {
-                      const active = option.value === 0 ? draft.codeBorderRadius <= 0 : draft.codeBorderRadius > 0;
-                      return (
-                        <button
-                          key={option.label}
-                          type="button"
-                          className={cn(
-                            "flex items-center justify-center border-r border-slate-200 text-sm font-semibold last:border-r-0 dark:border-zinc-700",
-                            active ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
-                          )}
-                          onClick={() => updateDraft("codeBorderRadius", option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Field>
-                <Field label="圆角弧度 (px)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={32} step={1} value={draft.codeBorderRadius} onChange={(event) => updateDraft("codeBorderRadius", Number(event.target.value))} /></Field>
                 <Field label="左右内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingX} onChange={(event) => updateDraft("codePaddingX", Number(event.target.value))} /></Field>
                 <Field label="上下内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingY} onChange={(event) => updateDraft("codePaddingY", Number(event.target.value))} /></Field>
               </div>
@@ -1071,14 +1037,9 @@ function StyleProperties({
                   >
                     B
                   </button>
-                  <Select value={draft[fontWeightKey] as string} onValueChange={(value) => updateDraft(fontWeightKey, value)}>
-                    <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-none border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {fontWeightOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <span className="flex items-center px-3 text-sm font-medium text-slate-600 dark:text-zinc-300">
+                    {Number(draft[fontWeightKey]) >= 700 ? "加粗" : "常规"}
+                  </span>
                 </div>
               </Field>
             ) : null}
@@ -1215,13 +1176,13 @@ function StyleProperties({
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="表格布局模式"><Select value={draft.tableLayout} onValueChange={(value) => updateDraft("tableLayout", value as StyleDraft["tableLayout"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动适配内容</SelectItem><SelectItem value="fixed">固定列宽</SelectItem></SelectContent></Select></Field>
                 <Field label="整体水平对齐"><SimpleAlignSelect value={draft.tableHorizontalAlign} onChange={(value) => updateDraft("tableHorizontalAlign", value)} /></Field>
-                <SettingSwitch label="根据窗口自动铺满表格" checked={draft.fitToPageWidth} onCheckedChange={(checked) => updateDraft("fitToPageWidth", checked)} />
+                <SettingSwitch label="铺满正文宽度" checked={draft.fitToPageWidth} onCheckedChange={(checked) => updateDraft("fitToPageWidth", checked)} />
                 <SettingSwitch label="隔行底色" checked={draft.rowStripe} onCheckedChange={(checked) => updateDraft("rowStripe", checked)} />
                 <Field label="表格宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={40} max={100} value={draft.tableWidthPercent} onChange={(event) => updateDraft("tableWidthPercent", Number(event.target.value))} /></Field>
                 <Field label="列宽模式"><Select value={draft.columnWidthMode} onValueChange={(value) => updateDraft("columnWidthMode", value as StyleDraft["columnWidthMode"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动分配</SelectItem><SelectItem value="custom">自定义百分比</SelectItem></SelectContent></Select></Field>
                 <Field label="第一列宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.firstColumnWidth} onChange={(event) => updateDraft("firstColumnWidth", Number(event.target.value))} /></Field>
                 <Field label="第二列宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.secondColumnWidth} onChange={(event) => updateDraft("secondColumnWidth", Number(event.target.value))} /></Field>
-                <Field label="第三列宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.thirdColumnWidth} onChange={(event) => updateDraft("thirdColumnWidth", Number(event.target.value))} /></Field>
+                <Field label="其余列总宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.thirdColumnWidth} onChange={(event) => updateDraft("thirdColumnWidth", Number(event.target.value))} /></Field>
                 <Field label="最小行高 (px)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={18} max={80} value={draft.minRowHeight} onChange={(event) => updateDraft("minRowHeight", Number(event.target.value))} /></Field>
                 <SettingSwitch label="单元格自动换行" checked={draft.cellWrap} onCheckedChange={(checked) => updateDraft("cellWrap", checked)} />
                 <Field label="单元格左右内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft.cellPaddingX} onChange={(event) => updateDraft("cellPaddingX", Number(event.target.value))} /></Field>

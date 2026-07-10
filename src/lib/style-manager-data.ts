@@ -15,7 +15,6 @@ export const styleNodes: StyleNode[] = [
   { id: "heading-5", name: "Heading 5", displayName: "五级标题", group: "basic", kind: "heading", markdown: "#####", description: "深层级标题" },
   { id: "heading-6", name: "Heading 6", displayName: "六级标题", group: "basic", kind: "heading", markdown: "######", description: "最深层级标题" },
   { id: "normal", name: "Normal", displayName: "正文", group: "basic", kind: "paragraph", markdown: "paragraph", description: "普通正文段落" },
-  { id: "body-text", name: "Body Text", displayName: "正文增强", group: "basic", kind: "paragraph", markdown: "body", description: "增强正文样式" },
   { id: "quote", name: "Quote", displayName: "引用块", group: "blocks", kind: "block", markdown: ">", description: "Markdown 引用内容" },
   { id: "source-code", name: "Source Code", displayName: "代码块", group: "blocks", kind: "code", markdown: "```", description: "围栏代码块", warning: "建议设置等宽字体和底纹" },
   { id: "inline-code", name: "Inline Code", displayName: "行内代码", group: "blocks", kind: "code", markdown: "`code`", description: "行内代码样式" },
@@ -85,7 +84,7 @@ export const defaultStyleDraft: StyleDraft = {
   chineseFont: "微软雅黑",
   latinFont: "Times New Roman",
   fontSize: 15,
-  fontWeight: "600",
+  fontWeight: "700",
   color: "#111827",
   lineHeight: "1.5",
   firstLineIndent: 0,
@@ -173,7 +172,9 @@ export const defaultStyleDraft: StyleDraft = {
   quoteBorderWidth: 4,
   codeBlockPreset: "document",
   codeBorderColor: "#E2E8F0",
-  codeBorderRadius: 8,
+  // Word paragraph borders cannot represent CSS-style rounded code blocks.
+  // Keep the legacy field in persisted configs, but default all new styles to square corners.
+  codeBorderRadius: 0,
   codePaddingX: 12,
   codePaddingY: 10,
   tableLayout: "auto",
@@ -387,7 +388,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#111827",
       backgroundColor: "#F8FAFC",
       codeBorderColor: "#E2E8F0",
-      codeBorderRadius: 8,
+      codeBorderRadius: 0,
       lineHeight: "1.55",
       beforeSpacing: 8,
       afterSpacing: 8,
@@ -406,7 +407,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#E2E8F0",
       backgroundColor: "#111827",
       codeBorderColor: "#334155",
-      codeBorderRadius: 10,
+      codeBorderRadius: 0,
       lineHeight: "1.6",
       beforeSpacing: 10,
       afterSpacing: 10,
@@ -425,7 +426,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#0F172A",
       backgroundColor: "#EFF6FF",
       codeBorderColor: "#93C5FD",
-      codeBorderRadius: 10,
+      codeBorderRadius: 0,
       lineHeight: "1.6",
       beforeSpacing: 10,
       afterSpacing: 10,
@@ -444,7 +445,7 @@ export const codeBlockPresets: { key: CodeBlockPresetKey; label: string; descrip
       color: "#1F2937",
       backgroundColor: "#F3F4F6",
       codeBorderColor: "#D1D5DB",
-      codeBorderRadius: 4,
+      codeBorderRadius: 0,
       lineHeight: "1.5",
       beforeSpacing: 6,
       afterSpacing: 6,
@@ -509,7 +510,7 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
     return {
       ...draft,
       fontSize: Math.max(10, 22 - level * 2),
-      fontWeight: level <= 2 ? "700" : "600",
+      fontWeight: "700",
       color: "#111827",
       lineHeight: "1.35",
       firstLineIndent: 0,
@@ -547,7 +548,7 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       backgroundColor: styleId === "source-code" ? "#111827" : "#F1F5F9",
       codeBlockPreset: styleId === "source-code" ? "terminal" : "document",
       codeBorderColor: styleId === "source-code" ? "#334155" : "#CBD5E1",
-      codeBorderRadius: styleId === "source-code" ? 10 : 4,
+      codeBorderRadius: 0,
       codePaddingX: styleId === "source-code" ? 14 : 4,
       codePaddingY: styleId === "source-code" ? 12 : 1,
       lineHeight: "1.55",
@@ -588,6 +589,10 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       listTextIndent: 1.5,
       listWrapMode: "hanging",
       listNumberingMode: "restart",
+      listLevel1Type: isNumbered ? "number" : "bullet",
+      listLevel2Type: "bullet",
+      listLevel3Type: "bullet",
+      listLevel4Type: "bullet",
       nestedLevel2MarkerStyle: "circle",
       nestedLevel3MarkerStyle: "square",
       nestedLevel2NumberFormat: "1)",
@@ -611,7 +616,7 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
     return {
       ...draft,
       fontSize: 10,
-      fontWeight: "500",
+      fontWeight: "400",
       color: "#334155",
       align: "center",
       firstLineIndent: 0,
@@ -668,7 +673,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       backgroundColor: "#F8FAFC",
       codeBlockPreset: "document",
       codeBorderColor: "#E2E8F0",
-      codeBorderRadius: 8,
+      codeBorderRadius: 0,
       lineHeight: "1.55",
     };
     styles["inline-code"] = {
@@ -679,7 +684,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       color: "#111827",
       backgroundColor: "#F1F5F9",
       codeBorderColor: "#CBD5E1",
-      codeBorderRadius: 4,
+      codeBorderRadius: 0,
       codePaddingX: 4,
       codePaddingY: 1,
       lineHeight: "1.35",
@@ -721,7 +726,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles["heading-1"] = { ...styles["heading-1"], fontSize: 20, color: "#1D4ED8", align: "left" };
     styles["heading-2"] = { ...styles["heading-2"], fontSize: 16, color: "#1D4ED8" };
     styles.normal = { ...styles.normal, fontSize: 11, lineHeight: "1.7", firstLineIndent: 0, align: "left" };
-    styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codeBorderRadius: 10, codePaddingX: 14, codePaddingY: 12 };
+    styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codeBorderRadius: 0, codePaddingX: 14, codePaddingY: 12 };
     styles.table = { ...styles.table, tablePreset: "grid", tableLayout: "fixed", rowStripe: false, borderColor: "#64748B", headerBackgroundColor: "#F1F5F9", headerBorderColor: "#64748B", bodyBorderColor: "#64748B" };
   }
 
@@ -742,8 +747,18 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
   };
 }
 
+function normalizeFontWeight(value: unknown) {
+  return Number(value) >= 700 ? "700" : "400";
+}
+
 function normalizeLegacyStyleDraft(styleId: string, draft: Partial<StyleDraft>, fallback = createDefaultStyleDraft(styleId)): StyleDraft {
-  let normalized: StyleDraft = { ...fallback, ...draft, styleId, firstLineIndent: draft.firstLineIndent ?? fallback.firstLineIndent };
+  let normalized: StyleDraft = {
+    ...fallback,
+    ...draft,
+    styleId,
+    fontWeight: normalizeFontWeight(draft.fontWeight ?? fallback.fontWeight),
+    firstLineIndent: draft.firstLineIndent ?? fallback.firstLineIndent,
+  };
   if (styleNodes.find((node) => node.id === styleId)?.kind === "list") {
     normalized = {
       ...normalized,
@@ -759,10 +774,10 @@ function normalizeLegacyStyleDraft(styleId: string, draft: Partial<StyleDraft>, 
       listLevel2FontSize: draft.listLevel2FontSize ?? normalized.fontSize,
       listLevel3FontSize: draft.listLevel3FontSize ?? normalized.fontSize,
       listLevel4FontSize: draft.listLevel4FontSize ?? normalized.fontSize,
-      listLevel1FontWeight: draft.listLevel1FontWeight ?? normalized.fontWeight,
-      listLevel2FontWeight: draft.listLevel2FontWeight ?? normalized.fontWeight,
-      listLevel3FontWeight: draft.listLevel3FontWeight ?? normalized.fontWeight,
-      listLevel4FontWeight: draft.listLevel4FontWeight ?? normalized.fontWeight,
+      listLevel1FontWeight: normalizeFontWeight(draft.listLevel1FontWeight ?? normalized.fontWeight),
+      listLevel2FontWeight: normalizeFontWeight(draft.listLevel2FontWeight ?? normalized.fontWeight),
+      listLevel3FontWeight: normalizeFontWeight(draft.listLevel3FontWeight ?? normalized.fontWeight),
+      listLevel4FontWeight: normalizeFontWeight(draft.listLevel4FontWeight ?? normalized.fontWeight),
       listLevel1Color: draft.listLevel1Color ?? normalized.color,
       listLevel2Color: draft.listLevel2Color ?? normalized.color,
       listLevel3Color: draft.listLevel3Color ?? normalized.color,

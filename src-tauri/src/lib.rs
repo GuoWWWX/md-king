@@ -11,9 +11,9 @@ pub use core::template::{
 
 use commands::{
     check_pandoc, clear_history, convert_markdown, get_app_config, get_app_status,
-    get_template_style_config, import_template, list_history, list_templates, open_output_path,
-    reset_template_style_config, save_app_config, save_history, save_template_style_config,
-    save_templates,
+    get_template_style_config, import_template, list_history, list_templates, load_preview_image,
+    open_output_path, read_markdown_file, reset_template_style_config, save_app_config,
+    save_history, save_template_style_config, save_templates,
 };
 use core::config::load_config;
 use tauri::Manager;
@@ -67,6 +67,8 @@ pub fn run() {
             save_history,
             clear_history,
             open_output_path,
+            read_markdown_file,
+            load_preview_image,
             convert_markdown
         ])
         .run(tauri::generate_context!())
