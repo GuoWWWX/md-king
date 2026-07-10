@@ -24,7 +24,7 @@ type WordPreviewPageProps = {
 };
 
 type PreviewBlock =
-  | { type: "heading"; level: HeadingLevel; text: string; number?: string }
+  | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string }
   | { type: "paragraph"; segments: PreviewTextSegment[] }
   | { type: "quote"; segments: PreviewTextSegment[] }
   | { type: "code"; text: string; language?: string }
@@ -209,7 +209,7 @@ function normalizeCodeLanguage(info?: string) {
 
 function codeLanguageLabel(language?: string) {
   if (!language) return undefined;
-  return languageLabels[language] ?? language.toUpperCase();
+  return languageLabels[language] ?? language;
 }
 
 function hexToLuminance(value: string) {
@@ -344,26 +344,83 @@ function listMarkerFromStyle(value: StyleDraft["listMarkerStyle"]) {
 function listNumberText(format: string, index: number) {
   if (format === "1)") return `${index})`;
   if (format === "(1)") return `(${index})`;
+  if (format === "01.") return `${String(index).padStart(2, "0")}.`;
+  if (format === "A.") return `${alphabeticMarker(index)}.`;
+  if (format === "A)") return `${alphabeticMarker(index)})`;
+  if (format === "a.") return `${alphabeticMarker(index).toLowerCase()}.`;
+  if (format === "a)") return `${alphabeticMarker(index).toLowerCase()})`;
+  if (format === "I.") return `${romanMarker(index)}.`;
+  if (format === "I)") return `${romanMarker(index)})`;
+  if (format === "i.") return `${romanMarker(index).toLowerCase()}.`;
+  if (format === "i)") return `${romanMarker(index).toLowerCase()})`;
   if (format === "一、") return `${toChineseNumber(index)}、`;
   if (format === "（一）") return `（${toChineseNumber(index)}）`;
   return `${index}.`;
 }
 
-function markerTextFromStyle(draft: StyleDraft, item: PreviewListItem, displayIndex = item.index) {
-  if (!item.ordered) {
-    if (item.level === 1) return listMarkerFromStyle(draft.nestedLevel2MarkerStyle);
-    if (item.level >= 2) return listMarkerFromStyle(draft.nestedLevel3MarkerStyle);
-    return listMarkerFromStyle(draft.listMarkerStyle);
+function alphabeticMarker(value: number) {
+  let next = Math.max(1, Math.floor(value));
+  const chars: string[] = [];
+  while (next > 0) {
+    next -= 1;
+    chars.unshift(String.fromCharCode(65 + (next % 26)));
+    next = Math.floor(next / 26);
   }
+  return chars.join("");
+}
 
-  if (item.level === 1) return listNumberText(draft.nestedLevel2NumberFormat, displayIndex);
-  if (item.level >= 2) return listNumberText(draft.nestedLevel3NumberFormat, displayIndex);
-  return listNumberText(draft.numberFormat, displayIndex);
+function romanMarker(value: number) {
+  let next = Math.max(1, Math.min(3999, Math.floor(value)));
+  const parts: Array<[number, string]> = [
+    [1000, "M"],
+    [900, "CM"],
+    [500, "D"],
+    [400, "CD"],
+    [100, "C"],
+    [90, "XC"],
+    [50, "L"],
+    [40, "XL"],
+    [10, "X"],
+    [9, "IX"],
+    [5, "V"],
+    [4, "IV"],
+    [1, "I"],
+  ];
+  let result = "";
+  parts.forEach(([amount, marker]) => {
+    while (next >= amount) {
+      result += marker;
+      next -= amount;
+    }
+  });
+  return result;
+}
+
+function markerTextFromStyle(draft: StyleDraft, item: PreviewListItem, displayIndex = item.index) {
+  return item.ordered ? listNumberText(draft.numberFormat, displayIndex) : listMarkerFromStyle(draft.listMarkerStyle);
 }
 
 function resolveListIndent(draft: StyleDraft, item: Pick<PreviewListItem, "level">) {
-  if (item.level <= 0) return Math.max(0, draft.listIndent);
-  return Math.max(0, draft.listIndent + Math.max(0, item.level - 1) * draft.nestedIndentStep);
+  void item;
+  return Math.max(0, draft.listIndent);
+}
+
+function resolveListLevelDraft(draft: StyleDraft, item: Pick<PreviewListItem, "level">): StyleDraft {
+  const level = Math.min(4, Math.max(1, item.level + 1));
+  if (level === 1) {
+    return { ...draft, chineseFont: draft.listLevel1ChineseFont, latinFont: draft.listLevel1LatinFont, fontSize: draft.listLevel1FontSize, fontWeight: draft.listLevel1FontWeight, color: draft.listLevel1Color, lineHeight: draft.listLevel1LineHeight, beforeSpacing: draft.listLevel1BeforeSpacing, afterSpacing: draft.listLevel1AfterSpacing, align: draft.listLevel1Align, listMarkerStyle: draft.listLevel1MarkerStyle, numberFormat: draft.listLevel1NumberFormat, listIndent: draft.listLevel1Indent, listTextIndent: draft.listLevel1TextIndent, listWrapMode: draft.listLevel1WrapMode, listNumberingMode: draft.listLevel1NumberingMode };
+  }
+  if (level === 2) {
+    return { ...draft, chineseFont: draft.listLevel2ChineseFont, latinFont: draft.listLevel2LatinFont, fontSize: draft.listLevel2FontSize, fontWeight: draft.listLevel2FontWeight, color: draft.listLevel2Color, lineHeight: draft.listLevel2LineHeight, beforeSpacing: draft.listLevel2BeforeSpacing, afterSpacing: draft.listLevel2AfterSpacing, align: draft.listLevel2Align, listMarkerStyle: draft.listLevel2MarkerStyle, numberFormat: draft.listLevel2NumberFormat, listIndent: draft.listLevel2Indent, listTextIndent: draft.listLevel2TextIndent, listWrapMode: draft.listLevel2WrapMode, listNumberingMode: draft.listLevel2NumberingMode };
+  }
+  if (level === 3) {
+    return { ...draft, chineseFont: draft.listLevel3ChineseFont, latinFont: draft.listLevel3LatinFont, fontSize: draft.listLevel3FontSize, fontWeight: draft.listLevel3FontWeight, color: draft.listLevel3Color, lineHeight: draft.listLevel3LineHeight, beforeSpacing: draft.listLevel3BeforeSpacing, afterSpacing: draft.listLevel3AfterSpacing, align: draft.listLevel3Align, listMarkerStyle: draft.listLevel3MarkerStyle, numberFormat: draft.listLevel3NumberFormat, listIndent: draft.listLevel3Indent, listTextIndent: draft.listLevel3TextIndent, listWrapMode: draft.listLevel3WrapMode, listNumberingMode: draft.listLevel3NumberingMode };
+  }
+  return { ...draft, chineseFont: draft.listLevel4ChineseFont, latinFont: draft.listLevel4LatinFont, fontSize: draft.listLevel4FontSize, fontWeight: draft.listLevel4FontWeight, color: draft.listLevel4Color, lineHeight: draft.listLevel4LineHeight, beforeSpacing: draft.listLevel4BeforeSpacing, afterSpacing: draft.listLevel4AfterSpacing, align: draft.listLevel4Align, listMarkerStyle: draft.listLevel4MarkerStyle, numberFormat: draft.listLevel4NumberFormat, listIndent: draft.listLevel4Indent, listTextIndent: draft.listLevel4TextIndent, listWrapMode: draft.listLevel4WrapMode, listNumberingMode: draft.listLevel4NumberingMode };
+}
+
+function resolveListBaseDraft(drafts: Record<string, StyleDraft>, item: PreviewListItem) {
+  return drafts["nested-list"] ?? (item.level > 0 ? drafts["nested-list"] : item.ordered ? drafts["numbered-list"] : drafts["bullet-list"]);
 }
 
 function annotateHeadingNumbers(blocks: PreviewBlock[], drafts: Record<string, StyleDraft>) {
@@ -422,6 +479,7 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
 function parseMarkdownPreview(markdown: string): PreviewBlock[] {
   const tokens = markdownParser.parse(markdown, {});
   const blocks: PreviewBlock[] = [];
+  let headingIndex = 0;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -430,7 +488,8 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
     if (token.type === "heading_open" && next?.type === "inline") {
       const level = Number(token.tag.slice(1));
       const normalizedLevel = Math.min(6, Math.max(1, level)) as HeadingLevel;
-      blocks.push({ type: "heading", level: normalizedLevel, text: plainText(inlineSegmentsFromToken(next)) });
+      headingIndex += 1;
+      blocks.push({ type: "heading", level: normalizedLevel, text: plainText(inlineSegmentsFromToken(next)), anchorId: `heading-${headingIndex}` });
       index += 2;
       continue;
     }
@@ -493,7 +552,7 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
     }
   }
 
-  return blocks.slice(0, 36);
+  return blocks;
 }
 
 function estimateTextLines(text: string, charsPerLine = 26) {
@@ -529,7 +588,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   if (block.type === "list") {
     return 12 + block.items.reduce((total, item) => {
-      const draft = item.level > 0 ? drafts["nested-list"] : item.ordered ? drafts["numbered-list"] : drafts["bullet-list"];
+      const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
       const listOffset = (resolveListIndent(draft, item) + draft.listTextIndent) * ptToPx(draft.fontSize);
       return total + estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
     }, 0);
@@ -581,7 +640,7 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
       let usedHeight = 20;
 
       block.items.forEach((item) => {
-        const draft = item.level > 0 ? drafts["nested-list"] : item.ordered ? drafts["numbered-list"] : drafts["bullet-list"];
+        const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
         const listOffset = (resolveListIndent(draft, item) + draft.listTextIndent) * ptToPx(draft.fontSize);
         const itemHeight = estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
         if (currentItems.length > 0 && usedHeight + itemHeight > pageContentHeight) {
@@ -643,7 +702,6 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
 function createFallbackBlocks(imageCaption: string, tableCaption: string): PreviewBlock[] {
   return [
     { type: "heading", level: 1, text: "文档标题" },
-    { type: "paragraph", segments: textSegments("md-king · 样式结构预览") },
     { type: "heading", level: 2, text: "一级章节" },
     { type: "heading", level: 3, text: "二级小节" },
     { type: "heading", level: 4, text: "三级条目" },
@@ -658,7 +716,7 @@ function createFallbackBlocks(imageCaption: string, tableCaption: string): Previ
       { segments: textSegments("第二个编号项用于观察编号递增。"), level: 0, ordered: true, index: 2 },
     ] },
     { type: "quote", segments: textSegments("这里展示引用块样式，内容仅用于观察缩进、边框、字体和背景效果。") },
-    { type: "code", text: "function convertMarkdown(input) {\n  const docx = renderWordDocument(input);\n  return saveAs(docx, \"report.docx\");\n}" },
+    { type: "code", language: "javascript", text: "function convertMarkdown(input) {\n  const docx = renderWordDocument(input);\n  return saveAs(docx, \"report.docx\");\n}" },
     { type: "image", caption: imageCaption },
     { type: "hr" },
     { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "用于章节层级"], ["正文", "常规", "用于段落内容"], ["表格", "按页面宽度铺满", "自动换行"]] },
@@ -710,7 +768,7 @@ function renderMarkdownBlocks({
     if (block.type === "heading") {
       const styleId = `heading-${block.level}`;
       rendered.push(
-        <div key={index} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={textStyle(drafts[styleId])}>
+        <div key={index} data-preview-heading-id={block.anchorId} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={textStyle(drafts[styleId])}>
           {block.number ? <span>{block.number} </span> : null}
           {block.text}
         </div>,
@@ -760,7 +818,7 @@ function renderMarkdownBlocks({
         >
           {languageLabel ? (
             <span
-              className="absolute right-2 top-1 rounded px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide"
+              className="absolute right-2 top-1 rounded px-1.5 py-0.5 text-[8px] font-semibold tracking-wide"
               style={{ color: syntaxPalette(backgroundColor).comment, backgroundColor: hexToLuminance(backgroundColor) < 0.45 ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)" }}
             >
               {languageLabel}
@@ -781,8 +839,8 @@ function renderMarkdownBlocks({
       rendered.push(
         <div key={index} className="space-y-1.5">
           {block.items.map((item, itemIndex) => {
-            const listStyleId = item.level > 0 ? "nested-list" : item.ordered ? "numbered-list" : "bullet-list";
-            const listDraft = drafts[listStyleId] ?? drafts.normal;
+            const listStyleId = "nested-list";
+            const listDraft = resolveListLevelDraft(resolveListBaseDraft(drafts, item) ?? drafts.normal, item);
             const displayIndex = item.ordered && item.level === 0 && listDraft.listNumberingMode === "continue" ? continuedOrderedListIndex + 1 : item.index;
             if (item.ordered && item.level === 0 && listDraft.listNumberingMode === "continue") continuedOrderedListIndex = displayIndex;
             const marker = markerTextFromStyle(listDraft, item, displayIndex);
@@ -825,8 +883,17 @@ function renderMarkdownBlocks({
       rendered.push(
         <figure key={index} className={cn("my-3", selectedRing(selectedStyle, "caption"))}>
           {tableStyle.figureCaptionPosition === "above" ? caption : null}
-          <div className={cn("flex h-28 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-500", selectedRing(selectedStyle, "image"))} style={tableStyle.imageStyle}>
-            Markdown 图片预览
+          <div className={cn("relative h-28 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-[10px] font-semibold text-slate-400 dark:border-zinc-700 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800 dark:text-zinc-500", selectedRing(selectedStyle, "image"))} style={tableStyle.imageStyle}>
+            <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-white/70 to-transparent dark:from-white/5" />
+            <svg className="absolute inset-x-0 bottom-0 h-full w-full" viewBox="0 0 420 132" preserveAspectRatio="none" aria-hidden="true">
+              <circle cx="318" cy="36" r="14" fill="rgba(96,165,250,0.45)" />
+              <path d="M0 132 L0 92 L78 56 L142 96 L205 42 L322 132 Z" fill="rgba(59,130,246,0.16)" />
+              <path d="M82 132 L170 70 L230 106 L280 82 L420 132 Z" fill="rgba(99,102,241,0.18)" />
+              <path d="M0 132 L120 80 L210 132 Z" fill="rgba(15,23,42,0.08)" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[10px] font-bold text-slate-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/72 dark:text-zinc-400">图片占位预览</span>
+            </div>
           </div>
           {tableStyle.figureCaptionPosition === "below" ? caption : null}
         </figure>,
@@ -1093,7 +1160,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         onPointerLeave={stopPreviewDrag}
       >
         {previewPages.map((pageBlocks, pageIndex) => (
-        <div key={pageIndex} className={cn("mx-auto", pageIndex > 0 && "mt-5")} style={pageScaleStyle}>
+        <div key={pageIndex} data-preview-page-index={pageIndex + 1} className={cn("mx-auto", pageIndex > 0 && "mt-5")} style={pageScaleStyle}>
         <div className="mk-word-preview-page overflow-hidden rounded-sm bg-white text-slate-900 shadow-none ring-1 ring-slate-200" style={pageStyle}>
           {headerEnabled && headerText ? <div className="mb-5 border-b border-slate-200 pb-2 text-[9px] text-slate-400">{headerText}</div> : null}
           {renderMarkdownBlocks({

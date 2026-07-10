@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use zip::ZipArchive;
 
 use crate::core::config::{load_config, save_config};
+use crate::core::template_style::save_template_style_config;
 use crate::storage::paths::{templates_dir, templates_path};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -168,6 +172,12 @@ pub fn import_template(request: ImportTemplateRequest) -> Result<Template, Strin
         save_config(config)?;
     }
 
+    if let Some(style_config) =
+        extract_template_style_config_from_docx(&reference_path, &template.id)
+    {
+        let _ = save_template_style_config(style_config);
+    }
+
     Ok(template)
 }
 
@@ -228,6 +238,290 @@ fn is_docx_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"))
+}
+
+fn extract_template_style_config_from_docx(path: &Path, template_id: &str) -> Option<Value> {
+    let bytes = fs::read(path).ok()?;
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).ok()?;
+    let styles_xml = read_zip_text(&mut archive, "word/styles.xml").unwrap_or_default();
+    let document_xml = read_zip_text(&mut archive, "word/document.xml").unwrap_or_default();
+
+    let mut styles = Map::new();
+    if let Some(style) = extract_word_style(&styles_xml, &["normal"]) {
+        styles.insert("normal".to_string(), style.clone());
+        styles.insert("body-text".to_string(), with_style_id(style, "body-text"));
+    }
+
+    for level in 1..=6 {
+        if let Some(style) = extract_word_style(&styles_xml, &[&format!("heading{level}")]) {
+            styles.insert(
+                format!("heading-{level}"),
+                with_style_id(style, &format!("heading-{level}")),
+            );
+        }
+    }
+
+    let mut config = Map::new();
+    config.insert("templateId".to_string(), json!(template_id));
+    if !styles.is_empty() {
+        config.insert("styles".to_string(), Value::Object(styles));
+    }
+    if let Some(page_settings) = extract_page_settings(&document_xml) {
+        config.insert("pageSettings".to_string(), page_settings);
+    }
+    config.insert("updatedAt".to_string(), json!(now_millis().to_string()));
+
+    Some(Value::Object(config))
+}
+
+fn read_zip_text<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    name: &str,
+) -> Option<String> {
+    let mut file = archive.by_name(name).ok()?;
+    let mut content = String::new();
+    file.read_to_string(&mut content).ok()?;
+    Some(content)
+}
+
+fn with_style_id(value: Value, style_id: &str) -> Value {
+    let mut object = value.as_object().cloned().unwrap_or_default();
+    object.insert("styleId".to_string(), json!(style_id));
+    Value::Object(object)
+}
+
+fn extract_word_style(styles_xml: &str, targets: &[&str]) -> Option<Value> {
+    let normalized_targets: Vec<String> = targets
+        .iter()
+        .map(|value| normalize_style_name(value))
+        .collect();
+    for style_block in collect_style_blocks(styles_xml) {
+        let open_tag = style_block.split('>').next().unwrap_or_default();
+        let style_id = attr(open_tag, "w:styleId").or_else(|| attr(open_tag, "styleId"));
+        let name_tag = find_tag(style_block, "w:name");
+        let style_name = name_tag
+            .as_deref()
+            .and_then(|tag| attr(tag, "w:val").or_else(|| attr(tag, "val")));
+        let normalized_style_id = style_id.as_deref().map(normalize_style_name);
+        let normalized_style_name = style_name.as_deref().map(normalize_style_name);
+        let matched = normalized_style_id
+            .as_ref()
+            .is_some_and(|value| normalized_targets.contains(value))
+            || normalized_style_name
+                .as_ref()
+                .is_some_and(|value| normalized_targets.contains(value));
+        if !matched {
+            continue;
+        }
+
+        let mut style = Map::new();
+        if let Some(fonts_tag) = find_tag(style_block, "w:rFonts") {
+            if let Some(font) =
+                attr(&fonts_tag, "w:eastAsia").or_else(|| attr(&fonts_tag, "eastAsia"))
+            {
+                style.insert("chineseFont".to_string(), json!(font));
+            }
+            if let Some(font) = attr(&fonts_tag, "w:ascii")
+                .or_else(|| attr(&fonts_tag, "w:hAnsi"))
+                .or_else(|| attr(&fonts_tag, "ascii"))
+            {
+                style.insert("latinFont".to_string(), json!(font));
+            }
+        }
+        if let Some(size_tag) = find_tag(style_block, "w:sz") {
+            if let Some(size) = attr(&size_tag, "w:val").and_then(|value| value.parse::<f64>().ok())
+            {
+                style.insert(
+                    "fontSize".to_string(),
+                    json!((size / 2.0 * 10.0).round() / 10.0),
+                );
+            }
+        }
+        if has_enabled_tag(style_block, "w:b") {
+            style.insert("fontWeight".to_string(), json!("700"));
+        }
+        if let Some(color_tag) = find_tag(style_block, "w:color") {
+            if let Some(color) =
+                attr(&color_tag, "w:val").filter(|value| !value.eq_ignore_ascii_case("auto"))
+            {
+                style.insert("color".to_string(), json!(format!("#{color}")));
+            }
+        }
+        if let Some(jc_tag) = find_tag(style_block, "w:jc") {
+            if let Some(align) = attr(&jc_tag, "w:val").and_then(|value| map_word_align(&value)) {
+                style.insert("align".to_string(), json!(align));
+            }
+        }
+        if let Some(spacing_tag) = find_tag(style_block, "w:spacing") {
+            if let Some(before) =
+                attr(&spacing_tag, "w:before").and_then(|value| value.parse::<f64>().ok())
+            {
+                style.insert(
+                    "beforeSpacing".to_string(),
+                    json!((before / 20.0 * 10.0).round() / 10.0),
+                );
+            }
+            if let Some(after) =
+                attr(&spacing_tag, "w:after").and_then(|value| value.parse::<f64>().ok())
+            {
+                style.insert(
+                    "afterSpacing".to_string(),
+                    json!((after / 20.0 * 10.0).round() / 10.0),
+                );
+            }
+            if let Some(line) =
+                attr(&spacing_tag, "w:line").and_then(|value| value.parse::<f64>().ok())
+            {
+                let line_rule =
+                    attr(&spacing_tag, "w:lineRule").unwrap_or_else(|| "auto".to_string());
+                if line_rule == "auto" {
+                    style.insert(
+                        "lineHeight".to_string(),
+                        json!(format!("{:.2}", line / 240.0)),
+                    );
+                }
+            }
+        }
+        if let Some(indent_tag) = find_tag(style_block, "w:ind") {
+            if let Some(first_line) =
+                attr(&indent_tag, "w:firstLine").and_then(|value| value.parse::<f64>().ok())
+            {
+                style.insert(
+                    "firstLineIndent".to_string(),
+                    json!((first_line / 240.0 * 10.0).round() / 10.0),
+                );
+            }
+        }
+
+        return Some(Value::Object(style));
+    }
+    None
+}
+
+fn collect_style_blocks(styles_xml: &str) -> Vec<&str> {
+    let mut blocks = Vec::new();
+    let mut rest = styles_xml;
+    while let Some(start) = rest.find("<w:style ") {
+        rest = &rest[start..];
+        let Some(end) = rest.find("</w:style>") else {
+            break;
+        };
+        let end_index = end + "</w:style>".len();
+        blocks.push(&rest[..end_index]);
+        rest = &rest[end_index..];
+    }
+    blocks
+}
+
+fn find_tag(xml: &str, tag_name: &str) -> Option<String> {
+    let needle = format!("<{tag_name}");
+    let start = xml.find(&needle)?;
+    let rest = &xml[start..];
+    let end = rest.find('>')?;
+    Some(rest[..=end].to_string())
+}
+
+fn attr(tag: &str, name: &str) -> Option<String> {
+    let pattern = format!("{name}=\"");
+    let start = tag.find(&pattern)? + pattern.len();
+    let rest = &tag[start..];
+    let end = rest.find('"')?;
+    Some(xml_unescape(&rest[..end]))
+}
+
+fn has_enabled_tag(xml: &str, tag_name: &str) -> bool {
+    let Some(tag) = find_tag(xml, tag_name) else {
+        return false;
+    };
+    !attr(&tag, "w:val").is_some_and(|value| value == "0" || value.eq_ignore_ascii_case("false"))
+}
+
+fn normalize_style_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn map_word_align(value: &str) -> Option<&'static str> {
+    match value {
+        "center" => Some("center"),
+        "right" => Some("right"),
+        "both" | "distribute" => Some("justify"),
+        "left" | "start" => Some("left"),
+        _ => None,
+    }
+}
+
+fn xml_unescape(value: &str) -> String {
+    value
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+fn extract_page_settings(document_xml: &str) -> Option<Value> {
+    let sect_start = document_xml.rfind("<w:sectPr")?;
+    let sect = &document_xml[sect_start..];
+    let mut page = Map::new();
+
+    if let Some(pg_size) = find_tag(sect, "w:pgSz") {
+        let width = attr(&pg_size, "w:w").and_then(|value| value.parse::<f64>().ok());
+        let height = attr(&pg_size, "w:h").and_then(|value| value.parse::<f64>().ok());
+        let orientation = attr(&pg_size, "w:orient").unwrap_or_default();
+        if orientation == "landscape" || width.zip(height).is_some_and(|(w, h)| w > h) {
+            page.insert("orientation".to_string(), json!("landscape"));
+        } else {
+            page.insert("orientation".to_string(), json!("portrait"));
+        }
+        if let Some(size) = width.zip(height).and_then(|(w, h)| infer_paper_size(w, h)) {
+            page.insert("paperSize".to_string(), json!(size));
+        }
+    }
+
+    if let Some(margin) = find_tag(sect, "w:pgMar") {
+        insert_cm_margin(&mut page, "marginTop", attr(&margin, "w:top"));
+        insert_cm_margin(&mut page, "marginBottom", attr(&margin, "w:bottom"));
+        insert_cm_margin(&mut page, "marginLeft", attr(&margin, "w:left"));
+        insert_cm_margin(&mut page, "marginRight", attr(&margin, "w:right"));
+    }
+
+    if page.is_empty() {
+        None
+    } else {
+        Some(Value::Object(page))
+    }
+}
+
+fn insert_cm_margin(page: &mut Map<String, Value>, key: &str, value: Option<String>) {
+    if let Some(cm) = value
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(|twips| (twips / 1440.0 * 2.54 * 100.0).round() / 100.0)
+    {
+        page.insert(key.to_string(), json!(cm));
+    }
+}
+
+fn infer_paper_size(width_twips: f64, height_twips: f64) -> Option<&'static str> {
+    let (short, long) = if width_twips <= height_twips {
+        (width_twips, height_twips)
+    } else {
+        (height_twips, width_twips)
+    };
+    let candidates = [
+        ("A3", 16838.0, 23811.0),
+        ("A4", 11906.0, 16838.0),
+        ("A5", 8391.0, 11906.0),
+        ("Letter", 12240.0, 15840.0),
+        ("Legal", 12240.0, 20160.0),
+    ];
+    candidates
+        .iter()
+        .find(|(_, w, h)| (short - *w).abs() < 120.0 && (long - *h).abs() < 120.0)
+        .map(|(name, _, _)| *name)
 }
 
 fn normalize_optional(value: &str) -> Option<String> {

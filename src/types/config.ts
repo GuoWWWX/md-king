@@ -11,6 +11,9 @@ export type AppConfig = {
   enableContextMenu: boolean;
   enableFloatingBall: boolean;
   enableTray: boolean;
+  enableQuickPaste: boolean;
+  quickPasteShortcut: string;
+  quickPasteTemplateId?: string;
   cliDefaultJson: boolean;
   logLevel: "error" | "warn" | "info" | "debug";
   language: "zh" | "en";

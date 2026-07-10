@@ -1,4 +1,4 @@
-import { Check, Database, FolderOpen, Globe2, HardDrive, MousePointer2, PanelTop, Palette, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
+import { Check, Database, FolderOpen, Globe2, HardDrive, Keyboard, MousePointer2, Palette, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SettingRow } from "@/components/settings/setting-row";
@@ -26,7 +26,7 @@ const accentOptions: Array<{ value: AccentColor; label: string; description: str
 ];
 
 export function SettingsPage() {
-  const { appConfig, pandocStatus, setAppConfig, setPandocStatus, history, clearHistory, setHistory } = useAppStore();
+  const { appConfig, pandocStatus, setAppConfig, setPandocStatus, history, clearHistory, setHistory, templates } = useAppStore();
   const [draft, setDraft] = useState<AppConfig | undefined>(appConfig);
   const [isSaving, setIsSaving] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
@@ -48,6 +48,7 @@ export function SettingsPage() {
 
   const hasChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(appConfig), [appConfig, draft]);
   const pandocAvailable = pandocStatus?.available === true;
+  const quickPasteTemplateId = draft?.quickPasteTemplateId?.trim() || draft?.defaultTemplateId || "default-report";
   const pandocSummaryLabel = pandocStatus ? (pandocAvailable ? "已检测可用" : "不可用") : "未检测";
   const pandocBadgeClass = pandocAvailable
     ? "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"
@@ -142,7 +143,7 @@ export function SettingsPage() {
             <div className="mt-3 flex flex-col gap-2 text-sm text-slate-600 dark:text-zinc-300 lg:flex-row lg:flex-wrap">
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">历史记录：{history.length} 条</div>
               <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">Pandoc：{pandocSummaryLabel}</div>
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">系统集成：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray].filter(Boolean).length}/3 已启用</div>
+              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">快捷入口：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray, draft.enableQuickPaste].filter(Boolean).length}/4 已启用</div>
               <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72" title={draft.defaultOutputDir?.trim() || "文档/MD King"}>默认目录：{draft.defaultOutputDir?.trim() || "文档/MD King"}</div>
             </div>
           </div>
@@ -253,15 +254,44 @@ export function SettingsPage() {
           </div>
         </SettingsSection>
 
-        <SettingsSection title="系统集成" description="悬浮球、Windows 右键菜单和系统托盘已可用。" icon={MousePointer2}>
+        <SettingsSection title="快捷粘贴" description="复制 Markdown 后，在 Word/WPS 当前光标处按模板插入。" icon={Keyboard}>
+          <SettingRow label="启用快捷粘贴 Markdown" description="开启并保存后，可通过全局快捷键把剪贴板 Markdown 转成模板格式并插入到 Word/WPS。" checked={draft.enableQuickPaste} badge="Windows" onCheckedChange={(checked) => updateDraft("enableQuickPaste", checked)} />
+          <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-800/60 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500 dark:text-zinc-400">快捷键</Label>
+              <Input
+                value={draft.quickPasteShortcut ?? "Ctrl+Alt+V"}
+                onChange={(event) => updateDraft("quickPasteShortcut", event.target.value)}
+                placeholder="Ctrl+Alt+V"
+                disabled={!draft.enableQuickPaste}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500 dark:text-zinc-400">使用模板</Label>
+              <Select
+                value={quickPasteTemplateId}
+                onValueChange={(value) => updateDraft("quickPasteTemplateId", value)}
+                disabled={!draft.enableQuickPaste}
+              >
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {templates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="sm:col-span-2 text-xs leading-5 text-slate-500 dark:text-zinc-400">
+              使用时先复制 Markdown 文本，再把光标放到目标位置，按快捷键即可插入转换后的内容。
+            </p>
+          </div>
+          <InfoLine icon={Keyboard} text={`当前配置：${draft.enableQuickPaste ? `${draft.quickPasteShortcut || "Ctrl+Alt+V"} · ${templates.find((template) => template.id === quickPasteTemplateId)?.name ?? "默认模板"}` : "未开启"}`} />
+        </SettingsSection>
+
+        <SettingsSection title="系统集成" description="右键菜单、悬浮球和系统托盘。" icon={MousePointer2}>
           <SettingRow label="添加到右键菜单" description="开启并保存后，.md/.markdown 文件右键可直接转换为 Word，桌面空白处右键可打开 MD King。" checked={draft.enableContextMenu} badge="可用" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
           <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入多个 Markdown 文件或文本批量转换。" checked={draft.enableFloatingBall} badge="可用" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
           <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="可用" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
-          <div className="grid gap-2 text-sm text-slate-500 dark:text-zinc-400">
-            <InfoLine icon={MousePointer2} text={`右键菜单：${draft.enableContextMenu ? "保存后写入当前用户 Windows 右键菜单" : "未开启"}`} />
-            <InfoLine icon={PanelTop} text={`悬浮球：${draft.enableFloatingBall ? "保存后显示在右下角" : "未显示"}`} />
-            <InfoLine icon={PanelTop} text={`系统托盘：${draft.enableTray ? "保存后显示托盘图标" : "未开启"}`} />
-          </div>
         </SettingsSection>
 
         <SettingsSection title="隐私与数据" description="本地优先的数据策略。" icon={ShieldCheck}>
@@ -283,6 +313,9 @@ function normalizeSettingsDraft(config: AppConfig): AppConfig {
   return {
     ...config,
     defaultConflictStrategy: config.defaultConflictStrategy === "ask" ? "overwrite" : config.defaultConflictStrategy,
+    enableQuickPaste: config.enableQuickPaste ?? false,
+    quickPasteShortcut: config.quickPasteShortcut?.trim() || "Ctrl+Alt+V",
+    quickPasteTemplateId: config.quickPasteTemplateId?.trim() || config.defaultTemplateId,
   };
 }
 

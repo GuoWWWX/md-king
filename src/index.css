@@ -1410,50 +1410,73 @@ select {
 
   .dark .mk-word-preview-page {
     border-color: rgba(212, 212, 216, 0.28) !important;
-    background:
-      linear-gradient(180deg, rgba(43, 43, 43, 0.98), rgba(31, 31, 31, 0.98)),
-      #2b2b2b !important;
+    background: #242424 !important;
     color: #f8fafc !important;
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.06),
       0 18px 40px rgba(0, 0, 0, 0.28) !important;
   }
 
-  .dark .mk-word-preview-page * {
+  .dark .mk-word-preview-page .bg-white {
+    background-color: #2b2b2b !important;
+  }
+
+  .dark .mk-word-preview-page .bg-slate-50,
+  .dark .mk-word-preview-page .bg-slate-100 {
+    background-color: #303030 !important;
+  }
+
+  .dark .mk-word-preview-page .text-slate-900,
+  .dark .mk-word-preview-page .text-slate-950 {
     color: #f8fafc !important;
   }
 
-  .dark .mk-word-preview-page .text-slate-400,
+  .dark .mk-word-preview-page .text-slate-500 {
+    color: #cbd5e1 !important;
+  }
+
+  .dark .mk-word-preview-page .text-slate-400 {
+    color: #a1a1aa !important;
+  }
+
   .dark .mk-word-preview-page .text-slate-300 {
-    color: #d4d4d8 !important;
+    color: #cbd5e1 !important;
+  }
+
+  .dark .mk-word-preview-page .border-slate-200 {
+    border-color: rgba(212, 212, 216, 0.24) !important;
+  }
+
+  .dark .mk-word-preview-page .border-slate-300 {
+    border-color: rgba(212, 212, 216, 0.34) !important;
+  }
+
+  .dark .mk-word-preview-page :where(p, div, span, td, th):not(pre):not(pre *):not(code):not(code *) {
+    color: #f8fafc !important;
   }
 
   .dark .mk-word-preview-page blockquote {
-    border-left-color: #a1a1aa !important;
-    background: rgba(63, 63, 70, 0.72) !important;
+    background-color: rgba(63, 63, 70, 0.5) !important;
     color: #f8fafc !important;
   }
 
-  .dark .mk-word-preview-page pre,
-  .dark .mk-word-preview-page code {
-    background: #111111 !important;
-    color: #f8fafc !important;
+  .dark .mk-word-preview-page pre {
+    background-color: #303030 !important;
+    color: #e2e8f0 !important;
   }
 
   .dark .mk-word-preview-page table {
-    border-color: rgba(212, 212, 216, 0.46) !important;
+    border-color: rgba(212, 212, 216, 0.28) !important;
   }
 
   .dark .mk-word-preview-page th {
-    border-color: rgba(212, 212, 216, 0.42) !important;
-    background: rgba(63, 63, 70, 0.92) !important;
-    color: #ffffff !important;
+    background-color: rgba(63, 63, 70, 0.72) !important;
+    border-color: rgba(212, 212, 216, 0.3) !important;
   }
 
   .dark .mk-word-preview-page td {
-    border-color: rgba(212, 212, 216, 0.34) !important;
-    background: rgba(43, 43, 43, 0.96) !important;
-    color: #f8fafc !important;
+    background-color: rgba(43, 43, 43, 0.88) !important;
+    border-color: rgba(212, 212, 216, 0.24) !important;
   }
 
   .dark .mk-template-card-preview {

@@ -25,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             if let Some(icon) = app.default_window_icon().cloned() {
                 if let Some(window) = app.get_webview_window("main") {
@@ -34,6 +35,7 @@ pub fn run() {
             let config = load_config();
             system::context_menu::sync_context_menu(config.enable_context_menu)?;
             system::tray::sync_tray(app.handle(), config.enable_tray)?;
+            system::quick_paste::sync_quick_paste(app.handle(), &config)?;
             system::context_menu::handle_startup_context_action(app.handle().clone());
             Ok(())
         })

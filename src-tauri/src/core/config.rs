@@ -25,6 +25,12 @@ pub struct AppConfig {
     pub enable_context_menu: bool,
     pub enable_floating_ball: bool,
     pub enable_tray: bool,
+    #[serde(default = "default_enable_quick_paste")]
+    pub enable_quick_paste: bool,
+    #[serde(default = "default_quick_paste_shortcut")]
+    pub quick_paste_shortcut: String,
+    #[serde(default)]
+    pub quick_paste_template_id: Option<String>,
     pub cli_default_json: bool,
     pub log_level: String,
     #[serde(default = "default_language")]
@@ -49,6 +55,9 @@ pub fn default_config() -> AppConfig {
         enable_context_menu: false,
         enable_floating_ball: false,
         enable_tray: false,
+        enable_quick_paste: false,
+        quick_paste_shortcut: default_quick_paste_shortcut(),
+        quick_paste_template_id: None,
         cli_default_json: true,
         log_level: "info".to_string(),
         language: default_language(),
@@ -85,6 +94,14 @@ fn default_conflict_strategy() -> String {
 
 fn default_keep_conversion_log() -> bool {
     true
+}
+
+fn default_enable_quick_paste() -> bool {
+    false
+}
+
+fn default_quick_paste_shortcut() -> String {
+    "Ctrl+Alt+V".to_string()
 }
 
 pub fn load_config() -> AppConfig {
@@ -146,6 +163,16 @@ fn normalize_config(mut config: AppConfig) -> AppConfig {
         "overwrite" | "rename" | "ask" => config.default_conflict_strategy,
         _ => default_conflict_strategy(),
     };
+    config.quick_paste_shortcut = config.quick_paste_shortcut.trim().to_string();
+    if config.quick_paste_shortcut.is_empty() {
+        config.quick_paste_shortcut = default_quick_paste_shortcut();
+    }
+    config.quick_paste_template_id = config
+        .quick_paste_template_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     if config
         .default_output_dir
         .as_deref()

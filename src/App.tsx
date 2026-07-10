@@ -1,5 +1,7 @@
 import { FileText, History, Info, LayoutTemplate, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { applyAppearance } from "@/lib/appearance";
 import { SystemFloatingWindowManager } from "@/components/floating/system-floating-window-manager";
 import { FloatingConverter } from "@/components/floating/floating-converter";
@@ -56,6 +58,11 @@ const pageMeta: Record<string, PageMeta> = {
   },
 };
 
+type QuickPasteStatusEvent = {
+  level: "info" | "success" | "error";
+  message: string;
+};
+
 function App() {
   const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, setPandocStatus } = useAppStore();
   const [bootReady, setBootReady] = useState(false);
@@ -84,6 +91,20 @@ function App() {
       setBootReady(true);
     });
   }, [setAppConfig, setAppStatus, setHistory, setPandocStatus, setTemplates]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<QuickPasteStatusEvent>("quick-paste://status", (event) => {
+      const level = event.payload.level ?? "info";
+      toast[level](event.payload.message);
+    })
+      .then((dispose) => {
+        unlisten = dispose;
+      })
+      .catch(() => undefined);
+
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     if (!appConfig) return undefined;

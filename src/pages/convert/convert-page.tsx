@@ -1,9 +1,10 @@
-import { ArrowRight, CheckCircle2, ClipboardPaste, FileText, FolderOpen, Loader2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardPaste, FileText, FolderOpen, Loader2, Maximize2, UploadCloud, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
 import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
@@ -17,6 +18,39 @@ import { useAppStore } from "@/stores/app-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
 
 type ConvertMode = "markdown" | "file";
+type PreviewHeading = { id: string; level: number; text: string };
+const previewZoomMin = 40;
+const previewZoomMax = 200;
+const previewZoomStep = 10;
+
+function clampPreviewZoom(value: number) {
+  return Math.min(previewZoomMax, Math.max(previewZoomMin, value));
+}
+
+function extractPreviewHeadings(markdown: string): PreviewHeading[] {
+  const headings: PreviewHeading[] = [];
+  const lines = markdown.split(/\r?\n/);
+  lines.forEach((line, index) => {
+    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (match) {
+      headings.push({
+        id: `heading-${headings.length + 1}`,
+        level: match[1].length,
+        text: match[2].replace(/\s+#+\s*$/, "").replace(/[#*_`~\[\]()]/g, "").trim(),
+      });
+      return;
+    }
+
+    const previous = lines[index - 1]?.trim();
+    if (!previous) return;
+    if (/^=+\s*$/.test(line)) {
+      headings.push({ id: `heading-${headings.length + 1}`, level: 1, text: previous.replace(/[#*_`~\[\]()]/g, "").trim() });
+    } else if (/^-+\s*$/.test(line)) {
+      headings.push({ id: `heading-${headings.length + 1}`, level: 2, text: previous.replace(/[#*_`~\[\]()]/g, "").trim() });
+    }
+  });
+  return headings;
+}
 
 const fallbackTemplate: Template = {
   id: "default-report",
@@ -42,6 +76,11 @@ export function ConvertPage() {
   const [isConverting, setIsConverting] = useState(false);
   const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(templateId));
+  const [previewWidth, setPreviewWidth] = useState(520);
+  const [previewZoom, setPreviewZoom] = useState(40);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [previewPageCount, setPreviewPageCount] = useState(1);
+  const splitPaneRef = useRef<HTMLDivElement>(null);
   const conversionVersionRef = useRef(0);
 
   useEffect(() => {
@@ -67,6 +106,25 @@ export function ConvertPage() {
   useEffect(() => {
     if (!outputNameEdited) setOutputNameDraft(autoOutputName);
   }, [autoOutputName, outputNameEdited]);
+
+  useEffect(() => {
+    if (previewExpanded) setPreviewZoom((value) => Math.max(value, 92));
+  }, [previewExpanded]);
+
+  useEffect(() => {
+    if (!previewExpanded) return undefined;
+    let frame = 0;
+    const updatePageCount = () => {
+      setPreviewPageCount(Math.max(1, document.querySelectorAll("[data-preview-page-index]").length));
+    };
+    frame = window.requestAnimationFrame(updatePageCount);
+    const observer = new MutationObserver(updatePageCount);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [previewExpanded, markdown, previewStyleConfig, previewZoom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,55 +271,47 @@ export function ConvertPage() {
     }
   }
 
+  function handlePreviewResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    const container = splitPaneRef.current;
+    if (!container) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = container.getBoundingClientRect();
+    const move = (moveEvent: PointerEvent) => {
+      const nextWidth = rect.right - moveEvent.clientX - 12;
+      const maxWidth = Math.max(460, rect.width * 0.68);
+      setPreviewWidth(Math.min(maxWidth, Math.max(460, nextWidth)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
   const words = markdown.trim() ? markdown.trim().length : 0;
   const lines = markdown ? markdown.split(/\r?\n/).length : 0;
   const outputName = normalizeOutputName(outputNameDraft);
   const outputDirLabel = appConfig?.defaultOutputDir?.trim() || "与源 Markdown 同目录";
   const outputPath = buildOutputPath(appConfig?.defaultOutputDir, outputName);
+  const previewHeadings = useMemo(() => extractPreviewHeadings(markdown), [markdown]);
 
-  return (
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
-      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1 dark:border-zinc-700/70 dark:bg-zinc-900/80">
-        <ModeTile active={mode === "markdown"} icon={FileText} title="Markdown 输入" onClick={() => setMode("markdown")} />
-        <ModeTile active={mode === "file"} icon={UploadCloud} title="导入文件" onClick={() => setMode("file")} />
-        <ModeTile icon={ClipboardPaste} title="粘贴内容" onClick={() => void handleReadClipboard()} disabled={isConverting} />
-      </div>
+  function scrollToPreviewHeading(id: string) {
+    const target = document.querySelector(`[data-preview-heading-id="${id}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
-      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_360px] gap-3 overflow-hidden max-[1100px]:flex max-[1100px]:min-h-0 max-[1100px]:flex-col max-[1100px]:overflow-y-auto max-[1100px]:overflow-x-hidden max-[1100px]:pb-3">
-        <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
-          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
-        </div>
+  function scrollToPreviewPage(page: number) {
+    const target = document.querySelector(`[data-preview-page-index="${page}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
-        <AppSurface as="aside" padding="none" radius="md" className="min-h-0 min-w-0 overflow-hidden p-3 max-[1100px]:hidden">
-          <WordPreviewPage
-            markdown={markdown}
-            styleConfig={previewStyleConfig}
-            zoom={70}
-            paginate
-            headerTitle="Word 预览"
-            headerSubtitle={markdown.trim() ? outputName : "等待 Markdown 内容"}
-            badgeText="DOCX"
-            className="max-h-none min-h-0 overflow-hidden border-0 bg-transparent p-0 shadow-none"
-            viewportClassName="bg-transparent p-2"
-          />
-        </AppSurface>
-
-        <AppSurface as="aside" padding="none" radius="md" className="hidden min-h-[460px] min-w-0 overflow-hidden p-3 max-[1100px]:block max-[1100px]:shrink-0">
-          <WordPreviewPage
-            markdown={markdown}
-            styleConfig={previewStyleConfig}
-            zoom={76}
-            paginate
-            headerTitle="Word 预览"
-            headerSubtitle={markdown.trim() ? outputName : "等待 Markdown 内容"}
-            badgeText="DOCX"
-            className="h-[460px] max-h-none min-h-0 overflow-hidden border-0 bg-transparent p-0 shadow-none"
-            viewportClassName="bg-transparent p-2"
-          />
-        </AppSurface>
-      </div>
-
-      <section className="flex min-h-0 flex-col justify-center gap-2 rounded-[12px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92">
+  function renderConvertFooter(className?: string) {
+    return (
+      <section className={cn("flex min-h-0 flex-col justify-center gap-2 rounded-[12px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", className)}>
         <div className="flex min-w-0 items-center gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80">
           <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
             <CheckCircle2 className="size-3.5" />
@@ -318,6 +368,95 @@ export function ConvertPage() {
           </PrimaryActionButton>
         </div>
       </section>
+    );
+  }
+
+  if (previewExpanded) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-zinc-800">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-black tracking-[-0.02em] text-slate-950 dark:text-zinc-50">Word 预览</h2>
+            <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
+          </div>
+          <Button variant="ghost" size="sm" className="h-8 rounded-[10px]" onClick={() => setPreviewExpanded(false)}>
+            <ArrowLeft className="size-4" />
+            返回转换页
+          </Button>
+        </header>
+        <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)] gap-4 bg-slate-50/80 p-4 dark:bg-zinc-900/70 max-[900px]:grid-cols-1">
+          <WordPreviewSidebar
+            headings={previewHeadings}
+            pageCount={previewPageCount}
+            onPageJump={scrollToPreviewPage}
+            onHeadingJump={scrollToPreviewHeading}
+          />
+          <ConvertPreviewPanel
+            markdown={markdown}
+            outputName={outputName}
+            styleConfig={previewStyleConfig}
+            zoom={previewZoom}
+            setZoom={setPreviewZoom}
+            onExpand={() => undefined}
+            expanded
+            className="h-full rounded-[12px]"
+            previewClassName="h-full"
+          />
+        </div>
+        {renderConvertFooter("shrink-0 rounded-none border-x-0 border-b-0")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1 dark:border-zinc-700/70 dark:bg-zinc-900/80">
+        <ModeTile active={mode === "markdown"} icon={FileText} title="Markdown 输入" onClick={() => setMode("markdown")} />
+        <ModeTile active={mode === "file"} icon={UploadCloud} title="导入文件" onClick={() => setMode("file")} />
+        <ModeTile icon={ClipboardPaste} title="粘贴内容" onClick={() => void handleReadClipboard()} disabled={isConverting} />
+      </div>
+
+      <div
+        ref={splitPaneRef}
+        className="grid min-h-0 min-w-0 gap-0 overflow-hidden max-[1100px]:flex max-[1100px]:min-h-0 max-[1100px]:flex-col max-[1100px]:overflow-y-auto max-[1100px]:overflow-x-hidden max-[1100px]:pb-3"
+        style={{ gridTemplateColumns: `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` }}
+      >
+        <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
+          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
+        </div>
+
+        <div
+          className="group flex min-h-0 cursor-col-resize items-center justify-center px-1 max-[1100px]:hidden"
+          onPointerDown={handlePreviewResizeStart}
+          role="separator"
+          aria-label="调整 Word 预览宽度"
+        >
+          <span className="h-16 w-1 rounded-full bg-slate-200 transition group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
+        </div>
+
+        <ConvertPreviewPanel
+          markdown={markdown}
+          outputName={outputName}
+          styleConfig={previewStyleConfig}
+          zoom={previewZoom}
+          setZoom={setPreviewZoom}
+          onExpand={() => setPreviewExpanded(true)}
+          className="min-h-0 min-w-0 max-[1100px]:hidden"
+        />
+
+        <ConvertPreviewPanel
+          markdown={markdown}
+          outputName={outputName}
+          styleConfig={previewStyleConfig}
+          zoom={previewZoom}
+          setZoom={setPreviewZoom}
+          onExpand={() => setPreviewExpanded(true)}
+          className="hidden min-h-[460px] min-w-0 max-[1100px]:block max-[1100px]:shrink-0"
+          previewClassName="h-[460px]"
+        />
+      </div>
+
+      {renderConvertFooter()}
 
     </div>
   );
@@ -342,5 +481,143 @@ function ModeTile({ active = false, disabled = false, icon: Icon, title, onClick
       <Icon className="size-4" />
       <span>{title}</span>
     </button>
+  );
+}
+
+function ConvertPreviewPanel({
+  markdown,
+  outputName,
+  styleConfig,
+  zoom,
+  setZoom,
+  onExpand,
+  expanded = false,
+  className,
+  previewClassName,
+}: {
+  markdown: string;
+  outputName: string;
+  styleConfig: TemplateStyleConfig;
+  zoom: number;
+  setZoom: (value: number | ((current: number) => number)) => void;
+  onExpand: () => void;
+  expanded?: boolean;
+  className?: string;
+  previewClassName?: string;
+}) {
+  function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setZoom((value) => clampPreviewZoom(value + direction * previewZoomStep));
+  }
+
+  return (
+    <AppSurface as="aside" padding="none" radius="md" className={cn("flex min-h-0 flex-col overflow-hidden p-3", className)}>
+      <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
+          <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
+          <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} title="缩小预览" aria-label="缩小预览">
+            <ZoomOut className="size-3.5 text-slate-500 dark:text-zinc-400" />
+          </Button>
+          <span className="w-10 text-center text-xs font-bold text-slate-500 dark:text-zinc-400">{zoom}%</span>
+          <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} title="放大预览" aria-label="放大预览">
+            <ZoomIn className="size-3.5 text-slate-500 dark:text-zinc-400" />
+          </Button>
+          {!expanded ? (
+            <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onExpand} title="放大查看" aria-label="放大查看">
+              <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
+        <WordPreviewPage
+          markdown={markdown}
+          styleConfig={styleConfig}
+          zoom={zoom}
+          paginate
+          showHeader={false}
+          interactiveViewport
+          className={cn("max-h-none min-h-0 overflow-hidden border-0 bg-transparent p-0 shadow-none", previewClassName)}
+          viewportClassName="bg-transparent p-2 dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80"
+        />
+      </div>
+    </AppSurface>
+  );
+}
+
+function WordPreviewSidebar({
+  headings,
+  pageCount,
+  onPageJump,
+  onHeadingJump,
+}: {
+  headings: PreviewHeading[];
+  pageCount: number;
+  onPageJump: (page: number) => void;
+  onHeadingJump: (id: string) => void;
+}) {
+  return (
+    <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
+      <section className="min-h-0 shrink-[0.6] overflow-hidden">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-xs font-black text-slate-500 dark:text-zinc-400">页面缩略图</p>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount} 页</span>
+        </div>
+        <div className="grid max-h-[240px] grid-cols-2 gap-2 overflow-auto pr-1 max-[900px]:max-h-[120px]">
+          {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+            <button
+              key={page}
+              type="button"
+              className="group rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
+              onClick={() => onPageJump(page)}
+              title={`跳到第 ${page} 页`}
+            >
+              <span className="mx-auto block aspect-[3/4] w-full rounded-[6px] border border-slate-200 bg-white p-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
+                <span className="mb-1 block h-1 w-2/3 rounded bg-slate-200 dark:bg-zinc-700" />
+                <span className="mb-1 block h-1 w-full rounded bg-slate-100 dark:bg-zinc-800" />
+                <span className="mb-1 block h-1 w-5/6 rounded bg-slate-100 dark:bg-zinc-800" />
+                <span className="mt-2 block h-4 rounded border border-dashed border-slate-200 bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900" />
+              </span>
+              <span className="mt-1 block text-center text-[10px] font-black text-slate-500 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-200">{page}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4 min-h-0 flex-1 overflow-hidden border-t border-slate-200 pt-3 dark:border-zinc-800">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-xs font-black text-slate-500 dark:text-zinc-400">文档目录</p>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{headings.length}</span>
+        </div>
+        <div className="h-full overflow-auto pr-1">
+          {headings.length > 0 ? (
+            <div className="space-y-1">
+              {headings.map((heading) => (
+                <button
+                  key={heading.id}
+                  type="button"
+                  className="block w-full truncate rounded-[8px] px-2 py-1.5 text-left text-xs font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
+                  style={{ paddingLeft: 8 + Math.min(5, heading.level - 1) * 10 }}
+                  onClick={() => onHeadingJump(heading.id)}
+                  title={heading.text}
+                >
+                  <span className="mr-1 text-[10px] font-black text-slate-400 dark:text-zinc-500">H{heading.level}</span>
+                  {heading.text}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[10px] border border-dashed border-slate-200 px-3 py-4 text-center text-xs font-semibold leading-5 text-slate-400 dark:border-zinc-800 dark:text-zinc-500">
+              当前 Markdown 没有标题，目录会在识别到 # 标题后显示。
+            </div>
+          )}
+        </div>
+      </section>
+    </aside>
   );
 }

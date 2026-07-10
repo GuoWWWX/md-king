@@ -1,5 +1,6 @@
 use crate::core::config::{load_config, save_config as save_config_core, AppConfig, AppStatus};
 use crate::system::context_menu::sync_context_menu;
+use crate::system::quick_paste::sync_quick_paste;
 use crate::system::tray::sync_tray;
 use tauri::AppHandle;
 
@@ -23,5 +24,6 @@ pub fn get_app_config() -> AppConfig {
 pub fn save_app_config(app: AppHandle, config: AppConfig) -> Result<AppConfig, String> {
     sync_context_menu(config.enable_context_menu)?;
     sync_tray(&app, config.enable_tray)?;
+    sync_quick_paste(&app, &config)?;
     save_config_core(config)
 }

@@ -21,6 +21,9 @@ use crate::core::template::find_template;
 use crate::core::template_style::get_template_style_config;
 use crate::system::open_file::open_path;
 
+const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
+const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConvertRequest {
@@ -217,6 +220,12 @@ struct InlineCodeStyleConfig {
     bold: bool,
     color: String,
     background_color: String,
+}
+
+#[derive(Clone, Copy)]
+enum TaskListMarker {
+    Checked,
+    Unchecked,
 }
 
 #[derive(Clone, Copy)]
@@ -1329,7 +1338,11 @@ fn text_style_config_from_value(style_id: &str, style: &Value) -> TextStyleConfi
         after_spacing: read_spacing_points(style, "afterSpacing", 0.0),
         first_line_indent: read_style_indent(style, "firstLineIndent", 0.0),
         align: if style_id == "caption" {
-            read_style_string(style, "captionAlign", &read_style_string(style, "align", "center"))
+            read_style_string(
+                style,
+                "captionAlign",
+                &read_style_string(style, "align", "center"),
+            )
         } else {
             read_style_string(style, "align", "left")
         },
@@ -1349,8 +1362,16 @@ fn text_style_config_from_value(style_id: &str, style: &Value) -> TextStyleConfi
         ],
         list_level_number_formats: [
             read_style_string(style, "listLevel1NumberFormat", &number_format),
-            read_style_string(style, "listLevel2NumberFormat", &nested_level2_number_format),
-            read_style_string(style, "listLevel3NumberFormat", &nested_level3_number_format),
+            read_style_string(
+                style,
+                "listLevel2NumberFormat",
+                &nested_level2_number_format,
+            ),
+            read_style_string(
+                style,
+                "listLevel3NumberFormat",
+                &nested_level3_number_format,
+            ),
             read_style_string(style, "listLevel4NumberFormat", "I."),
         ],
         list_level_styles: [
@@ -1362,25 +1383,70 @@ fn text_style_config_from_value(style_id: &str, style: &Value) -> TextStyleConfi
     }
 }
 
-fn read_list_level_style_config(style: &Value, prefix: &str, level_offset: f64) -> ListLevelStyleConfig {
+fn read_list_level_style_config(
+    style: &Value,
+    prefix: &str,
+    level_offset: f64,
+) -> ListLevelStyleConfig {
     let font_size = read_style_number(style, "fontSize", 12.0);
     let line_height = read_line_height(style, 1.5);
     let list_indent = read_style_indent(style, "listIndent", 2.0);
     let nested_indent_step = read_style_indent(style, "nestedIndentStep", 2.0);
     ListLevelStyleConfig {
-        chinese_font: read_style_string(style, &format!("{prefix}ChineseFont"), &read_style_string(style, "chineseFont", "微软雅黑")),
-        latin_font: read_style_string(style, &format!("{prefix}LatinFont"), &read_style_string(style, "latinFont", "Times New Roman")),
+        chinese_font: read_style_string(
+            style,
+            &format!("{prefix}ChineseFont"),
+            &read_style_string(style, "chineseFont", "微软雅黑"),
+        ),
+        latin_font: read_style_string(
+            style,
+            &format!("{prefix}LatinFont"),
+            &read_style_string(style, "latinFont", "Times New Roman"),
+        ),
         font_size: read_style_number(style, &format!("{prefix}FontSize"), font_size),
-        bold: read_style_bold_key(style, &format!("{prefix}FontWeight")).unwrap_or_else(|| read_style_bold(style)),
-        color: read_style_color(style, &format!("{prefix}Color"), &read_style_color(style, "color", "111827")),
+        bold: read_style_bold_key(style, &format!("{prefix}FontWeight"))
+            .unwrap_or_else(|| read_style_bold(style)),
+        color: read_style_color(
+            style,
+            &format!("{prefix}Color"),
+            &read_style_color(style, "color", "111827"),
+        ),
         line_height: read_line_height_key(style, &format!("{prefix}LineHeight"), line_height),
-        before_spacing: read_spacing_points(style, &format!("{prefix}BeforeSpacing"), read_spacing_points(style, "beforeSpacing", 0.0)),
-        after_spacing: read_spacing_points(style, &format!("{prefix}AfterSpacing"), read_spacing_points(style, "afterSpacing", 0.0)),
-        align: read_style_string(style, &format!("{prefix}Align"), &read_style_string(style, "align", "left")),
-        indent: read_style_indent(style, &format!("{prefix}Indent"), list_indent + nested_indent_step * level_offset),
-        text_indent: read_style_indent(style, &format!("{prefix}TextIndent"), read_style_indent(style, "listTextIndent", 1.5)),
-        wrap_mode: read_style_string(style, &format!("{prefix}WrapMode"), &read_style_string(style, "listWrapMode", "hanging")),
-        numbering_mode: read_style_string(style, &format!("{prefix}NumberingMode"), &read_style_string(style, "listNumberingMode", "restart")),
+        before_spacing: read_spacing_points(
+            style,
+            &format!("{prefix}BeforeSpacing"),
+            read_spacing_points(style, "beforeSpacing", 0.0),
+        ),
+        after_spacing: read_spacing_points(
+            style,
+            &format!("{prefix}AfterSpacing"),
+            read_spacing_points(style, "afterSpacing", 0.0),
+        ),
+        align: read_style_string(
+            style,
+            &format!("{prefix}Align"),
+            &read_style_string(style, "align", "left"),
+        ),
+        indent: read_style_indent(
+            style,
+            &format!("{prefix}Indent"),
+            list_indent + nested_indent_step * level_offset,
+        ),
+        text_indent: read_style_indent(
+            style,
+            &format!("{prefix}TextIndent"),
+            read_style_indent(style, "listTextIndent", 1.5),
+        ),
+        wrap_mode: read_style_string(
+            style,
+            &format!("{prefix}WrapMode"),
+            &read_style_string(style, "listWrapMode", "hanging"),
+        ),
+        numbering_mode: read_style_string(
+            style,
+            &format!("{prefix}NumberingMode"),
+            &read_style_string(style, "listNumberingMode", "restart"),
+        ),
     }
 }
 
@@ -1716,18 +1782,32 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
     let mut lines = markdown.lines();
 
     while let Some(line) = lines.next() {
-        if let Some(fence) = parse_math_fence_start(line) {
-            let mut formula_lines = Vec::new();
-            for content_line in lines.by_ref() {
-                if is_fence_end(content_line, fence) {
-                    break;
+        if let Some(fence) = parse_markdown_fence_start(line) {
+            if fence.is_math {
+                let mut formula_lines = Vec::new();
+                for content_line in lines.by_ref() {
+                    if is_fence_end(content_line, fence.marker) {
+                        break;
+                    }
+                    formula_lines.push(content_line);
                 }
-                formula_lines.push(content_line);
+
+                output.push("$$".to_string());
+                output.extend(formula_lines.into_iter().map(str::to_string));
+                output.push("$$".to_string());
+                continue;
             }
 
-            output.push("$$".to_string());
-            output.extend(formula_lines.into_iter().map(str::to_string));
-            output.push("$$".to_string());
+            if let Some(language) = fence.language.as_deref() {
+                output.push(format!("{CODE_LANGUAGE_MARKER_PREFIX}{language}"));
+            }
+            output.push(line.to_string());
+            for content_line in lines.by_ref() {
+                output.push(content_line.to_string());
+                if is_fence_end(content_line, fence.marker) {
+                    break;
+                }
+            }
             continue;
         }
 
@@ -1741,33 +1821,120 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
     prepared
 }
 
-fn parse_math_fence_start(line: &str) -> Option<&'static str> {
+struct MarkdownFenceStart {
+    marker: &'static str,
+    language: Option<String>,
+    is_math: bool,
+}
+
+fn parse_markdown_fence_start(line: &str) -> Option<MarkdownFenceStart> {
     let trimmed = line.trim();
-    let fence = if trimmed.starts_with("```") {
+    let marker = if trimmed.starts_with("```") {
         "```"
     } else if trimmed.starts_with("~~~") {
         "~~~"
     } else {
         return None;
     };
-    let language = trimmed
-        .trim_start_matches(fence)
-        .trim()
-        .trim_matches('{')
-        .trim_matches('}')
-        .trim_start_matches('.')
-        .trim()
-        .to_ascii_lowercase();
+    let language = parse_fence_language(trimmed.trim_start_matches(marker));
+    let is_math = language
+        .as_deref()
+        .map(is_math_fence_language)
+        .unwrap_or(false);
 
+    Some(MarkdownFenceStart {
+        marker,
+        language,
+        is_math,
+    })
+}
+
+fn parse_fence_language(info: &str) -> Option<String> {
+    let info = info.trim();
+    if info.is_empty() {
+        return None;
+    }
+
+    let normalized = if info.starts_with('{') && info.ends_with('}') {
+        info.trim_start_matches('{').trim_end_matches('}')
+    } else {
+        info
+    };
+
+    normalized.split_whitespace().find_map(|token| {
+        let token = token.trim().trim_start_matches('.');
+        if token.is_empty() || token.starts_with('#') || token.contains('=') {
+            return None;
+        }
+        let language: String = token
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '#' | '-' | '_' | '.'))
+            .collect();
+        (!language.is_empty()).then_some(language)
+    })
+}
+
+fn is_math_fence_language(language: &str) -> bool {
     matches!(
-        language.as_str(),
+        language.trim().to_ascii_lowercase().as_str(),
         "math" | "latex" | "tex" | "formula" | "equation" | "公式"
     )
-    .then_some(fence)
 }
 
 fn is_fence_end(line: &str, fence: &str) -> bool {
     line.trim().starts_with(fence)
+}
+
+fn read_task_list_markers_from_docx(
+    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+) -> HashMap<String, TaskListMarker> {
+    let Ok(mut numbering_file) = archive.by_name("word/numbering.xml") else {
+        return HashMap::new();
+    };
+    let mut data = Vec::new();
+    if numbering_file.read_to_end(&mut data).is_err() {
+        return HashMap::new();
+    }
+    let Ok(xml) = String::from_utf8(data) else {
+        return HashMap::new();
+    };
+    task_list_markers_from_numbering_xml(&xml)
+}
+
+fn task_list_markers_from_numbering_xml(xml: &str) -> HashMap<String, TaskListMarker> {
+    let abstract_num =
+        Regex::new(r#"(?s)<w:abstractNum\s+w:abstractNumId="([^"]+)">.*?</w:abstractNum>"#)
+            .expect("valid abstract numbering regex");
+    let mut abstract_markers = HashMap::new();
+    for captures in abstract_num.captures_iter(xml) {
+        let Some(id) = captures.get(1).map(|value| value.as_str().to_string()) else {
+            continue;
+        };
+        let block = captures.get(0).map(|value| value.as_str()).unwrap_or("");
+        if block.contains(r#"<w:lvlText w:val="☒""#) {
+            abstract_markers.insert(id, TaskListMarker::Checked);
+        } else if block.contains(r#"<w:lvlText w:val="☐""#) {
+            abstract_markers.insert(id, TaskListMarker::Unchecked);
+        }
+    }
+
+    let num = Regex::new(
+        r#"(?s)<w:num\s+w:numId="([^"]+)">.*?<w:abstractNumId\s+w:val="([^"]+)"\s*/>.*?</w:num>"#,
+    )
+    .expect("valid numbering instance regex");
+    let mut markers = HashMap::new();
+    for captures in num.captures_iter(xml) {
+        let Some(num_id) = captures.get(1).map(|value| value.as_str().to_string()) else {
+            continue;
+        };
+        let Some(abstract_id) = captures.get(2).map(|value| value.as_str()) else {
+            continue;
+        };
+        if let Some(marker) = abstract_markers.get(abstract_id).copied() {
+            markers.insert(num_id, marker);
+        }
+    }
+    markers
 }
 
 fn normalize_docx(
@@ -1793,6 +1960,7 @@ fn normalize_docx(
     let mut has_header_xml = false;
     let mut has_footer_xml = false;
     let header_footer = page_settings.filter(|settings| page_settings_has_header_footer(settings));
+    let task_list_markers = read_task_list_markers_from_docx(&mut archive);
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -1810,6 +1978,7 @@ fn normalize_docx(
         if name == "word/document.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 document.xml 失败：{error}"))?;
+            let xml = mark_task_list_paragraphs(&xml, &task_list_markers);
             let xml = normalize_document_xml(
                 &xml,
                 apply_default_template_style,
@@ -2004,7 +2173,9 @@ fn normalize_document_images(
 ) -> String {
     let content_width_twips = page_settings
         .map(page_content_width_twips)
-        .unwrap_or_else(|| document_content_width_twips(xml).unwrap_or_else(default_content_width_twips));
+        .unwrap_or_else(|| {
+            document_content_width_twips(xml).unwrap_or_else(default_content_width_twips)
+        });
     let width_mode = image_style
         .map(|style| style.width_mode.as_str())
         .unwrap_or("content");
@@ -2109,7 +2280,11 @@ fn align_paragraph_properties(properties: &str, align: &str) -> String {
     let jc_re = Regex::new(r#"(?s)<w:jc\b[^>]*/>"#).expect("valid paragraph alignment regex");
     let without_alignment = jc_re.replace_all(properties, "");
     without_alignment
-        .replacen("</w:pPr>", &format!(r#"<w:jc w:val="{align}" /></w:pPr>"#), 1)
+        .replacen(
+            "</w:pPr>",
+            &format!(r#"<w:jc w:val="{align}" /></w:pPr>"#),
+            1,
+        )
         .to_string()
 }
 
@@ -2237,9 +2412,8 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
     }
 
     let instruction = toc_field_instruction(page_settings);
-    let fld_simple =
-        Regex::new(r#"<w:fldSimple\b([^>]*)\bw:instr="([^"]*TOC[^"]*)"([^>]*)>"#)
-            .expect("valid TOC fldSimple regex");
+    let fld_simple = Regex::new(r#"<w:fldSimple\b([^>]*)\bw:instr="([^"]*TOC[^"]*)"([^>]*)>"#)
+        .expect("valid TOC fldSimple regex");
     let xml = fld_simple
         .replace_all(xml, |captures: &Captures| {
             format!(
@@ -2729,7 +2903,9 @@ fn list_level_style(style: &TextStyleConfig, level: usize) -> &ListLevelStyleCon
 fn list_indent_xml_for_level(style: &TextStyleConfig, level: usize) -> String {
     let level_style = list_level_style(style, level);
     let left = (level_style.indent * 240.0).round().clamp(0.0, 4000.0) as u32;
-    let text = (level_style.text_indent * 240.0).round().clamp(120.0, 1200.0) as u32;
+    let text = (level_style.text_indent * 240.0)
+        .round()
+        .clamp(120.0, 1200.0) as u32;
 
     if level_style.wrap_mode == "flat" {
         format!(r#"<w:ind w:left="{left}" w:firstLine="0" />"#)
@@ -2869,6 +3045,182 @@ fn normalize_inline_code_run_xml(run_xml: &str, style: Option<&InlineCodeStyleCo
     insert_run_properties(run_xml, &properties)
 }
 
+fn extract_code_language_marker(paragraph_xml: &str) -> Option<String> {
+    let text = paragraph_plain_text(paragraph_xml);
+    text.trim()
+        .strip_prefix(CODE_LANGUAGE_MARKER_PREFIX)
+        .map(str::trim)
+        .filter(|language| !language.is_empty())
+        .map(ToString::to_string)
+}
+
+fn paragraph_plain_text(paragraph_xml: &str) -> String {
+    Regex::new(r#"(?s)<w:t(?:\s+[^>]*)?>(.*?)</w:t>"#)
+        .expect("valid paragraph text regex")
+        .captures_iter(paragraph_xml)
+        .filter_map(|captures| captures.get(1))
+        .map(|value| decode_basic_xml_entities(value.as_str()))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn decode_basic_xml_entities(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+fn mark_task_list_paragraphs(
+    xml: &str,
+    task_list_markers: &HashMap<String, TaskListMarker>,
+) -> String {
+    if task_list_markers.is_empty() {
+        return xml.to_string();
+    }
+
+    let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
+    paragraph
+        .replace_all(xml, |captures: &Captures| {
+            mark_task_list_paragraph(&captures[0], task_list_markers)
+        })
+        .to_string()
+}
+
+fn mark_task_list_paragraph(
+    paragraph_xml: &str,
+    task_list_markers: &HashMap<String, TaskListMarker>,
+) -> String {
+    let Some(num_id) = capture_list_num_id(paragraph_xml) else {
+        return paragraph_xml.to_string();
+    };
+    let Some(marker) = task_list_markers.get(&num_id).copied() else {
+        return paragraph_xml.to_string();
+    };
+    if paragraph_plain_text(paragraph_xml)
+        .trim_start()
+        .starts_with(TASK_LIST_MARKER_PREFIX)
+    {
+        return paragraph_xml.to_string();
+    }
+
+    prefix_first_text_run(paragraph_xml, task_list_marker_prefix(marker))
+}
+
+fn task_list_marker_prefix(marker: TaskListMarker) -> &'static str {
+    match marker {
+        TaskListMarker::Checked => "MD_KING_TASK_LIST:checked:",
+        TaskListMarker::Unchecked => "MD_KING_TASK_LIST:unchecked:",
+    }
+}
+
+fn extract_task_list_marker(paragraph_xml: &str) -> Option<TaskListMarker> {
+    let text = paragraph_plain_text(paragraph_xml);
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("MD_KING_TASK_LIST:checked:") {
+        Some(TaskListMarker::Checked)
+    } else if trimmed.starts_with("MD_KING_TASK_LIST:unchecked:") {
+        Some(TaskListMarker::Unchecked)
+    } else {
+        None
+    }
+}
+
+fn strip_task_list_marker(paragraph_xml: &str) -> String {
+    let text = Regex::new(r#"(<w:t(?:\s+[^>]*)?>)([^<]*)(</w:t>)"#).expect("valid text regex");
+    text.replace(paragraph_xml, |captures: &Captures| {
+        let stripped = captures[2]
+            .replacen("MD_KING_TASK_LIST:checked:", "", 1)
+            .replacen("MD_KING_TASK_LIST:unchecked:", "", 1);
+        format!("{}{}{}", &captures[1], stripped, &captures[3])
+    })
+    .to_string()
+}
+
+fn task_list_marker_text(marker: TaskListMarker) -> &'static str {
+    match marker {
+        TaskListMarker::Checked => "☑",
+        TaskListMarker::Unchecked => "☐",
+    }
+}
+
+fn code_language_label_paragraph(language: &str, style: Option<&CodeBlockStyleConfig>) -> String {
+    let label = escape_xml_text(&code_language_display_name(language));
+    let properties = code_language_label_paragraph_properties_xml(style);
+    let run_properties = code_language_label_run_properties_xml(style);
+
+    format!(
+        r#"<w:p><w:pPr>{properties}</w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{label}</w:t></w:r></w:p>"#
+    )
+}
+
+fn code_language_display_name(language: &str) -> String {
+    match language.trim().to_ascii_lowercase().as_str() {
+        "js" | "javascript" => "JavaScript".to_string(),
+        "ts" | "typescript" => "TypeScript".to_string(),
+        "tsx" => "TSX".to_string(),
+        "jsx" => "JSX".to_string(),
+        "py" | "python" => "Python".to_string(),
+        "rs" | "rust" => "Rust".to_string(),
+        "sh" | "bash" | "shell" => "Shell".to_string(),
+        "ps1" | "powershell" => "PowerShell".to_string(),
+        "csharp" | "c#" => "C#".to_string(),
+        "cpp" | "c++" => "C++".to_string(),
+        "html" => "HTML".to_string(),
+        "css" => "CSS".to_string(),
+        "json" => "JSON".to_string(),
+        "yaml" | "yml" => "YAML".to_string(),
+        "sql" => "SQL".to_string(),
+        "java" => "Java".to_string(),
+        "go" | "golang" => "Go".to_string(),
+        value if value.is_empty() => "Code".to_string(),
+        _ => language.to_string(),
+    }
+}
+
+fn code_language_label_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String {
+    let background = style
+        .map(|value| value.background_color.as_str())
+        .unwrap_or("F8FAFC");
+    let border_color = style
+        .map(|value| value.border_color.as_str())
+        .unwrap_or("E2E8F0");
+    let horizontal_padding =
+        points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
+    let border_space = (style.map(|value| value.padding_y).unwrap_or(10.0) / 2.0)
+        .round()
+        .clamp(0.0, 24.0) as u32;
+    let border = border_xml_with_space("solid", 0.75, border_color, border_space);
+
+    format!(
+        r#"<w:spacing w:before="120" w:after="0" w:line="220" w:lineRule="auto" /><w:jc w:val="right" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:top {border} /><w:left {border} /><w:right {border} /></w:pBdr>"#
+    )
+}
+
+fn code_language_label_run_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String {
+    let latin_font = style
+        .map(|value| value.latin_font.as_str())
+        .unwrap_or("Consolas");
+    let chinese_font = style
+        .map(|value| value.chinese_font.as_str())
+        .unwrap_or("Microsoft YaHei UI");
+    let color = if is_dark_hex_color(
+        style
+            .map(|value| value.background_color.as_str())
+            .unwrap_or("F8FAFC"),
+    ) {
+        "CBD5E1"
+    } else {
+        "64748B"
+    };
+
+    format!(
+        r#"<w:rFonts w:ascii="{latin_font}" w:eastAsia="{chinese_font}" w:hAnsi="{latin_font}" w:cs="{latin_font}" /><w:noProof /><w:color w:val="{color}" /><w:b w:val="1" /><w:bCs w:val="1" /><w:sz w:val="16" /><w:szCs w:val="16" />"#
+    )
+}
+
 fn normalize_code_and_quote_blocks(
     xml: &str,
     markdown_features: &MarkdownFeatureConfig,
@@ -2876,11 +3228,13 @@ fn normalize_code_and_quote_blocks(
 ) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
     let mut in_quote_list = false;
+    let mut pending_code_language_label = false;
     paragraph
         .replace_all(xml, |captures: &Captures| {
             normalize_code_or_quote_paragraph(
                 &captures[0],
                 &mut in_quote_list,
+                &mut pending_code_language_label,
                 markdown_features,
                 block_style,
             )
@@ -2891,34 +3245,56 @@ fn normalize_code_and_quote_blocks(
 fn normalize_code_or_quote_paragraph(
     paragraph_xml: &str,
     in_quote_list: &mut bool,
+    pending_code_language_label: &mut bool,
     markdown_features: &MarkdownFeatureConfig,
     block_style: Option<&BlockStyleConfig>,
 ) -> String {
+    if let Some(language) = extract_code_language_marker(paragraph_xml) {
+        *in_quote_list = false;
+        *pending_code_language_label = markdown_features.code_block;
+        return if markdown_features.code_block {
+            code_language_label_paragraph(&language, block_style.map(|style| &style.code))
+        } else {
+            String::new()
+        };
+    }
+
     match capture_paragraph_style_id(paragraph_xml).as_deref() {
         Some("SourceCode") if markdown_features.code_block => {
             *in_quote_list = false;
-            normalize_source_code_paragraph(paragraph_xml, block_style.map(|style| &style.code))
+            let connects_to_label = *pending_code_language_label;
+            *pending_code_language_label = false;
+            normalize_source_code_paragraph(
+                paragraph_xml,
+                block_style.map(|style| &style.code),
+                connects_to_label,
+            )
         }
         Some("SourceCode") => {
             *in_quote_list = false;
+            *pending_code_language_label = false;
             flatten_special_block_paragraph(paragraph_xml)
         }
         Some("BlockText") if markdown_features.quote_block => {
             *in_quote_list = true;
+            *pending_code_language_label = false;
             normalize_quote_paragraph(paragraph_xml, block_style.map(|style| &style.quote))
         }
         Some("BlockText") => {
             *in_quote_list = false;
+            *pending_code_language_label = false;
             flatten_special_block_paragraph(paragraph_xml)
         }
         _ if markdown_features.quote_block
             && *in_quote_list
             && has_list_numbering(paragraph_xml) =>
         {
+            *pending_code_language_label = false;
             normalize_quote_list_paragraph(paragraph_xml, block_style.map(|style| &style.quote))
         }
         _ => {
             *in_quote_list = false;
+            *pending_code_language_label = false;
             paragraph_xml.to_string()
         }
     }
@@ -2970,18 +3346,20 @@ fn flatten_special_text_run_xml(run_xml: &str) -> String {
 fn normalize_source_code_paragraph(
     paragraph_xml: &str,
     style: Option<&CodeBlockStyleConfig>,
+    connects_to_label: bool,
 ) -> String {
-    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml, style);
+    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml, style, connects_to_label);
     normalize_code_runs(&paragraph_xml, style)
 }
 
 fn ensure_code_paragraph_properties(
     paragraph_xml: &str,
     style: Option<&CodeBlockStyleConfig>,
+    omit_top_border: bool,
 ) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
-    let properties = code_paragraph_properties_xml(style);
+    let properties = code_paragraph_properties_xml(style, !omit_top_border);
     if paragraph_properties.is_match(paragraph_xml) {
         return paragraph_properties
             .replace(paragraph_xml, |captures: &Captures| {
@@ -3131,7 +3509,10 @@ fn normalize_quote_run_xml(run_xml: &str, style: Option<&QuoteBlockStyleConfig>)
     insert_run_properties(run_xml, &properties)
 }
 
-fn code_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String {
+fn code_paragraph_properties_xml(
+    style: Option<&CodeBlockStyleConfig>,
+    include_top_border: bool,
+) -> String {
     let background = style
         .map(|value| value.background_color.as_str())
         .unwrap_or("F8FAFC");
@@ -3141,7 +3522,11 @@ fn code_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String
     let line = style
         .map(|value| line_height_twips(value.font_size, value.line_height))
         .unwrap_or(300);
-    let before = points_to_twentieths(style.map(|value| value.before_spacing).unwrap_or(6.0));
+    let before = if include_top_border {
+        points_to_twentieths(style.map(|value| value.before_spacing).unwrap_or(6.0))
+    } else {
+        0
+    };
     let after = points_to_twentieths(style.map(|value| value.after_spacing).unwrap_or(6.0));
     let horizontal_padding =
         points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
@@ -3149,13 +3534,21 @@ fn code_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String
         .round()
         .clamp(0.0, 24.0) as u32;
     let border = border_xml_with_space("solid", 0.75, border_color, border_space);
+    let top_border = if include_top_border {
+        format!(r#"<w:top {border} />"#)
+    } else {
+        String::new()
+    };
 
     format!(
-        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:top {border} /><w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr>{top_border}<w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
     )
 }
 
-fn code_run_properties_xml(style: Option<&CodeBlockStyleConfig>, token_style: Option<&str>) -> String {
+fn code_run_properties_xml(
+    style: Option<&CodeBlockStyleConfig>,
+    token_style: Option<&str>,
+) -> String {
     let latin_font = style
         .map(|value| value.latin_font.as_str())
         .unwrap_or("Consolas");
@@ -3186,28 +3579,60 @@ fn syntax_token_color(token_style: &str, style: Option<&CodeBlockStyleConfig>) -
     let dark = is_dark_hex_color(background);
     match token_style {
         "KeywordTok" | "ControlFlowTok" | "ImportTok" | "ExtensionTok" | "PreprocessorTok" => {
-            if dark { "C084FC" } else { "7C3AED" }
+            if dark {
+                "C084FC"
+            } else {
+                "7C3AED"
+            }
         }
         "DataTypeTok" | "DecValTok" | "BaseNTok" | "FloatTok" | "ConstantTok" => {
-            if dark { "FBBF24" } else { "B45309" }
+            if dark {
+                "FBBF24"
+            } else {
+                "B45309"
+            }
         }
         "CharTok" | "StringTok" | "SpecialStringTok" | "VerbatimStringTok" => {
-            if dark { "86EFAC" } else { "15803D" }
+            if dark {
+                "86EFAC"
+            } else {
+                "15803D"
+            }
         }
         "CommentTok" | "DocumentationTok" | "AnnotationTok" | "CommentVarTok" => {
-            if dark { "94A3B8" } else { "64748B" }
+            if dark {
+                "94A3B8"
+            } else {
+                "64748B"
+            }
         }
         "FunctionTok" => {
-            if dark { "67E8F9" } else { "0369A1" }
+            if dark {
+                "67E8F9"
+            } else {
+                "0369A1"
+            }
         }
         "OperatorTok" | "SpecialCharTok" | "VariableTok" | "AttributeTok" => {
-            if dark { "F9A8D4" } else { "BE185D" }
+            if dark {
+                "F9A8D4"
+            } else {
+                "BE185D"
+            }
         }
         "AlertTok" | "ErrorTok" => {
-            if dark { "F87171" } else { "DC2626" }
+            if dark {
+                "F87171"
+            } else {
+                "DC2626"
+            }
         }
         _ => {
-            if dark { "E2E8F0" } else { "111827" }
+            if dark {
+                "E2E8F0"
+            } else {
+                "111827"
+            }
         }
     }
 }
@@ -3226,8 +3651,9 @@ fn is_dark_hex_color(value: &str) -> bool {
     let Ok(blue) = u8::from_str_radix(&hex[4..6], 16) else {
         return false;
     };
-    let luminance =
-        0.2126 * f64::from(red) / 255.0 + 0.7152 * f64::from(green) / 255.0 + 0.0722 * f64::from(blue) / 255.0;
+    let luminance = 0.2126 * f64::from(red) / 255.0
+        + 0.7152 * f64::from(green) / 255.0
+        + 0.0722 * f64::from(blue) / 255.0;
     luminance < 0.45
 }
 
@@ -3338,10 +3764,16 @@ fn insert_run_properties(run_xml: &str, properties: &str) -> String {
 fn normalize_list_markers(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
     let mut ordered_counters: HashMap<String, usize> = HashMap::new();
+    let mut list_level_ordered = [false; 4];
 
     paragraph
         .replace_all(xml, |captures: &Captures| {
-            normalize_list_paragraph(&captures[0], &mut ordered_counters, document_style)
+            normalize_list_paragraph(
+                &captures[0],
+                &mut ordered_counters,
+                &mut list_level_ordered,
+                document_style,
+            )
         })
         .to_string()
 }
@@ -3353,7 +3785,10 @@ fn ordered_list_restart_enabled(document_style: Option<&DocumentStyleConfig>) ->
         .unwrap_or(true)
 }
 
-fn ordered_list_level_restart_enabled(document_style: Option<&DocumentStyleConfig>, level: usize) -> bool {
+fn ordered_list_level_restart_enabled(
+    document_style: Option<&DocumentStyleConfig>,
+    level: usize,
+) -> bool {
     document_style
         .and_then(|style| {
             style
@@ -3381,6 +3816,7 @@ fn clear_restart_ordered_counters(
 fn normalize_list_paragraph(
     paragraph_xml: &str,
     ordered_counters: &mut HashMap<String, usize>,
+    list_level_ordered: &mut [bool; 4],
     document_style: Option<&DocumentStyleConfig>,
 ) -> String {
     if capture_heading_style_id(paragraph_xml).is_some() {
@@ -3401,18 +3837,30 @@ fn normalize_list_paragraph(
         .and_then(|value| value.as_str().parse::<usize>().ok())
         .unwrap_or(0);
     let num_id = captures.get(2).map(|value| value.as_str()).unwrap_or("");
+    let task_marker = extract_task_list_marker(paragraph_xml);
     if num_id == "9100" {
         clear_restart_ordered_counters(ordered_counters, document_style);
         return paragraph_xml.to_string();
     }
 
-    let is_ordered = num_id.parse::<usize>().is_ok_and(|value| value >= 1003);
-    if !is_ordered && level == 0 {
+    let raw_is_ordered = num_id.parse::<usize>().is_ok_and(|value| value >= 1003);
+    let inferred_is_ordered = if task_marker.is_some() {
+        false
+    } else if document_style.is_none() && level > 0 {
+        list_level_ordered
+            .get(level.saturating_sub(1).min(3))
+            .copied()
+            .unwrap_or(raw_is_ordered)
+    } else {
+        raw_is_ordered
+    };
+    if !inferred_is_ordered && level == 0 {
         clear_restart_ordered_counters(ordered_counters, document_style);
     }
+    list_level_ordered[level.min(3)] = inferred_is_ordered;
     let style_id = if level > 0 {
         "nested-list"
-    } else if is_ordered {
+    } else if inferred_is_ordered {
         "numbered-list"
     } else {
         "bullet-list"
@@ -3428,9 +3876,12 @@ fn normalize_list_paragraph(
     let marker_is_ordered = list_style
         .and_then(|style| list_level_type_override(style, level))
         .map(|value| value == "number")
-        .unwrap_or(is_ordered);
-    let marker = if marker_is_ordered {
-        let counter_key = if is_ordered {
+        .unwrap_or(inferred_is_ordered)
+        && task_marker.is_none();
+    let marker = if let Some(task_marker) = task_marker {
+        task_list_marker_text(task_marker).to_string()
+    } else if marker_is_ordered {
+        let counter_key = if inferred_is_ordered {
             format!("{num_id}:{level}")
         } else {
             format!("configured:{level}")
@@ -3439,15 +3890,25 @@ fn normalize_list_paragraph(
         *counter += 1;
         ordered_list_marker(*counter, list_style, level)
     } else if level > 0 {
-        unordered_list_marker(list_style, "circle", level)
+        let fallback = match level {
+            1 => "circle",
+            2 => "square",
+            _ => "dash",
+        };
+        unordered_list_marker(list_style, fallback, level)
     } else {
         unordered_list_marker(list_style, "disc", level)
     };
 
     let without_numbering = numbering.replace(paragraph_xml, "").to_string();
-    let with_indent = list_style
-        .map(|style| apply_list_paragraph_properties(&without_numbering, style, level))
-        .unwrap_or(without_numbering);
+    let without_numbering = strip_task_list_marker(&without_numbering);
+    let with_indent = if let Some(style) = list_style {
+        apply_list_paragraph_properties(&without_numbering, style, level)
+    } else if without_numbering.contains("<w:pBdr>") {
+        without_numbering
+    } else {
+        apply_default_list_paragraph_properties(&without_numbering, level)
+    };
     let with_marker = prefix_first_text_run(&with_indent, &format!("{marker} "));
     list_style
         .map(|style| apply_list_level_run_style(&with_marker, style, level))
@@ -3595,10 +4056,15 @@ fn list_level_paragraph_properties_xml(style: &TextStyleConfig, level: usize) ->
     )
 }
 
-fn apply_list_paragraph_properties(paragraph_xml: &str, style: &TextStyleConfig, level: usize) -> String {
-    let properties = list_level_paragraph_properties_xml(style, level);
-    let existing_properties = Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#)
-        .expect("valid paragraph properties regex");
+fn apply_default_list_paragraph_properties(paragraph_xml: &str, level: usize) -> String {
+    let left = ((2.0 + level.min(3) as f64 * 2.0) * 240.0).round() as u32;
+    let hanging = 240;
+    let properties = format!(
+        r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" /><w:ind w:left="{}" w:hanging="{hanging}" />"#,
+        left + hanging
+    );
+    let existing_properties =
+        Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#).expect("valid paragraph properties regex");
     if existing_properties.is_match(paragraph_xml) {
         return existing_properties
             .replace(paragraph_xml, format!("<w:pPr>{properties}</w:pPr>"))
@@ -3608,7 +4074,28 @@ fn apply_list_paragraph_properties(paragraph_xml: &str, style: &TextStyleConfig,
     insert_paragraph_properties(paragraph_xml, &properties)
 }
 
-fn apply_list_level_run_style(paragraph_xml: &str, style: &TextStyleConfig, level: usize) -> String {
+fn apply_list_paragraph_properties(
+    paragraph_xml: &str,
+    style: &TextStyleConfig,
+    level: usize,
+) -> String {
+    let properties = list_level_paragraph_properties_xml(style, level);
+    let existing_properties =
+        Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#).expect("valid paragraph properties regex");
+    if existing_properties.is_match(paragraph_xml) {
+        return existing_properties
+            .replace(paragraph_xml, format!("<w:pPr>{properties}</w:pPr>"))
+            .to_string();
+    }
+
+    insert_paragraph_properties(paragraph_xml, &properties)
+}
+
+fn apply_list_level_run_style(
+    paragraph_xml: &str,
+    style: &TextStyleConfig,
+    level: usize,
+) -> String {
     let properties = list_level_run_properties_xml(style, level);
     let run = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("valid run regex");
     run.replace_all(paragraph_xml, |captures: &Captures| {
@@ -3618,7 +4105,8 @@ fn apply_list_level_run_style(paragraph_xml: &str, style: &TextStyleConfig, leve
 }
 
 fn ensure_run_properties_xml(run_xml: &str, properties: &str) -> String {
-    let run_properties = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("valid run properties regex");
+    let run_properties =
+        Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("valid run properties regex");
     let replacement = format!("<w:rPr>{properties}</w:rPr>");
 
     if run_properties.is_match(run_xml) {
@@ -3632,6 +4120,14 @@ fn has_list_numbering(paragraph_xml: &str) -> bool {
     Regex::new(r#"(?s)<w:numPr><w:ilvl w:val="\d+" /><w:numId w:val="\d+" /></w:numPr>"#)
         .expect("valid paragraph numbering regex")
         .is_match(paragraph_xml)
+}
+
+fn capture_list_num_id(paragraph_xml: &str) -> Option<String> {
+    Regex::new(r#"(?s)<w:numPr><w:ilvl w:val="\d+" /><w:numId w:val="(\d+)" /></w:numPr>"#)
+        .expect("valid paragraph numbering regex")
+        .captures(paragraph_xml)
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str().to_string())
 }
 
 fn prefix_first_text_run(paragraph_xml: &str, prefix: &str) -> String {
@@ -4297,12 +4793,14 @@ mod tests {
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, create_heading_numbering_xml,
         default_markdown_feature_config, default_report_heading_numbering_config,
-        document_style_config_from_value, heading_numbering_config_from_value, image_style_config_from_value,
-        footer_page_number_xml, markdown_feature_config_from_value, normalize_default_report_styles_xml,
-        normalize_document_images, normalize_document_xml, normalize_docx,
-        normalize_template_styles_xml, page_content_width_twips, page_settings_config_from_value,
-        pandoc_document_options_from_value, preprocess_markdown_for_word,
-        table_style_config_from_value, ConvertRequest, HeadingNumberingConfig,
+        document_style_config_from_value, footer_page_number_xml,
+        heading_numbering_config_from_value, image_style_config_from_value,
+        mark_task_list_paragraphs, markdown_feature_config_from_value,
+        normalize_default_report_styles_xml, normalize_document_images, normalize_document_xml,
+        normalize_docx, normalize_template_styles_xml, page_content_width_twips,
+        page_settings_config_from_value, pandoc_document_options_from_value,
+        preprocess_markdown_for_word, table_style_config_from_value,
+        task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         MarkdownFeatureConfig,
     };
     use serde_json::json;
@@ -4393,7 +4891,8 @@ mod tests {
             }
         }))
         .expect("image style should parse");
-        let target_width = ((f64::from(page_content_width_twips(&page_settings)) * 0.5).round() as u64) * 635;
+        let target_width =
+            ((f64::from(page_content_width_twips(&page_settings)) * 0.5).round() as u64) * 635;
         let target_height = target_width / 2;
         let input = r#"<w:document><w:body><w:p><w:pPr><w:jc w:val="left" /></w:pPr><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
 
@@ -4644,8 +5143,15 @@ mod tests {
 
         let document = r#"<w:document><w:body><w:p><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /><w:i /><w:color w:val="E2E8F0" /></w:rPr><w:t>ShipPositionCache.configure()</w:t></w:r></w:p></w:body></w:document>"#;
         let config = default_report_heading_numbering_config();
-        let normalized_document =
-            normalize_document_xml(document, true, Some(&config), &inline_enabled, None, None, None);
+        let normalized_document = normalize_document_xml(
+            document,
+            true,
+            Some(&config),
+            &inline_enabled,
+            None,
+            None,
+            None,
+        );
 
         assert!(normalized_document.contains(r#"<w:rStyle w:val="VerbatimChar" />"#));
         assert!(normalized_document.contains(r#"<w:rFonts w:ascii="Consolas""#));
@@ -4736,7 +5242,8 @@ mod tests {
             horizontal_rule: false,
         };
 
-        let output = normalize_document_xml(input, false, None, &features, None, None, Some(&style));
+        let output =
+            normalize_document_xml(input, false, None, &features, None, None, Some(&style));
 
         assert!(output.contains(r#"<w:rFonts w:ascii="Cascadia Mono" w:eastAsia="宋体""#));
         assert!(output.contains(r#"<w:b w:val="1" />"#));
@@ -4799,6 +5306,25 @@ mod tests {
     }
 
     #[test]
+    fn renders_code_language_marker_as_label_paragraph() {
+        let input = r#"<w:document><w:body><w:p><w:r><w:t>MD_KING_CODE_LANG:python</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:t>print("ok")</w:t></w:r></w:p></w:body></w:document>"#;
+        let output = normalize_document_xml(
+            input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains("<w:t>Python</w:t>"));
+        assert!(!output.contains("MD_KING_CODE_LANG"));
+        assert!(output.contains(r#"<w:jc w:val="right" />"#));
+        assert!(output.contains(r#"<w:pStyle w:val="SourceCode" />"#));
+    }
+
+    #[test]
     fn flattens_disabled_markdown_features_to_normal_text() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Consolas" /><w:i /><w:color w:val="E2E8F0" /></w:rPr><w:t>const value = 1;</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="BlockText" /></w:pPr><w:r><w:rPr><w:i /><w:color w:val="475569" /></w:rPr><w:t>引用内容</w:t></w:r></w:p><w:p><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /><w:color w:val="E2E8F0" /></w:rPr><w:t>ShipPositionCache.configure()</w:t></w:r></w:p></w:body></w:document>"#;
         let features = MarkdownFeatureConfig {
@@ -4808,7 +5334,8 @@ mod tests {
             horizontal_rule: false,
         };
         let config = default_report_heading_numbering_config();
-        let output = normalize_document_xml(input, true, Some(&config), &features, None, None, None);
+        let output =
+            normalize_document_xml(input, true, Some(&config), &features, None, None, None);
 
         assert!(output.contains("<w:t>const value = 1;</w:t>"));
         assert!(output.contains("<w:t>引用内容</w:t>"));
@@ -5110,7 +5637,7 @@ mod tests {
 
         assert!(output.contains("$$\nE = mc^2\n$$"));
         assert!(output.contains("$$\n\\frac{a}{b}\n$$"));
-        assert!(output.contains("```rust\nlet value = 1;\n```"));
+        assert!(output.contains("MD_KING_CODE_LANG:rust\n```rust\nlet value = 1;\n```"));
     }
 
     #[test]
@@ -5156,6 +5683,28 @@ mod tests {
         assert!(output.contains("<w:t>• 无序列表 A</w:t>"));
         assert!(output.contains("<w:t>◦ 嵌套列表 B.1</w:t>"));
         assert!(output.contains("<w:t>1. 有序列表第一项</w:t>"));
+        assert!(!output.contains("<w:numPr>"));
+    }
+
+    #[test]
+    fn renders_task_list_markers_from_numbering_xml() {
+        let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="992"><w:lvl w:ilvl="0"><w:lvlText w:val="☐" /></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="993"><w:lvl w:ilvl="0"><w:lvlText w:val="☒" /></w:lvl></w:abstractNum><w:num w:numId="1001"><w:abstractNumId w:val="993" /></w:num><w:num w:numId="1002"><w:abstractNumId w:val="992" /></w:num></w:numbering>"#;
+        let markers = task_list_markers_from_numbering_xml(numbering);
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr></w:pPr><w:r><w:t>已完成</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1002" /></w:numPr></w:pPr><w:r><w:t>未完成</w:t></w:r></w:p></w:body></w:document>"#;
+        let input = mark_task_list_paragraphs(input, &markers);
+        let output = normalize_document_xml(
+            &input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains("<w:t>☑ 已完成</w:t>"));
+        assert!(output.contains("<w:t>☐ 未完成</w:t>"));
+        assert!(!output.contains("MD_KING_TASK_LIST"));
         assert!(!output.contains("<w:numPr>"));
     }
 
@@ -5306,10 +5855,14 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(r#"<w:spacing w:before="240" w:after="160" w:line="560" w:lineRule="auto" />"#));
+        assert!(output.contains(
+            r#"<w:spacing w:before="240" w:after="160" w:line="560" w:lineRule="auto" />"#
+        ));
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
         assert!(output.contains(r#"<w:ind w:left="720" w:firstLine="0" />"#));
-        assert!(output.contains(r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="黑体" />"#));
+        assert!(
+            output.contains(r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="黑体" />"#)
+        );
         assert!(output.contains(r#"<w:color w:val="EF4444" />"#));
         assert!(output.contains(r#"<w:sz w:val="28" />"#));
         assert!(output.contains(r#"<w:b w:val="1" />"#));

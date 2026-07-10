@@ -231,9 +231,6 @@ mod tests {
         )
         .expect("expected output path");
 
-        assert_eq!(
-            output,
-            r"C:\Users\gyx\Documents\MD King\demo.docx"
-        );
+        assert_eq!(output, r"C:\Users\gyx\Documents\MD King\demo.docx");
     }
 }

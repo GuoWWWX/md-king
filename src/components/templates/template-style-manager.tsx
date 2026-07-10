@@ -765,17 +765,18 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
     <button
       type="button"
       className={cn(
-        "flex min-h-10 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition",
-        active ? "bg-indigo-50 font-semibold text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
+        "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left font-medium leading-3 transition",
+        active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
       title={`${node.displayName} · ${node.name} · ${node.markdown}`}
+      style={{ fontSize: 10 }}
     >
       <span className="min-w-0 flex-1">
-        <span className={cn("block truncate", node.kind === "heading" && "font-bold", node.kind === "code" && "font-mono", node.kind === "paragraph" && "font-normal")}>{node.displayName}</span>
+        <span className="block truncate">{node.displayName}</span>
       </span>
-      <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
-        <NodeIcon className="size-3" />
+      <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
+        <NodeIcon className="size-2.5" />
       </span>
     </button>
   );
@@ -1052,7 +1053,7 @@ function StyleProperties({
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="中文字体"><Select value={draft[chineseFontKey] as string} onValueChange={(value) => updateDraft(chineseFontKey, value)}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="Microsoft YaHei UI">Microsoft YaHei UI</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
             <Field label="英文字体"><Select value={draft[latinFontKey] as string} onValueChange={(value) => updateDraft(latinFontKey, value)}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="Consolas">Consolas</SelectItem><SelectItem value="Cascadia Mono">Cascadia Mono</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
-            {(!isTableNode || isTableCaption) ? <Field label="字号"><WordFontSizeSelect value={draft[fontSizeKey] as number} onChange={(value) => updateDraft(fontSizeKey, value)} /></Field> : null}
+            {!isList && (!isTableNode || isTableCaption) ? <Field label="字号"><WordFontSizeSelect value={draft[fontSizeKey] as number} onChange={(value) => updateDraft(fontSizeKey, value)} /></Field> : null}
             <Field label="文字颜色"><WordColorPicker value={draft[colorKey] as string} onChange={(value) => updateDraft(colorKey, value)} autoColor="#111827" /></Field>
             {(!isTableNode || isTableCaption) ? (
               <Field label="字重">
@@ -1170,6 +1171,7 @@ function StyleProperties({
                   </SelectContent>
                 </Select>
               </Field>
+              <Field label={`${activeListLevel} 级字号`}><WordFontSizeSelect value={draft[activeListLevelFontSizeKey] as number} onChange={(value) => updateDraft(activeListLevelFontSizeKey, value)} /></Field>
             </div>
           </PropertyCard>
         ) : null}
