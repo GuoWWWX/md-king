@@ -2,6 +2,7 @@ import { Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Sun, t
 import type { AppStatus, Template, ThemeMode } from "@/types";
 import { PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
+import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type NavigationItem = {
@@ -122,10 +123,12 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
         </Button>
         <div className={cn("flex items-center overflow-hidden text-xs text-slate-400", collapsed ? "justify-center px-0" : "justify-between px-2 max-[980px]:justify-center")}>
           <span className={sidebarLabelClass}>{appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}</span>
-          <div className="flex items-center gap-2" title="本地运行">
-            <ShieldCheck className="size-4 text-blue-600" />
-            <span className={cn("text-[11px] font-semibold text-slate-400", sidebarLabelClass)}>本地</span>
-          </div>
+          <TooltipAnchor content="本地运行">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-blue-600" />
+              <span className={cn("text-[11px] font-semibold text-slate-400", sidebarLabelClass)}>本地</span>
+            </div>
+          </TooltipAnchor>
         </div>
       </div>
     </div>
@@ -173,22 +176,21 @@ function ThemeModeButton({
         className={cn("mk-theme-cycle-button flex h-9 w-full items-center justify-center rounded-[8px] px-3 text-sm font-bold max-[980px]:hidden", !onThemeModeChange && "pointer-events-none opacity-50")}
         role="group"
         aria-label={`外观主题，当前：${activeMode.label}`}
-        title={`当前：${activeMode.label}`}
       >
         <span className="mk-theme-cycle-track">
           <span className="mk-theme-cycle-thumb" style={{ transform: `translateX(${activeIndex * 28}px)` }} />
           {modes.map(({ mode, icon: Icon, label }) => (
-            <button
+            <TooltipButton
               key={mode}
               type="button"
               className={cn("mk-theme-cycle-icon", themeMode === mode && "is-active")}
-              title={label}
+              tooltip={label}
               aria-label={label}
               aria-pressed={themeMode === mode}
               onClick={() => onThemeModeChange?.(mode)}
             >
               <Icon className="size-4" />
-            </button>
+            </TooltipButton>
           ))}
         </span>
       </div>

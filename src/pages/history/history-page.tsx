@@ -6,6 +6,7 @@ import { AppSurface } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TooltipAnchor } from "@/components/ui/tooltip";
 import { clearHistoryRemote, saveHistory } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
@@ -261,7 +262,9 @@ export function HistoryPage() {
                 <div className="flex items-start gap-3">
                   <FilePreviewIcon status={selectedRecord.status} simulated={selectedRecord.simulated} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-black text-blue-950 dark:text-zinc-50" title={selectedRecord.inputPath}>{selectedRecord.inputPath}</p>
+                    <TooltipAnchor content={selectedRecord.inputPath}>
+                      <p className="truncate text-sm font-black text-blue-950 dark:text-zinc-50">{selectedRecord.inputPath}</p>
+                    </TooltipAnchor>
                     <p className="mt-1 text-xs font-semibold text-blue-700/70 dark:text-blue-300/80">{selectedTemplateName}</p>
                   </div>
                 </div>

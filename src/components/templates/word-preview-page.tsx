@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, typ
 import { createPortal } from "react-dom";
 import MarkdownIt from "markdown-it";
 import { AppSurface } from "@/components/ui/app-surface";
-import { createDefaultStyleDraft, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
+import { TooltipButton } from "@/components/ui/tooltip";
+import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
 import { resolvePreviewImageSource } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
@@ -61,7 +62,6 @@ type MarkdownInlineToken = {
 };
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false });
-const defaultMarkdownFeatures: MarkdownFeatureSettings = { inlineCode: true, codeBlock: true, quoteBlock: true, horizontalRule: false };
 const PT_TO_PX = 4 / 3;
 const CSS_DPI = 96;
 const PAPER_SIZE_PX = {
@@ -162,8 +162,8 @@ function textStyle(draft: StyleDraft): CSSProperties {
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
     lineHeight: draft.lineHeight,
-    marginTop: `${draft.beforeSpacing}px`,
-    marginBottom: `${draft.afterSpacing}px`,
+    marginTop: `${draft.beforeSpacing}pt`,
+    marginBottom: `${draft.afterSpacing}pt`,
     textAlign: resolveTextAlign(draft.align),
     textIndent: `${draft.firstLineIndent}em`,
     backgroundColor: draft.backgroundColor === "transparent" ? undefined : draft.backgroundColor,
@@ -665,7 +665,7 @@ function estimateCharsPerLine(contentWidth: number, draft: StyleDraft, ratio = 1
 function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
-    return draft.beforeSpacing + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * resolveLineHeightPx(draft) + draft.afterSpacing;
+    return ptToPx(draft.beforeSpacing + draft.afterSpacing) + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * resolveLineHeightPx(draft);
   }
 
   if (block.type === "toc") {
@@ -673,15 +673,15 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "paragraph") {
-    return drafts.normal.beforeSpacing + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal)) * resolveLineHeightPx(drafts.normal) + drafts.normal.afterSpacing;
+    return ptToPx(drafts.normal.beforeSpacing + drafts.normal.afterSpacing) + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal)) * resolveLineHeightPx(drafts.normal);
   }
 
   if (block.type === "quote") {
-    return drafts.quote.beforeSpacing + 16 + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth - 24, drafts.quote)) * resolveLineHeightPx(drafts.quote) + drafts.quote.afterSpacing;
+    return ptToPx(drafts.quote.beforeSpacing + drafts.quote.afterSpacing) + 16 + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth - 24, drafts.quote)) * resolveLineHeightPx(drafts.quote);
   }
 
   if (block.type === "code") {
-    return drafts.code.beforeSpacing + 18 + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code) + drafts.code.afterSpacing;
+    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
   }
 
   if (block.type === "hr") {
@@ -689,18 +689,29 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "list") {
-    return 12 + block.items.reduce((total, item) => {
+    const contentHeight = block.items.reduce((total, item) => {
       const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
       const listOffset = (resolveListIndent(draft, item) + draft.listTextIndent) * ptToPx(draft.fontSize);
       return total + estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
     }, 0);
+    const firstItem = block.items[0];
+    const lastItem = block.items[block.items.length - 1];
+    const firstDraft = firstItem ? resolveListLevelDraft(resolveListBaseDraft(drafts, firstItem), firstItem) : undefined;
+    const lastDraft = lastItem ? resolveListLevelDraft(resolveListBaseDraft(drafts, lastItem), lastItem) : undefined;
+    const spacingHeight = ptToPx((firstDraft?.beforeSpacing ?? 0) + (lastDraft?.afterSpacing ?? 0));
+    return contentHeight + spacingHeight + Math.max(0, block.items.length - 1) * 6;
   }
 
   if (block.type === "image") {
-    return 132 + (block.caption ? 26 : 0);
+    const captionDraft = drafts.caption;
+    return 132 + (block.caption && captionDraft ? resolveLineHeightPx(captionDraft) + ptToPx(captionDraft.beforeSpacing + captionDraft.afterSpacing) : 0);
   }
 
-  return (block.caption ? 28 : 10) + Math.max(1, block.rows.length) * Math.max(tableDraft.minRowHeight, ptToPx(tableDraft.bodyFontSize) * Number(tableDraft.bodyLineHeight || 1.5) + tableDraft.cellPaddingY * 2);
+  const tableCaptionDraft = drafts["table-caption"];
+  const tableCaptionHeight = block.caption && tableCaptionDraft
+    ? resolveLineHeightPx(tableCaptionDraft) + ptToPx(tableCaptionDraft.beforeSpacing + tableCaptionDraft.afterSpacing)
+    : 0;
+  return 10 + tableCaptionHeight + Math.max(1, block.rows.length) * Math.max(tableDraft.minRowHeight, ptToPx(tableDraft.bodyFontSize) * Number(tableDraft.bodyLineHeight || 1.5) + tableDraft.cellPaddingY * 2);
 }
 
 function splitTextByLength(text: string, maxChars: number) {
@@ -1039,8 +1050,8 @@ function renderMarkdownBlocks({
             const itemStyle = {
               ...textStyle(listDraft),
               marginLeft: `${resolveListIndent(listDraft, item)}em`,
-              marginTop: itemIndex === 0 ? `${listDraft.beforeSpacing}px` : 0,
-              marginBottom: itemIndex === block.items.length - 1 ? `${listDraft.afterSpacing}px` : 0,
+              marginTop: itemIndex === 0 ? `${listDraft.beforeSpacing}pt` : 0,
+              marginBottom: itemIndex === block.items.length - 1 ? `${listDraft.afterSpacing}pt` : 0,
               textIndent: 0,
             };
 
@@ -1192,6 +1203,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     fontWeight: tableCaption.fontWeight,
     lineHeight: tableCaption.lineHeight,
     textAlign: resolveTextAlign(tableCaption.captionAlign),
+    marginTop: `${tableCaption.beforeSpacing}pt`,
+    marginBottom: `${tableCaption.afterSpacing}pt`,
   };
   const figureCaptionStyle: CSSProperties = {
     color: caption.color,
@@ -1200,8 +1213,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     fontWeight: caption.fontWeight,
     lineHeight: caption.lineHeight,
     textAlign: resolveTextAlign(caption.captionAlign),
-    marginTop: caption.captionPosition === "below" ? `${caption.beforeSpacing}px` : 0,
-    marginBottom: caption.captionPosition === "above" ? `${caption.afterSpacing}px` : 0,
+    marginTop: `${caption.beforeSpacing}pt`,
+    marginBottom: `${caption.afterSpacing}pt`,
   };
   const imageStyle: CSSProperties = {
     width: image.imageWidthMode === "original" ? "auto" : `${imageWidthPercent(image)}%`,
@@ -1251,7 +1264,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
       ? { ...block, caption: captionText(caption, block.alt) }
       : block);
   const mappedBlocks = applyHeadingMappings(activeBlocks, styleConfig?.markdownRules?.headingMappings ?? defaultMarkdownRules.headingMappings);
-  const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "inline-code": inlineCode, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
+  const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-caption": tableCaption, "inline-code": inlineCode, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
   const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
   const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight);
   const shouldPaginate = paginate && hasMarkdownPreview;
@@ -1415,12 +1428,12 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
       {thumbnailContainer && onThumbnailPageSelect ? createPortal(
         <div className="contents">
           {previewPages.map((pageBlocks, pageIndex) => (
-            <button
+            <TooltipButton
               key={pageIndex}
               type="button"
               className="group relative w-fit max-w-full justify-self-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
               onClick={() => onThumbnailPageSelect(pageIndex + 1)}
-              title={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
+              tooltip={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
               aria-label={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
             >
               <div className="overflow-hidden rounded-[6px] border border-slate-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
@@ -1428,7 +1441,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
               </div>
               <span className="mt-1 block text-center text-[10px] font-black text-slate-500 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-200">{pageIndex + 1}</span>
               {pageIndex < tocPages.length ? <span className="absolute right-2 top-2 rounded bg-white/90 px-1 py-0.5 text-[8px] font-bold text-slate-500 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-300">目录</span> : null}
-            </button>
+            </TooltipButton>
           ))}
         </div>,
         thumbnailContainer,

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipButton, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
@@ -243,26 +244,26 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
                 <div key={group.label} className="flex shrink-0 items-center gap-1" aria-label={group.label}>
                   {groupIndex > 0 ? <ToolbarMenuSeparator /> : null}
                   {group.items.map(({ action, label, icon: Icon }) => (
-                    <button
+                    <TooltipButton
                       key={action}
                       type="button"
                       className="mk-editor-tool-button flex size-8 items-center justify-center rounded-[8px] border border-transparent text-slate-700 transition hover:-translate-y-px hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
                       disabled={disabled || !showMarkdownEditor}
-                      title={label}
+                      tooltip={label}
                       aria-label={label}
                       onClick={() => handleToolbarAction(action)}
                     >
                       <Icon className="size-3.5" />
-                    </button>
+                    </TooltipButton>
                   ))}
                 </div>
               ))}
             </>
           ) : <div className="h-8" />}
         </div>
-        <button type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} title={isExpanded ? "退出放大" : "放大编辑区"} onClick={() => setIsExpanded((value) => !value)}>
+        <TooltipButton type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} tooltip={isExpanded ? "退出放大" : "放大编辑区"} onClick={() => setIsExpanded((value) => !value)}>
           <Maximize2 className="size-3.5" />
-        </button>
+        </TooltipButton>
       </div>
 
       <div className={cn("grid min-h-0 flex-1 gap-3", singlePane ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_280px] max-[1180px]:grid-cols-1")}>
@@ -329,18 +330,22 @@ function ToolbarMenuSeparator() {
 function ToolbarMenuButton({ label, icon: Icon, triggerText, disabled = false, children }: { label: string; icon?: LucideIcon; triggerText?: string; disabled?: boolean; children: ReactNode }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="mk-editor-tool-button flex h-8 items-center gap-1 rounded-[8px] border border-transparent px-2 text-slate-700 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
-          disabled={disabled}
-          title={label}
-          aria-label={label}
-        >
-          {triggerText ? <span className="text-sm font-bold leading-none">{triggerText}</span> : Icon ? <Icon className="size-3.5" /> : null}
-          <ChevronDown className="size-3 opacity-65" />
-        </button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="mk-editor-tool-button flex h-8 items-center gap-1 rounded-[8px] border border-transparent px-2 text-slate-700 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
+              disabled={disabled}
+              aria-label={label}
+            >
+              {triggerText ? <span className="text-sm font-bold leading-none">{triggerText}</span> : Icon ? <Icon className="size-3.5" /> : null}
+              <ChevronDown className="size-3 opacity-65" />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="start" className="min-w-36 p-1.5">
         {children}
       </DropdownMenuContent>

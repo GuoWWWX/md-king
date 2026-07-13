@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { applyAppearance } from "@/lib/appearance";
 import { checkPandoc, clearHistoryRemote, saveAppConfig, selectDirectory } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
@@ -187,17 +188,17 @@ export function SettingsPage() {
               {accentOptions.map((option) => {
                 const active = (draft.accentColor ?? "blue") === option.value;
                 return (
-                  <button
+                  <TooltipButton
                     key={option.value}
                     type="button"
                     className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition ${active ? "border-[var(--app-primary)] bg-[var(--app-primary-soft)] text-[var(--app-primary-text)] shadow-sm dark:text-blue-100" : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"}`}
-                    title={option.description}
+                    tooltip={option.description}
                     onClick={() => updateDraft("accentColor", option.value)}
                   >
                     <span className="size-3.5 shrink-0 rounded-full shadow-sm" style={{ backgroundColor: option.color }} />
                     <span>{option.label}</span>
                     {active ? <Check className="size-3" /> : null}
-                  </button>
+                  </TooltipButton>
                 );
               })}
             </div>

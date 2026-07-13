@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
+import { TooltipAnchor } from "@/components/ui/tooltip";
 import { clipboardWriteErrorMessage } from "@/lib/clipboard-errors";
 import { openOutputPath } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
@@ -58,10 +59,16 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
       as="article"
       variant="solid"
       radius="sm"
-      className={cn("min-w-0 overflow-hidden", selected && "ring-2 ring-blue-500/40", checked && "bg-white/88 dark:bg-zinc-900/88")}
+      className={cn(
+        "relative min-w-0 overflow-hidden",
+        selected && "border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
+        checked && "bg-white/88 dark:bg-zinc-900/88",
+      )}
       interactive={Boolean(onSelect)}
       onClick={() => onSelect?.(item)}
     >
+      {selected ? <span className="pointer-events-none absolute inset-1 rounded-[6px] border border-blue-200/70 dark:border-blue-500/50" /> : null}
+
       <div className="flex min-w-0 items-start justify-between gap-3">
         {onToggleChecked ? (
           <button
@@ -82,7 +89,9 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
             {isSuccess ? <CheckCircle2 className="size-4 shrink-0 text-emerald-600" /> : isFailed ? <AlertCircle className="size-4 shrink-0 text-red-600" /> : <Clock className="size-4 shrink-0 text-indigo-600" />}
             <h4 className="min-w-0 truncate text-sm font-semibold text-slate-950 dark:text-zinc-50">{item.inputPath}</h4>
           </div>
-          <p className="mt-1 min-w-0 truncate text-sm text-slate-500 dark:text-zinc-400" title={item.outputPath ?? item.errorMessage ?? "等待输出"}>→ {item.outputPath ?? item.errorMessage ?? "等待输出"}</p>
+          <TooltipAnchor content={item.outputPath ?? item.errorMessage ?? "等待输出"}>
+            <p className="mt-1 min-w-0 truncate text-sm text-slate-500 dark:text-zinc-400">→ {item.outputPath ?? item.errorMessage ?? "等待输出"}</p>
+          </TooltipAnchor>
         </div>
         <Badge className={item.simulated ? "shrink-0 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : isSuccess ? "shrink-0 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16" : isFailed ? "shrink-0 rounded-full bg-red-50 text-red-700 hover:bg-red-50 dark:bg-red-500/16 dark:text-red-200 dark:hover:bg-red-500/16" : "shrink-0 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-50 dark:bg-indigo-500/16 dark:text-indigo-200 dark:hover:bg-indigo-500/16"}>
           {item.simulated ? "预览" : isSuccess ? "成功" : isFailed ? "失败" : "处理中"}

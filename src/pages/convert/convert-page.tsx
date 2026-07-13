@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
 import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
@@ -388,7 +389,9 @@ export function ConvertPage() {
           <span className="shrink-0 text-blue-950 dark:text-zinc-100">{convertResult?.simulated ? "预览完成" : convertResult?.ok ? "已生成" : "当前输入"}</span>
           <span className="shrink-0">{words} 字符</span>
           <span className="shrink-0">{lines} 行</span>
-          <span className="min-w-0 truncate" title={convertResult?.output ?? outputPath}>{convertResult?.output ?? outputPath}</span>
+          <TooltipAnchor content={convertResult?.output ?? outputPath}>
+            <span className="min-w-0 truncate">{convertResult?.output ?? outputPath}</span>
+          </TooltipAnchor>
           {canRevealOutput ? (
             <Button variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} title="在资源管理器中显示" aria-label="在资源管理器中显示生成的 DOCX">
               <FolderOpen className="size-3.5" />
@@ -412,28 +415,30 @@ export function ConvertPage() {
               ))}
             </SelectContent>
           </Select>
-          <button
+          <TooltipButton
             type="button"
             className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-left text-xs font-bold text-blue-800 shadow-none transition hover:bg-slate-50 dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
             onClick={() => void handleSelectOutputDir()}
-            title={outputDirLabel}
+            tooltip={outputDirLabel}
           >
             <FolderOpen className="size-4 shrink-0" />
             <span className="min-w-0 truncate">{outputDirLabel}</span>
-          </button>
-          <div className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100" title={outputPath}>
-            <FileText className="size-4 shrink-0" />
-            <Input
-              value={outputNameDraft}
-              onChange={(event) => {
-                setOutputNameEdited(true);
-                setOutputNameDraft(event.target.value);
-              }}
-              onBlur={(event) => setOutputNameDraft(normalizeOutputName(event.target.value))}
-              aria-label="输出文件名"
-              className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-blue-800 shadow-none outline-none placeholder:text-blue-900/35 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent dark:text-zinc-50 dark:placeholder:text-zinc-500"
-            />
-          </div>
+          </TooltipButton>
+          <TooltipAnchor content={outputPath}>
+            <div className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100">
+              <FileText className="size-4 shrink-0" />
+              <Input
+                value={outputNameDraft}
+                onChange={(event) => {
+                  setOutputNameEdited(true);
+                  setOutputNameDraft(event.target.value);
+                }}
+                onBlur={(event) => setOutputNameDraft(normalizeOutputName(event.target.value))}
+                aria-label="输出文件名"
+                className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-blue-800 shadow-none outline-none placeholder:text-blue-900/35 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent dark:text-zinc-50 dark:placeholder:text-zinc-500"
+              />
+            </div>
+          </TooltipAnchor>
           <PrimaryActionButton className="h-10 rounded-[10px] text-sm font-black max-[760px]:min-w-[116px] max-[640px]:min-w-[104px]" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
             {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
             {isConverting ? "转换中" : "开始转换"}
@@ -533,7 +538,9 @@ export function ConvertPage() {
                   <FileText className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900 dark:text-zinc-100">{name}</p>
-                    <p className="truncate text-xs text-slate-500 dark:text-zinc-400" title={path}>{path}</p>
+                    <TooltipAnchor content={path}>
+                      <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{path}</p>
+                    </TooltipAnchor>
                   </div>
                   <Button variant="ghost" size="icon-xs" className="shrink-0 text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-300" onClick={() => removeBatchImportPath(path)} aria-label={`移除 ${name}`} title="移除">
                     <Trash2 className="size-3.5" />
@@ -808,16 +815,16 @@ function WordPreviewSidebar({
                           {isCollapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                         </button>
                       ) : <span className="size-5 shrink-0" />}
-                      <button
+                      <TooltipButton
                         type="button"
                         className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] py-1.5 pr-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
                         onClick={() => onHeadingJump(heading.id)}
-                        title={heading.text}
+                        tooltip={heading.text}
                       >
                         {heading.number ? <span className="shrink-0 text-[10px] font-black text-slate-400 dark:text-zinc-500">{heading.number}</span> : null}
                         <span className="min-w-0 flex-1 truncate">{heading.text}</span>
                         <span className="shrink-0 tabular-nums text-[10px] font-bold text-slate-400 dark:text-zinc-500">{heading.page}</span>
-                      </button>
+                      </TooltipButton>
                     </div>
                   );
                 })}

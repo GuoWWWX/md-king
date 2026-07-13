@@ -5236,17 +5236,18 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
-        block_style_config_from_value, create_heading_numbering_xml,
-        default_markdown_feature_config, default_report_heading_numbering_config,
-        document_style_config_from_value, footer_page_number_xml,
-        heading_numbering_config_from_value, image_style_config_from_value,
+        block_style_config_from_value, cell_shading_xml, create_heading_numbering_xml,
+        default_heading_mappings, default_markdown_feature_config,
+        default_report_heading_numbering_config, document_style_config_from_value,
+        footer_page_number_xml, heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
         normalize_template_styles_xml, page_content_width_twips, page_settings_config_from_value,
-        pandoc_document_options_from_value, preprocess_markdown_for_word, table_column_widths,
-        table_style_config_from_value, task_list_markers_from_numbering_xml, ConvertRequest,
-        default_heading_mappings, HeadingNumberingConfig, HeadingTarget, MarkdownFeatureConfig,
+        pandoc_document_options_from_value, paragraph_shading_xml, preprocess_markdown_for_word,
+        read_style_fill, table_column_widths, table_style_config_from_value,
+        task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
+        HeadingTarget, MarkdownFeatureConfig,
     };
     use serde_json::json;
     use std::fs;
@@ -5811,6 +5812,18 @@ mod tests {
         assert!(output.contains(r#"<w:rFonts w:ascii="Consolas" w:eastAsia="Microsoft YaHei UI""#));
         assert!(output.contains(r#"<w:color w:val="C026D3" />"#));
         assert!(output.contains(r#"w:fill="FDF4FF""#));
+    }
+
+    #[test]
+    fn preserves_transparent_fill_as_no_docx_shading() {
+        let style = json!({ "backgroundColor": "transparent" });
+
+        assert_eq!(
+            read_style_fill(&style, "backgroundColor", "F8FAFC"),
+            "transparent"
+        );
+        assert!(paragraph_shading_xml("transparent").is_empty());
+        assert!(cell_shading_xml("transparent").is_empty());
     }
 
     #[test]

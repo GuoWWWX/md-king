@@ -2,6 +2,7 @@ import { Copy, Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { MdKingLogo } from "@/components/brand/md-king-logo";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function getAppWindow(): TauriWindow | undefined {
@@ -112,10 +113,10 @@ function TitlebarButton({ label, danger = false, disabled = false, onClick, chil
   const title = disabled ? `${label}仅在桌面端可用` : label;
 
   return (
-    <button
+    <TooltipButton
       type="button"
       aria-label={label}
-      title={title}
+      tooltip={title}
       disabled={disabled}
       className={cn(
         "mk-titlebar-button relative z-10 flex h-10 w-10 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",
@@ -131,6 +132,6 @@ function TitlebarButton({ label, danger = false, disabled = false, onClick, chil
       }}
     >
       {children}
-    </button>
+    </TooltipButton>
   );
 }

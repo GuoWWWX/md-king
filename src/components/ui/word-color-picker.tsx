@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 type ColorOption = {
@@ -150,9 +151,9 @@ function SwatchButton({ color, label, selected, onClick }: { color: string; labe
   const normalizedColor = normalizeColor(color);
 
   return (
-    <button
+    <TooltipButton
       type="button"
-      title={label}
+      tooltip={label}
       aria-label={`${label} ${normalizedColor}`}
       className={cn(
         "group relative size-6 rounded-[4px] border border-slate-300 outline-none transition hover:scale-105 hover:ring-2 hover:ring-slate-300 focus-visible:ring-2 focus-visible:ring-slate-400 dark:border-zinc-600 dark:hover:ring-zinc-500 dark:focus-visible:ring-zinc-400",
@@ -162,7 +163,7 @@ function SwatchButton({ color, label, selected, onClick }: { color: string; labe
       onClick={() => onClick(normalizedColor)}
     >
       {selected ? <Check className={cn("absolute left-1/2 top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2", isDarkColor(normalizedColor) ? "text-white" : "text-slate-950")} /> : null}
-    </button>
+    </TooltipButton>
   );
 }
 

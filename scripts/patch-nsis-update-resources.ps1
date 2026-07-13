@@ -28,6 +28,14 @@ Set-Content -LiteralPath $pandocVersionFile -Value $pandocVersion -NoNewline -En
 
 $content = Get-Content -LiteralPath $installerScript -Raw
 
+# Solid compression forces NSIS to walk one shared stream even when the installed Pandoc is reused.
+$solidCompressorPattern = '(?m)^(?<indent>[ \t]*)SetCompressor /SOLID "lzma"\r?$'
+if ($content -match $solidCompressorPattern) {
+  $content = [regex]::Replace($content, $solidCompressorPattern, '${indent}SetCompressor "lzma"')
+} elseif ($content -notmatch '(?m)^[ \t]*SetCompressor "lzma"\r?$') {
+  throw "Could not find the expected NSIS LZMA compressor directive."
+}
+
 # Preserve the existing installation during upgrades so large unchanged resources remain available.
 $defaultSelectionPattern = '(?ms)    ; Check the first radio button if this the first time\r?\n    ; we enter this page or if the second button wasn''t\r?\n    ; selected the last time we were on this page\r?\n    \$\{If\} \$ReinstallPageCheck <> 2\r?\n      SendMessage \$R2 \$\{BM_SETCHECK\} \$\{BST_CHECKED\} 0\r?\n    \$\{Else\}\r?\n      SendMessage \$R3 \$\{BM_SETCHECK\} \$\{BST_CHECKED\} 0\r?\n    \$\{EndIf\}\r?\n'
 $replacement = @'
@@ -65,6 +73,7 @@ $pandocCacheBlock = @'
     IfFileExists "$INSTDIR\pandoc\windows\pandoc.version" pandoc_version_check pandoc_install
   pandoc_version_check:
     StrCpy $R1 ""
+    ClearErrors
     FileOpen $R0 "$INSTDIR\pandoc\windows\pandoc.version" r
     IfErrors pandoc_install
     FileRead $R0 $R1

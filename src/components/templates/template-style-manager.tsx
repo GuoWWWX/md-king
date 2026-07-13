@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { WordColorPicker } from "@/components/ui/word-color-picker";
 import { WordFontSizeSelect } from "@/components/ui/word-font-size-select";
 import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
@@ -839,20 +840,20 @@ function DocumentStructureNavigationItem({ item, active, onSelect }: { item: (ty
   const ItemIcon = item.icon;
 
   return (
-    <button
+    <TooltipButton
       type="button"
       className={cn(
         "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left text-xs font-medium leading-3 transition",
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
-      title={item.description}
+      tooltip={item.description}
     >
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
         <ItemIcon className="size-2.5" />
       </span>
-    </button>
+    </TooltipButton>
   );
 }
 
@@ -860,14 +861,14 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
   const NodeIcon = getStyleNodeIcon(node);
 
   return (
-    <button
+    <TooltipButton
       type="button"
       className={cn(
         "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left text-xs font-medium leading-3 transition",
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
-      title={`${node.displayName} · ${node.name} · ${node.markdown}`}
+      tooltip={`${node.displayName} · ${node.name} · ${node.markdown}`}
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate">{node.displayName}</span>
@@ -875,7 +876,7 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
         <NodeIcon className="size-2.5" />
       </span>
-    </button>
+    </TooltipButton>
   );
 }
 
@@ -1142,7 +1143,7 @@ function StyleProperties({
             {(!isTableNode || isTableCaption) ? (
               <Field label="字重">
                 <div className="grid h-10 grid-cols-[40px_minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
-                  <button
+                  <TooltipButton
                     type="button"
                     className={cn(
                       "flex items-center justify-center border-r border-slate-200 text-base font-black transition dark:border-zinc-700",
@@ -1150,11 +1151,11 @@ function StyleProperties({
                     )}
                     aria-label="加粗"
                     aria-pressed={Number(draft[fontWeightKey]) >= 700}
-                    title="加粗"
+                    tooltip="加粗"
                     onClick={() => updateDraft(fontWeightKey, Number(draft[fontWeightKey]) >= 700 ? "400" : "700")}
                   >
                     B
-                  </button>
+                  </TooltipButton>
                   <span className="flex items-center px-3 text-sm font-medium text-slate-600 dark:text-zinc-300">
                     {Number(draft[fontWeightKey]) >= 700 ? "加粗" : "常规"}
                   </span>
@@ -1481,17 +1482,17 @@ function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChang
   return (
     <div className="grid h-10 grid-cols-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
       {options.map(({ value: optionValue, label, icon: Icon }) => (
-        <button
+        <TooltipButton
           key={optionValue}
           type="button"
           className={cn("flex items-center justify-center border-r border-slate-200 last:border-r-0 dark:border-zinc-700", value === optionValue ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200")}
           onClick={() => onChange(optionValue)}
-          title={label}
+          tooltip={label}
           aria-label={label}
           aria-pressed={value === optionValue}
         >
           <Icon className="size-4" />
-        </button>
+        </TooltipButton>
       ))}
     </div>
   );
@@ -1537,7 +1538,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function SettingSwitch({ label, checked, onCheckedChange, disabled = false }: { label: string; checked: boolean; onCheckedChange?: (checked: boolean) => void; disabled?: boolean }) {
-  return <div className="flex items-center justify-between gap-4 text-sm text-slate-700 dark:text-zinc-300"><span>{label}</span><Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
+  return <div className="flex items-center justify-between gap-4 text-sm text-slate-700 dark:text-zinc-300"><span>{label}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
 }
 
 function TabScrollArea({ children }: { children: ReactNode }) {

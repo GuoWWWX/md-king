@@ -6,5 +6,5 @@ type MdKingLogoProps = ImgHTMLAttributes<HTMLImageElement> & {
 };
 
 export function MdKingLogo({ title = "md-king", alt, ...props }: MdKingLogoProps) {
-  return <img src={logoUrl} alt={alt ?? title} title={title} draggable={false} {...props} />;
+  return <img src={logoUrl} alt={alt ?? title} draggable={false} {...props} />;
 }

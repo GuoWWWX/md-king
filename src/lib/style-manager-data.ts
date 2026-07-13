@@ -940,12 +940,12 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
 }
 
 export const markdownMappings = [
-  ["# 一级标题", "Heading 1"],
-  ["## 二级标题", "Heading 2"],
-  ["### 三级标题", "Heading 3"],
-  ["#### 四级标题", "Heading 4"],
-  ["##### 五级标题", "Heading 5"],
-  ["###### 六级标题", "Heading 6"],
+  ["#", "Heading 1"],
+  ["##", "Heading 2"],
+  ["###", "Heading 3"],
+  ["####", "Heading 4"],
+  ["#####", "Heading 5"],
+  ["######", "Heading 6"],
   ["正文段落", "Normal"],
   ["> 引用块", "Quote"],
   ["```code```", "Source Code"],

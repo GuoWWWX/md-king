@@ -910,7 +910,7 @@ select {
 
   .mk-nav-idle:hover {
     color: var(--app-primary-text) !important;
-    background: #eef2f7 !important;
+    background: rgba(238, 242, 247, 0.78) !important;
     border-color: transparent !important;
     box-shadow: none !important;
     transform: none !important;
@@ -967,7 +967,7 @@ select {
 
   .mk-theme-cycle-button:hover {
     color: #0f172a !important;
-    background: #e8edf3 !important;
+    background: rgba(226, 232, 240, 0.72) !important;
     border-color: #cbd5e1 !important;
     transform: none;
   }
@@ -1064,7 +1064,7 @@ select {
 
   .dark .mk-mode-tile:hover {
     color: #ffffff;
-    background: rgba(63, 63, 70, 0.86);
+    background: rgba(63, 63, 70, 0.58);
   }
 
   .dark .mk-mode-tile-active {
@@ -1150,6 +1150,21 @@ select {
     color: var(--app-primary);
   }
 
+  .toaster [data-sonner-toast] [data-close-button] {
+    border-color: rgba(148, 163, 184, 0.34) !important;
+    background: rgba(255, 255, 255, 0.76) !important;
+    color: #64748b !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .toaster [data-sonner-toast] [data-close-button]:hover {
+    border-color: rgba(100, 116, 139, 0.4) !important;
+    background: rgba(241, 245, 249, 0.88) !important;
+    color: #0f172a !important;
+  }
+
   .mk-doc-preview {
     background: #ffffff;
     box-shadow: none;
@@ -1224,7 +1239,7 @@ select {
   .dark .mk-nav-idle:focus-visible {
     border-color: transparent !important;
     color: #ffffff !important;
-    background: #303030 !important;
+    background: rgba(63, 63, 70, 0.56) !important;
     box-shadow: 0 0 0 3px rgba(212, 212, 216, 0.1) !important;
   }
 
@@ -1335,7 +1350,7 @@ select {
   }
 
   .dark .mk-titlebar-button:hover {
-    background: rgba(63, 63, 70, 0.72) !important;
+    background: rgba(63, 63, 70, 0.52) !important;
     color: #ffffff !important;
   }
 
@@ -1355,6 +1370,19 @@ select {
       inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }
 
+  .dark .toaster [data-sonner-toast] [data-close-button] {
+    border-color: rgba(161, 161, 170, 0.28) !important;
+    background: rgba(39, 39, 42, 0.72) !important;
+    color: #d4d4d8 !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) !important;
+  }
+
+  .dark .toaster [data-sonner-toast] [data-close-button]:hover {
+    border-color: rgba(212, 212, 216, 0.34) !important;
+    background: rgba(63, 63, 70, 0.68) !important;
+    color: #ffffff !important;
+  }
+
   .dark .mk-editor-surface,
   .dark .mk-card {
     border-color: rgba(212, 212, 216, 0.24) !important;
@@ -1369,10 +1397,15 @@ select {
     color: #d4d4d8 !important;
   }
 
+  .mk-editor-tool-button:hover,
+  .mk-editor-tool-button:focus-visible {
+    background: rgba(248, 250, 252, 0.78) !important;
+  }
+
   .dark .mk-editor-tool-button:hover,
   .dark .mk-editor-tool-button:focus-visible {
     border-color: rgba(228, 228, 231, 0.3) !important;
-    background: rgba(63, 63, 70, 0.86) !important;
+    background: rgba(63, 63, 70, 0.58) !important;
     color: #ffffff !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }

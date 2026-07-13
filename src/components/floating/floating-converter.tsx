@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { buildDocxOutputName, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { readMarkdownFile } from "@/lib/markdown-files";
@@ -711,7 +712,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
             }
           }}
         >
-          <button
+          <TooltipButton
             type="button"
             className={cn(
               "flex items-center justify-center transition hover:scale-[1.03] cursor-grab active:scale-[0.98] active:cursor-grabbing",
@@ -734,37 +735,37 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               if (systemWindow) return;
               resetIdleCollapseTimer();
             }}
-            title={systemWindow ? "点击展开；长按拖动；可拖入 Markdown 文件" : "拖动悬浮球；点击打开批量转换"}
+            tooltip={systemWindow ? "点击展开；长按拖动；可拖入 Markdown 文件" : "拖动悬浮球；点击打开批量转换"}
             aria-label="悬浮球批量转换"
           >
-            <MdKingLogo className="relative z-10 size-11" title="MD King 转换" />
+            <MdKingLogo className="relative z-10 size-11" />
             {tasks.length > 0 ? (
               <span className="absolute -right-1 -top-1 z-20 flex min-w-5 items-center justify-center rounded-full border border-white/90 bg-white px-1.5 py-0.5 text-[10px] font-black leading-none text-slate-950 shadow-lg">
                 {tasks.length > 9 ? "9+" : tasks.length}
               </span>
             ) : null}
-          </button>
+          </TooltipButton>
           {!systemWindow && tasks.length > 0 ? (
             <div className="mk-floating-soft flex items-center gap-1 rounded-[12px] bg-white/72 p-1 backdrop-blur dark:bg-slate-900/85">
-              <button
+              <TooltipButton
                 type="button"
                 className="flex size-6 items-center justify-center rounded-[8px] bg-slate-950 text-white shadow-sm disabled:opacity-40 dark:bg-white dark:text-slate-950"
-                title="开始转换"
+                tooltip="开始转换"
                 aria-label="开始转换"
                 onClick={() => void runBatchConvert()}
                 disabled={isConverting || tasks.length === 0}
               >
                 {isConverting ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
-              </button>
-              <button
+              </TooltipButton>
+              <TooltipButton
                 type="button"
                 className="flex size-6 items-center justify-center rounded-full text-[var(--app-primary)] hover:bg-[var(--app-primary-soft)]"
-                title="展开设置"
+                tooltip="展开设置"
                 aria-label="展开设置"
                 onClick={handlePointerOpenPanel}
               >
                 <Maximize2 className="size-3.5" />
-              </button>
+              </TooltipButton>
             </div>
           ) : null}
         </div>
