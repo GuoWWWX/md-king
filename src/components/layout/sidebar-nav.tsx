@@ -39,8 +39,8 @@ export function SidebarNav({
     <aside
       data-collapsed={collapsed ? "true" : "false"}
       className={cn(
-        "mk-sidebar-panel flex h-full shrink-0 flex-col overflow-hidden rounded-[10px] p-4 transition-[width,padding] duration-200 max-[980px]:w-[76px] max-[980px]:px-3",
-        collapsed ? "w-[76px] px-3" : "w-[220px]",
+        "mk-sidebar-panel flex h-full shrink-0 flex-col overflow-hidden rounded-[8px] p-3 transition-[width,padding] duration-200 max-[980px]:w-[72px] max-[980px]:px-2.5",
+        collapsed ? "w-[72px] px-2.5" : "w-[212px]",
       )}
     >
       <SidebarContent
@@ -61,16 +61,16 @@ export function SidebarNav({
 
 function SidebarContent({ navigation, activePage, currentTemplate, appStatus, collapsed = false, themeMode, onNavigate, onToggleCollapsed, onToggleThemeMode, onThemeModeChange }: SidebarNavProps) {
   const sidebarLabelClass = cn("mk-sidebar-label min-w-0 truncate whitespace-nowrap", collapsed && "hidden");
-  const centeredWhenCollapsed = collapsed ? "mx-auto size-11 justify-center rounded-[12px] px-0" : "justify-start gap-3 px-4 max-[980px]:mx-auto max-[980px]:size-11 max-[980px]:justify-center max-[980px]:rounded-[12px] max-[980px]:px-0";
+  const centeredWhenCollapsed = collapsed ? "mx-auto size-10 justify-center rounded-[8px] px-0" : "justify-start gap-2.5 px-3 max-[980px]:mx-auto max-[980px]:size-10 max-[980px]:justify-center max-[980px]:rounded-[8px] max-[980px]:px-0";
   const navRailLayout = collapsed
-    ? "mx-auto mt-5 flex w-12 flex-col items-center gap-2 rounded-[12px] bg-white/28 p-1.5 shadow-inner shadow-blue-100/40"
-    : "mt-6 rounded-[10px] bg-white/36 p-2 shadow-inner shadow-blue-100/50 max-[980px]:mx-auto max-[980px]:mt-5 max-[980px]:flex max-[980px]:w-12 max-[980px]:flex-col max-[980px]:items-center max-[980px]:gap-2 max-[980px]:rounded-[12px] max-[980px]:bg-white/28 max-[980px]:p-1.5";
-  const navButtonBase = collapsed ? "mk-nav-collapsed size-10 rounded-[12px] p-0" : "h-11 w-full rounded-[9px] max-[980px]:size-10 max-[980px]:rounded-[12px] max-[980px]:p-0";
-  const navButtonLayout = collapsed ? "justify-center" : "justify-start gap-3 px-3 max-[980px]:justify-center max-[980px]:px-0";
+    ? "mx-auto mt-4 flex w-10 flex-col items-center gap-1.5 p-0.5"
+    : "mt-5 p-0.5 max-[980px]:mx-auto max-[980px]:mt-4 max-[980px]:flex max-[980px]:w-10 max-[980px]:flex-col max-[980px]:items-center max-[980px]:gap-1.5";
+  const navButtonBase = collapsed ? "mk-nav-collapsed size-10 rounded-[8px] p-0" : "h-10 w-full rounded-[8px] max-[980px]:size-10 max-[980px]:rounded-[8px] max-[980px]:p-0";
+  const navButtonLayout = collapsed ? "justify-center" : "justify-start gap-2.5 px-3 max-[980px]:justify-center max-[980px]:px-0";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PrimaryActionButton className={cn("h-11 overflow-hidden rounded-[10px] text-sm font-bold whitespace-nowrap shadow-blue-500/25", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
+      <PrimaryActionButton className={cn("h-10 overflow-hidden text-sm font-bold whitespace-nowrap", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
         <Plus className="size-4" />
         <span className={sidebarLabelClass}>新建转换</span>
       </PrimaryActionButton>
@@ -105,12 +105,12 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
 
       </div>
 
-      <div className={cn("mk-sidebar-footer shrink-0 space-y-4 border-t border-blue-100/50 pt-3", collapsed && "items-center")}>
+      <div className={cn("mk-sidebar-footer shrink-0 space-y-3 border-t border-slate-200/80 pt-3 dark:border-zinc-700", collapsed && "items-center")}>
         <ThemeModeButton collapsed={collapsed} themeMode={themeMode} onToggleThemeMode={onToggleThemeMode} onThemeModeChange={onThemeModeChange} />
         <Button
           variant="outline"
           className={cn(
-            "mk-sidebar-icon-button h-9 justify-center overflow-hidden rounded-[10px] border-white/70 bg-white/62 text-xs font-bold whitespace-nowrap text-blue-900/70 hover:bg-white/82",
+            "mk-sidebar-icon-button h-9 justify-center overflow-hidden rounded-[8px] border-slate-200 bg-slate-50 text-xs font-bold whitespace-nowrap text-slate-600 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800",
             collapsed ? "mx-auto w-9 px-0" : "w-full gap-2 px-2 max-[980px]:mx-auto max-[980px]:w-9 max-[980px]:px-0",
           )}
           onClick={onToggleCollapsed}
@@ -156,7 +156,7 @@ function ThemeModeButton({
     return (
       <Button
         variant="outline"
-        className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto h-9 w-9 justify-center rounded-[10px] px-0"
+        className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto h-9 w-9 justify-center rounded-[8px] px-0"
         onClick={onToggleThemeMode}
         title={activeMode.label}
         aria-label={`切换外观主题，当前：${activeMode.label}`}
@@ -170,7 +170,7 @@ function ThemeModeButton({
   return (
     <>
       <div
-        className={cn("mk-theme-cycle-button flex h-10 w-full items-center justify-center rounded-[10px] px-3 text-sm font-bold max-[980px]:hidden", !onThemeModeChange && "pointer-events-none opacity-50")}
+        className={cn("mk-theme-cycle-button flex h-9 w-full items-center justify-center rounded-[8px] px-3 text-sm font-bold max-[980px]:hidden", !onThemeModeChange && "pointer-events-none opacity-50")}
         role="group"
         aria-label={`外观主题，当前：${activeMode.label}`}
         title={`当前：${activeMode.label}`}
@@ -194,7 +194,7 @@ function ThemeModeButton({
       </div>
       <Button
         variant="outline"
-        className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto hidden h-9 w-9 justify-center rounded-[10px] px-0 max-[980px]:inline-flex"
+        className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto hidden h-9 w-9 justify-center rounded-[8px] px-0 max-[980px]:inline-flex"
         onClick={onToggleThemeMode}
         title={activeMode.label}
         aria-label={`切换外观主题，当前：${activeMode.label}`}

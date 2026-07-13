@@ -332,6 +332,14 @@ export function openOutputPath(path: string) {
   return Promise.reject(new Error("浏览器预览无法打开本机文件，请在 Tauri 桌面端使用"));
 }
 
+export function revealOutputPath(path: string) {
+  if (isTauriEnvironment()) {
+    return invoke<void>("reveal_output_path", { path });
+  }
+
+  return Promise.reject(new Error("浏览器预览无法打开资源管理器，请在 Tauri 桌面端使用"));
+}
+
 export function convertMarkdown(request: ConvertRequest) {
   if (isTauriEnvironment()) {
     return invoke<ConvertResult>("convert_markdown", { request });

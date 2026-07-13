@@ -1,4 +1,4 @@
-import type { BorderStyleMode, CaptionPosition, CodeBlockPresetKey, ImageWidthMode, ListLevelType, ListMarkerStyle, ListNumberingMode, ListWrapMode, MarkdownFeatureSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
+import type { BorderStyleMode, CaptionPosition, CodeBlockPresetKey, ImageWidthMode, ListLevelType, ListMarkerStyle, ListNumberingMode, ListWrapMode, MarkdownFeatureSettings, MarkdownRulesSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
 
 export const styleGroupLabels: Record<StyleGroupKey, string> = {
   basic: "基础样式",
@@ -8,6 +8,7 @@ export const styleGroupLabels: Record<StyleGroupKey, string> = {
 };
 
 export const styleNodes: StyleNode[] = [
+  { id: "title", name: "Title", displayName: "大标题", group: "basic", kind: "paragraph", markdown: "#", description: "文档大标题，不参与章节编号和目录" },
   { id: "heading-1", name: "Heading 1", displayName: "一级标题", group: "basic", kind: "heading", markdown: "#", description: "文档主标题，通常映射为 Word Heading 1" },
   { id: "heading-2", name: "Heading 2", displayName: "二级标题", group: "basic", kind: "heading", markdown: "##", description: "章节标题，常用于报告主体结构" },
   { id: "heading-3", name: "Heading 3", displayName: "三级标题", group: "basic", kind: "heading", markdown: "###", description: "小节标题" },
@@ -481,6 +482,30 @@ export const defaultMarkdownFeatures: MarkdownFeatureSettings = {
   horizontalRule: false,
 };
 
+export const defaultMarkdownRules: MarkdownRulesSettings = {
+  headingMappings: {
+    "heading-1": "heading-1",
+    "heading-2": "heading-2",
+    "heading-3": "heading-3",
+    "heading-4": "heading-4",
+    "heading-5": "heading-5",
+    "heading-6": "heading-6",
+  },
+};
+
+const builtInTemplateIds = new Set(["default-report", "official-document", "technical-spec"]);
+
+const builtInMarkdownRules: MarkdownRulesSettings = {
+  headingMappings: {
+    "heading-1": "title",
+    "heading-2": "heading-1",
+    "heading-3": "heading-2",
+    "heading-4": "heading-3",
+    "heading-5": "heading-4",
+    "heading-6": "heading-5",
+  },
+};
+
 export const headingNumberFormats: Record<string, string> = {
   "heading-1": "1",
   "heading-2": "1.1",
@@ -505,18 +530,35 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
   const node = styleNodes.find((item) => item.id === styleId);
   const draft: StyleDraft = { ...defaultStyleDraft, styleId };
 
-  if (node?.kind === "heading") {
-    const level = Number(styleId.replace("heading-", "")) || 2;
+  if (styleId === "title") {
     return {
       ...draft,
-      fontSize: Math.max(10, 22 - level * 2),
+      fontSize: 24,
+      fontWeight: "700",
+      color: "#111827",
+      lineHeight: "1.35",
+      firstLineIndent: 0,
+      beforeSpacing: 0,
+      afterSpacing: 24,
+      align: "center",
+      autoNumbering: false,
+      numberFormat: "无编号",
+    };
+  }
+
+  if (node?.kind === "heading") {
+    const level = Number(styleId.replace("heading-", "")) || 2;
+    const headingFontSizes: Record<number, number> = { 1: 22, 2: 18, 3: 16, 4: 15, 5: 14, 6: 12 };
+    return {
+      ...draft,
+      fontSize: headingFontSizes[level] ?? 12,
       fontWeight: "700",
       color: "#111827",
       lineHeight: "1.35",
       firstLineIndent: 0,
       beforeSpacing: level <= 2 ? 18 : 12,
       afterSpacing: level <= 2 ? 10 : 6,
-      align: level === 1 ? "center" : "left",
+      align: "left",
       autoNumbering: true,
       numberFormat: getDefaultNumberFormat(styleId),
     };
@@ -634,6 +676,14 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
 export function createDefaultTemplateStyleConfig(templateId: string): TemplateStyleConfig {
   const styles = Object.fromEntries(styleNodes.map((node) => [node.id, createDefaultStyleDraft(node.id)]));
   if (templateId === "default-report") {
+    styles.title = {
+      ...styles.title,
+      chineseFont: "宋体",
+      latinFont: "Times New Roman",
+      fontSize: 24,
+      align: "center",
+      afterSpacing: 24,
+    };
     styles.normal = {
       ...styles.normal,
       chineseFont: "宋体",
@@ -715,7 +765,8 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
   }
 
   if (templateId === "official-document") {
-    styles["heading-1"] = { ...styles["heading-1"], chineseFont: "宋体", fontSize: 22, color: "#111827", align: "center", autoNumbering: false };
+    styles.title = { ...styles.title, chineseFont: "宋体", fontSize: 24, color: "#111827", align: "center", afterSpacing: 28 };
+    styles["heading-1"] = { ...styles["heading-1"], chineseFont: "宋体", fontSize: 22, color: "#111827", align: "left", autoNumbering: false };
     styles["heading-2"] = { ...styles["heading-2"], chineseFont: "黑体", fontSize: 16, color: "#111827", numberFormat: "一、" };
     styles.normal = { ...styles.normal, chineseFont: "仿宋", fontSize: 12, lineHeight: "1.85", firstLineIndent: 2, color: "#111827" };
     styles.quote = { ...styles.quote, chineseFont: "仿宋", backgroundColor: "#FFFFFF", color: "#374151" };
@@ -723,7 +774,8 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
   }
 
   if (templateId === "technical-spec") {
-    styles["heading-1"] = { ...styles["heading-1"], fontSize: 20, color: "#1D4ED8", align: "left" };
+    styles.title = { ...styles.title, fontSize: 24, color: "#1D4ED8", align: "left", afterSpacing: 22 };
+    styles["heading-1"] = { ...styles["heading-1"], fontSize: 22, color: "#1D4ED8", align: "left" };
     styles["heading-2"] = { ...styles["heading-2"], fontSize: 16, color: "#1D4ED8" };
     styles.normal = { ...styles.normal, fontSize: 11, lineHeight: "1.7", firstLineIndent: 0, align: "left" };
     styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codeBorderRadius: 0, codePaddingX: 14, codePaddingY: 12 };
@@ -743,6 +795,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles,
     pageSettings: defaultPageSettings,
     markdownFeatures: defaultMarkdownFeatures,
+    markdownRules: builtInTemplateIds.has(templateId) ? builtInMarkdownRules : defaultMarkdownRules,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -830,12 +883,38 @@ function normalizeLegacyStyleDraft(styleId: string, draft: Partial<StyleDraft>, 
 
 export function mergeTemplateStyleConfig(templateId: string, config?: Partial<TemplateStyleConfig>): TemplateStyleConfig {
   const defaults = createDefaultTemplateStyleConfig(templateId);
+  const storedMarkdownRules = config?.markdownRules as (Partial<MarkdownRulesSettings> & { headingMappingMode?: string }) | undefined;
+  const legacyHeadingMappings = storedMarkdownRules?.headingMappingMode === "title-offset"
+    ? {
+      "heading-1": "title",
+      "heading-2": "heading-1",
+      "heading-3": "heading-2",
+      "heading-4": "heading-3",
+      "heading-5": "heading-4",
+      "heading-6": "heading-5",
+    } as const
+    : {};
   const styles = Object.fromEntries(
     Object.entries({
       ...defaults.styles,
       ...(config?.styles ?? {}),
     }).map(([styleId, draft]) => [styleId, normalizeLegacyStyleDraft(styleId, draft, defaults.styles[styleId] ?? createDefaultStyleDraft(styleId))]),
   );
+  const legacyDefaultHeadingOneDrafts = [
+    { ...defaults.styles["heading-1"], fontSize: 20, align: "center" as const },
+    { ...defaults.styles["heading-1"], fontSize: 20, align: "left" as const },
+    { ...defaults.styles["heading-1"], fontSize: 22, align: "center" as const },
+  ];
+  if (legacyDefaultHeadingOneDrafts.some((draft) => JSON.stringify(styles["heading-1"]) === JSON.stringify(draft))) {
+    styles["heading-1"] = defaults.styles["heading-1"];
+  }
+  const legacyHeadingFontSizes: Record<string, number> = { "heading-4": 14, "heading-5": 12, "heading-6": 10 };
+  for (const [styleId, legacyFontSize] of Object.entries(legacyHeadingFontSizes)) {
+    const legacyDraft = { ...defaults.styles[styleId], fontSize: legacyFontSize };
+    if (JSON.stringify(styles[styleId]) === JSON.stringify(legacyDraft)) {
+      styles[styleId] = defaults.styles[styleId];
+    }
+  }
 
   return {
     ...defaults,
@@ -849,6 +928,13 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
     markdownFeatures: {
       ...defaults.markdownFeatures,
       ...(config?.markdownFeatures ?? {}),
+    },
+    markdownRules: {
+      headingMappings: {
+        ...defaults.markdownRules.headingMappings,
+        ...legacyHeadingMappings,
+        ...(storedMarkdownRules?.headingMappings ?? {}),
+      },
     },
   };
 }

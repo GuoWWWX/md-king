@@ -15,6 +15,8 @@ export type ListWrapMode = "flat" | "hanging";
 export type ListNumberingMode = "restart" | "continue";
 export type CaptionPosition = "above" | "below";
 export type ImageWidthMode = "content" | "original" | "custom";
+export type MarkdownHeadingStyleId = "heading-1" | "heading-2" | "heading-3" | "heading-4" | "heading-5" | "heading-6";
+export type WordHeadingTarget = "title" | MarkdownHeadingStyleId;
 
 export type StyleNode = {
   id: string;
@@ -173,7 +175,7 @@ export type StyleDraft = {
 
 export type PaperSize = "A3" | "A4" | "A5" | "A6" | "B4" | "B5" | "B6" | "Letter" | "Legal" | "Executive" | "Tabloid" | "K16" | "K32";
 export type FooterPageNumberFormat = "page" | "plain" | "page-total" | "plain-total" | "dash" | "none";
-export type TocLeaderStyle = "dot" | "space";
+export type TocLeaderStyle = "dot" | "cjk-dot" | "dot-spaced" | "dash" | "line" | "space";
 
 export type PageSettingsDraft = {
   paperSize: PaperSize;
@@ -201,10 +203,15 @@ export type MarkdownFeatureSettings = {
   horizontalRule: boolean;
 };
 
+export type MarkdownRulesSettings = {
+  headingMappings: Record<MarkdownHeadingStyleId, WordHeadingTarget>;
+};
+
 export type TemplateStyleConfig = {
   templateId: string;
   styles: Record<string, StyleDraft>;
   pageSettings: PageSettingsDraft;
   markdownFeatures: MarkdownFeatureSettings;
+  markdownRules: MarkdownRulesSettings;
   updatedAt: string;
 };

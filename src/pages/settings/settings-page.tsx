@@ -1,11 +1,12 @@
-import { Check, Database, FolderOpen, Globe2, HardDrive, Keyboard, MousePointer2, Palette, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
+import { Check, Database, FolderOpen, HardDrive, Keyboard, MousePointer2, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SettingRow } from "@/components/settings/setting-row";
 import { SettingsSection } from "@/components/settings/settings-section";
-import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
+import { PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +31,7 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<AppConfig | undefined>(appConfig);
   const [isSaving, setIsSaving] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
 
   useEffect(() => {
     setDraft(appConfig ? normalizeSettingsDraft(appConfig) : undefined);
@@ -49,7 +51,6 @@ export function SettingsPage() {
   const hasChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(appConfig), [appConfig, draft]);
   const pandocAvailable = pandocStatus?.available === true;
   const quickPasteTemplateId = draft?.quickPasteTemplateId?.trim() || draft?.defaultTemplateId || "default-report";
-  const pandocSummaryLabel = pandocStatus ? (pandocAvailable ? "已检测可用" : "不可用") : "未检测";
   const pandocBadgeClass = pandocAvailable
     ? "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"
     : pandocStatus
@@ -124,30 +125,13 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1440px] min-w-0 flex-col gap-4 overflow-hidden">
-      <AppSurface as="section" radius="lg" padding="lg" className="shrink-0">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">
-                <Save className="size-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-base font-semibold text-slate-950 dark:text-zinc-50">设置总览</p>
-                  <Badge className={hasChanges ? "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"}>{hasChanges ? "有未保存更改" : "已保存"}</Badge>
-                </div>
-                <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-zinc-400">修改配置后可在这里统一保存或重置。</p>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-2 text-sm text-slate-600 dark:text-zinc-300 lg:flex-row lg:flex-wrap">
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">历史记录：{history.length} 条</div>
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">Pandoc：{pandocSummaryLabel}</div>
-              <div className="rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72">快捷入口：{[draft.enableContextMenu, draft.enableFloatingBall, draft.enableTray, draft.enableQuickPaste].filter(Boolean).length}/4 已启用</div>
-              <div className="max-w-full truncate rounded-full border border-white/70 bg-white/58 px-3 py-1.5 dark:border-zinc-700/70 dark:bg-zinc-900/72" title={draft.defaultOutputDir?.trim() || "文档/MD King"}>默认目录：{draft.defaultOutputDir?.trim() || "文档/MD King"}</div>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+    <div className="mx-auto flex h-full w-full max-w-[1440px] min-w-0 flex-col gap-3 overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-zinc-800">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge className={hasChanges ? "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"}>{hasChanges ? "有未保存更改" : "已保存"}</Badge>
+          <span className="truncate text-sm text-slate-500 dark:text-zinc-400">保存后应用到后续转换与系统入口</span>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
             <SoftActionButton className="h-11 rounded-xl" onClick={handleReset} disabled={!hasChanges || isSaving}>
               <RotateCcw className="size-4" />
               重置
@@ -156,13 +140,12 @@ export function SettingsPage() {
               <Save className="size-4" />
               {isSaving ? "正在保存..." : "保存设置"}
             </PrimaryActionButton>
-          </div>
         </div>
-      </AppSurface>
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="grid gap-4 lg:grid-cols-2">
-        <SettingsSection title="基础设置" description="默认目录、外观和主题色。" icon={Settings2}>
+        <SettingsSection title="转换默认项" description="输出位置与生成后的默认行为。" icon={HardDrive}>
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500 dark:text-zinc-400">默认输出目录</Label>
             <div className="flex gap-2">
@@ -173,6 +156,21 @@ export function SettingsPage() {
               </Button>
             </div>
           </div>
+          <SettingRow label="完成后自动打开文件" description="转换成功后使用默认应用打开生成的 DOCX。" checked={draft.openAfterConvert} onCheckedChange={(checked) => updateDraft("openAfterConvert", checked)} />
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500 dark:text-zinc-400">同名文件处理</Label>
+            <Select value={draft.defaultConflictStrategy ?? "overwrite"} onValueChange={(value) => updateDraft("defaultConflictStrategy", value as AppConfig["defaultConflictStrategy"])}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="overwrite">直接覆盖</SelectItem>
+                <SelectItem value="rename">自动重命名</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">单次转换、右键菜单和批量转换都会采用这里的策略。</p>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="外观" description="主题模式与全局强调色。" icon={Settings2}>
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500 dark:text-zinc-400">外观主题</Label>
             <Select value={draft.themeMode ?? "light"} onValueChange={(value) => updateDraft("themeMode", value as AppConfig["themeMode"])}>
@@ -206,7 +204,7 @@ export function SettingsPage() {
           </div>
         </SettingsSection>
 
-        <SettingsSection title="Pandoc 引擎" description="默认优先使用应用内置的 Pandoc，无需用户单独安装。" icon={Terminal}>
+        <SettingsSection title="引擎与维护" description="通常无需修改，仅在排查转换问题时使用。" icon={Terminal}>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-800/60">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium text-slate-900 dark:text-zinc-100">引擎状态</span>
@@ -237,21 +235,6 @@ export function SettingsPage() {
             <RefreshCcw className="size-4" />
             {isChecking ? "检测中..." : "重新检测 Pandoc"}
           </Button>
-        </SettingsSection>
-
-        <SettingsSection title="转换设置" description="默认转换行为。" icon={HardDrive}>
-          <SettingRow label="完成后自动打开文件" description="转换成功后使用默认应用打开生成的 DOCX。" checked={draft.openAfterConvert} onCheckedChange={(checked) => updateDraft("openAfterConvert", checked)} />
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500 dark:text-zinc-400">同名文件处理</Label>
-            <Select value={draft.defaultConflictStrategy ?? "overwrite"} onValueChange={(value) => updateDraft("defaultConflictStrategy", value as AppConfig["defaultConflictStrategy"])}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="overwrite">直接覆盖</SelectItem>
-                <SelectItem value="rename">自动重命名</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">单次转换、右键菜单和批量转换都会采用这里的处理策略。</p>
-          </div>
         </SettingsSection>
 
         <SettingsSection title="快捷粘贴" description="复制 Markdown 后，在 Word/WPS 当前光标处按模板插入。" icon={Keyboard}>
@@ -294,17 +277,27 @@ export function SettingsPage() {
           <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="可用" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
         </SettingsSection>
 
-        <SettingsSection title="隐私与数据" description="本地优先的数据策略。" icon={ShieldCheck}>
+        <SettingsSection title="数据与隐私" description="本地数据与历史记录管理。" icon={ShieldCheck}>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:border-zinc-700/70 dark:bg-zinc-800/60 dark:text-zinc-200">Markdown 和 DOCX 默认只在本机处理，不上传云端。</div>
           <div className="grid gap-2 text-sm text-slate-500 dark:text-zinc-400">
             <InfoLine icon={Database} text={`历史记录：${history.length} 条`} />
-            <InfoLine icon={Globe2} text="运行模式：本地桌面" />
-            <InfoLine icon={Palette} text={`主题色：${accentOptions.find((option) => option.value === draft.accentColor)?.label ?? "专业蓝"}`} />
           </div>
-          <Button variant="outline" className="w-full" onClick={handleClearHistory}>清空转换历史</Button>
+          <Button variant="outline" className="w-full" onClick={() => setClearHistoryConfirmOpen(true)}>清空转换历史</Button>
         </SettingsSection>
         </div>
       </div>
+      <Dialog open={clearHistoryConfirmOpen} onOpenChange={setClearHistoryConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>清空转换历史？</DialogTitle>
+            <DialogDescription>此操作会删除本机保存的全部转换记录，无法恢复；不会删除已经生成的 DOCX 文件。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearHistoryConfirmOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={() => { setClearHistoryConfirmOpen(false); void handleClearHistory(); }}>清空历史</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

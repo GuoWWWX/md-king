@@ -58,6 +58,13 @@ struct TemplateResolution {
 #[derive(Clone)]
 struct HeadingNumberingConfig {
     formats: [Option<String>; 6],
+    mappings: [HeadingTarget; 6],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeadingTarget {
+    Title,
+    Heading(usize),
 }
 
 #[derive(Clone)]
@@ -834,7 +841,9 @@ fn resolve_template(runtime: ConvertRuntime<'_>, request: &ConvertRequest) -> Te
 
 fn built_in_reference_docx_path(runtime: ConvertRuntime<'_>, template_id: &str) -> Option<PathBuf> {
     let resource_path = match template_id {
-        "default-report" => "templates/default-report/reference.docx",
+        "default-report" | "official-document" | "technical-spec" => {
+            "templates/default-report/reference.docx"
+        }
         _ => return None,
     };
 
@@ -893,11 +902,7 @@ fn heading_numbering_config(request: &ConvertRequest) -> Option<HeadingNumbering
         }
     }
 
-    if template_id == "default-report" {
-        return Some(default_report_heading_numbering_config());
-    }
-
-    None
+    default_built_in_heading_numbering_config(template_id)
 }
 
 fn markdown_feature_config(request: &ConvertRequest) -> MarkdownFeatureConfig {
@@ -1285,7 +1290,7 @@ fn table_cell_style_config(style: &Value, table: &Value, is_header: bool) -> Tab
             false
         },
         color: read_style_color(style, "color", "111827"),
-        background_color: read_style_color(style, background_key, "FFFFFF"),
+        background_color: read_style_fill(style, background_key, "FFFFFF"),
         horizontal_align: read_style_string(
             style,
             align_key,
@@ -1307,6 +1312,7 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
     let mut mapped_styles = HashMap::new();
 
     for (style_id, style) in [
+        ("title", styles.get("title")),
         ("heading-1", styles.get("heading-1")),
         ("heading-2", styles.get("heading-2")),
         ("heading-3", styles.get("heading-3")),
@@ -1524,7 +1530,7 @@ fn block_style_config_from_value(config: &Value) -> Option<BlockStyleConfig> {
             font_size: read_style_number(code, "fontSize", 9.0),
             bold: read_style_bold(code),
             color: read_style_color(code, "color", "111827"),
-            background_color: read_style_color(code, "backgroundColor", "F8FAFC"),
+            background_color: read_style_fill(code, "backgroundColor", "F8FAFC"),
             border_color: read_style_color(code, "codeBorderColor", "E2E8F0"),
             line_height: read_line_height(code, 1.55),
             before_spacing: read_spacing_points(code, "beforeSpacing", 8.0),
@@ -1640,6 +1646,14 @@ fn read_style_color(style: &Value, key: &str, default_value: &str) -> String {
         .unwrap_or_else(|| default_value.to_string())
 }
 
+fn read_style_fill(style: &Value, key: &str, default_value: &str) -> String {
+    match style.get(key).and_then(Value::as_str).map(str::trim) {
+        Some(value) if value.eq_ignore_ascii_case("transparent") => "transparent".to_string(),
+        Some(value) => normalize_hex_color(value).unwrap_or_else(|| default_value.to_string()),
+        None => default_value.to_string(),
+    }
+}
+
 fn normalize_hex_color(value: &str) -> Option<String> {
     let color = value.trim().trim_start_matches('#');
     if color.eq_ignore_ascii_case("transparent") {
@@ -1685,12 +1699,32 @@ fn default_report_heading_numbering_config() -> HeadingNumberingConfig {
             Some("1.1.1.1.1".to_string()),
             Some("1.1.1.1.1.1".to_string()),
         ],
+        mappings: default_built_in_heading_mappings(),
+    }
+}
+
+fn default_built_in_heading_numbering_config(template_id: &str) -> Option<HeadingNumberingConfig> {
+    match template_id {
+        "default-report" | "technical-spec" => Some(default_report_heading_numbering_config()),
+        "official-document" => Some(HeadingNumberingConfig {
+            formats: [
+                None,
+                Some("一、".to_string()),
+                Some("1.1.1".to_string()),
+                Some("1.1.1.1".to_string()),
+                Some("1.1.1.1.1".to_string()),
+                Some("1.1.1.1.1.1".to_string()),
+            ],
+            mappings: default_built_in_heading_mappings(),
+        }),
+        _ => None,
     }
 }
 
 fn heading_numbering_config_from_value(config: &Value) -> Option<HeadingNumberingConfig> {
     let styles = config.get("styles")?;
     let mut formats: [Option<String>; 6] = Default::default();
+    let mappings = heading_mappings_from_value(config);
 
     for level in 1..=6 {
         let style_id = format!("heading-{level}");
@@ -1710,10 +1744,93 @@ fn heading_numbering_config_from_value(config: &Value) -> Option<HeadingNumberin
         }
     }
 
-    formats
-        .iter()
-        .any(Option::is_some)
-        .then_some(HeadingNumberingConfig { formats })
+    (formats.iter().any(Option::is_some) || mappings != default_heading_mappings())
+        .then_some(HeadingNumberingConfig { formats, mappings })
+}
+
+fn default_heading_mappings() -> [HeadingTarget; 6] {
+    [
+        HeadingTarget::Heading(1),
+        HeadingTarget::Heading(2),
+        HeadingTarget::Heading(3),
+        HeadingTarget::Heading(4),
+        HeadingTarget::Heading(5),
+        HeadingTarget::Heading(6),
+    ]
+}
+
+fn default_built_in_heading_mappings() -> [HeadingTarget; 6] {
+    [
+        HeadingTarget::Title,
+        HeadingTarget::Heading(1),
+        HeadingTarget::Heading(2),
+        HeadingTarget::Heading(3),
+        HeadingTarget::Heading(4),
+        HeadingTarget::Heading(5),
+    ]
+}
+
+fn heading_mappings_from_value(config: &Value) -> [HeadingTarget; 6] {
+    let mut mappings = config
+        .get("templateId")
+        .and_then(Value::as_str)
+        .is_some_and(is_built_in_template_id)
+        .then_some(default_built_in_heading_mappings())
+        .unwrap_or_else(default_heading_mappings);
+    let rules = config.get("markdownRules");
+
+    if rules
+        .and_then(|value| value.get("headingMappingMode"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.trim() == "title-offset")
+    {
+        mappings = [
+            HeadingTarget::Title,
+            HeadingTarget::Heading(1),
+            HeadingTarget::Heading(2),
+            HeadingTarget::Heading(3),
+            HeadingTarget::Heading(4),
+            HeadingTarget::Heading(5),
+        ];
+    }
+
+    let Some(saved_mappings) = rules.and_then(|value| value.get("headingMappings")) else {
+        return mappings;
+    };
+
+    for source_level in 1..=6 {
+        let key = format!("heading-{source_level}");
+        let Some(target) = saved_mappings
+            .get(&key)
+            .and_then(Value::as_str)
+            .and_then(parse_heading_target)
+        else {
+            continue;
+        };
+        mappings[source_level - 1] = target;
+    }
+
+    mappings
+}
+
+fn is_built_in_template_id(template_id: &str) -> bool {
+    matches!(
+        template_id.trim(),
+        "default-report" | "official-document" | "technical-spec"
+    )
+}
+
+fn parse_heading_target(value: &str) -> Option<HeadingTarget> {
+    let value = value.trim();
+    if value == "title" {
+        return Some(HeadingTarget::Title);
+    }
+
+    value
+        .strip_prefix("heading-")
+        .and_then(|level| level.parse::<usize>().ok())
+        .filter(|level| (1..=6).contains(level))
+        .map(HeadingTarget::Heading)
 }
 
 fn normalize_output(output: Option<&str>) -> Option<String> {
@@ -2721,8 +2838,15 @@ fn toc_field_instruction(page_settings: &PageSettingsConfig) -> String {
     let mut instruction = format!(r#"TOC \o "1-{depth}" \h \z \u"#);
     if !page_settings.toc_show_page_numbers {
         instruction.push_str(&format!(r#" \n "1-{depth}""#));
-    } else if page_settings.toc_leader.trim() == "space" {
-        instruction.push_str(r#" \p " ""#);
+    } else {
+        match page_settings.toc_leader.trim() {
+            "space" => instruction.push_str(r#" \p " ""#),
+            "cjk-dot" => instruction.push_str(r#" \p "…………""#),
+            "dot-spaced" => instruction.push_str(r#" \p "· · ·""#),
+            "dash" => instruction.push_str(r#" \p " - ""#),
+            "line" => instruction.push_str(r#" \p " ___ ""#),
+            _ => {}
+        }
     }
     instruction
 }
@@ -3052,6 +3176,7 @@ fn normalize_template_style_xml(
 
 fn template_style_id_for_word_style(style_id: &str) -> Option<&'static str> {
     match style_id {
+        "Title" => Some("title"),
         "Heading1" => Some("heading-1"),
         "Heading2" => Some("heading-2"),
         "Heading3" => Some("heading-3"),
@@ -3473,8 +3598,9 @@ fn code_language_label_paragraph_properties_xml(style: Option<&CodeBlockStyleCon
         .clamp(0.0, 24.0) as u32;
     let border = border_xml_with_space("solid", 0.75, border_color, border_space);
 
+    let shading = paragraph_shading_xml(background);
     format!(
-        r#"<w:spacing w:before="120" w:after="0" w:line="220" w:lineRule="auto" /><w:jc w:val="right" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:top {border} /><w:left {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="120" w:after="0" w:line="220" w:lineRule="auto" /><w:jc w:val="right" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr><w:top {border} /><w:left {border} /><w:right {border} /></w:pBdr>"#
     )
 }
 
@@ -3819,8 +3945,9 @@ fn code_paragraph_properties_xml(
         String::new()
     };
 
+    let shading = paragraph_shading_xml(background);
     format!(
-        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr>{top_border}<w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr>{top_border}<w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
     )
 }
 
@@ -4434,17 +4561,36 @@ fn normalize_heading_paragraph(
         return paragraph_xml.to_string();
     };
 
-    let level = style_id
+    let source_level = style_id
         .trim_start_matches("Heading")
         .parse::<usize>()
         .unwrap_or(1)
         .clamp(1, 6);
+    let mut paragraph_xml = paragraph_xml.to_string();
+    let level = match heading_numbering.mappings[source_level - 1] {
+        HeadingTarget::Title => return replace_paragraph_style_id(&paragraph_xml, "Title"),
+        HeadingTarget::Heading(level) => {
+            if source_level != level {
+                paragraph_xml =
+                    replace_paragraph_style_id(&paragraph_xml, &format!("Heading{level}"));
+            }
+            level
+        }
+    };
+
     if heading_numbering.formats[level - 1].is_none() {
-        return paragraph_xml.to_string();
+        return paragraph_xml;
     }
 
-    let paragraph_xml = strip_manual_heading_number(paragraph_xml);
+    let paragraph_xml = strip_manual_heading_number(&paragraph_xml);
     ensure_paragraph_numbering(&paragraph_xml, level)
+}
+
+fn replace_paragraph_style_id(paragraph_xml: &str, style_id: &str) -> String {
+    let style = Regex::new(r#"<w:pStyle\s+w:val="[^"]+"\s*/>"#).expect("valid paragraph style regex");
+    style
+        .replace(paragraph_xml, format!(r#"<w:pStyle w:val="{style_id}" />"#))
+        .to_string()
 }
 
 fn capture_heading_style_id(paragraph_xml: &str) -> Option<String> {
@@ -4849,6 +4995,16 @@ fn table_cell_style(style: &TableStyleConfig, is_header: bool) -> &TableCellStyl
 }
 
 fn cell_shading_xml(fill: &str) -> String {
+    if fill.eq_ignore_ascii_case("transparent") {
+        return String::new();
+    }
+    format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{fill}" />"#)
+}
+
+fn paragraph_shading_xml(fill: &str) -> String {
+    if fill.eq_ignore_ascii_case("transparent") {
+        return String::new();
+    }
     format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{fill}" />"#)
 }
 
@@ -5090,7 +5246,7 @@ mod tests {
         normalize_template_styles_xml, page_content_width_twips, page_settings_config_from_value,
         pandoc_document_options_from_value, preprocess_markdown_for_word, table_column_widths,
         table_style_config_from_value, task_list_markers_from_numbering_xml, ConvertRequest,
-        HeadingNumberingConfig, MarkdownFeatureConfig,
+        default_heading_mappings, HeadingNumberingConfig, HeadingTarget, MarkdownFeatureConfig,
     };
     use serde_json::json;
     use std::fs;
@@ -6038,7 +6194,8 @@ mod tests {
     fn adds_word_heading_numbering_and_removes_typed_prefixes() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>总述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1. 背景</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading3" /></w:pPr><w:r><w:t>1.1.1 细节</w:t></w:r></w:p></w:body></w:document>"#;
 
-        let config = default_report_heading_numbering_config();
+        let mut config = default_report_heading_numbering_config();
+        config.mappings = default_heading_mappings();
         let output = normalize_document_xml(
             input,
             true,
@@ -6049,7 +6206,7 @@ mod tests {
             None,
         );
 
-        assert!(!output.contains(r#"<w:pStyle w:val="Heading1" /></w:pPr>"#));
+        assert!(output.contains(r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="2" /><w:numId w:val="9100" />"#));
@@ -6331,6 +6488,7 @@ mod tests {
                 None,
                 None,
             ],
+            mappings: default_heading_mappings(),
         };
         let numbering = create_heading_numbering_xml(&config);
 
@@ -6342,6 +6500,13 @@ mod tests {
     #[test]
     fn reads_heading_numbering_from_saved_template_style_config() {
         let value = json!({
+            "markdownRules": {
+                "headingMappings": {
+                    "heading-1": "title",
+                    "heading-2": "heading-1",
+                    "heading-3": "heading-4"
+                }
+            },
             "styles": {
                 "heading-1": { "autoNumbering": false, "numberFormat": "无编号" },
                 "heading-2": { "autoNumbering": true, "numberFormat": "一、" },
@@ -6354,6 +6519,41 @@ mod tests {
         assert_eq!(config.formats[0], None);
         assert_eq!(config.formats[1].as_deref(), Some("一、"));
         assert_eq!(config.formats[2].as_deref(), Some("1.1.1"));
+        assert_eq!(config.mappings[0], HeadingTarget::Title);
+        assert_eq!(config.mappings[1], HeadingTarget::Heading(1));
+        assert_eq!(config.mappings[2], HeadingTarget::Heading(4));
+    }
+
+    #[test]
+    fn maps_markdown_title_to_word_title_and_offsets_heading_levels() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>项目报告</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1. 项目概览</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading3" /></w:pPr><w:r><w:t>1.1 核心结论</w:t></w:r></w:p></w:body></w:document>"#;
+        let mut config = default_report_heading_numbering_config();
+        config.mappings = [
+            HeadingTarget::Title,
+            HeadingTarget::Heading(1),
+            HeadingTarget::Heading(2),
+            HeadingTarget::Heading(3),
+            HeadingTarget::Heading(4),
+            HeadingTarget::Heading(5),
+        ];
+
+        let output = normalize_document_xml(
+            input,
+            true,
+            Some(&config),
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains(r#"<w:pStyle w:val="Title" /></w:pPr><w:r><w:t>项目报告</w:t>"#));
+        assert!(output.contains(r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
+        assert!(output.contains(r#"<w:pStyle w:val="Heading2" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
+        assert!(output.contains("<w:t>项目概览</w:t>"));
+        assert!(output.contains("<w:t>核心结论</w:t>"));
+        assert!(!output.contains("<w:t>1. 项目概览</w:t>"));
+        assert!(!output.contains("<w:t>1.1 核心结论</w:t>"));
     }
 
     #[test]
@@ -6375,7 +6575,8 @@ mod tests {
         }
         fs::write(&path, buffer.into_inner()).unwrap();
 
-        let config = default_report_heading_numbering_config();
+        let mut config = default_report_heading_numbering_config();
+        config.mappings = default_heading_mappings();
         let inline_enabled = MarkdownFeatureConfig {
             inline_code: true,
             ..default_markdown_feature_config()

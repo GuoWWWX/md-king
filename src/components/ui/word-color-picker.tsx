@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Ban, Check, ChevronDown } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -20,6 +20,8 @@ type WordColorPickerProps = {
   onChange: (value: string) => void;
   autoColor?: string;
   autoLabel?: string;
+  allowTransparent?: boolean;
+  transparentLabel?: string;
   className?: string;
 };
 
@@ -57,7 +59,7 @@ const standardColors: ColorOption[] = [
   { name: "紫色", value: "#7030A0" },
 ];
 
-export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLabel = "自动", className }: WordColorPickerProps) {
+export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLabel = "自动", allowTransparent = false, transparentLabel = "无填充", className }: WordColorPickerProps) {
   const [open, setOpen] = useState(false);
   const normalizedValue = normalizeColor(value);
   const normalizedAuto = normalizeColor(autoColor);
@@ -96,6 +98,19 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
           <ColorSwatch color={normalizedAuto} selected={normalizedValue === normalizedAuto} />
           {autoLabel}
         </button>
+
+        {allowTransparent ? (
+          <button
+            type="button"
+            className="flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm font-semibold text-slate-900 outline-none transition hover:bg-slate-100 focus-visible:bg-slate-100 dark:text-zinc-50 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+            onClick={() => chooseColor("transparent")}
+          >
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-slate-300 bg-[linear-gradient(135deg,transparent_42%,#ef4444_43%,#ef4444_57%,transparent_58%)] dark:border-zinc-600">
+              <Ban className="size-3 text-slate-500 dark:text-zinc-400" />
+            </span>
+            {transparentLabel}
+          </button>
+        ) : null}
 
         <ColorSection title="主题颜色">
           <div className="grid grid-cols-10 gap-1.5">
@@ -154,7 +169,7 @@ function SwatchButton({ color, label, selected, onClick }: { color: string; labe
 function ColorSwatch({ color, selected }: { color: string; selected: boolean }) {
   return (
     <span
-      className={cn("relative size-5 shrink-0 rounded-[5px] border border-slate-300 shadow-sm dark:border-zinc-600", selected && "ring-2 ring-slate-900 dark:ring-zinc-100")}
+      className={cn("relative size-5 shrink-0 rounded-[5px] border border-slate-300 shadow-sm dark:border-zinc-600", color === "transparent" && "bg-[linear-gradient(135deg,transparent_42%,#ef4444_43%,#ef4444_57%,transparent_58%)]", selected && "ring-2 ring-slate-900 dark:ring-zinc-100")}
       style={{ backgroundColor: color }}
     />
   );
@@ -175,6 +190,7 @@ function normalizeColor(color: string) {
 }
 
 function findColorLabel(color: string) {
+  if (color === "transparent") return "无填充";
   if (color === "#111827") return "自动";
   for (const column of themeColorColumns) {
     if (column.colors.some((item) => normalizeColor(item) === color)) return color;
@@ -184,6 +200,7 @@ function findColorLabel(color: string) {
 }
 
 function isDarkColor(color: string) {
+  if (color === "transparent") return false;
   if (!/^#[0-9A-F]{6}$/.test(color)) return true;
   const red = Number.parseInt(color.slice(1, 3), 16);
   const green = Number.parseInt(color.slice(3, 5), 16);

@@ -54,7 +54,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
     <div className="mk-app-bg flex h-screen overflow-hidden text-slate-950">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AppTitlebar />
-        <div className="flex min-h-0 min-w-0 flex-1 gap-3 p-3">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-2.5 p-2.5">
           <SidebarNav
             activePage={activePage}
             appStatus={appStatus}
@@ -68,8 +68,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
             onThemeModeChange={appConfig ? (mode) => void handleSetThemeMode(mode) : undefined}
           />
 
-          <main aria-label={pageMeta.title} className="mk-workspace-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px]">
-            <div className="mx-auto flex h-full min-h-0 w-full max-w-[1540px] flex-col overflow-y-auto overflow-x-hidden p-4">{children}</div>
+          <main aria-label={pageMeta.title} className="mk-workspace-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-[8px]">
+            <div className="mx-auto flex h-full min-h-0 w-full max-w-[1540px] flex-col overflow-y-auto overflow-x-hidden p-3">{children}</div>
           </main>
         </div>
       </div>

@@ -1,7 +1,7 @@
 use tauri::AppHandle;
 
 use crate::core::pandoc::{check_pandoc_available, PandocStatus};
-use crate::system::open_file::open_path;
+use crate::system::open_file::{open_path, reveal_path};
 
 #[tauri::command]
 pub fn check_pandoc(app: AppHandle) -> PandocStatus {
@@ -16,4 +16,14 @@ pub fn open_output_path(path: String) -> Result<(), String> {
     }
 
     open_path(trimmed)
+}
+
+#[tauri::command]
+pub fn reveal_output_path(path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("打开路径不能为空。".to_string());
+    }
+
+    reveal_path(trimmed)
 }

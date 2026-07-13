@@ -1,55 +1,31 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardPaste, FileText, FolderOpen, Loader2, Maximize2, UploadCloud, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, ClipboardPaste, FileText, FolderOpen, Loader2, Maximize2, PanelsTopLeft, Trash2, UploadCloud, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
-import { WordPreviewPage } from "@/components/templates/word-preview-page";
+import { WordPreviewPage, type PreviewOutlineItem } from "@/components/templates/word-preview-page";
 import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
+import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
 
 type ConvertMode = "markdown" | "file";
-type PreviewHeading = { id: string; level: number; text: string };
-const previewZoomMin = 40;
+type PreviewSidebarView = "pages" | "outline";
+const previewZoomMin = 20;
 const previewZoomMax = 200;
 const previewZoomStep = 10;
 
 function clampPreviewZoom(value: number) {
   return Math.min(previewZoomMax, Math.max(previewZoomMin, value));
-}
-
-function extractPreviewHeadings(markdown: string): PreviewHeading[] {
-  const headings: PreviewHeading[] = [];
-  const lines = markdown.split(/\r?\n/);
-  lines.forEach((line, index) => {
-    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
-    if (match) {
-      headings.push({
-        id: `heading-${headings.length + 1}`,
-        level: match[1].length,
-        text: match[2].replace(/\s+#+\s*$/, "").replace(/[#*_`~\[\]()]/g, "").trim(),
-      });
-      return;
-    }
-
-    const previous = lines[index - 1]?.trim();
-    if (!previous) return;
-    if (/^=+\s*$/.test(line)) {
-      headings.push({ id: `heading-${headings.length + 1}`, level: 1, text: previous.replace(/[#*_`~\[\]()]/g, "").trim() });
-    } else if (/^-+\s*$/.test(line)) {
-      headings.push({ id: `heading-${headings.length + 1}`, level: 2, text: previous.replace(/[#*_`~\[\]()]/g, "").trim() });
-    }
-  });
-  return headings;
 }
 
 const fallbackTemplate: Template = {
@@ -76,12 +52,20 @@ export function ConvertPage() {
   const [mode, setMode] = useState<ConvertMode>("markdown");
   const [isConverting, setIsConverting] = useState(false);
   const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
+  const [batchImportPaths, setBatchImportPaths] = useState<string[]>([]);
+  const [selectedBatchImportPaths, setSelectedBatchImportPaths] = useState<string[]>([]);
+  const [batchImportDialogOpen, setBatchImportDialogOpen] = useState(false);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(templateId));
   const [previewWidth, setPreviewWidth] = useState(520);
   const [previewZoom, setPreviewZoom] = useState(40);
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [previewPageCount, setPreviewPageCount] = useState(1);
+  const [previewSidebarView, setPreviewSidebarView] = useState<PreviewSidebarView>("pages");
+  const [previewSidebarWidth, setPreviewSidebarWidth] = useState(208);
+  const [previewOutline, setPreviewOutline] = useState<PreviewOutlineItem[]>([]);
+  const [previewThumbnailContainer, setPreviewThumbnailContainer] = useState<HTMLDivElement | null>(null);
   const splitPaneRef = useRef<HTMLDivElement>(null);
+  const expandedPreviewRef = useRef<HTMLDivElement>(null);
   const conversionVersionRef = useRef(0);
 
   useEffect(() => {
@@ -199,8 +183,37 @@ export function ConvertPage() {
       return;
     }
 
-    if (paths.length === 0) return;
+    const uniquePaths = Array.from(new Set(paths));
+    if (uniquePaths.length === 0) return;
 
+    setBatchImportPaths(uniquePaths);
+    setSelectedBatchImportPaths(uniquePaths);
+    setBatchImportDialogOpen(true);
+  }
+
+  function closeBatchImportDialog() {
+    setBatchImportDialogOpen(false);
+    setBatchImportPaths([]);
+    setSelectedBatchImportPaths([]);
+  }
+
+  function toggleBatchImportPath(path: string) {
+    setSelectedBatchImportPaths((current) => current.includes(path) ? current.filter((item) => item !== path) : [...current, path]);
+  }
+
+  function removeBatchImportPath(path: string) {
+    setBatchImportPaths((current) => current.filter((item) => item !== path));
+    setSelectedBatchImportPaths((current) => current.filter((item) => item !== path));
+  }
+
+  async function runSelectedBatchImport() {
+    const paths = batchImportPaths.filter((path) => selectedBatchImportPaths.includes(path));
+    if (paths.length === 0) {
+      toast.error("请至少选择一个 Markdown 文件");
+      return;
+    }
+
+    closeBatchImportDialog();
     setMode("file");
     setIsConverting(true);
     setConvertResult(null);
@@ -289,6 +302,18 @@ export function ConvertPage() {
     }
   }
 
+  async function handleRevealOutput() {
+    const path = convertResult?.output;
+    if (!path) return;
+
+    try {
+      await revealOutputPath(path);
+      toast.success("已在资源管理器中定位文件");
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "打开资源管理器失败"));
+    }
+  }
+
   function handlePreviewResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
     const container = splitPaneRef.current;
     if (!container) return;
@@ -310,12 +335,32 @@ export function ConvertPage() {
     window.addEventListener("pointercancel", stop);
   }
 
+  function handleExpandedSidebarResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    const container = expandedPreviewRef.current;
+    if (!container) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = container.getBoundingClientRect();
+    const move = (moveEvent: PointerEvent) => {
+      const minWidth = 172;
+      const maxWidth = Math.min(400, Math.max(248, rect.width * 0.42));
+      setPreviewSidebarWidth(Math.min(maxWidth, Math.max(minWidth, moveEvent.clientX - rect.left)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
   const words = markdown.trim() ? markdown.trim().length : 0;
   const lines = markdown ? markdown.split(/\r?\n/).length : 0;
   const outputName = normalizeOutputName(outputNameDraft);
   const outputDirLabel = appConfig?.defaultOutputDir?.trim() || "与源 Markdown 同目录";
   const outputPath = buildOutputPath(appConfig?.defaultOutputDir, outputName);
-  const previewHeadings = useMemo(() => extractPreviewHeadings(markdown), [markdown]);
 
   function scrollToPreviewHeading(id: string) {
     const target = document.querySelector(`[data-preview-heading-id="${id}"]`);
@@ -327,7 +372,13 @@ export function ConvertPage() {
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function openPreviewSidebarView(view: PreviewSidebarView) {
+    setPreviewSidebarView(view);
+  }
+
   function renderConvertFooter(className?: string) {
+    const canRevealOutput = Boolean(convertResult?.ok && !convertResult.simulated && convertResult.output);
+
     return (
       <section className={cn("flex min-h-0 flex-col justify-center gap-2 rounded-[12px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", className)}>
         <div className="flex min-w-0 items-center gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80">
@@ -338,9 +389,14 @@ export function ConvertPage() {
           <span className="shrink-0">{words} 字符</span>
           <span className="shrink-0">{lines} 行</span>
           <span className="min-w-0 truncate" title={convertResult?.output ?? outputPath}>{convertResult?.output ?? outputPath}</span>
+          {canRevealOutput ? (
+            <Button variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} title="在资源管理器中显示" aria-label="在资源管理器中显示生成的 DOCX">
+              <FolderOpen className="size-3.5" />
+            </Button>
+          ) : null}
         </div>
 
-        <div className="grid min-w-0 grid-cols-[180px_minmax(320px,1fr)_150px] items-center gap-2 max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(220px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1">
+        <div className="grid min-w-0 grid-cols-[180px_minmax(150px,0.8fr)_minmax(180px,1fr)_150px] items-center gap-2 max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1">
           <Select value={templateId} onValueChange={(value) => {
             setTemplateId(value);
             setCurrentTemplateId(value);
@@ -356,29 +412,27 @@ export function ConvertPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="grid min-w-0 grid-cols-[minmax(132px,0.9fr)_minmax(150px,1fr)] overflow-hidden rounded-[10px] border border-slate-200 bg-white text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100">
-            <button
-              type="button"
-              className="flex h-10 min-w-0 items-center gap-2 border-r border-slate-200 px-3 text-left text-xs font-bold text-blue-800 transition hover:bg-slate-50 dark:border-zinc-700/70 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
-              onClick={() => void handleSelectOutputDir()}
-              title={outputDirLabel}
-            >
-              <FolderOpen className="size-4 shrink-0" />
-              <span className="min-w-0 truncate">{outputDirLabel}</span>
-            </button>
-            <div className="flex h-10 min-w-0 items-center gap-2 px-3" title={outputPath}>
-              <FileText className="size-4 shrink-0" />
-              <Input
-                value={outputNameDraft}
-                onChange={(event) => {
-                  setOutputNameEdited(true);
-                  setOutputNameDraft(event.target.value);
-                }}
-                onBlur={(event) => setOutputNameDraft(normalizeOutputName(event.target.value))}
-                aria-label="输出文件名"
-                className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-blue-800 shadow-none outline-none placeholder:text-blue-900/35 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent dark:text-zinc-50 dark:placeholder:text-zinc-500"
-              />
-            </div>
+          <button
+            type="button"
+            className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-left text-xs font-bold text-blue-800 shadow-none transition hover:bg-slate-50 dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
+            onClick={() => void handleSelectOutputDir()}
+            title={outputDirLabel}
+          >
+            <FolderOpen className="size-4 shrink-0" />
+            <span className="min-w-0 truncate">{outputDirLabel}</span>
+          </button>
+          <div className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100" title={outputPath}>
+            <FileText className="size-4 shrink-0" />
+            <Input
+              value={outputNameDraft}
+              onChange={(event) => {
+                setOutputNameEdited(true);
+                setOutputNameDraft(event.target.value);
+              }}
+              onBlur={(event) => setOutputNameDraft(normalizeOutputName(event.target.value))}
+              aria-label="输出文件名"
+              className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-blue-800 shadow-none outline-none placeholder:text-blue-900/35 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent dark:text-zinc-50 dark:placeholder:text-zinc-500"
+            />
           </div>
           <PrimaryActionButton className="h-10 rounded-[10px] text-sm font-black max-[760px]:min-w-[116px] max-[640px]:min-w-[104px]" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
             {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
@@ -402,13 +456,28 @@ export function ConvertPage() {
             返回转换页
           </Button>
         </header>
-        <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)] gap-4 bg-slate-50/80 p-4 dark:bg-zinc-900/70 max-[900px]:grid-cols-1">
+        <div
+          ref={expandedPreviewRef}
+          className="grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_10px_minmax(0,1fr)] gap-0 bg-slate-50/80 p-4 dark:bg-zinc-900/70 max-[900px]:!grid-cols-1"
+          style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
+        >
           <WordPreviewSidebar
-            headings={previewHeadings}
+            activeView={previewSidebarView}
+            headings={previewOutline}
             pageCount={previewPageCount}
-            onPageJump={scrollToPreviewPage}
+            onViewChange={openPreviewSidebarView}
             onHeadingJump={scrollToPreviewHeading}
+            onThumbnailContainerChange={setPreviewThumbnailContainer}
           />
+          <div
+            className="group flex cursor-col-resize items-center justify-center max-[900px]:hidden"
+            onPointerDown={handleExpandedSidebarResizeStart}
+            role="separator"
+            aria-label="调整预览导航宽度"
+            aria-orientation="vertical"
+          >
+            <span className="h-10 w-1 rounded-full bg-slate-300/75 transition group-hover:h-16 group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
+          </div>
           <ConvertPreviewPanel
             markdown={markdown}
             markdownSourcePath={markdownSourcePath}
@@ -418,6 +487,10 @@ export function ConvertPage() {
             setZoom={setPreviewZoom}
             onExpand={() => undefined}
             expanded
+            showTocPage
+            thumbnailContainer={previewThumbnailContainer}
+            onThumbnailPageSelect={scrollToPreviewPage}
+            onPreviewOutlineChange={setPreviewOutline}
             className="h-full rounded-[12px]"
             previewClassName="h-full"
           />
@@ -428,6 +501,59 @@ export function ConvertPage() {
   }
 
   return (
+    <>
+      <Dialog open={batchImportDialogOpen} onOpenChange={(open) => { if (!open) closeBatchImportDialog(); }}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+          <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
+            <DialogTitle className="text-lg font-semibold text-slate-950 dark:text-zinc-50">选择要转换的 Markdown</DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-5">已导入 {batchImportPaths.length} 个文件。勾选后才会转换为 DOCX，未选文件不会处理。</DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3 dark:border-zinc-800/80">
+            <span className="text-sm font-medium text-slate-700 dark:text-zinc-200">已选 {selectedBatchImportPaths.length} / {batchImportPaths.length}</span>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setSelectedBatchImportPaths(batchImportPaths)} disabled={batchImportPaths.length === 0 || selectedBatchImportPaths.length === batchImportPaths.length}>全选</Button>
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setSelectedBatchImportPaths([])} disabled={selectedBatchImportPaths.length === 0}>取消全选</Button>
+            </div>
+          </div>
+
+          <div className="max-h-[min(52vh,420px)] divide-y divide-slate-100 overflow-y-auto dark:divide-zinc-800">
+            {batchImportPaths.map((path) => {
+              const checked = selectedBatchImportPaths.includes(path);
+              const name = path.split(/[\\/]/).pop() ?? path;
+              return (
+                <div key={path} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50/80 dark:hover:bg-zinc-900/70">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleBatchImportPath(path)}
+                    className="size-4 shrink-0 accent-blue-600"
+                    aria-label={`选择 ${name}`}
+                  />
+                  <FileText className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-900 dark:text-zinc-100">{name}</p>
+                    <p className="truncate text-xs text-slate-500 dark:text-zinc-400" title={path}>{path}</p>
+                  </div>
+                  <Button variant="ghost" size="icon-xs" className="shrink-0 text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-300" onClick={() => removeBatchImportPath(path)} aria-label={`移除 ${name}`} title="移除">
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              );
+            })}
+            {batchImportPaths.length === 0 ? <p className="px-5 py-10 text-center text-sm text-slate-500 dark:text-zinc-400">没有待转换的文件</p> : null}
+          </div>
+
+          <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
+            <Button variant="outline" onClick={closeBatchImportDialog}>取消</Button>
+            <PrimaryActionButton onClick={() => void runSelectedBatchImport()} disabled={selectedBatchImportPaths.length === 0}>
+              <ArrowRight className="size-4" />
+              转换选中 {selectedBatchImportPaths.length} 项
+            </PrimaryActionButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
       <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1 dark:border-zinc-700/70 dark:bg-zinc-900/80">
         <ModeTile active={mode === "markdown"} icon={FileText} title="Markdown 输入" onClick={() => setMode("markdown")} />
@@ -480,6 +606,7 @@ export function ConvertPage() {
       {renderConvertFooter()}
 
     </div>
+    </>
   );
 }
 
@@ -514,6 +641,10 @@ function ConvertPreviewPanel({
   setZoom,
   onExpand,
   expanded = false,
+  showTocPage = false,
+  thumbnailContainer,
+  onThumbnailPageSelect,
+  onPreviewOutlineChange,
   className,
   previewClassName,
 }: {
@@ -525,6 +656,10 @@ function ConvertPreviewPanel({
   setZoom: (value: number | ((current: number) => number)) => void;
   onExpand: () => void;
   expanded?: boolean;
+  showTocPage?: boolean;
+  thumbnailContainer?: HTMLDivElement | null;
+  onThumbnailPageSelect?: (page: number) => void;
+  onPreviewOutlineChange?: (items: PreviewOutlineItem[]) => void;
   className?: string;
   previewClassName?: string;
 }) {
@@ -564,6 +699,10 @@ function ConvertPreviewPanel({
           styleConfig={styleConfig}
           zoom={zoom}
           paginate
+          showTocPage={showTocPage}
+          thumbnailContainer={thumbnailContainer}
+          onThumbnailPageSelect={onThumbnailPageSelect}
+          onPreviewOutlineChange={onPreviewOutlineChange}
           showHeader={false}
           interactiveViewport
           className={cn("max-h-none min-h-0 overflow-hidden border-0 bg-transparent p-0 shadow-none", previewClassName)}
@@ -575,73 +714,122 @@ function ConvertPreviewPanel({
 }
 
 function WordPreviewSidebar({
+  activeView,
   headings,
   pageCount,
-  onPageJump,
+  onViewChange,
   onHeadingJump,
+  onThumbnailContainerChange,
 }: {
-  headings: PreviewHeading[];
+  activeView: PreviewSidebarView;
+  headings: PreviewOutlineItem[];
   pageCount: number;
-  onPageJump: (page: number) => void;
+  onViewChange: (view: PreviewSidebarView) => void;
   onHeadingJump: (id: string) => void;
+  onThumbnailContainerChange: (element: HTMLDivElement | null) => void;
 }) {
-  return (
-    <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
-      <section className="min-h-0 shrink-[0.6] overflow-hidden">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-xs font-black text-slate-500 dark:text-zinc-400">页面缩略图</p>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount} 页</span>
-        </div>
-        <div className="grid max-h-[240px] grid-cols-2 gap-2 overflow-auto pr-1 max-[900px]:max-h-[120px]">
-          {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
-            <button
-              key={page}
-              type="button"
-              className="group rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
-              onClick={() => onPageJump(page)}
-              title={`跳到第 ${page} 页`}
-            >
-              <span className="mx-auto block aspect-[3/4] w-full rounded-[6px] border border-slate-200 bg-white p-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
-                <span className="mb-1 block h-1 w-2/3 rounded bg-slate-200 dark:bg-zinc-700" />
-                <span className="mb-1 block h-1 w-full rounded bg-slate-100 dark:bg-zinc-800" />
-                <span className="mb-1 block h-1 w-5/6 rounded bg-slate-100 dark:bg-zinc-800" />
-                <span className="mt-2 block h-4 rounded border border-dashed border-slate-200 bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900" />
-              </span>
-              <span className="mt-1 block text-center text-[10px] font-black text-slate-500 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-200">{page}</span>
-            </button>
-          ))}
-        </div>
-      </section>
+  const [collapsedHeadingIds, setCollapsedHeadingIds] = useState<Set<string>>(() => new Set());
+  const collapsibleHeadingIds = useMemo(() => new Set(
+    headings.flatMap((heading, index) => headings[index + 1]?.level > heading.level ? [heading.id] : []),
+  ), [headings]);
 
-      <section className="mt-4 min-h-0 flex-1 overflow-hidden border-t border-slate-200 pt-3 dark:border-zinc-800">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-xs font-black text-slate-500 dark:text-zinc-400">文档目录</p>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{headings.length}</span>
-        </div>
-        <div className="h-full overflow-auto pr-1">
-          {headings.length > 0 ? (
-            <div className="space-y-1">
-              {headings.map((heading) => (
-                <button
-                  key={heading.id}
-                  type="button"
-                  className="block w-full truncate rounded-[8px] px-2 py-1.5 text-left text-xs font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
-                  style={{ paddingLeft: 8 + Math.min(5, heading.level - 1) * 10 }}
-                  onClick={() => onHeadingJump(heading.id)}
-                  title={heading.text}
-                >
-                  <span className="mr-1 text-[10px] font-black text-slate-400 dark:text-zinc-500">H{heading.level}</span>
-                  {heading.text}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-[10px] border border-dashed border-slate-200 px-3 py-4 text-center text-xs font-semibold leading-5 text-slate-400 dark:border-zinc-800 dark:text-zinc-500">
-              当前 Markdown 没有标题，目录会在识别到 # 标题后显示。
-            </div>
-          )}
-        </div>
-      </section>
+  function isHeadingVisible(index: number) {
+    let parentLevel = headings[index].level;
+    for (let candidateIndex = index - 1; candidateIndex >= 0; candidateIndex -= 1) {
+      const candidate = headings[candidateIndex];
+      if (candidate.level < parentLevel) {
+        if (collapsedHeadingIds.has(candidate.id)) return false;
+        parentLevel = candidate.level;
+      }
+    }
+    return true;
+  }
+
+  function toggleHeading(id: string) {
+    setCollapsedHeadingIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[12px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
+      <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-[8px] bg-slate-100 p-1 dark:bg-zinc-900">
+        <button
+          type="button"
+          className={cn("flex h-8 items-center justify-center gap-1.5 rounded-[6px] text-xs font-bold transition", activeView === "pages" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
+          onClick={() => onViewChange("pages")}
+        >
+          <PanelsTopLeft className="size-3.5" />
+          缩略图
+        </button>
+        <button
+          type="button"
+          className={cn("flex h-8 items-center justify-center gap-1.5 rounded-[6px] text-xs font-bold transition", activeView === "outline" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
+          onClick={() => onViewChange("outline")}
+        >
+          <FileText className="size-3.5" />
+          目录
+        </button>
+      </div>
+
+      {activeView === "pages" ? (
+        <section className="min-h-0 flex-1 overflow-hidden">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-black text-slate-500 dark:text-zinc-400">页面缩略图</p>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount} 页</span>
+          </div>
+          <div ref={onThumbnailContainerChange} className="grid h-full grid-cols-[repeat(auto-fit,minmax(104px,1fr))] content-start gap-2 overflow-auto pr-1 max-[900px]:max-h-[120px]" />
+        </section>
+      ) : (
+        <section className="min-h-0 flex-1 overflow-hidden">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-black text-slate-500 dark:text-zinc-400">文档目录</p>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{headings.length}</span>
+          </div>
+          <div className="h-full overflow-auto pr-1">
+            {headings.length > 0 ? (
+              <div className="space-y-0.5">
+                {headings.map((heading, index) => {
+                  if (!isHeadingVisible(index)) return null;
+                  const canCollapse = collapsibleHeadingIds.has(heading.id);
+                  const isCollapsed = collapsedHeadingIds.has(heading.id);
+                  return (
+                    <div key={heading.id} className="flex min-w-0 items-center gap-0.5" style={{ paddingLeft: Math.min(5, heading.level - 1) * 10 }}>
+                      {canCollapse ? (
+                        <button
+                          type="button"
+                          className="flex size-5 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                          onClick={() => toggleHeading(heading.id)}
+                          aria-label={`${isCollapsed ? "展开" : "折叠"}${heading.text}`}
+                        >
+                          {isCollapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                        </button>
+                      ) : <span className="size-5 shrink-0" />}
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] py-1.5 pr-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
+                        onClick={() => onHeadingJump(heading.id)}
+                        title={heading.text}
+                      >
+                        {heading.number ? <span className="shrink-0 text-[10px] font-black text-slate-400 dark:text-zinc-500">{heading.number}</span> : null}
+                        <span className="min-w-0 flex-1 truncate">{heading.text}</span>
+                        <span className="shrink-0 tabular-nums text-[10px] font-bold text-slate-400 dark:text-zinc-500">{heading.page}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-[10px] border border-dashed border-slate-200 px-3 py-4 text-center text-xs font-semibold leading-5 text-slate-400 dark:border-zinc-800 dark:text-zinc-500">
+                当前 Markdown 没有标题，目录会在识别到 # 标题后显示。
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </aside>
   );
 }

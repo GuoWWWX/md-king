@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build": "tauri build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/patch-nsis-installer.ps1",
+    "tauri:build": "tauri build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/patch-nsis-update-resources.ps1",
     "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "cli:check": "cargo check --manifest-path src-tauri/Cargo.toml --bin md-king-cli",
     "test": "pnpm typecheck && pnpm tauri:check && cargo test --manifest-path src-tauri/Cargo.toml"

@@ -14,7 +14,7 @@
 
 桌面端已按 MVP 路线接入 bundled Pandoc，打包应用默认优先使用内置 Pandoc，普通用户无需单独安装；只有需要强制指定其他版本时才填写自定义 `pandocPath`。浏览器预览（例如 `http://localhost:1420`）不具备真实 Tauri/Rust/Pandoc 能力，Pandoc 检测与转换会明确标记为模拟结果，不生成真实 DOCX；验证真实转换、打开输出文件、配置持久化和内置 Pandoc 时，请使用 `pnpm tauri dev`。
 
-当前已落地的桌面能力包括：Markdown → DOCX 转换、默认输出目录配置、模板导入/管理、历史记录写入/清空、打开输出文件、表格样式前端编辑与 Word 预览增强。CLI 已具备第一版 `md-king-cli convert` 与 `md-king-cli templates list` 命令，可输出 JSON 并复用现有 Rust 转换核心。模板样式编辑器目前主要用于前端草稿和预览，尚未把样式完整写回 `reference.docx`。Windows 右键菜单、悬浮球、系统托盘、MCP Server 与完整批量队列仍是规划能力，界面中应保持禁用或明确标注“规划中”。
+当前已落地的桌面能力包括：Markdown → DOCX 转换、默认输出目录配置、模板导入/管理、历史记录写入/清空、打开输出文件、样式编辑与 DOCX 写回、导入 DOCX 的基础样式提取、右键菜单、悬浮转换窗口、系统托盘、全局快捷粘贴和批量转换。CLI 已具备第一版 `md-king-cli convert` 与 `md-king-cli templates list` 命令，可输出 JSON 并复用现有 Rust 转换核心。MCP Server 仍是规划能力。
 
 ## 1. 项目背景
 
