@@ -7,7 +7,6 @@ const floatingWindowLabel = "floating-converter";
 const systemPositionStorageKey = "md-king:system-floating-window-position";
 const floatingWindowClosedWidth = 48;
 const floatingWindowClosedHeight = 48;
-const dockVisibleWidth = 12;
 
 function isTauriEnvironment() {
   if (typeof window === "undefined") return false;
@@ -30,7 +29,7 @@ function loadSystemFloatingWindowPosition() {
     const parsed = JSON.parse(stored) as { x?: number; y?: number };
     if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return defaultPosition;
     return {
-      x: Math.max(screenLeft - floatingWindowClosedWidth + dockVisibleWidth, Math.min(parsed.x, screenLeft + screen.availWidth - dockVisibleWidth)),
+      x: Math.max(screenLeft, Math.min(parsed.x, screenLeft + screen.availWidth - floatingWindowClosedWidth)),
       y: Math.max(screenTop + 8, Math.min(parsed.y, screenTop + screen.availHeight - floatingWindowClosedHeight - 8)),
     };
   } catch {

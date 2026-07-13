@@ -46,6 +46,7 @@ pub fn handle_startup_context_action(app: AppHandle) {
         let output = context_output_path(&input_path, config.default_output_dir.as_deref());
         let request = ConvertRequest {
             input: input_path.to_string_lossy().to_string(),
+            input_kind: Some("path".to_string()),
             source_path: None,
             output,
             template_id: Some(config.default_template_id),
@@ -113,10 +114,7 @@ fn context_markdown_arg(args: Vec<String>) -> Option<PathBuf> {
                 .filter(|path| is_markdown_path(path));
         }
     }
-
-    args.into_iter()
-        .map(PathBuf::from)
-        .find(|path| is_markdown_path(path))
+    None
 }
 
 fn is_markdown_path(path: &Path) -> bool {
@@ -217,11 +215,10 @@ mod tests {
     }
 
     #[test]
-    fn reads_plain_markdown_argument() {
-        let path = context_markdown_arg(vec![r"C:\Docs\demo.markdown".to_string()])
-            .expect("expected markdown path");
+    fn ignores_plain_markdown_argument() {
+        let path = context_markdown_arg(vec![r"C:\Docs\demo.markdown".to_string()]);
 
-        assert_eq!(path.to_string_lossy(), r"C:\Docs\demo.markdown");
+        assert!(path.is_none());
     }
 
     #[test]

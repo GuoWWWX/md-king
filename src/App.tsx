@@ -14,7 +14,7 @@ import { ConvertPage } from "@/pages/convert/convert-page";
 import { HistoryPage } from "@/pages/history/history-page";
 import { SettingsPage } from "@/pages/settings/settings-page";
 import { TemplatesPage } from "@/pages/templates/templates-page";
-import { checkPandoc, getAppConfig, getAppStatus, listHistory, listTemplates } from "@/lib/tauri";
+import { checkPandoc, getAppConfig, getAppStatus, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
 import { useAppStore } from "@/stores/app-store";
 
 const navigation = [
@@ -64,7 +64,7 @@ type QuickPasteStatusEvent = {
 };
 
 function App() {
-  const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, setPandocStatus } = useAppStore();
+  const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, setPandocStatus, queueImportPaths } = useAppStore();
   const [bootReady, setBootReady] = useState(false);
 
   useEffect(() => {
@@ -105,6 +105,32 @@ function App() {
 
     return () => unlisten?.();
   }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const importPendingFiles = async () => {
+      try {
+        const paths = await takeOpenFiles();
+        if (paths.length === 0) return;
+        queueImportPaths(paths);
+        setActivePage("convert");
+      } catch {
+        // 文件入口失败不影响应用正常启动。
+      }
+    };
+
+    listen("open-files://available", () => {
+      void importPendingFiles();
+    })
+      .then((dispose) => {
+        unlisten = dispose;
+        void importPendingFiles();
+      })
+      .catch(() => undefined);
+
+    return () => unlisten?.();
+  }, [queueImportPaths, setActivePage]);
 
   useEffect(() => {
     if (!appConfig) return undefined;

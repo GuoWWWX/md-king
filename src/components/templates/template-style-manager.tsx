@@ -1,4 +1,4 @@
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, FileText, Heading, ImageIcon, ListTree, Palette, Pilcrow, Quote, Search, SlidersHorizontal, Table2, Upload, X, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, FileText, Heading, ImageIcon, ListTree, Minus, Palette, Pilcrow, Quote, Search, SlidersHorizontal, Table2, Upload, X, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ const markdownMappingStyleIds: Record<string, string> = {
   Quote: "quote",
   "Source Code": "source-code",
   "Inline Code": "inline-code",
+  "Horizontal Rule": "horizontal-rule",
   Table: "table",
   "Table Header": "table-header",
   "Table Body": "table-body",
@@ -120,6 +121,15 @@ function isDocumentStructureStyleId(value: string): value is DocumentStructureSt
 }
 
 const listLevelOptions = [1, 2, 3, 4] as const;
+
+const fontWeightOptions = [
+  { value: "300", label: "300 轻细" },
+  { value: "400", label: "400 常规" },
+  { value: "500", label: "500 中等" },
+  { value: "600", label: "600 半粗" },
+  { value: "700", label: "700 加粗" },
+  { value: "800", label: "800 特粗" },
+];
 const listLevelTypeKeys = {
   1: "listLevel1Type",
   2: "listLevel2Type",
@@ -250,6 +260,7 @@ const tocLeaderOptions: Array<{ value: PageSettingsDraft["tocLeader"]; label: st
 
 function getStyleNodeIcon(node: StyleNode) {
   if (node.id === "quote") return Quote;
+  if (node.kind === "rule") return Minus;
   if (node.kind === "code") return Code2;
   if (node.kind === "image") return ImageIcon;
   if (node.kind === "heading") return Heading;
@@ -602,7 +613,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
           />
         </nav>
 
-        <div className="min-h-0 flex-1 overflow-hidden bg-slate-50/50 dark:bg-zinc-950">
+        <div className="@container/style-editor min-h-0 flex-1 overflow-hidden bg-slate-50/50 dark:bg-zinc-950">
           {activeTab === "info" ? (
             <TabScrollArea>
               <TemplateInfoPanel
@@ -627,7 +638,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
             </TabScrollArea>
           ) : null}
           {activeTab === "styles" ? (
-            <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto md:grid md:grid-cols-[300px_minmax(0,1fr)] md:max-lg:grid-rows-[minmax(560px,58vh)_minmax(520px,1fr)] lg:grid-cols-[220px_minmax(300px,1fr)_minmax(280px,340px)] lg:overflow-x-hidden lg:overflow-y-hidden xl:grid-cols-[240px_minmax(420px,1fr)_minmax(320px,420px)] 2xl:grid-cols-[270px_minmax(620px,1fr)_minmax(460px,540px)]">
+            <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto @min-[720px]/style-editor:grid @min-[720px]/style-editor:grid-cols-[300px_minmax(0,1fr)] @min-[720px]/style-editor:grid-rows-[minmax(560px,58vh)_minmax(520px,1fr)] @min-[1280px]/style-editor:grid-cols-[240px_minmax(420px,1fr)_minmax(320px,420px)] @min-[1280px]/style-editor:grid-rows-[minmax(0,1fr)] @min-[1280px]/style-editor:overflow-x-hidden @min-[1280px]/style-editor:overflow-y-hidden @min-[1536px]/style-editor:grid-cols-[270px_minmax(620px,1fr)_minmax(460px,540px)]">
               <StyleNavigation query={query} setQuery={setQuery} groupedNodes={groupedNodes} activeStyleId={activeStyleId} setActiveStyleId={setActiveStyleId} />
               {isDocumentStructureSelection ? (
                 <DocumentStructureProperties selection={activeStyleId} pageSettings={styleConfig.pageSettings} patchPageSettings={patchPageSettings} />
@@ -641,8 +652,6 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
           {activeTab === "mapping" ? (
             <TabScrollArea>
               <MappingPanel
-                markdownFeatures={styleConfig.markdownFeatures}
-                patchMarkdownFeatures={patchMarkdownFeatures}
                 markdownRules={styleConfig.markdownRules}
                 patchMarkdownRules={patchMarkdownRules}
                 onEditStyle={(styleId) => {
@@ -729,7 +738,7 @@ function StyleNavigation({
   }
 
   return (
-    <aside className="min-h-0 overflow-hidden border-r border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 max-md:max-h-[340px] max-md:shrink-0 max-md:border-b max-md:border-r-0 md:max-lg:h-full md:max-lg:min-h-[560px] md:max-lg:border-b">
+    <aside className="min-h-0 max-h-[340px] shrink-0 overflow-hidden border-b border-slate-200 border-r-0 bg-white dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:h-full @min-[720px]/style-editor:max-h-none @min-[720px]/style-editor:min-h-[560px] @min-[720px]/style-editor:border-r @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0">
       <div className="border-b border-slate-200 p-3.5 dark:border-zinc-800">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
@@ -848,6 +857,7 @@ function DocumentStructureNavigationItem({ item, active, onSelect }: { item: (ty
       )}
       onClick={onSelect}
       tooltip={item.description}
+      tooltipSide="right"
     >
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
@@ -869,6 +879,7 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
       )}
       onClick={onSelect}
       tooltip={`${node.displayName} · ${node.name} · ${node.markdown}`}
+      tooltipSide="right"
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate">{node.displayName}</span>
@@ -959,6 +970,7 @@ function StyleProperties({
   const isCodeBlock = selectedStyle.id === "source-code";
   const isInlineCode = selectedStyle.id === "inline-code";
   const isQuote = selectedStyle.id === "quote";
+  const isHorizontalRule = selectedStyle.id === "horizontal-rule";
   const isList = selectedStyle.kind === "list";
   const isImage = selectedStyle.id === "image";
   const usesBlockSpacing = isCodeBlock || isQuote;
@@ -1026,7 +1038,7 @@ function StyleProperties({
   }
 
   return (
-    <section className="min-h-0 overflow-auto border-r border-slate-200 bg-white px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950 max-md:shrink-0 max-md:overflow-visible max-md:border-b max-md:border-r-0 md:max-lg:min-h-[560px] md:max-lg:border-b md:max-lg:border-r-0">
+    <section className="min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[560px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
       <div className="mb-5">
         <h3 className="text-[26px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{isHeadingStyle ? headingNavigationNode.displayName : isList ? listNavigationNode.displayName : selectedStyle.displayName}</h3>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -1087,6 +1099,23 @@ function StyleProperties({
           </PropertyCard>
         ) : null}
 
+        {isHorizontalRule ? (
+          <PropertyCard title="分割线样式">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="线型">
+                <Select value={draft.borderStyle} onValueChange={(value) => updateDraft("borderStyle", value as typeof draft.borderStyle)}>
+                  <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
+                  <SelectContent>{borderStyleOptions.filter((option) => option.value !== "none").map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field label="线条颜色"><WordColorPicker value={draft.borderColor} onChange={(value) => updateDraft("borderColor", value)} autoColor="#CBD5E1" /></Field>
+              <Field label="线条粗细 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.25} max={12} step={0.25} value={draft.borderWidth} onChange={(event) => updateDraft("borderWidth", Number(event.target.value))} /></Field>
+              <Field label="段前间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={draft.beforeSpacing} onChange={(event) => updateDraft("beforeSpacing", Number(event.target.value))} /></Field>
+              <Field label="段后间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={draft.afterSpacing} onChange={(event) => updateDraft("afterSpacing", Number(event.target.value))} /></Field>
+            </div>
+          </PropertyCard>
+        ) : null}
+
         {isHeadingStyle ? (
           <PropertyCard title="标题级别">
             <div className="grid grid-cols-7 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5 dark:border-zinc-700 dark:bg-zinc-900/72">
@@ -1134,7 +1163,7 @@ function StyleProperties({
           </PropertyCard>
         ) : null}
 
-        {!isTableRoot && !isImage ? <PropertyCard title={isHeadingStyle ? `文本属性（当前 ${activeHeadingLevelLabel}）` : isList ? `文本属性（当前 ${activeListLevel} 级）` : isInlineCode ? "行内代码样式" : isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
+        {!isTableRoot && !isImage && !isHorizontalRule ? <PropertyCard title={isHeadingStyle ? `文本属性（当前 ${activeHeadingLevelLabel}）` : isList ? `文本属性（当前 ${activeListLevel} 级）` : isInlineCode ? "行内代码样式" : isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="中文字体"><Select value={draft[chineseFontKey] as string} onValueChange={(value) => updateDraft(chineseFontKey, value)}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="Microsoft YaHei UI">Microsoft YaHei UI</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
             <Field label="英文字体"><Select value={draft[latinFontKey] as string} onValueChange={(value) => updateDraft(latinFontKey, value)}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="Consolas">Consolas</SelectItem><SelectItem value="Cascadia Mono">Cascadia Mono</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
@@ -1147,18 +1176,23 @@ function StyleProperties({
                     type="button"
                     className={cn(
                       "flex items-center justify-center border-r border-slate-200 text-base font-black transition dark:border-zinc-700",
-                      Number(draft[fontWeightKey]) >= 700 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+                      Number(draft[fontWeightKey]) >= 600 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
                     )}
                     aria-label="加粗"
-                    aria-pressed={Number(draft[fontWeightKey]) >= 700}
+                    aria-pressed={Number(draft[fontWeightKey]) >= 600}
                     tooltip="加粗"
-                    onClick={() => updateDraft(fontWeightKey, Number(draft[fontWeightKey]) >= 700 ? "400" : "700")}
+                    onClick={() => updateDraft(fontWeightKey, Number(draft[fontWeightKey]) >= 600 ? "400" : "700")}
                   >
                     B
                   </TooltipButton>
-                  <span className="flex items-center px-3 text-sm font-medium text-slate-600 dark:text-zinc-300">
-                    {Number(draft[fontWeightKey]) >= 700 ? "加粗" : "常规"}
-                  </span>
+                  <Select value={draft[fontWeightKey] as string} onValueChange={(value) => updateDraft(fontWeightKey, value)}>
+                    <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-none border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {fontWeightOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </Field>
             ) : null}
@@ -1242,7 +1276,7 @@ function StyleProperties({
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label={`${activeListLevel} 级缩进 (中文字符)`}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={12} step={0.5} value={draft[activeListLevelIndentKey]} onChange={(event) => updateDraft(activeListLevelIndentKey, Number(event.target.value))} /></Field>
-              <Field label="符号到文字 (中文字符)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={4} step={0.25} value={draft[activeListLevelTextIndentKey]} onChange={(event) => updateDraft(activeListLevelTextIndentKey, Number(event.target.value))} /></Field>
+              <Field label="符号到文字 (英文空格)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={4} step={0.5} value={draft[activeListLevelTextIndentKey]} onChange={(event) => updateDraft(activeListLevelTextIndentKey, Number(event.target.value))} /></Field>
               <Field label="换行对齐">
                 <Select value={draft[activeListLevelWrapModeKey]} onValueChange={(value) => updateDraft(activeListLevelWrapModeKey, value as StyleDraft[typeof activeListLevelWrapModeKey])}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
@@ -1256,7 +1290,7 @@ function StyleProperties({
           </PropertyCard>
         ) : null}
 
-        {(!isTableNode || isTableCaption) && !isInlineCode ? (
+        {(!isTableNode || isTableCaption) && !isInlineCode && !isHorizontalRule ? (
           <PropertyCard title={isHeadingStyle ? `段落与间距（当前 ${activeHeadingLevelLabel}）` : isList ? `段落与间距（当前 ${activeListLevel} 级）` : usesBlockSpacing ? "块级间距" : "段落与间距"}>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="行高"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft[lineHeightKey] as string} onChange={(event) => updateDraft(lineHeightKey, event.target.value)} /></Field>
@@ -1429,6 +1463,14 @@ function MarkdownFeatureStyleSwitch({
     );
   }
 
+  if (selectedStyleId === "horizontal-rule") {
+    return (
+      <PropertyCard title="分割线映射">
+        <SettingSwitch label="保留 Markdown 分割线" checked={markdownFeatures.horizontalRule} onCheckedChange={(checked) => patchMarkdownFeatures({ horizontalRule: checked })} />
+      </PropertyCard>
+    );
+  }
+
   return null;
 }
 
@@ -1455,7 +1497,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selected
   }
 
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden bg-slate-50/80 px-4 py-4 dark:bg-zinc-900/70 max-lg:min-h-[430px] max-lg:shrink-0 max-lg:border-t max-lg:border-slate-200 md:max-lg:col-span-2 dark:max-lg:border-zinc-800">
+    <aside className="flex min-h-[430px] shrink-0 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/70 @min-[720px]/style-editor:col-span-2 @min-[720px]/style-editor:min-h-[520px] @min-[1280px]/style-editor:col-span-1 @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-t-0">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
         <p className="text-sm font-semibold text-slate-400 dark:text-zinc-500">实时预览（{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
         <div className="flex shrink-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
@@ -1746,7 +1788,7 @@ function DocumentStructureProperties({ selection, pageSettings, patchPageSetting
   const item = documentStructureItems.find((entry) => entry.id === selection) ?? documentStructureItems[0];
 
   return (
-    <section className="min-h-0 overflow-auto border-r border-slate-200 bg-white px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950 max-md:shrink-0 max-md:overflow-visible max-md:border-b max-md:border-r-0 md:max-lg:min-h-[560px] md:max-lg:border-b md:max-lg:border-r-0">
+    <section className="min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[560px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
       <div className="mb-5">
         <h3 className="text-[26px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{item.label}</h3>
         <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">{item.description}</p>
@@ -1830,14 +1872,10 @@ function TocLeaderSample({ leader, sample, className }: { leader: PageSettingsDr
 }
 
 function MappingPanel({
-  markdownFeatures,
-  patchMarkdownFeatures,
   markdownRules,
   patchMarkdownRules,
   onEditStyle,
 }: {
-  markdownFeatures: MarkdownFeatureSettings;
-  patchMarkdownFeatures: (patch: Partial<MarkdownFeatureSettings>) => void;
   markdownRules: MarkdownRulesSettings;
   patchMarkdownRules: (patch: Partial<MarkdownRulesSettings>) => void;
   onEditStyle: (styleId: string) => void;
@@ -1846,7 +1884,7 @@ function MappingPanel({
   const fixedMappings = markdownMappings.slice(markdownHeadingStyleIds.length);
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div>
       <AppSurface variant="plain" radius="sm" padding="none" className="p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -1875,7 +1913,7 @@ function MappingPanel({
                 {styleId ? (
                   <button
                     type="button"
-                    className="h-8 justify-self-end rounded-md px-2.5 text-xs font-semibold text-slate-500 transition hover:bg-white hover:text-[var(--app-primary)] dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-[var(--app-primary)]"
+                    className="h-8 justify-self-end rounded-md px-2.5 text-xs font-semibold text-slate-500 transition hover:bg-white/60 hover:text-[var(--app-primary)] dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-[var(--app-primary)]"
                     onClick={() => onEditStyle(styleId)}
                   >
                     编辑样式
@@ -1908,20 +1946,6 @@ function MappingPanel({
         </div>
       </AppSurface>
 
-      <PanelCard title="可编辑规则">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
-          <div className="space-y-3">
-            <SettingSwitch label="启用行内代码样式" checked={markdownFeatures.inlineCode} onCheckedChange={(checked) => patchMarkdownFeatures({ inlineCode: checked })} />
-            <SettingSwitch label="启用代码块样式" checked={markdownFeatures.codeBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ codeBlock: checked })} />
-            <SettingSwitch label="启用引用块样式" checked={markdownFeatures.quoteBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ quoteBlock: checked })} />
-            <SettingSwitch label="保留分割线" checked={markdownFeatures.horizontalRule} onCheckedChange={(checked) => patchMarkdownFeatures({ horizontalRule: checked })} />
-          </div>
-        </div>
-        <div className="grid gap-2 text-xs text-slate-500 dark:text-zinc-400">
-          <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-zinc-900/72">关闭行内代码、代码块或引用块后，导出时会按普通正文处理。</div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-zinc-900/72">标题映射会同时作用于预览、目录和导出的 Word 层级；其他 Markdown 语义保持不变。</div>
-        </div>
-      </PanelCard>
     </div>
   );
 }

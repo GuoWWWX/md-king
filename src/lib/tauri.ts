@@ -154,8 +154,8 @@ export async function selectMarkdownFiles() {
   return normalizeDialogSelections(await open({
     directory: false,
     multiple: true,
-    title: "选择 Markdown 文件",
-    filters: [{ name: "Markdown 文档", extensions: ["md", "markdown"] }],
+    title: "选择 Markdown / TXT 文件",
+    filters: [{ name: "Markdown / TXT 文档", extensions: ["md", "markdown", "txt"] }],
   }));
 }
 
@@ -167,17 +167,25 @@ export async function selectMarkdownFile() {
   return normalizeDialogSelection(await open({
     directory: false,
     multiple: false,
-    title: "选择 Markdown 文件",
-    filters: [{ name: "Markdown 文档", extensions: ["md", "markdown"] }],
+    title: "选择 Markdown / TXT 文件",
+    filters: [{ name: "Markdown / TXT 文档", extensions: ["md", "markdown", "txt"] }],
   }));
 }
 
 export function readMarkdownFileFromPath(path: string) {
   if (!isTauriEnvironment()) {
-    return Promise.reject(new Error("浏览器预览无法读取本机 Markdown 文件，请在桌面端使用"));
+    return Promise.reject(new Error("浏览器预览无法读取本机 Markdown/TXT 文件，请在桌面端使用"));
   }
 
   return invoke<string>("read_markdown_file", { path });
+}
+
+export function takeOpenFiles() {
+  if (!isTauriEnvironment()) {
+    return Promise.resolve<string[]>([]);
+  }
+
+  return invoke<string[]>("take_open_files");
 }
 
 export function resolvePreviewImageSource(path: string, sourcePath?: string) {

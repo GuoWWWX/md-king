@@ -15,8 +15,8 @@ pub fn convert_markdown(app: AppHandle, request: ConvertRequest) -> ConvertResul
 #[tauri::command]
 pub fn read_markdown_file(path: String) -> Result<String, String> {
     let path = PathBuf::from(path.trim());
-    if !path.is_file() || !is_markdown_path(&path) {
-        return Err("请选择存在的 .md 或 .markdown 文件。".to_string());
+    if !path.is_file() || !is_supported_text_path(&path) {
+        return Err("请选择存在的 .md、.markdown 或 .txt 文件。".to_string());
     }
 
     let metadata =
@@ -71,11 +71,14 @@ fn resolve_preview_image_path(path: &str, source_path: Option<&str>) -> Result<P
         .ok_or_else(|| "图片文件不存在。".to_string())
 }
 
-fn is_markdown_path(path: &Path) -> bool {
+fn is_supported_text_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
-            matches!(extension.to_ascii_lowercase().as_str(), "md" | "markdown")
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "md" | "markdown" | "txt"
+            )
         })
 }
 

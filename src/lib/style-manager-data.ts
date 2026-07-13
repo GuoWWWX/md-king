@@ -19,6 +19,7 @@ export const styleNodes: StyleNode[] = [
   { id: "quote", name: "Quote", displayName: "引用块", group: "blocks", kind: "block", markdown: ">", description: "Markdown 引用内容" },
   { id: "source-code", name: "Source Code", displayName: "代码块", group: "blocks", kind: "code", markdown: "```", description: "围栏代码块", warning: "建议设置等宽字体和底纹" },
   { id: "inline-code", name: "Inline Code", displayName: "行内代码", group: "blocks", kind: "code", markdown: "`code`", description: "行内代码样式" },
+  { id: "horizontal-rule", name: "Horizontal Rule", displayName: "分割线", group: "blocks", kind: "rule", markdown: "---", description: "Markdown 分割线" },
   { id: "image", name: "Image", displayName: "图片样式", group: "images", kind: "image", markdown: "![alt](url)", description: "控制 Markdown 图片的宽度和对齐方式" },
   { id: "caption", name: "Caption", displayName: "图片题注", group: "images", kind: "paragraph", markdown: "caption", description: "控制图片下方或上方的说明文字" },
   { id: "bullet-list", name: "Bullet List", displayName: "无序列表", group: "basic", kind: "list", markdown: "-", description: "项目符号列表" },
@@ -58,8 +59,8 @@ export const listLevelTypeOptions: { value: ListLevelType; label: string }[] = [
 export const listNumberFormatOptions = ["1.", "1)", "(1)", "01.", "A.", "A)", "a.", "a)", "I.", "I)", "i.", "i)", "一、", "（一）"] as const;
 
 export const listWrapModeOptions: { value: ListWrapMode; label: string; description: string }[] = [
-  { value: "hanging", label: "文字对齐", description: "换行后与列表文字起点对齐" },
-  { value: "flat", label: "不悬挂", description: "换行后回到列表左侧起点" },
+  { value: "hanging", label: "与正文文字对齐", description: "换行后与符号后的文字起点对齐" },
+  { value: "flat", label: "与符号对齐", description: "换行后与列表符号起点对齐" },
 ];
 
 export const listNumberingModeOptions: { value: ListNumberingMode; label: string; description: string }[] = [
@@ -96,7 +97,7 @@ export const defaultStyleDraft: StyleDraft = {
   numberFormat: "1.1",
   listMarkerStyle: "disc",
   listIndent: 2,
-  listTextIndent: 1.5,
+  listTextIndent: 1,
   listWrapMode: "hanging",
   listNumberingMode: "restart",
   nestedLevel2MarkerStyle: "circle",
@@ -155,10 +156,10 @@ export const defaultStyleDraft: StyleDraft = {
   listLevel2Indent: 4,
   listLevel3Indent: 6,
   listLevel4Indent: 8,
-  listLevel1TextIndent: 1.5,
-  listLevel2TextIndent: 1.5,
-  listLevel3TextIndent: 1.5,
-  listLevel4TextIndent: 1.5,
+  listLevel1TextIndent: 1,
+  listLevel2TextIndent: 1,
+  listLevel3TextIndent: 1,
+  listLevel4TextIndent: 1,
   listLevel1WrapMode: "hanging",
   listLevel2WrapMode: "hanging",
   listLevel3WrapMode: "hanging",
@@ -614,6 +615,18 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
     };
   }
 
+  if (styleId === "horizontal-rule") {
+    return {
+      ...draft,
+      borderStyle: "solid",
+      borderColor: "#CBD5E1",
+      borderWidth: 1,
+      beforeSpacing: 12,
+      afterSpacing: 12,
+      autoNumbering: false,
+    };
+  }
+
   if (node?.kind === "list") {
     const isNumbered = styleId === "numbered-list";
     const isNested = styleId === "nested-list";
@@ -627,8 +640,8 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       autoNumbering: isNumbered,
       numberFormat: isNumbered ? "1." : "无编号",
       listMarkerStyle: isNested ? "circle" : "disc",
-      listIndent: isNested ? 4 : 2,
-      listTextIndent: 1.5,
+      listIndent: 2,
+      listTextIndent: 1,
       listWrapMode: "hanging",
       listNumberingMode: "restart",
       listLevel1Type: isNumbered ? "number" : "bullet",
@@ -801,7 +814,9 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
 }
 
 function normalizeFontWeight(value: unknown) {
-  return Number(value) >= 700 ? "700" : "400";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "400";
+  return String(Math.min(800, Math.max(300, Math.round(numeric / 100) * 100)));
 }
 
 function normalizeLegacyStyleDraft(styleId: string, draft: Partial<StyleDraft>, fallback = createDefaultStyleDraft(styleId)): StyleDraft {
@@ -950,6 +965,8 @@ export const markdownMappings = [
   ["> 引用块", "Quote"],
   ["```code```", "Source Code"],
   ["`inline code`", "Inline Code"],
+  ["---", "Horizontal Rule"],
+  ["$...$ / $$...$$ / ```math", "Word 公式（自动转换）"],
   ["表格", "Table"],
   ["表头", "Table Header"],
   ["表格体", "Table Body"],

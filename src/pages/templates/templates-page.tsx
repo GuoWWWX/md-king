@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckSquare, ChevronDown, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
+import { CheckSquare, ChevronDown, FilePlus, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { TemplateGalleryCard } from "@/components/templates/template-gallery-card";
 import { TemplateEditDrawer } from "@/components/templates/template-edit-drawer";
@@ -234,13 +234,9 @@ export function TemplatesPage() {
   }
 
   async function persistTemplates(nextTemplates: Template[]) {
-    setTemplates(nextTemplates);
-    try {
-      const saved = await saveTemplates(nextTemplates);
-      setTemplates(saved);
-    } catch (error) {
-      toast.error(userFacingErrorMessage(error, "保存模板列表失败，仅更新了当前界面"));
-    }
+    const saved = await saveTemplates(nextTemplates);
+    setTemplates(saved);
+    return saved;
   }
 
   async function setDefaultTemplate(template: Template) {
@@ -283,8 +279,7 @@ export function TemplatesPage() {
   async function handleImport(request: ImportTemplateRequest) {
     const template = await importTemplate(request);
     if (request.isDefault && appConfig) {
-      const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: template.id });
-      setAppConfig(savedConfig);
+      setAppConfig({ ...appConfig, defaultTemplateId: template.id });
     }
     try {
       const nextTemplates = await listTemplates();
@@ -292,6 +287,7 @@ export function TemplatesPage() {
     } catch {
       setTemplates([...templates, template]);
     }
+    setPreviewTemplateId(template.id);
     return template;
   }
 
@@ -310,13 +306,13 @@ export function TemplatesPage() {
       updatedAt: now,
     };
     const nextTemplates = request.isDefault ? templates.map((item) => ({ ...item, isDefault: false })).concat(template) : templates.concat(template);
+    const savedTemplates = await persistTemplates(nextTemplates);
     if (request.isDefault && appConfig) {
       const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: template.id });
       setAppConfig(savedConfig);
+      setTemplates(savedTemplates.map((item) => ({ ...item, isDefault: item.id === template.id })));
     }
-    await persistTemplates(nextTemplates);
     setPreviewTemplateId(template.id);
-    setStyleTemplate(template);
     return template;
   }
 
@@ -333,17 +329,21 @@ export function TemplatesPage() {
     const deletedDefault = appConfig ? ids.includes(appConfig.defaultTemplateId) : false;
     const deletedCurrent = currentTemplateId ? ids.includes(currentTemplateId) : false;
 
-    await persistTemplates(nextTemplates);
-    if (deletedDefault && appConfig && fallbackTemplate) {
-      const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: fallbackTemplate.id });
-      setAppConfig(savedConfig);
+    try {
+      await persistTemplates(nextTemplates);
+      if (deletedDefault && appConfig && fallbackTemplate) {
+        const savedConfig = await saveAppConfig({ ...appConfig, defaultTemplateId: fallbackTemplate.id });
+        setAppConfig(savedConfig);
+      }
+      if (deletedCurrent) {
+        setCurrentTemplateId(fallbackTemplate?.id);
+      }
+      setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
+      if (previewTemplateId && ids.includes(previewTemplateId)) setPreviewTemplateId(fallbackTemplate?.id);
+      toast.success(`已删除 ${targets.length} 个模板`);
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "删除模板失败"));
     }
-    if (deletedCurrent) {
-      setCurrentTemplateId(fallbackTemplate?.id);
-    }
-    setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
-    if (previewTemplateId && ids.includes(previewTemplateId)) setPreviewTemplateId(fallbackTemplate?.id);
-    toast.success(`已删除 ${targets.length} 个模板`);
   }
 
   function toggleSelect(template: Template) {
@@ -397,14 +397,18 @@ export function TemplatesPage() {
       ? templates.map((template) => getTemplateCategory(template.tags, template.isBuiltIn) === group ? applyGroupToTemplate(template, "未分组") : template)
       : templates;
 
-    if (targets.length > 0) {
-      await persistTemplates(nextTemplates);
-    }
+    try {
+      if (targets.length > 0) {
+        await persistTemplates(nextTemplates);
+      }
 
-    const nextGroups = customGroups.filter((item) => item !== group);
-    syncCustomGroups(nextGroups);
-    setSelectedGroups((current) => current.filter((item) => item !== group));
-    toast.success(targets.length > 0 ? `已删除分组「${group}」，相关模板已移到未分组` : `已删除分组「${group}」`);
+      const nextGroups = customGroups.filter((item) => item !== group);
+      syncCustomGroups(nextGroups);
+      setSelectedGroups((current) => current.filter((item) => item !== group));
+      toast.success(targets.length > 0 ? `已删除分组「${group}」，相关模板已移到未分组` : `已删除分组「${group}」`);
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "删除模板分组失败"));
+    }
   }
 
   if (styleTemplate) {
@@ -423,10 +427,25 @@ export function TemplatesPage() {
             <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950 dark:text-zinc-50">模板中心</h2>
             <p className="mt-1 text-sm text-blue-900/58 dark:text-zinc-400">选择参考 DOCX 模板，让同类文档保持稳定格式。</p>
           </div>
-          <PrimaryActionButton className="rounded-[14px]" onClick={() => openDialog("import")}>
-            <Upload className="size-4" />
-            导入模板
-          </PrimaryActionButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <PrimaryActionButton className="rounded-[14px]">
+                <Plus className="size-4" />
+                新建模板
+                <ChevronDown className="size-4" />
+              </PrimaryActionButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => openDialog("create")}>
+                <FilePlus className="size-4" />
+                从空白创建
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openDialog("import")}>
+                <Upload className="size-4" />
+                从 DOCX 导入
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="mk-template-filter-panel mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-[12px] border border-blue-100/60 bg-white/24 p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
@@ -467,7 +486,7 @@ export function TemplatesPage() {
                 <ChevronDown className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[240px] p-2" align="start">
+            <DropdownMenuContent className="p-2" align="start">
               <DropdownMenuItem className="justify-between text-slate-600 dark:text-zinc-300" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
                 显示全部分组
                 {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600 dark:text-indigo-300">当前</span> : null}
@@ -500,14 +519,10 @@ export function TemplatesPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <div className="ml-auto grid min-w-0 grid-cols-2 items-center gap-2 max-[640px]:ml-0 max-[640px]:w-full">
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900" onClick={() => setStyleTemplate(templates[0])} disabled={templates.length === 0}>
+          <div className="ml-auto flex min-w-0 items-center max-[640px]:ml-0 max-[640px]:w-full">
+            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full" onClick={() => setStyleTemplate(highlightedTemplate)} disabled={!highlightedTemplate}>
               <Palette className="size-4" />
               样式管理器
-            </Button>
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900" onClick={() => openDialog("create")}>
-              <Plus className="size-4" />
-              创建模板
             </Button>
           </div>
         </div>
@@ -628,7 +643,18 @@ export function TemplatesPage() {
         </AppSurface>
       </aside>
 
-      <TemplateImportDialog open={dialogOpen} mode={dialogMode} groups={groups} onOpenChange={setDialogOpen} onImport={handleImport} onCreate={handleCreate} />
+      <TemplateImportDialog
+        open={dialogOpen}
+        mode={dialogMode}
+        groups={groups}
+        onOpenChange={setDialogOpen}
+        onImport={handleImport}
+        onCreate={handleCreate}
+        onComplete={(template) => {
+          setPreviewTemplateId(template.id);
+          setStyleTemplate(template);
+        }}
+      />
       <TemplateEditDrawer
         open={Boolean(editingTemplate)}
         template={editingTemplate}

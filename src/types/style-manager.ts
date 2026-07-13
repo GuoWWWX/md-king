@@ -1,6 +1,6 @@
 export type StyleGroupKey = "basic" | "images" | "blocks" | "tables";
 
-export type StyleNodeKind = "heading" | "paragraph" | "block" | "code" | "list" | "image" | "table";
+export type StyleNodeKind = "heading" | "paragraph" | "block" | "code" | "list" | "image" | "rule" | "table";
 
 export type HorizontalAlign = "left" | "center" | "right" | "justify";
 export type VerticalAlign = "top" | "middle" | "bottom";

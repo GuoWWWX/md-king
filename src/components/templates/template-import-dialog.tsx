@@ -18,9 +18,10 @@ type TemplateImportDialogProps = {
   onOpenChange: (open: boolean) => void;
   onImport: (request: ImportTemplateRequest) => Promise<Template>;
   onCreate: (request: Omit<ImportTemplateRequest, "referenceDocxPath">) => Promise<Template>;
+  onComplete: (template: Template) => void;
 };
 
-export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImport, onCreate }: TemplateImportDialogProps) {
+export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImport, onCreate, onComplete }: TemplateImportDialogProps) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("我的模板");
   const [description, setDescription] = useState("");
@@ -70,14 +71,16 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
         tags: [category.trim() || "我的模板", "自定义"],
         isDefault,
       };
+      let template: Template;
       if (mode === "import") {
-        await onImport({ ...base, referenceDocxPath: referenceDocxPath.trim() });
+        template = await onImport({ ...base, referenceDocxPath: referenceDocxPath.trim() });
         toast.success("模板已导入");
       } else {
-        await onCreate(base);
+        template = await onCreate(base);
         toast.success("模板已创建，可继续进入样式编辑器定义样式");
       }
       onOpenChange(false);
+      onComplete(template);
     } catch (error) {
       toast.error(userFacingErrorMessage(error, mode === "import" ? "导入模板失败" : "创建模板失败"));
     } finally {
@@ -135,7 +138,7 @@ export function TemplateImportDialog({ open, mode, groups, onOpenChange, onImpor
               <p className="text-sm font-medium text-slate-900 dark:text-zinc-50">设为默认模板</p>
               <p className="text-xs text-slate-500 dark:text-zinc-400">保存后转换页默认使用这个模板。</p>
             </div>
-            <Switch checked={isDefault} onCheckedChange={setIsDefault} />
+            <Switch checked={isDefault} onCheckedChange={setIsDefault} aria-label="设为默认模板" />
           </div>
         </div>
 

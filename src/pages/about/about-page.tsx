@@ -1,4 +1,4 @@
-import { ClipboardPaste, Cpu, FileText, History, Layers3, ShieldCheck, type LucideIcon } from "lucide-react";
+import { ClipboardPaste, Cpu, FileText, HardDrive, History, Layers3, ShieldCheck, type LucideIcon } from "lucide-react";
 import { AppSurface } from "@/components/ui/app-surface";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -40,6 +40,7 @@ export function AboutPage() {
           <Capability icon={ClipboardPaste} title="粘贴转换" text="复制 AI 对话内容后快速生成 DOCX。" />
           <Capability icon={Layers3} title="模板样式" text="复用参考 DOCX 控制 Word 样式。" />
           <Capability icon={History} title="转换历史" text="保留最近结果，方便回看和定位输出。" />
+          <Capability icon={HardDrive} title="本地处理" text="文档内容在本机完成转换，不上传到远程服务。" />
         </div>
       </section>
 

@@ -191,7 +191,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
   return (
     <section className={cn("mk-card flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] max-[760px]:min-h-[300px]", isExpanded ? "fixed inset-6 z-50 h-auto bg-white/95 shadow-2xl dark:bg-slate-950" : "h-full max-[1100px]:h-auto")}>
       <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-700/70 dark:bg-slate-950/35">
-        <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-1 text-slate-700 [scrollbar-width:none] dark:text-slate-300 [&::-webkit-scrollbar]:hidden">
+        <div className="scrollbar-none flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden py-1 text-slate-700 dark:text-slate-300">
           {showMarkdownEditor ? (
             <>
               <ToolbarMenuButton
@@ -250,6 +250,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
                       className="mk-editor-tool-button flex size-8 items-center justify-center rounded-[8px] border border-transparent text-slate-700 transition hover:-translate-y-px hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
                       disabled={disabled || !showMarkdownEditor}
                       tooltip={label}
+                      tooltipSide="bottom"
                       aria-label={label}
                       onClick={() => handleToolbarAction(action)}
                     >
@@ -261,7 +262,7 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
             </>
           ) : <div className="h-8" />}
         </div>
-        <TooltipButton type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} tooltip={isExpanded ? "退出放大" : "放大编辑区"} onClick={() => setIsExpanded((value) => !value)}>
+        <TooltipButton type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} tooltip={isExpanded ? "退出放大" : "放大编辑区"} tooltipSide="bottom" onClick={() => setIsExpanded((value) => !value)}>
           <Maximize2 className="size-3.5" />
         </TooltipButton>
       </div>
@@ -298,8 +299,8 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
           <div className="mk-file-cube mb-5 flex size-20 items-center justify-center rounded-[16px] text-white">
             <FileText className="size-10" />
           </div>
-          <h4 className="text-lg font-black text-blue-700">导入 Markdown</h4>
-          <p className="mt-2 max-w-[250px] text-xs leading-5 text-blue-900/55">选择单个文件可载入编辑区；批量导入后可勾选需要转换的文件。</p>
+          <h4 className="text-lg font-black text-blue-700">导入 Markdown / TXT</h4>
+          <p className="mt-2 max-w-[250px] text-xs leading-5 text-blue-900/55">选择单个文本文件可载入编辑区；批量导入后可勾选需要转换的文件。</p>
           <div className="mt-5 flex flex-col gap-2">
             <Button type="button" onClick={() => onNativeFileSelect ? void Promise.resolve(onNativeFileSelect()) : inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">
               <UploadCloud className="size-4" />
@@ -344,7 +345,7 @@ function ToolbarMenuButton({ label, icon: Icon, triggerText, disabled = false, c
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
+        <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="min-w-36 p-1.5">
         {children}

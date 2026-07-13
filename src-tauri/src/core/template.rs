@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use zip::ZipArchive;
 
 use crate::core::config::{load_config, save_config};
-use crate::core::template_style::save_template_style_config;
+use crate::core::template_style::{reset_template_style_config, save_template_style_config};
 use crate::storage::paths::{templates_dir, templates_path};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -127,11 +127,13 @@ pub fn import_template(request: ImportTemplateRequest) -> Result<Template, Strin
     if !is_docx_file(&source_path) {
         return Err("仅支持导入 .docx 文件作为 reference.docx。".to_string());
     }
+    validate_reference_docx(&source_path)?;
 
     let name = request.name.trim();
     if name.is_empty() {
         return Err("模板名称不能为空。".to_string());
     }
+    let original_user_templates = load_user_templates_checked()?;
 
     let now = now_millis();
     let id = format!("user-{}-{}", slugify(name), now);
@@ -159,30 +161,48 @@ pub fn import_template(request: ImportTemplateRequest) -> Result<Template, Strin
         updated_at: created_at,
     };
 
-    let mut user_templates = load_user_templates();
+    let style_config = extract_template_style_config_from_docx(&reference_path, &template.id)
+        .ok_or_else(|| "无法从 DOCX 读取 Word 样式或页面设置。".to_string());
+    let style_config = match style_config {
+        Ok(config) => config,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&template_dir);
+            return Err(error);
+        }
+    };
+    if let Err(error) = save_template_style_config(style_config) {
+        let _ = fs::remove_dir_all(&template_dir);
+        return Err(format!("保存导入的模板样式失败：{error}"));
+    }
+
+    let mut user_templates = original_user_templates.clone();
     if template.is_default {
         for item in &mut user_templates {
             item.is_default = false;
         }
     }
     user_templates.push(template.clone());
-    save_user_templates(user_templates)?;
+    if let Err(error) = save_user_templates(user_templates) {
+        let _ = reset_template_style_config(template.id.clone());
+        let _ = fs::remove_dir_all(&template_dir);
+        return Err(error);
+    }
     if template.is_default {
         let mut config = load_config();
         config.default_template_id = template.id.clone();
-        save_config(config)?;
-    }
-
-    if let Some(style_config) =
-        extract_template_style_config_from_docx(&reference_path, &template.id)
-    {
-        let _ = save_template_style_config(style_config);
+        if let Err(error) = save_config(config) {
+            let _ = save_user_templates(original_user_templates);
+            let _ = reset_template_style_config(template.id.clone());
+            let _ = fs::remove_dir_all(&template_dir);
+            return Err(error);
+        }
     }
 
     Ok(template)
 }
 
 pub fn save_user_templates(templates: Vec<Template>) -> Result<Vec<Template>, String> {
+    load_user_templates_checked()?;
     let path = templates_path().map_err(|error| format!("获取模板路径失败：{error}"))?;
     let user_templates: Vec<Template> = templates
         .into_iter()
@@ -195,14 +215,25 @@ pub fn save_user_templates(templates: Vec<Template>) -> Result<Vec<Template>, St
 }
 
 fn load_user_templates() -> Vec<Template> {
-    let Ok(path) = templates_path() else {
-        return Vec::new();
-    };
-    let Ok(content) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
+    load_user_templates_checked().unwrap_or_default()
+}
 
-    serde_json::from_str(&content).unwrap_or_default()
+fn load_user_templates_checked() -> Result<Vec<Template>, String> {
+    let Ok(path) = templates_path() else {
+        return Err("获取模板路径失败。".to_string());
+    };
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|error| format!("读取模板列表失败：{error}"))?;
+
+    serde_json::from_str(&content).map_err(|error| {
+        format!(
+            "模板列表文件已损坏，为避免覆盖原数据，本次保存已取消：{}（{error}）",
+            path.to_string_lossy()
+        )
+    })
 }
 
 fn normalize_default_template(mut templates: Vec<Template>) -> Vec<Template> {
@@ -239,6 +270,22 @@ fn is_docx_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"))
+}
+
+fn validate_reference_docx(path: &Path) -> Result<(), String> {
+    let bytes = fs::read(path).map_err(|error| format!("读取参考 DOCX 失败：{error}"))?;
+    let mut archive = ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!("参考文件不是有效的 DOCX 包：{error}"))?;
+    for required in [
+        "[Content_Types].xml",
+        "word/document.xml",
+        "word/styles.xml",
+    ] {
+        archive
+            .by_name(required)
+            .map_err(|_| format!("参考 DOCX 缺少必要内容：{required}"))?;
+    }
+    Ok(())
 }
 
 fn extract_template_style_config_from_docx(path: &Path, template_id: &str) -> Option<Value> {
@@ -367,7 +414,7 @@ fn with_list_style(value: Value, style_id: &str) -> Value {
     let text_indent = object
         .get("listTextIndent")
         .and_then(Value::as_f64)
-        .unwrap_or(1.5);
+        .unwrap_or(1.0);
     for level in 1..=4 {
         let prefix = format!("listLevel{level}");
         for (source, target) in [
@@ -849,7 +896,10 @@ fn now_millis() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_page_settings, extract_theme_fonts, extract_word_style};
+    use super::{
+        extract_page_settings, extract_theme_fonts, extract_word_style, validate_reference_docx,
+    };
+    use std::fs;
 
     #[test]
     fn resolves_based_on_styles_and_theme_fonts() {
@@ -907,5 +957,19 @@ mod tests {
             object.get("footerText").and_then(|value| value.as_str()),
             Some("内部资料")
         );
+    }
+
+    #[test]
+    fn rejects_files_that_only_have_a_docx_extension() {
+        let path = std::env::temp_dir().join(format!(
+            "md-king-invalid-reference-{}.docx",
+            std::process::id()
+        ));
+        fs::write(&path, b"not a zip package").expect("invalid fixture should be written");
+
+        let error = validate_reference_docx(&path).expect_err("invalid docx should be rejected");
+
+        assert!(error.contains("不是有效的 DOCX 包"));
+        let _ = fs::remove_file(path);
     }
 }

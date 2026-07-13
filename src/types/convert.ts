@@ -2,6 +2,7 @@ export type ConvertStatus = "pending" | "running" | "success" | "failed";
 
 export type ConvertRequest = {
   input: string;
+  inputKind?: "text" | "path";
   sourcePath?: string;
   output?: string;
   templateId?: string;

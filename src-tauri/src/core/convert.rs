@@ -29,6 +29,8 @@ const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 pub struct ConvertRequest {
     pub input: String,
     #[serde(default)]
+    pub input_kind: Option<String>,
+    #[serde(default)]
     pub source_path: Option<String>,
     pub output: Option<String>,
     pub template_id: Option<String>,
@@ -198,6 +200,7 @@ struct BlockStyleConfig {
     code: CodeBlockStyleConfig,
     quote: QuoteBlockStyleConfig,
     inline_code: InlineCodeStyleConfig,
+    horizontal_rule: HorizontalRuleStyleConfig,
 }
 
 #[derive(Clone)]
@@ -241,6 +244,15 @@ struct InlineCodeStyleConfig {
     background_color: String,
 }
 
+#[derive(Clone)]
+struct HorizontalRuleStyleConfig {
+    border_style: String,
+    border_color: String,
+    border_width: f64,
+    before_spacing: f64,
+    after_spacing: f64,
+}
+
 #[derive(Clone, Copy)]
 enum TaskListMarker {
     Checked,
@@ -275,19 +287,28 @@ fn convert_markdown_with_runtime(
     let started_at = Instant::now();
     let input_path = PathBuf::from(&request.input);
     let output = normalize_output(request.output.as_deref());
+    let input_kind = request
+        .input_kind
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase);
+
+    if input_kind.as_deref() == Some("text") {
+        return convert_text_input(runtime, request, output, started_at);
+    }
 
     if input_path.exists() {
         return convert_existing_file(runtime, request, input_path, output, started_at);
     }
 
-    if has_markdown_extension(&input_path) {
+    if input_kind.as_deref() == Some("path") || has_supported_text_extension(&input_path) {
         return failure_result(
             request,
             output,
             started_at,
             Vec::new(),
             "INPUT_FILE_NOT_FOUND",
-            "输入看起来是 Markdown 文件路径，但文件不存在。",
+            "输入看起来是 Markdown/TXT 文件路径，但文件不存在。",
         );
     }
 
@@ -312,14 +333,14 @@ fn convert_existing_file(
         );
     }
 
-    if !has_markdown_extension(&input_path) {
+    if !has_supported_text_extension(&input_path) {
         return failure_result(
             request,
             output,
             started_at,
             Vec::new(),
             "UNSUPPORTED_INPUT_FILE",
-            "当前阶段仅支持存在的 .md/.markdown 文件路径执行真实转换。",
+            "当前阶段仅支持存在的 .md/.markdown/.txt 文件路径执行真实转换。",
         );
     }
 
@@ -353,6 +374,7 @@ fn convert_existing_file(
         );
     }
     let output_string = Some(output_path.to_string_lossy().to_string());
+    let staged_output_path = make_sibling_temp_path(&output_path, "output-staged", "docx");
 
     let pandoc_status = check_pandoc_available_for(runtime);
     if !pandoc_status.available {
@@ -396,7 +418,7 @@ fn convert_existing_file(
     let conversion = run_pandoc_to_docx_for(
         runtime,
         &pandoc_input_path,
-        &output_path,
+        &staged_output_path,
         template_resolution.reference_docx_path.as_deref(),
         &pandoc_options,
     );
@@ -407,8 +429,9 @@ fn convert_existing_file(
 
     match conversion {
         Ok(execution) if execution.success => {
+            append_pandoc_success_messages(&execution, &mut warnings);
             if let Err(error) = normalize_docx(
-                &output_path,
+                &staged_output_path,
                 should_apply_default_template_postprocess(&request),
                 heading_numbering_config(&request).as_ref(),
                 &markdown_feature_config(&request),
@@ -418,11 +441,46 @@ fn convert_existing_file(
                 document_style_config(&request).as_ref(),
                 block_style_config(&request).as_ref(),
             ) {
-                warnings.push(format!("调整 DOCX 样式失败：{error}"));
+                let _ = fs::remove_file(&staged_output_path);
+                return failure_result(
+                    request,
+                    output_string,
+                    started_at,
+                    warnings,
+                    "DOCX_POSTPROCESS_FAILED",
+                    &format!("调整 DOCX 样式失败：{error}"),
+                );
+            }
+            if let Err(error) = validate_docx_package(&staged_output_path) {
+                let _ = fs::remove_file(&staged_output_path);
+                return failure_result(
+                    request,
+                    output_string,
+                    started_at,
+                    warnings,
+                    "DOCX_VALIDATION_FAILED",
+                    &error,
+                );
+            }
+            match commit_staged_output(&staged_output_path, &output_path) {
+                Ok(Some(warning)) => warnings.push(warning),
+                Ok(None) => {}
+                Err(error) => {
+                    let _ = fs::remove_file(&staged_output_path);
+                    return failure_result(
+                        request,
+                        output_string,
+                        started_at,
+                        warnings,
+                        "OUTPUT_WRITE_FAILED",
+                        &error,
+                    );
+                }
             }
             success_result(request, output_path, output_string, started_at, warnings)
         }
         Ok(execution) => {
+            let _ = fs::remove_file(&staged_output_path);
             let status = execution
                 .status_code
                 .map(|code| code.to_string())
@@ -445,14 +503,17 @@ fn convert_existing_file(
                 &message,
             )
         }
-        Err(error) => failure_result(
-            request,
-            output_string,
-            started_at,
-            warnings,
-            "PANDOC_SPAWN_FAILED",
-            &format!("调用 Pandoc 失败：{error}"),
-        ),
+        Err(error) => {
+            let _ = fs::remove_file(&staged_output_path);
+            failure_result(
+                request,
+                output_string,
+                started_at,
+                warnings,
+                "PANDOC_SPAWN_FAILED",
+                &format!("调用 Pandoc 失败：{error}"),
+            )
+        }
     }
 }
 
@@ -511,6 +572,7 @@ fn convert_text_input(
         );
     }
     let output_string = Some(output_path.to_string_lossy().to_string());
+    let staged_output_path = make_sibling_temp_path(&output_path, "output-staged", "docx");
 
     let temp_input_path = make_sibling_temp_path(&output_path, "input", "md");
 
@@ -560,11 +622,6 @@ fn convert_text_input(
         );
     }
 
-    warnings.push(format!(
-        "Markdown 文本已写入临时文件：{}",
-        temp_input_path.to_string_lossy()
-    ));
-
     let mut pandoc_options = pandoc_document_options(&request);
     pandoc_options.resource_path = request
         .source_path
@@ -577,14 +634,15 @@ fn convert_text_input(
     match run_pandoc_to_docx_for(
         runtime,
         &temp_input_path,
-        &output_path,
+        &staged_output_path,
         template_resolution.reference_docx_path.as_deref(),
         &pandoc_options,
     ) {
         Ok(execution) if execution.success => {
             let _ = fs::remove_file(&temp_input_path);
+            append_pandoc_success_messages(&execution, &mut warnings);
             if let Err(error) = normalize_docx(
-                &output_path,
+                &staged_output_path,
                 should_apply_default_template_postprocess(&request),
                 heading_numbering_config(&request).as_ref(),
                 &markdown_feature_config(&request),
@@ -594,12 +652,47 @@ fn convert_text_input(
                 document_style_config(&request).as_ref(),
                 block_style_config(&request).as_ref(),
             ) {
-                warnings.push(format!("调整 DOCX 样式失败：{error}"));
+                let _ = fs::remove_file(&staged_output_path);
+                return failure_result(
+                    request,
+                    output_string,
+                    started_at,
+                    warnings,
+                    "DOCX_POSTPROCESS_FAILED",
+                    &format!("调整 DOCX 样式失败：{error}"),
+                );
+            }
+            if let Err(error) = validate_docx_package(&staged_output_path) {
+                let _ = fs::remove_file(&staged_output_path);
+                return failure_result(
+                    request,
+                    output_string,
+                    started_at,
+                    warnings,
+                    "DOCX_VALIDATION_FAILED",
+                    &error,
+                );
+            }
+            match commit_staged_output(&staged_output_path, &output_path) {
+                Ok(Some(warning)) => warnings.push(warning),
+                Ok(None) => {}
+                Err(error) => {
+                    let _ = fs::remove_file(&staged_output_path);
+                    return failure_result(
+                        request,
+                        output_string,
+                        started_at,
+                        warnings,
+                        "OUTPUT_WRITE_FAILED",
+                        &error,
+                    );
+                }
             }
             success_result(request, output_path, output_string, started_at, warnings)
         }
         Ok(execution) => {
             let _ = fs::remove_file(&temp_input_path);
+            let _ = fs::remove_file(&staged_output_path);
             let status = execution
                 .status_code
                 .map(|code| code.to_string())
@@ -624,6 +717,7 @@ fn convert_text_input(
         }
         Err(error) => {
             let _ = fs::remove_file(&temp_input_path);
+            let _ = fs::remove_file(&staged_output_path);
             failure_result(
                 request,
                 output_string,
@@ -678,6 +772,14 @@ fn failure_result(
         warnings,
         error_code: Some(error_code.to_string()),
         message: Some(message.to_string()),
+    }
+}
+
+fn append_pandoc_success_messages(execution: &PandocExecution, warnings: &mut Vec<String>) {
+    for detail in [execution.stderr.trim(), execution.stdout.trim()] {
+        if !detail.is_empty() {
+            warnings.push(format!("Pandoc：{detail}"));
+        }
     }
 }
 
@@ -1502,7 +1604,7 @@ fn read_list_level_style_config(
         text_indent: read_style_indent(
             style,
             &format!("{prefix}TextIndent"),
-            read_style_indent(style, "listTextIndent", 1.5),
+            read_style_indent(style, "listTextIndent", 1.0),
         ),
         wrap_mode: read_style_string(
             style,
@@ -1522,6 +1624,8 @@ fn block_style_config_from_value(config: &Value) -> Option<BlockStyleConfig> {
     let code = styles.get("source-code")?;
     let quote = styles.get("quote")?;
     let inline_code = styles.get("inline-code").unwrap_or(code);
+    let empty = Value::Null;
+    let horizontal_rule = styles.get("horizontal-rule").unwrap_or(&empty);
 
     Some(BlockStyleConfig {
         code: CodeBlockStyleConfig {
@@ -1558,6 +1662,13 @@ fn block_style_config_from_value(config: &Value) -> Option<BlockStyleConfig> {
             bold: read_style_bold(inline_code),
             color: read_style_color(inline_code, "color", "111827"),
             background_color: read_style_color(inline_code, "backgroundColor", "F1F5F9"),
+        },
+        horizontal_rule: HorizontalRuleStyleConfig {
+            border_style: read_style_string(horizontal_rule, "borderStyle", "solid"),
+            border_color: read_style_color(horizontal_rule, "borderColor", "CBD5E1"),
+            border_width: read_style_number(horizontal_rule, "borderWidth", 1.0),
+            before_spacing: read_spacing_points(horizontal_rule, "beforeSpacing", 12.0),
+            after_spacing: read_spacing_points(horizontal_rule, "afterSpacing", 12.0),
         },
     })
 }
@@ -1635,7 +1746,7 @@ fn read_style_bold_key(style: &Value, key: &str) -> Option<bool> {
                 .and_then(|text| text.trim().parse::<u16>().ok())
                 .or_else(|| value.as_u64().and_then(|number| u16::try_from(number).ok()))
         })
-        .map(|weight| weight >= 700)
+        .map(|weight| weight >= 600)
 }
 
 fn read_style_color(style: &Value, key: &str, default_value: &str) -> String {
@@ -1896,18 +2007,20 @@ fn ensure_output_parent_dir(output_path: &Path) -> Result<(), String> {
     fs::create_dir_all(parent).map_err(|error| format!("创建输出目录失败：{error}"))
 }
 
-fn has_markdown_extension(path: &Path) -> bool {
+fn has_supported_text_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown")
+            extension.eq_ignore_ascii_case("md")
+                || extension.eq_ignore_ascii_case("markdown")
+                || extension.eq_ignore_ascii_case("txt")
         })
 }
 
 fn make_temp_path(prefix: &str, extension: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
+        .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let process_id = std::process::id();
 
@@ -1929,14 +2042,69 @@ fn make_sibling_temp_path(output_path: &Path, prefix: &str, extension: &str) -> 
         .unwrap_or_else(|| make_temp_path(prefix, extension))
 }
 
+fn validate_docx_package(path: &Path) -> Result<(), String> {
+    let file = fs::File::open(path).map_err(|error| format!("读取生成的 DOCX 失败：{error}"))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|error| format!("生成结果不是有效的 DOCX 包：{error}"))?;
+    for required in [
+        "[Content_Types].xml",
+        "word/document.xml",
+        "word/styles.xml",
+    ] {
+        archive
+            .by_name(required)
+            .map_err(|_| format!("生成的 DOCX 缺少必要内容：{required}"))?;
+    }
+    Ok(())
+}
+
+fn commit_staged_output(staged_path: &Path, output_path: &Path) -> Result<Option<String>, String> {
+    if !staged_path.is_file() {
+        return Err("转换完成但未找到临时 DOCX 输出。".to_string());
+    }
+
+    if !output_path.exists() {
+        return fs::rename(staged_path, output_path)
+            .map(|_| None)
+            .map_err(|error| format!("写入输出文件失败：{error}"));
+    }
+
+    let backup_path = make_sibling_temp_path(output_path, "output-backup", "docx");
+    fs::rename(output_path, &backup_path)
+        .map_err(|error| format!("无法替换现有输出文件，请确认文件未被 Word/WPS 占用：{error}"))?;
+
+    if let Err(error) = fs::rename(staged_path, output_path) {
+        let restore_error = fs::rename(&backup_path, output_path).err();
+        return Err(match restore_error {
+            Some(restore_error) => format!(
+                "写入新 DOCX 失败：{error}；恢复原文件也失败：{restore_error}。原文件备份位于 {}",
+                backup_path.to_string_lossy()
+            ),
+            None => format!("写入新 DOCX 失败，已恢复原文件：{error}"),
+        });
+    }
+
+    match fs::remove_file(&backup_path) {
+        Ok(()) => Ok(None),
+        Err(error) => Ok(Some(format!(
+            "转换已完成，但清理旧文件备份失败：{}（{error}）",
+            backup_path.to_string_lossy()
+        ))),
+    }
+}
+
 fn prepare_markdown_file_for_pandoc(
     input_path: &Path,
 ) -> Result<(PathBuf, Option<PathBuf>), ConvertResultPreparationError> {
     let original = fs::read_to_string(input_path).map_err(|error| {
-        ConvertResultPreparationError(format!("读取 Markdown 文件失败：{error}"))
+        ConvertResultPreparationError(format!("读取 Markdown/TXT 文件失败：{error}"))
     })?;
     let prepared = preprocess_markdown_for_word(&original);
-    if prepared == original {
+    let is_text_file = input_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"));
+    if prepared == original && !is_text_file {
         return Ok((input_path.to_path_buf(), None));
     }
 
@@ -1963,11 +2131,19 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
         if let Some(fence) = parse_markdown_fence_start(line) {
             if fence.is_math {
                 let mut formula_lines = Vec::new();
+                let mut closed = false;
                 for content_line in lines.by_ref() {
-                    if is_fence_end(content_line, fence.marker) {
+                    if is_fence_end(content_line, fence.marker, fence.length) {
+                        closed = true;
                         break;
                     }
                     formula_lines.push(content_line);
+                }
+
+                if !closed {
+                    output.push(line.to_string());
+                    output.extend(formula_lines.into_iter().map(str::to_string));
+                    continue;
                 }
 
                 output.push("$$".to_string());
@@ -1982,7 +2158,7 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
             output.push(line.to_string());
             for content_line in lines.by_ref() {
                 output.push(content_line.to_string());
-                if is_fence_end(content_line, fence.marker) {
+                if is_fence_end(content_line, fence.marker, fence.length) {
                     break;
                 }
             }
@@ -2000,21 +2176,31 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
 }
 
 struct MarkdownFenceStart {
-    marker: &'static str,
+    marker: char,
+    length: usize,
     language: Option<String>,
     is_math: bool,
 }
 
 fn parse_markdown_fence_start(line: &str) -> Option<MarkdownFenceStart> {
-    let trimmed = line.trim();
-    let marker = if trimmed.starts_with("```") {
-        "```"
-    } else if trimmed.starts_with("~~~") {
-        "~~~"
-    } else {
+    let indent = line.chars().take_while(|ch| *ch == ' ').count();
+    if indent > 3 {
         return None;
-    };
-    let language = parse_fence_language(trimmed.trim_start_matches(marker));
+    }
+    let trimmed = &line[indent..];
+    let marker = trimmed.chars().next()?;
+    if marker != '`' && marker != '~' {
+        return None;
+    }
+    let length = trimmed.chars().take_while(|ch| *ch == marker).count();
+    if length < 3 {
+        return None;
+    }
+    let info = &trimmed[length..];
+    if marker == '`' && info.contains('`') {
+        return None;
+    }
+    let language = parse_fence_language(info);
     let is_math = language
         .as_deref()
         .map(is_math_fence_language)
@@ -2022,6 +2208,7 @@ fn parse_markdown_fence_start(line: &str) -> Option<MarkdownFenceStart> {
 
     Some(MarkdownFenceStart {
         marker,
+        length,
         language,
         is_math,
     })
@@ -2046,7 +2233,7 @@ fn parse_fence_language(info: &str) -> Option<String> {
         }
         let language: String = token
             .chars()
-            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '#' | '-' | '_' | '.'))
+            .filter(|ch| ch.is_alphanumeric() || matches!(ch, '+' | '#' | '-' | '_' | '.'))
             .collect();
         (!language.is_empty()).then_some(language)
     })
@@ -2059,8 +2246,14 @@ fn is_math_fence_language(language: &str) -> bool {
     )
 }
 
-fn is_fence_end(line: &str, fence: &str) -> bool {
-    line.trim().starts_with(fence)
+fn is_fence_end(line: &str, marker: char, opening_length: usize) -> bool {
+    let indent = line.chars().take_while(|ch| *ch == ' ').count();
+    if indent > 3 {
+        return false;
+    }
+    let trimmed = &line[indent..];
+    let length = trimmed.chars().take_while(|ch| *ch == marker).count();
+    length >= opening_length && trimmed[length..].trim().is_empty()
 }
 
 fn read_task_list_markers_from_docx(
@@ -2307,7 +2500,10 @@ fn normalize_document_xml(
 ) -> String {
     let xml = force_table_width_percent(xml);
     let xml = if markdown_features.horizontal_rule {
-        xml
+        normalize_horizontal_rule_paragraphs(
+            &xml,
+            block_style.map(|style| &style.horizontal_rule),
+        )
     } else {
         remove_horizontal_rule_paragraphs(&xml)
     };
@@ -3305,18 +3501,29 @@ fn list_level_style(style: &TextStyleConfig, level: usize) -> &ListLevelStyleCon
 }
 
 fn list_indent_xml_for_level(style: &TextStyleConfig, level: usize) -> String {
+    list_indent_xml_for_marker(style, level, "•")
+}
+
+fn list_indent_xml_for_marker(style: &TextStyleConfig, level: usize, marker: &str) -> String {
     let level_style = list_level_style(style, level);
-    let left = (level_style.indent * 240.0).round().clamp(0.0, 4000.0) as u32;
-    let text = (level_style.text_indent * 240.0)
-        .round()
-        .clamp(120.0, 1200.0) as u32;
+    let marker_left = (level_style.indent * 240.0).round().clamp(0.0, 4000.0) as u32;
 
     if level_style.wrap_mode == "flat" {
-        format!(r#"<w:ind w:left="{left}" w:firstLine="0" />"#)
+        format!(r#"<w:ind w:left="{marker_left}" w:firstLine="0" />"#)
     } else {
-        let hanging_left = left.saturating_add(text);
-        format!(r#"<w:ind w:left="{hanging_left}" w:hanging="{text}" />"#)
+        let hanging = list_marker_and_gap_twips(marker, level_style.text_indent);
+        let text_left = marker_left.saturating_add(hanging).min(6000);
+        format!(r#"<w:ind w:left="{text_left}" w:hanging="{hanging}" />"#)
     }
+}
+
+fn list_marker_and_gap_twips(marker: &str, gap_in_english_chars: f64) -> u32 {
+    let marker_width = marker
+        .chars()
+        .map(|character| if character.is_ascii() { 120 } else { 240 })
+        .sum::<u32>();
+    let gap = (gap_in_english_chars * 120.0).round().clamp(0.0, 1200.0) as u32;
+    marker_width.saturating_add(gap)
 }
 
 fn text_style_run_properties_xml(style: &TextStyleConfig) -> String {
@@ -3352,7 +3559,7 @@ fn word_alignment_value(value: &str) -> &'static str {
 }
 
 fn remove_horizontal_rule_paragraphs(xml: &str) -> String {
-    let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
+    let paragraph = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
     paragraph
         .replace_all(xml, |captures: &Captures| {
             let paragraph_xml = &captures[0];
@@ -3368,9 +3575,52 @@ fn remove_horizontal_rule_paragraphs(xml: &str) -> String {
 fn is_horizontal_rule_paragraph(paragraph_xml: &str) -> bool {
     paragraph_xml.contains(r#"<w:pStyle w:val="HorizontalRule""#)
         || paragraph_xml.contains(r#"o:hr="t""#)
-        || (paragraph_xml.contains("<w:pBdr>")
-            && paragraph_xml.contains("<w:bottom ")
-            && !paragraph_xml.contains("<w:t"))
+}
+
+fn normalize_horizontal_rule_paragraphs(
+    xml: &str,
+    style: Option<&HorizontalRuleStyleConfig>,
+) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+    paragraph
+        .replace_all(xml, |captures: &Captures| {
+            let paragraph_xml = &captures[0];
+            if !is_horizontal_rule_paragraph(paragraph_xml) {
+                return paragraph_xml.to_string();
+            }
+
+            let fallback = HorizontalRuleStyleConfig {
+                border_style: "solid".to_string(),
+                border_color: "CBD5E1".to_string(),
+                border_width: 1.0,
+                before_spacing: 12.0,
+                after_spacing: 12.0,
+            };
+            normalize_horizontal_rule_paragraph_xml(paragraph_xml, style.unwrap_or(&fallback))
+        })
+        .to_string()
+}
+
+fn normalize_horizontal_rule_paragraph_xml(
+    paragraph_xml: &str,
+    style: &HorizontalRuleStyleConfig,
+) -> String {
+    let paragraph_start = Regex::new(r#"^<w:p\b[^>]*>"#).expect("valid paragraph start regex");
+    let start = paragraph_start
+        .find(paragraph_xml)
+        .map(|matched| matched.as_str())
+        .unwrap_or("<w:p>");
+    let before = points_to_twentieths(style.before_spacing);
+    let after = points_to_twentieths(style.after_spacing);
+    let border = border_xml_with_space(
+        &style.border_style,
+        style.border_width,
+        &style.border_color,
+        1,
+    );
+    format!(
+        r#"{start}<w:pPr><w:pStyle w:val="HorizontalRule" /><w:spacing w:before="{before}" w:after="{after}" /><w:pBdr><w:bottom {border} /></w:pBdr></w:pPr></w:p>"#
+    )
 }
 
 fn normalize_inline_code_style_xml(style_xml: &str) -> String {
@@ -3678,7 +3928,7 @@ fn normalize_code_or_quote_paragraph(
         Some("SourceCode") => {
             *in_quote_list = false;
             *pending_code_language_label = false;
-            flatten_special_block_paragraph(paragraph_xml)
+            flatten_special_block_paragraph(paragraph_xml, false)
         }
         Some("BlockText") if markdown_features.quote_block => {
             *in_quote_list = true;
@@ -3688,7 +3938,7 @@ fn normalize_code_or_quote_paragraph(
         Some("BlockText") => {
             *in_quote_list = false;
             *pending_code_language_label = false;
-            flatten_special_block_paragraph(paragraph_xml)
+            flatten_special_block_paragraph(paragraph_xml, true)
         }
         _ if markdown_features.quote_block
             && *in_quote_list
@@ -3705,7 +3955,7 @@ fn normalize_code_or_quote_paragraph(
     }
 }
 
-fn flatten_special_block_paragraph(paragraph_xml: &str) -> String {
+fn flatten_special_block_paragraph(paragraph_xml: &str, preserve_emphasis: bool) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
     let properties = r#"<w:pPr><w:pStyle w:val="Normal" /></w:pPr>"#;
@@ -3718,18 +3968,18 @@ fn flatten_special_block_paragraph(paragraph_xml: &str) -> String {
         paragraph_xml.replace("<w:p>", &format!("<w:p>{properties}"))
     };
 
-    flatten_special_block_runs(&paragraph_xml)
+    flatten_special_block_runs(&paragraph_xml, preserve_emphasis)
 }
 
-fn flatten_special_block_runs(paragraph_xml: &str) -> String {
+fn flatten_special_block_runs(paragraph_xml: &str, preserve_emphasis: bool) -> String {
     let run = Regex::new(r#"(?s)<w:r(?:\s[^>]*)?>.*?</w:r>"#).expect("valid run regex");
     run.replace_all(paragraph_xml, |captures: &Captures| {
-        flatten_special_text_run_xml(&captures[0])
+        flatten_special_text_run_xml(&captures[0], preserve_emphasis)
     })
     .to_string()
 }
 
-fn flatten_special_text_run_xml(run_xml: &str) -> String {
+fn flatten_special_text_run_xml(run_xml: &str, preserve_emphasis: bool) -> String {
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
     if !run_properties.is_match(run_xml) {
@@ -3738,9 +3988,12 @@ fn flatten_special_text_run_xml(run_xml: &str) -> String {
 
     run_properties
         .replace(run_xml, |captures: &Captures| {
-            let removable = Regex::new(
-                r#"(?s)<w:rStyle\b[^>]*/>|<w:shd\b[^>]*/>|<w:(?:rFonts|noProof|color|sz|szCs|b|bCs|i|iCs)\b[^>]*/>"#,
-            )
+            let removable_pattern = if preserve_emphasis {
+                r#"(?s)<w:rStyle\b[^>]*/>|<w:shd\b[^>]*/>|<w:(?:rFonts|noProof|color|sz|szCs)\b[^>]*/>"#
+            } else {
+                r#"(?s)<w:rStyle\b[^>]*/>|<w:shd\b[^>]*/>|<w:(?:rFonts|noProof|color|sz|szCs|b|bCs|i|iCs)\b[^>]*/>"#
+            };
+            let removable = Regex::new(removable_pattern)
             .expect("valid special block run flatten regex");
             let inner = removable.replace_all(&captures[1], "");
             format!("<w:rPr>{inner}</w:rPr>")
@@ -4272,12 +4525,20 @@ fn normalize_list_paragraph(
         "bullet-list"
     };
     let list_style = document_style.and_then(|style| {
-        style.styles.get("nested-list").or_else(|| {
+        if level > 0 {
+            style.styles.get("nested-list").or_else(|| {
+                style
+                    .styles
+                    .get(style_id)
+                    .or_else(|| style.styles.get("bullet-list"))
+            })
+        } else {
             style
                 .styles
                 .get(style_id)
                 .or_else(|| style.styles.get("bullet-list"))
-        })
+                .or_else(|| style.styles.get("nested-list"))
+        }
     });
     let marker_is_ordered = list_style
         .and_then(|style| list_level_type_override(style, level))
@@ -4309,11 +4570,11 @@ fn normalize_list_paragraph(
     let without_numbering = numbering.replace(paragraph_xml, "").to_string();
     let without_numbering = strip_task_list_marker(&without_numbering);
     let with_indent = if let Some(style) = list_style {
-        apply_list_paragraph_properties(&without_numbering, style, level)
+        apply_list_paragraph_properties(&without_numbering, style, level, &marker)
     } else if without_numbering.contains("<w:pBdr>") {
         without_numbering
     } else {
-        apply_default_list_paragraph_properties(&without_numbering, level)
+        apply_default_list_paragraph_properties(&without_numbering, level, &marker)
     };
     let with_marker = prefix_first_text_run(&with_indent, &format!("{marker} "));
     list_style
@@ -4450,24 +4711,33 @@ fn chinese_number(value: usize) -> String {
     value.to_string()
 }
 
-fn list_level_paragraph_properties_xml(style: &TextStyleConfig, level: usize) -> String {
+fn list_level_paragraph_properties_xml(
+    style: &TextStyleConfig,
+    level: usize,
+    marker: &str,
+) -> String {
     let level_style = list_level_style(style, level);
     let before = points_to_twentieths(level_style.before_spacing);
     let after = points_to_twentieths(level_style.after_spacing);
     let line = line_height_twips(level_style.font_size, level_style.line_height);
     let align = word_alignment_value(&level_style.align);
-    let indent = list_indent_xml_for_level(style, level);
+    let indent = list_indent_xml_for_marker(style, level, marker);
     format!(
         r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" />{indent}"#
     )
 }
 
-fn apply_default_list_paragraph_properties(paragraph_xml: &str, level: usize) -> String {
-    let left = ((2.0 + level.min(3) as f64 * 2.0) * 240.0).round() as u32;
-    let hanging = 240;
+fn apply_default_list_paragraph_properties(
+    paragraph_xml: &str,
+    level: usize,
+    marker: &str,
+) -> String {
+    let marker_left = ((2.0 + level.min(3) as f64 * 2.0) * 240.0).round() as u32;
+    let hanging = list_marker_and_gap_twips(marker, 1.0);
+    let text_left = marker_left.saturating_add(hanging);
     let properties = format!(
         r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" /><w:ind w:left="{}" w:hanging="{hanging}" />"#,
-        left + hanging
+        text_left
     );
     let existing_properties =
         Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#).expect("valid paragraph properties regex");
@@ -4484,8 +4754,9 @@ fn apply_list_paragraph_properties(
     paragraph_xml: &str,
     style: &TextStyleConfig,
     level: usize,
+    marker: &str,
 ) -> String {
-    let properties = list_level_paragraph_properties_xml(style, level);
+    let properties = list_level_paragraph_properties_xml(style, level, marker);
     let existing_properties =
         Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#).expect("valid paragraph properties regex");
     if existing_properties.is_match(paragraph_xml) {
@@ -5236,15 +5507,17 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
-        block_style_config_from_value, cell_shading_xml, create_heading_numbering_xml,
+        block_style_config_from_value, cell_shading_xml, commit_staged_output,
+        create_heading_numbering_xml,
         default_heading_mappings, default_markdown_feature_config,
         default_report_heading_numbering_config, document_style_config_from_value,
-        footer_page_number_xml, heading_numbering_config_from_value, image_style_config_from_value,
-        mark_task_list_paragraphs, markdown_feature_config_from_value,
-        normalize_default_report_styles_xml, normalize_document_captions,
-        normalize_document_images, normalize_document_xml, normalize_docx,
-        normalize_template_styles_xml, page_content_width_twips, page_settings_config_from_value,
-        pandoc_document_options_from_value, paragraph_shading_xml, preprocess_markdown_for_word,
+        footer_page_number_xml, has_supported_text_extension, heading_numbering_config_from_value,
+        image_style_config_from_value, mark_task_list_paragraphs,
+        markdown_feature_config_from_value, normalize_default_report_styles_xml,
+        normalize_document_captions, normalize_document_images, normalize_document_xml,
+        normalize_docx, normalize_template_styles_xml, page_content_width_twips,
+        page_settings_config_from_value, pandoc_document_options_from_value, paragraph_shading_xml,
+        prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
         read_style_fill, table_column_widths, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         HeadingTarget, MarkdownFeatureConfig,
@@ -5252,8 +5525,50 @@ mod tests {
     use serde_json::json;
     use std::fs;
     use std::io::{Cursor, Read, Write};
+    use std::path::Path;
     use zip::write::SimpleFileOptions;
     use zip::{ZipArchive, ZipWriter};
+
+    #[test]
+    fn accepts_txt_input_and_stages_it_as_markdown() {
+        assert!(has_supported_text_extension(Path::new("notes.txt")));
+        assert!(!has_supported_text_extension(Path::new("notes.docx")));
+
+        let input =
+            std::env::temp_dir().join(format!("md-king-text-input-{}.txt", std::process::id()));
+        fs::write(&input, "Plain text content").unwrap();
+
+        let (prepared, temporary) = match prepare_markdown_file_for_pandoc(&input) {
+            Ok(value) => value,
+            Err(error) => panic!("TXT input preparation failed: {}", error.0),
+        };
+        assert_eq!(
+            prepared.extension().and_then(|value| value.to_str()),
+            Some("md")
+        );
+        assert_eq!(fs::read_to_string(&prepared).unwrap(), "Plain text content");
+
+        if let Some(temporary) = temporary {
+            let _ = fs::remove_file(temporary);
+        }
+        let _ = fs::remove_file(input);
+    }
+
+    #[test]
+    fn maps_numeric_font_weights_to_word_bold() {
+        assert_eq!(
+            read_style_bold_key(&json!({ "fontWeight": "500" }), "fontWeight"),
+            Some(false)
+        );
+        assert_eq!(
+            read_style_bold_key(&json!({ "fontWeight": "600" }), "fontWeight"),
+            Some(true)
+        );
+        assert_eq!(
+            read_style_bold_key(&json!({ "fontWeight": "800" }), "fontWeight"),
+            Some(true)
+        );
+    }
 
     #[test]
     fn normalizes_pandoc_table_xml_to_default_preview_style() {
@@ -5911,11 +6226,12 @@ mod tests {
         assert!(!output.contains(r#"w:val="E2E8F0""#));
         assert!(!output.contains(r#"w:fill="F8FAFC""#));
         assert!(!output.contains(r#"<w:left w:val="single" w:sz="18""#));
+        assert_eq!(output.matches("<w:i />").count(), 1);
     }
 
     #[test]
     fn removes_horizontal_rules_by_default_and_keeps_them_when_enabled() {
-        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="HorizontalRule" /><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto" /></w:pBdr></w:pPr></w:p><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto" /></w:pBdr></w:pPr></w:p><w:p><w:r><w:pict><v:rect style="width:0;height:1.5pt" o:hralign="center" o:hrstd="t" o:hr="t" /></w:pict></w:r></w:p><w:p><w:r><w:t>正文</w:t></w:r></w:p></w:body></w:document>"#;
+        let input = r#"<w:document><w:body><w:p w14:paraId="1111"><w:pPr><w:pStyle w:val="HorizontalRule" /><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto" /></w:pBdr></w:pPr></w:p><w:p><w:r><w:pict><v:rect style="width:0;height:1.5pt" o:hralign="center" o:hrstd="t" o:hr="t" /></w:pict></w:r></w:p><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto" /></w:pBdr></w:pPr><w:r><w:drawing><wp:inline /></w:drawing></w:r></w:p><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto" /></w:pBdr></w:pPr><m:oMathPara><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara></w:p><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto" /></w:pBdr></w:pPr><w:fldSimple w:instr="PAGE" /></w:p><w:p><w:r><w:t>正文</w:t></w:r></w:p></w:body></w:document>"#;
         let config = default_report_heading_numbering_config();
         let removed = normalize_document_xml(
             input,
@@ -5928,8 +6244,10 @@ mod tests {
         );
 
         assert!(removed.contains("<w:t>正文</w:t>"));
+        assert!(removed.contains("<w:drawing>"));
+        assert!(removed.contains("<m:oMathPara>"));
+        assert!(removed.contains("<w:fldSimple"));
         assert!(!removed.contains(r#"<w:pStyle w:val="HorizontalRule" />"#));
-        assert!(!removed.contains("<w:pBdr>"));
         assert!(!removed.contains(r#"o:hr="t""#));
 
         let kept = normalize_document_xml(
@@ -5945,9 +6263,46 @@ mod tests {
             None,
         );
 
-        assert!(kept.contains(r#"<w:pStyle w:val="HorizontalRule" />"#));
-        assert!(kept.contains("<w:pBdr>"));
-        assert!(kept.contains(r#"o:hr="t""#));
+        assert!(
+            kept.contains(r#"<w:p w14:paraId="1111"><w:pPr><w:pStyle w:val="HorizontalRule" />"#)
+        );
+        assert!(kept.contains(r#"<w:spacing w:before="240" w:after="240" />"#));
+        assert!(kept.contains(r#"w:val="single" w:sz="8" w:space="1" w:color="CBD5E1""#));
+        assert!(!kept.contains(r#"o:hr="t""#));
+    }
+
+    #[test]
+    fn applies_saved_horizontal_rule_style() {
+        let value = json!({
+            "styles": {
+                "source-code": {},
+                "quote": {},
+                "horizontal-rule": {
+                    "borderStyle": "dashed",
+                    "borderColor": "123ABC",
+                    "borderWidth": 1.5,
+                    "beforeSpacing": 5,
+                    "afterSpacing": 7
+                }
+            }
+        });
+        let block_style = block_style_config_from_value(&value).expect("block style should parse");
+        let input = r#"<w:document><w:body><w:p><w:r><w:pict><v:rect o:hr="t" /></w:pict></w:r></w:p></w:body></w:document>"#;
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &MarkdownFeatureConfig {
+                horizontal_rule: true,
+                ..default_markdown_feature_config()
+            },
+            None,
+            None,
+            Some(&block_style),
+        );
+
+        assert!(output.contains(r#"<w:spacing w:before="100" w:after="140" />"#));
+        assert!(output.contains(r#"w:val="dashed" w:sz="12" w:space="1" w:color="123ABC""#));
     }
 
     #[test]
@@ -6194,13 +6549,25 @@ mod tests {
 
     #[test]
     fn converts_formula_fenced_code_to_math_blocks_for_pandoc() {
-        let input = "正文\n\n```math\nE = mc^2\n```\n\n```latex\n\\frac{a}{b}\n```\n\n```rust\nlet value = 1;\n```\n";
+        let input = "正文\n\n```math\nE = mc^2\n```\n\n```latex\n\\frac{a}{b}\n```\n\n```公式\nx + y\n```\n\n```rust\nlet value = 1;\n```\n";
 
         let output = preprocess_markdown_for_word(input);
 
         assert!(output.contains("$$\nE = mc^2\n$$"));
         assert!(output.contains("$$\n\\frac{a}{b}\n$$"));
+        assert!(output.contains("$$\nx + y\n$$"));
         assert!(output.contains("MD_KING_CODE_LANG:rust\n```rust\nlet value = 1;\n```"));
+    }
+
+    #[test]
+    fn respects_markdown_fence_length_and_closing_rules() {
+        let input = "````math\na\n```\nb\n````\n\n```math\nc\n```not-close\nd\n```\n\n    ```math\ne\n    ```\n\n```math\nunclosed\n";
+        let output = preprocess_markdown_for_word(input);
+
+        assert!(output.contains("$$\na\n```\nb\n$$"));
+        assert!(output.contains("$$\nc\n```not-close\nd\n$$"));
+        assert!(output.contains("    ```math\ne\n    ```"));
+        assert!(output.ends_with("```math\nunclosed\n"));
     }
 
     #[test]
@@ -6247,6 +6614,8 @@ mod tests {
         assert!(output.contains("<w:t>• 无序列表 A</w:t>"));
         assert!(output.contains("<w:t>◦ 嵌套列表 B.1</w:t>"));
         assert!(output.contains("<w:t>1. 有序列表第一项</w:t>"));
+        assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
+        assert!(output.contains(r#"<w:ind w:left="1320" w:hanging="360" />"#));
         assert!(!output.contains("<w:numPr>"));
     }
 
@@ -6280,7 +6649,7 @@ mod tests {
                 "bullet-list": {
                     "listMarkerStyle": "triangle",
                     "listIndent": 2,
-                    "listTextIndent": 1.5,
+                    "listTextIndent": 1,
                     "listWrapMode": "hanging"
                 },
                 "numbered-list": {
@@ -6288,6 +6657,12 @@ mod tests {
                     "listIndent": 1,
                     "listTextIndent": 1.25,
                     "listWrapMode": "flat"
+                },
+                "nested-list": {
+                    "listLevel1Type": "bullet",
+                    "listMarkerStyle": "square",
+                    "listIndent": 4,
+                    "listTextIndent": 1
                 }
             }
         }))
@@ -6343,8 +6718,8 @@ mod tests {
         assert!(output.contains("<w:t>✓ 三级无序</w:t>"));
         assert!(output.contains("<w:t>1) 二级有序</w:t>"));
         assert!(output.contains("<w:t>(1) 三级有序</w:t>"));
-        assert!(output.contains(r#"<w:ind w:left="1320" w:hanging="360" />"#));
-        assert!(output.contains(r#"<w:ind w:left="1800" w:hanging="360" />"#));
+        assert!(output.contains(r#"<w:ind w:left="1380" w:hanging="420" />"#));
+        assert!(output.contains(r#"<w:ind w:left="1860" w:hanging="420" />"#));
     }
 
     #[test]
@@ -6706,6 +7081,7 @@ mod tests {
 
         let request = ConvertRequest {
             input: "# title".to_string(),
+            input_kind: None,
             source_path: None,
             output: Some(path.to_string_lossy().to_string()),
             template_id: None,
@@ -6726,6 +7102,23 @@ mod tests {
     }
 
     #[test]
+    fn staged_output_replaces_existing_file_only_at_commit() {
+        let dir = std::env::temp_dir();
+        let output = dir.join(format!("md-king-output-commit-{}.docx", std::process::id()));
+        let staged = dir.join(format!("md-king-output-staged-{}.docx", std::process::id()));
+        let _ = fs::remove_file(&output);
+        let _ = fs::remove_file(&staged);
+        fs::write(&output, b"old document").unwrap();
+        fs::write(&staged, b"new document").unwrap();
+
+        commit_staged_output(&staged, &output).expect("staged output should commit");
+
+        assert_eq!(fs::read(&output).unwrap(), b"new document");
+        assert!(!staged.exists());
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
     fn conflict_strategy_ask_rejects_existing_output_path() {
         let path =
             std::env::temp_dir().join(format!("md-king-conflict-ask-{}.docx", std::process::id()));
@@ -6734,6 +7127,7 @@ mod tests {
 
         let request = ConvertRequest {
             input: "# title".to_string(),
+            input_kind: None,
             source_path: None,
             output: Some(path.to_string_lossy().to_string()),
             template_id: None,

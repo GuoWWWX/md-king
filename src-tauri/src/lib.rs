@@ -23,9 +23,13 @@ pub fn run() {
     let _ = storage::paths::app_data_dir_hint();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let _ = system::startup_files::queue_open_files(app, args);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(system::startup_files::PendingOpenFiles::default())
         .setup(|app| {
             if let Some(icon) = app.default_window_icon().cloned() {
                 if let Some(window) = app.get_webview_window("main") {
@@ -36,6 +40,21 @@ pub fn run() {
             system::context_menu::sync_context_menu(config.enable_context_menu)?;
             system::tray::sync_tray(app.handle(), config.enable_tray)?;
             system::quick_paste::sync_quick_paste(app.handle(), &config)?;
+            let startup_args: Vec<String> = std::env::args().skip(1).collect();
+            let has_file_argument =
+                system::startup_files::has_existing_file_argument(&startup_args);
+            let queued_files =
+                system::startup_files::queue_open_files(app.handle(), startup_args.clone());
+            if has_file_argument
+                && !queued_files
+                && !startup_args.iter().any(|arg| arg == "--convert")
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+                app.handle().exit(0);
+                return Ok(());
+            }
             system::context_menu::handle_startup_context_action(app.handle().clone());
             Ok(())
         })
@@ -68,6 +87,7 @@ pub fn run() {
             clear_history,
             open_output_path,
             reveal_output_path,
+            system::startup_files::take_open_files,
             read_markdown_file,
             load_preview_image,
             convert_markdown

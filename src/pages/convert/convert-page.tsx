@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
 import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
-import { buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
+import { actionableConversionWarnings, buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
@@ -42,7 +42,7 @@ const fallbackTemplate: Template = {
 };
 
 export function ConvertPage() {
-  const { appConfig, templates, history, currentTemplateId, setAppConfig, setHistory, setCurrentTemplateId } = useAppStore();
+  const { appConfig, templates, history, currentTemplateId, pendingImportPaths, setAppConfig, setHistory, setCurrentTemplateId, clearPendingImportPaths } = useAppStore();
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
   const [markdown, setMarkdown] = useState("");
@@ -68,6 +68,34 @@ export function ConvertPage() {
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const expandedPreviewRef = useRef<HTMLDivElement>(null);
   const conversionVersionRef = useRef(0);
+
+  useEffect(() => {
+    if (isConverting || pendingImportPaths.length === 0) return;
+
+    const paths = pendingImportPaths;
+    clearPendingImportPaths();
+    setConvertResult(null);
+
+    if (paths.length > 1) {
+      setBatchImportPaths(paths);
+      setSelectedBatchImportPaths(paths);
+      setBatchImportDialogOpen(true);
+      setMode("file");
+      return;
+    }
+
+    const path = paths[0];
+    void readMarkdownFileFromPath(path)
+      .then((text) => {
+        setMarkdown(text);
+        setMarkdownSourcePath(path);
+        setMode("markdown");
+        toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
+      })
+      .catch((error) => {
+        toast.error(userFacingErrorMessage(error, "读取启动文件失败"));
+      });
+  }, [clearPendingImportPaths, isConverting, pendingImportPaths]);
 
   useEffect(() => {
     if (!currentTemplateId || currentTemplateId === templateId) return;
@@ -150,6 +178,7 @@ export function ConvertPage() {
     try {
       const result = await convertMarkdown({
         input,
+        inputKind: "text",
         sourcePath: markdownSourcePath,
         output: buildOutputPath(appConfig?.defaultOutputDir, outputName),
         templateId,
@@ -161,6 +190,10 @@ export function ConvertPage() {
       const nextHistory = [buildHistoryItem(result), ...history].slice(0, 20);
       await persistHistory(nextHistory);
       toast[result.ok && !result.simulated ? "success" : result.simulated ? "info" : "error"](result.message ?? (result.ok ? "转换完成" : "转换失败"));
+      const actionableWarnings = actionableConversionWarnings(result.warnings);
+      if (result.ok && actionableWarnings.length > 0) {
+        toast.warning("转换完成，但有需要检查的提示", { description: actionableWarnings.join("\n") });
+      }
     } catch (error) {
       if (conversionVersion !== conversionVersionRef.current) return;
       const message = userFacingErrorMessage(error, "转换调用失败");
@@ -210,7 +243,7 @@ export function ConvertPage() {
   async function runSelectedBatchImport() {
     const paths = batchImportPaths.filter((path) => selectedBatchImportPaths.includes(path));
     if (paths.length === 0) {
-      toast.error("请至少选择一个 Markdown 文件");
+      toast.error("请至少选择一个 Markdown/TXT 文件");
       return;
     }
 
@@ -225,6 +258,7 @@ export function ConvertPage() {
         const outputName = buildDocxOutputNameFromPath(path);
         const result = await convertMarkdown({
           input: path,
+          inputKind: "path",
           output: buildOutputPath(appConfig?.defaultOutputDir, outputName),
           templateId,
           openAfterConvert: false,
@@ -237,8 +271,9 @@ export function ConvertPage() {
       await persistHistory(nextHistory);
       const successCount = results.filter((result) => result.ok && !result.simulated).length;
       const failedCount = results.length - successCount;
+      const warningCount = results.reduce((total, result) => total + actionableConversionWarnings(result.warnings).length, 0);
       setConvertResult(results.length > 0 ? results[results.length - 1] : null);
-      toast[failedCount > 0 ? "error" : "success"](`批量转换完成：成功 ${successCount} 个，失败 ${failedCount} 个`);
+      toast[failedCount > 0 ? "error" : warningCount > 0 ? "warning" : "success"](`批量转换完成：成功 ${successCount} 个，失败 ${failedCount} 个${warningCount > 0 ? `，提示 ${warningCount} 条` : ""}`);
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "批量转换失败"));
       if (results.length > 0) {
@@ -510,8 +545,8 @@ export function ConvertPage() {
       <Dialog open={batchImportDialogOpen} onOpenChange={(open) => { if (!open) closeBatchImportDialog(); }}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
           <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
-            <DialogTitle className="text-lg font-semibold text-slate-950 dark:text-zinc-50">选择要转换的 Markdown</DialogTitle>
-            <DialogDescription className="mt-1 text-xs leading-5">已导入 {batchImportPaths.length} 个文件。勾选后才会转换为 DOCX，未选文件不会处理。</DialogDescription>
+            <DialogTitle className="text-lg font-semibold text-slate-950 dark:text-zinc-50">选择要转换的文档</DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-5">已导入 {batchImportPaths.length} 个 Markdown/TXT 文件。勾选后才会转换为 DOCX，未选文件不会处理。</DialogDescription>
           </DialogHeader>
 
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3 dark:border-zinc-800/80">
@@ -783,20 +818,20 @@ function WordPreviewSidebar({
       </div>
 
       {activeView === "pages" ? (
-        <section className="min-h-0 flex-1 overflow-hidden">
-          <div className="mb-2 flex items-center justify-between gap-2">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
             <p className="text-xs font-black text-slate-500 dark:text-zinc-400">页面缩略图</p>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount} 页</span>
           </div>
-          <div ref={onThumbnailContainerChange} className="grid h-full grid-cols-[repeat(auto-fit,minmax(104px,1fr))] content-start gap-2 overflow-auto pr-1 max-[900px]:max-h-[120px]" />
+          <div ref={onThumbnailContainerChange} className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fit,minmax(104px,1fr))] content-start gap-2 overflow-x-hidden overflow-y-auto pr-1 max-[900px]:max-h-[120px]" />
         </section>
       ) : (
-        <section className="min-h-0 flex-1 overflow-hidden">
-          <div className="mb-2 flex items-center justify-between gap-2">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
             <p className="text-xs font-black text-slate-500 dark:text-zinc-400">文档目录</p>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{headings.length}</span>
           </div>
-          <div className="h-full overflow-auto pr-1">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
             {headings.length > 0 ? (
               <div className="space-y-0.5">
                 {headings.map((heading, index) => {
@@ -820,6 +855,7 @@ function WordPreviewSidebar({
                         className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] py-1.5 pr-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
                         onClick={() => onHeadingJump(heading.id)}
                         tooltip={heading.text}
+                        tooltipSide="right"
                       >
                         {heading.number ? <span className="shrink-0 text-[10px] font-black text-slate-400 dark:text-zinc-500">{heading.number}</span> : null}
                         <span className="min-w-0 flex-1 truncate">{heading.text}</span>

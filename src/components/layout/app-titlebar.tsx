@@ -117,6 +117,7 @@ function TitlebarButton({ label, danger = false, disabled = false, onClick, chil
       type="button"
       aria-label={label}
       tooltip={title}
+      tooltipSide="bottom"
       disabled={disabled}
       className={cn(
         "mk-titlebar-button relative z-10 flex h-10 w-10 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",

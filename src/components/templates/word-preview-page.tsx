@@ -473,7 +473,8 @@ function resolveListLevelDraft(draft: StyleDraft, item: Pick<PreviewListItem, "l
 }
 
 function resolveListBaseDraft(drafts: Record<string, StyleDraft>, item: PreviewListItem) {
-  return drafts["nested-list"] ?? (item.level > 0 ? drafts["nested-list"] : item.ordered ? drafts["numbered-list"] : drafts["bullet-list"]);
+  if (item.level > 0) return drafts["nested-list"];
+  return item.ordered ? drafts["numbered-list"] : drafts["bullet-list"];
 }
 
 function applyHeadingMappings(blocks: PreviewBlock[], mappings: MarkdownRulesSettings["headingMappings"]) {
@@ -685,13 +686,14 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "hr") {
-    return 28;
+    const draft = drafts["horizontal-rule"];
+    return ptToPx(draft.beforeSpacing + draft.afterSpacing + Math.max(0.25, draft.borderWidth));
   }
 
   if (block.type === "list") {
     const contentHeight = block.items.reduce((total, item) => {
       const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
-      const listOffset = (resolveListIndent(draft, item) + draft.listTextIndent) * ptToPx(draft.fontSize);
+      const listOffset = resolveListIndent(draft, item) * ptToPx(draft.fontSize);
       return total + estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
     }, 0);
     const firstItem = block.items[0];
@@ -754,7 +756,7 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
 
       block.items.forEach((item) => {
         const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
-        const listOffset = (resolveListIndent(draft, item) + draft.listTextIndent) * ptToPx(draft.fontSize);
+        const listOffset = resolveListIndent(draft, item) * ptToPx(draft.fontSize);
         const itemHeight = estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
         if (currentItems.length > 0 && usedHeight + itemHeight > pageContentHeight) {
           pages.push({ ...block, items: currentItems });
@@ -820,19 +822,19 @@ function createFallbackBlocks(imageCaption: string, tableCaption: string): Previ
     { type: "heading", level: 4, text: "三级条目", anchorId: "heading-4" },
     { type: "heading", level: 5, text: "四级条目", anchorId: "heading-5" },
     { type: "heading", level: 6, text: "五级条目", anchorId: "heading-6" },
-    { type: "paragraph", segments: [...textSegments("这是一段正文，用于预览正文样式、行距、字号、对齐方式和段落间距。md-king 会把 AI 生成的 Markdown 转换成可继续编辑的 Word/WPS 文档，并尽量保留清晰的文档结构。"), { text: "inlineCode()", code: true }, ...textSegments(" 会在这里展示实际效果。")] },
+    { type: "paragraph", segments: [...textSegments("正文用于预览字号、行距和缩进，"), { text: "inlineCode()", code: true }, ...textSegments(" 展示行内代码。")] },
     { type: "list", items: [
-      { segments: textSegments("无序列表会展示项目符号、缩进和换行后的对齐效果。这里故意放一段更长的文字，方便观察第二行从哪里开始。"), level: 0, ordered: false, index: 1 },
-      { segments: textSegments("二级列表会使用多级列表里的二级样式。"), level: 1, ordered: false, index: 1 },
-      { segments: textSegments("三级列表会继续缩进，并使用三级样式。"), level: 2, ordered: false, index: 1 },
-      { segments: textSegments("有序列表可以切换数字、括号和中文编号。"), level: 0, ordered: true, index: 1 },
-      { segments: textSegments("第二个编号项用于观察编号递增。"), level: 0, ordered: true, index: 2 },
+      { segments: textSegments("一级列表用于观察项目符号、缩进和换行对齐。"), level: 0, ordered: false, index: 1 },
+      { segments: textSegments("二级无序列表使用较长内容展示自动换行效果，换行后可以检查续行是否与符号后的正文文字保持对齐。"), level: 1, ordered: false, index: 1 },
+      { segments: textSegments("三级列表继续缩进。"), level: 2, ordered: false, index: 1 },
+      { segments: textSegments("有序列表第一项使用较长内容检查自动换行，续行可以观察编号、正文文字和当前对齐方式之间的关系。"), level: 0, ordered: true, index: 1 },
+      { segments: textSegments("第二项用于检查编号递增。"), level: 0, ordered: true, index: 2 },
     ] },
-    { type: "quote", segments: textSegments("这里展示引用块样式，内容仅用于观察缩进、边框、字体和背景效果。") },
-    { type: "code", language: "javascript", text: "function convertMarkdown(input) {\n  const docx = renderWordDocument(input);\n  return saveAs(docx, \"report.docx\");\n}" },
+    { type: "quote", segments: textSegments("引用块用于观察缩进、边框和背景。") },
+    { type: "code", language: "javascript", text: "const docx = convertMarkdown(input);\nsaveAs(docx, \"report.docx\");" },
     { type: "image", caption: imageCaption },
     { type: "hr" },
-    { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "用于章节层级"], ["正文", "常规", "用于段落内容"], ["表格", "按页面宽度铺满", "自动换行"]] },
+    { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]] },
   ];
 }
 
@@ -1030,7 +1032,18 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "hr") {
-      rendered.push(<hr key={index} className="my-4 border-0 border-t border-slate-300" />);
+      const draft = drafts["horizontal-rule"];
+      rendered.push(
+        <hr
+          key={index}
+          className={cn("border-0", selectedRing(selectedStyle, "horizontal-rule"))}
+          style={{
+            borderTop: `${Math.max(0.25, draft.borderWidth)}pt ${draft.borderStyle} ${draft.borderColor}`,
+            marginTop: `${draft.beforeSpacing}pt`,
+            marginBottom: `${draft.afterSpacing}pt`,
+          }}
+        />,
+      );
       return;
     }
 
@@ -1046,7 +1059,7 @@ function renderMarkdownBlocks({
             const displayIndex = isNumbered && item.level === 0 && listDraft.listNumberingMode === "continue" ? continuedOrderedListIndex + 1 : item.index;
             if (isNumbered && item.level === 0 && listDraft.listNumberingMode === "continue") continuedOrderedListIndex = displayIndex;
             const marker = markerTextFromStyle(listDraft, item, markerType, displayIndex);
-            const markerWidth = `${Math.max(0.5, listDraft.listTextIndent)}em`;
+            const markerGap = `${Math.max(0.5, listDraft.listTextIndent)}ch`;
             const itemStyle = {
               ...textStyle(listDraft),
               marginLeft: `${resolveListIndent(listDraft, item)}em`,
@@ -1058,7 +1071,7 @@ function renderMarkdownBlocks({
             if (listDraft.listWrapMode === "flat") {
               return (
                 <div key={itemIndex} className={cn("break-words", selectedRing(selectedStyle, listStyleId))} style={itemStyle}>
-                  <span aria-hidden="true" style={{ display: "inline-block", width: markerWidth }}>{marker}</span>
+                  <span aria-hidden="true" style={{ marginRight: markerGap }}>{marker}</span>
                   {renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle)}
                 </div>
               );
@@ -1068,10 +1081,10 @@ function renderMarkdownBlocks({
               <div
                 key={itemIndex}
                 className={cn("grid break-words", selectedRing(selectedStyle, listStyleId))}
-                style={{ ...itemStyle, gridTemplateColumns: `${markerWidth} minmax(0,1fr)` }}
+                style={{ ...itemStyle, gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: markerGap }}
               >
-                <span aria-hidden="true">{marker}</span>
-                <span>{renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle)}</span>
+                <span aria-hidden="true" className="whitespace-nowrap">{marker}</span>
+                <span className="min-w-0">{renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle)}</span>
               </div>
             );
           })}
@@ -1173,6 +1186,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const quote = getDraft(styleConfig, "quote");
   const code = getDraft(styleConfig, "source-code");
   const inlineCode = getDraft(styleConfig, "inline-code");
+  const horizontalRule = getDraft(styleConfig, "horizontal-rule");
   const bulletList = getDraft(styleConfig, "bullet-list");
   const numberedList = getDraft(styleConfig, "numbered-list");
   const nestedList = getDraft(styleConfig, "nested-list");
@@ -1264,7 +1278,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
       ? { ...block, caption: captionText(caption, block.alt) }
       : block);
   const mappedBlocks = applyHeadingMappings(activeBlocks, styleConfig?.markdownRules?.headingMappings ?? defaultMarkdownRules.headingMappings);
-  const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-caption": tableCaption, "inline-code": inlineCode, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
+  const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-caption": tableCaption, "inline-code": inlineCode, "horizontal-rule": horizontalRule, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
   const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
   const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight);
   const shouldPaginate = paginate && hasMarkdownPreview;
@@ -1413,7 +1427,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         className={cn(
           "min-h-0 flex-1 rounded-lg bg-slate-200/60 p-3 2xl:p-4",
           interactiveViewport ? "cursor-grab select-none overflow-auto active:cursor-grabbing" : "overflow-y-auto overflow-x-hidden",
-          interactiveViewport && "flex flex-wrap content-start items-start justify-center gap-5",
+          interactiveViewport && "flex flex-wrap content-start items-start justify-start gap-5",
           interactiveViewport && isDraggingPreview && "cursor-grabbing",
           viewportClassName,
         )}
@@ -1434,6 +1448,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
               className="group relative w-fit max-w-full justify-self-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
               onClick={() => onThumbnailPageSelect(pageIndex + 1)}
               tooltip={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
+              tooltipSide="right"
               aria-label={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
             >
               <div className="overflow-hidden rounded-[6px] border border-slate-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950">

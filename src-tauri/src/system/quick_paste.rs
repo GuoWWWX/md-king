@@ -108,6 +108,7 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
 
     let request = ConvertRequest {
         input: input_path.to_string_lossy().to_string(),
+        input_kind: Some("path".to_string()),
         source_path: None,
         output: Some(output_path.to_string_lossy().to_string()),
         template_id: Some(template_id),

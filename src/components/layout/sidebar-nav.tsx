@@ -71,7 +71,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PrimaryActionButton className={cn("h-10 overflow-hidden text-sm font-bold whitespace-nowrap", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" aria-label="新建转换">
+      <PrimaryActionButton className={cn("h-10 overflow-hidden text-sm font-bold whitespace-nowrap", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" tooltipSide="right" aria-label="新建转换">
         <Plus className="size-4" />
         <span className={sidebarLabelClass}>新建转换</span>
       </PrimaryActionButton>
@@ -93,6 +93,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
                   )}
                   variant="ghost"
                   title={item.label}
+                  tooltipSide="right"
                   aria-label={item.label}
                   onClick={() => onNavigate(item.id)}
                 >
@@ -116,6 +117,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
           )}
           onClick={onToggleCollapsed}
           title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          tooltipSide="right"
           aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
         >
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
@@ -123,7 +125,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
         </Button>
         <div className={cn("flex items-center overflow-hidden text-xs text-slate-400", collapsed ? "justify-center px-0" : "justify-between px-2 max-[980px]:justify-center")}>
           <span className={sidebarLabelClass}>{appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}</span>
-          <TooltipAnchor content="本地运行">
+          <TooltipAnchor content="本地运行" tooltipSide="right">
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-blue-600" />
               <span className={cn("text-[11px] font-semibold text-slate-400", sidebarLabelClass)}>本地</span>
@@ -162,6 +164,7 @@ function ThemeModeButton({
         className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto h-9 w-9 justify-center rounded-[8px] px-0"
         onClick={onToggleThemeMode}
         title={activeMode.label}
+        tooltipSide="right"
         aria-label={`切换外观主题，当前：${activeMode.label}`}
         disabled={!onToggleThemeMode}
       >
@@ -199,6 +202,7 @@ function ThemeModeButton({
         className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto hidden h-9 w-9 justify-center rounded-[8px] px-0 max-[980px]:inline-flex"
         onClick={onToggleThemeMode}
         title={activeMode.label}
+        tooltipSide="right"
         aria-label={`切换外观主题，当前：${activeMode.label}`}
         disabled={!onToggleThemeMode}
       >
