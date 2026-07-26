@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, ClipboardPaste, FileText, FolderOpen, Loader2, Maximize2, PanelsTopLeft, Settings2, Trash2, UploadCloud, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Maximize2, PanelsTopLeft, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
@@ -19,9 +19,10 @@ import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
+import { DocumentTabBar } from "@/components/editor/document-tab-bar";
+import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
 
-type ConvertMode = "markdown" | "file";
 type PreviewSidebarView = "pages" | "outline";
 const previewZoomMin = 20;
 const previewZoomMax = 200;
@@ -47,23 +48,40 @@ export function ConvertPage() {
   const { appConfig, templates, currentTemplateId, pendingImportPaths, setAppConfig, setHistory, setCurrentTemplateId, clearPendingImportPaths } = useAppStore();
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
-  const [markdown, setMarkdown] = useState("");
-  const [markdownSourcePath, setMarkdownSourcePath] = useState<string>();
-  // 只有「外部灌入新文档」才递增：打开文件、粘贴、导入都算，用户逐字输入不算。
-  // 编辑器靠它决定何时做全量替换——每次内容变化都替换会打断输入、丢光标。
-  const [documentRevision, setDocumentRevision] = useState(0);
-  const documentKey = `${markdownSourcePath ?? "untitled"}#${documentRevision}`;
+  const tabs = useDocumentTabsStore((state) => state.tabs);
+  const activeTabId = useDocumentTabsStore((state) => state.activeTabId);
+  const openScratchTab = useDocumentTabsStore((state) => state.openScratchTab);
+  const updateTabContent = useDocumentTabsStore((state) => state.updateTabContent);
+  const openVaultTab = useDocumentTabsStore((state) => state.openVaultTab);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  // 正文的唯一来源是活动标签。revision 只在外部灌入内容时递增，
+  // 用户逐字输入不动它——每次内容变化都让编辑器全量替换会打断输入、丢光标。
+  const markdown = activeTab?.content ?? "";
+  const markdownSourcePath = activeTab?.absolutePath;
+  const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
+
+  function setMarkdown(next: string) {
+    if (!activeTabId) {
+      // 没有任何标签时直接开一个临时文档，用户不必先点「新建」。
+      openScratchTab({ title: deriveScratchTitle(next), content: next });
+      return;
+    }
+    updateTabContent(activeTabId, next);
+  }
   const isDark = (appConfig?.themeMode ?? "light") === "dark"
     || ((appConfig?.themeMode ?? "light") === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const autoOutputName = useMemo(() => buildDocxOutputName(markdown), [markdown]);
   const [outputNameDraft, setOutputNameDraft] = useState(() => buildDocxOutputName(""));
   const [outputNameEdited, setOutputNameEdited] = useState(false);
-  const [mode, setMode] = useState<ConvertMode>("markdown");
   const [isConverting, setIsConverting] = useState(false);
   const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
   const [batchImportPaths, setBatchImportPaths] = useState<string[]>([]);
   const [selectedBatchImportPaths, setSelectedBatchImportPaths] = useState<string[]>([]);
   const [batchImportDialogOpen, setBatchImportDialogOpen] = useState(false);
+  // 临时文档没有落盘，关掉就真没了，必须先问一句。用 ref 存 resolve
+  // 是为了把「弹窗 + 按钮点击」这套异步交互包成一个可 await 的 Promise。
+  const [closingScratchTab, setClosingScratchTab] = useState<DocumentTab>();
+  const closeScratchResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(templateId));
   const [previewWidth, setPreviewWidth] = useState(520);
   const [previewZoom, setPreviewZoom] = useState(40);
@@ -94,7 +112,6 @@ export function ConvertPage() {
       setBatchImportPaths(paths);
       setSelectedBatchImportPaths(paths);
       setBatchImportDialogOpen(true);
-      setMode("file");
       return undefined;
     }
 
@@ -108,10 +125,7 @@ export function ConvertPage() {
       .then((text) => {
         if (cancelled) return;
         clearPendingImportPaths();
-        setMarkdown(text);
-        setDocumentRevision((value) => value + 1);
-        setMarkdownSourcePath(path);
-        setMode("markdown");
+        openExternalDocument(path, text);
         toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
       })
       .catch((error) => {
@@ -144,21 +158,18 @@ export function ConvertPage() {
   useEffect(() => {
     conversionVersionRef.current += 1;
     setConvertResult(null);
-  }, [markdown, mode]);
+  }, [markdown, activeTabId]);
 
   // 文件树点开某个文件时，正文由 AppShell 那条链路送进来。
   // 一并把输出名的「已手改」标记清掉：否则用户改过一次文件名后，
   // 后面在树里点开的每个文件都会沿用那个名字，导出时互相覆盖。
   useEffect(() => {
-    registerVaultContentSink(({ absolutePath, content }) => {
-      setMarkdown(content);
-      setDocumentRevision((value) => value + 1);
-      setMarkdownSourcePath(absolutePath);
-      setMode("markdown");
+    registerVaultContentSink(({ path, absolutePath, content }) => {
+      openVaultTab({ path, absolutePath, title: path.split("/").pop() ?? path, content });
       setOutputNameEdited(false);
     });
     return () => registerVaultContentSink(undefined);
-  }, []);
+  }, [openVaultTab]);
 
   useEffect(() => {
     if (!outputNameEdited) setOutputNameDraft(autoOutputName);
@@ -196,6 +207,32 @@ export function ConvertPage() {
         setPreviewStyleConfig(mergeTemplateStyleConfig(templateId));
       });
   }, [templateId]);
+
+  function confirmCloseScratchTab(tab: DocumentTab) {
+    setClosingScratchTab(tab);
+    return new Promise<boolean>((resolve) => {
+      closeScratchResolveRef.current = resolve;
+    });
+  }
+
+  function resolveCloseScratch(confirmed: boolean) {
+    closeScratchResolveRef.current?.(confirmed);
+    closeScratchResolveRef.current = null;
+    setClosingScratchTab(undefined);
+  }
+
+  /// 从磁盘路径载入的文档。若这个路径已经在某个标签里开着就复用它，
+  /// 否则新开一个——和文件树点击走同一套去重逻辑，避免同一个文件开出两个标签。
+  function openExternalDocument(path: string, content: string) {
+    const normalized = path.replace(/\\/g, "/");
+    openVaultTab({
+      path: normalized,
+      absolutePath: path,
+      title: normalized.split("/").pop() ?? normalized,
+      content,
+    });
+    setOutputNameEdited(false);
+  }
 
   /// 只上传本次新增的记录：后端会重新读盘再合并回写，
   /// 避免悬浮球窗口、右键菜单进程在转换期间写入的记录被本窗口的旧快照覆盖。
@@ -293,7 +330,6 @@ export function ConvertPage() {
     }
 
     closeBatchImportDialog();
-    setMode("file");
     setIsConverting(true);
     setConvertResult(null);
 
@@ -329,10 +365,9 @@ export function ConvertPage() {
   }
 
   function handleFileTextLoad(text: string, file: File) {
-    setMarkdown(text);
-    setDocumentRevision((value) => value + 1);
-    setMarkdownSourcePath(undefined);
-    setMode("markdown");
+    // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
+    openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text });
+    setOutputNameEdited(false);
     toast.success(`已载入文件：${file.name}`);
   }
 
@@ -341,10 +376,7 @@ export function ConvertPage() {
       const path = await selectMarkdownFile();
       if (!path) return;
       const text = await readMarkdownFileFromPath(path);
-      setMarkdown(text);
-      setDocumentRevision((value) => value + 1);
-      setMarkdownSourcePath(path);
-      setMode("markdown");
+      openExternalDocument(path, text);
       toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "读取文件失败"));
@@ -358,10 +390,9 @@ export function ConvertPage() {
     }
     try {
       const text = await navigator.clipboard.readText();
-      setMarkdown(text);
-      setDocumentRevision((value) => value + 1);
-      setMarkdownSourcePath(undefined);
-      setMode("markdown");
+      // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
+      openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text });
+      setOutputNameEdited(false);
       toast.success(text.trim() ? "已从剪贴板读取到编辑区" : "剪贴板为空，已清空编辑区");
     } catch (error) {
       toast.error(clipboardReadErrorMessage(error));
@@ -680,12 +711,29 @@ export function ConvertPage() {
         </DialogContent>
       </Dialog>
 
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[54px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
-      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-slate-200 bg-white p-1 max-[760px]:grid-cols-1 dark:border-zinc-700/70 dark:bg-zinc-900/80">
-        <ModeTile active={mode === "markdown"} icon={FileText} title="Markdown 输入" onClick={() => setMode("markdown")} />
-        <ModeTile active={mode === "file"} icon={UploadCloud} title="导入文件" onClick={() => setMode("file")} />
-        <ModeTile icon={ClipboardPaste} title="粘贴内容" onClick={() => void handleReadClipboard()} disabled={isConverting} />
-      </div>
+      <Dialog open={Boolean(closingScratchTab)} onOpenChange={(open) => { if (!open) resolveCloseScratch(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>关闭未保存的文档</DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-5">
+              「{closingScratchTab?.title}」还没有保存到磁盘，关闭后内容会丢失。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => resolveCloseScratch(false)}>取消</Button>
+            <Button variant="destructive" onClick={() => resolveCloseScratch(true)}>仍然关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+    <div className="grid h-full min-h-0 flex-1 grid-rows-[40px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
+      <DocumentTabBar
+        onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
+        onImportFile={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
+        onBatchImport={isTauriEnvironment() ? runBatchImport : undefined}
+        onPasteClipboard={handleReadClipboard}
+        onConfirmCloseScratch={confirmCloseScratchTab}
+      />
 
       <div
         ref={splitPaneRef}
@@ -693,7 +741,7 @@ export function ConvertPage() {
         style={{ gridTemplateColumns: `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
-          <ConversionInputCard mode={mode} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
+          <ConversionInputCard hasDocument={Boolean(activeTab)} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
         </div>
 
         <div
@@ -739,23 +787,6 @@ export function ConvertPage() {
 function normalizeOutputName(value: string) {
   const cleaned = value.trim().replace(/[\\/:*?"<>|]/g, "-") || "untitled.docx";
   return cleaned.toLowerCase().endsWith(".docx") ? cleaned : `${cleaned}.docx`;
-}
-
-function ModeTile({ active = false, disabled = false, icon: Icon, title, onClick }: { active?: boolean; disabled?: boolean; icon: typeof FileText; title: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "flex h-11 items-center justify-center gap-2 rounded-[10px] text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-        active ? "bg-blue-600 text-white shadow-none" : "text-blue-800 hover:bg-slate-50 hover:text-blue-700 dark:text-zinc-200 dark:hover:bg-zinc-800/85 dark:hover:text-white",
-      )}
-      onClick={onClick}
-      disabled={disabled}
-    >
-      <Icon className="size-4" />
-      <span>{title}</span>
-    </button>
-  );
 }
 
 function ConvertPreviewPanel({

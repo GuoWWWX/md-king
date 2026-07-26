@@ -6,6 +6,7 @@ import { EditorView, drawSelection, keymap, placeholder as cmPlaceholder, rectan
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { livePreviewPlugin } from "./cm/live-preview";
+import { markdownFormattingKeymap } from "./cm/formatting-keymap";
 import { markdownEditorTheme } from "./cm/theme";
 
 export type LiveMarkdownEditorProps = {
@@ -110,6 +111,9 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
         // 必须排在 defaultKeymap 的 Enter/Backspace 之前。
         { key: "Enter", run: insertNewlineContinueMarkup },
         { key: "Backspace", run: deleteMarkupBackward },
+        // 加粗/斜体这类快捷键排在 defaultKeymap 之前：Mod-i 在默认绑定里
+        // 是缩进相关的，不抢先会被它接走。
+        ...markdownFormattingKeymap,
         ...defaultKeymap,
         ...historyKeymap,
       ]),
