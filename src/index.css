@@ -1316,13 +1316,18 @@ select {
 
   /* Mermaid 图容器。图本身由 mermaid 生成的 SVG 负责，这里只管外框和状态。 */
   .mk-cm-mermaid {
-    display: flex;
-    justify-content: center;
+    position: relative;
     margin: 8px 0;
-    padding: 12px;
+    /* 顶部多留出一行给左上角的 MERMAID 标签，和代码块的观感对齐。 */
+    padding: 24px 12px 12px;
     border: 1px solid rgba(226, 232, 240, 0.95);
     border-radius: 8px;
     background: rgba(248, 250, 252, 0.72);
+  }
+
+  .mk-cm-mermaid-canvas {
+    display: flex;
+    justify-content: center;
     overflow-x: auto;
   }
 
@@ -1331,8 +1336,8 @@ select {
     height: auto;
   }
 
-  .mk-cm-mermaid[data-state="loading"],
-  .mk-cm-mermaid[data-state="error"] {
+  .mk-cm-mermaid[data-state="loading"] .mk-cm-mermaid-canvas,
+  .mk-cm-mermaid[data-state="error"] .mk-cm-mermaid-canvas {
     justify-content: flex-start;
     font-family: ui-sans-serif, system-ui, sans-serif;
     font-size: 12px;
@@ -1342,6 +1347,9 @@ select {
   .mk-cm-mermaid[data-state="error"] {
     border-color: rgba(239, 68, 68, 0.4);
     background: rgba(254, 242, 242, 0.8);
+  }
+
+  .mk-cm-mermaid[data-state="error"] .mk-cm-mermaid-canvas {
     color: #b91c1c;
     white-space: pre-wrap;
   }
@@ -1385,7 +1393,8 @@ select {
 
   /* 语言名画在代码块左上角。用伪元素而不是插 widget：widget 会占据文档流，
      把首行代码顶下去，而且每次重建都要比对 eq。 */
-  .cm-line[data-code-language]::before {
+  .cm-line[data-code-language]::before,
+  .mk-cm-mermaid[data-code-language]::before {
     content: attr(data-code-language);
     position: absolute;
     left: 12px;
@@ -1823,6 +1832,9 @@ select {
   .dark .mk-cm-mermaid[data-state="error"] {
     border-color: rgba(248, 113, 113, 0.4);
     background: rgba(69, 10, 10, 0.5);
+  }
+
+  .dark .mk-cm-mermaid[data-state="error"] .mk-cm-mermaid-canvas {
     color: #fca5a5;
   }
 
@@ -1847,7 +1859,8 @@ select {
       inset 0 -1px 0 rgba(212, 212, 216, 0.18) !important;
   }
 
-  .dark .cm-line[data-code-language]::before {
+  .dark .cm-line[data-code-language]::before,
+  .dark .mk-cm-mermaid[data-code-language]::before {
     color: rgba(161, 161, 170, 0.85);
   }
 

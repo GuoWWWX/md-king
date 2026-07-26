@@ -55,32 +55,40 @@ export class MermaidWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
+    // 分两层：外层挂语言标签和边框，内层专门放 SVG。
+    // 不分层的话 innerHTML 会把标签一起冲掉。
     const host = document.createElement("div");
     host.className = "mk-cm-mermaid";
-    host.setAttribute("role", "img");
+    host.dataset.codeLanguage = "mermaid";
+
+    const canvas = document.createElement("div");
+    canvas.className = "mk-cm-mermaid-canvas";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", "Mermaid 图表");
+    host.append(canvas);
 
     const cached = getCachedMermaidSvg(this.source, this.dark);
     if (cached) {
-      host.innerHTML = cached.svg;
+      canvas.innerHTML = cached.svg;
       return host;
     }
 
     host.dataset.state = "loading";
-    host.textContent = "正在渲染图表…";
+    canvas.textContent = "正在渲染图表…";
 
     void renderMermaid(this.source, this.dark)
       .then(({ svg }) => {
         // 容器可能已经被 CM 回收（用户快速滚动或改了源码），
         // 这时候往里写东西没有意义，isConnected 判掉。
-        if (!host.isConnected) return;
+        if (!canvas.isConnected) return;
         delete host.dataset.state;
-        host.innerHTML = svg;
+        canvas.innerHTML = svg;
       })
       .catch((error: unknown) => {
-        if (!host.isConnected) return;
+        if (!canvas.isConnected) return;
         host.dataset.state = "error";
         // 语法错误要给出原文，否则用户不知道图为什么画不出来。
-        host.textContent = error instanceof Error ? error.message : "图表渲染失败";
+        canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
       });
 
     return host;
