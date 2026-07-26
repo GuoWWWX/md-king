@@ -21,6 +21,9 @@ type ConversionInputCardProps = {
   onNativeFileSelect?: () => void | Promise<void>;
   onBatchSelect?: () => void | Promise<void>;
   onReadClipboard: () => void | Promise<void>;
+  /// 桌面端的窗口级拖放正在进行。浏览器下的 HTML5 drop 由本组件自己处理，
+  /// 这个只负责把桌面端那条通道的高亮状态透进来。
+  externalDragging?: boolean;
   onRequestSave?: () => void;
 };
 
@@ -35,6 +38,7 @@ export function ConversionInputCard({
   onNativeFileSelect,
   onBatchSelect,
   onReadClipboard,
+  externalDragging = false,
   onRequestSave,
 }: ConversionInputCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +105,14 @@ export function ConversionInputCard({
         <Maximize2 className="size-3.5" />
       </TooltipButton>
 
+      {/* 拖放提示要盖在编辑器上：已有文档时引导区不渲染，
+          没有这层的话桌面端拖文件进来毫无视觉反馈。 */}
+      {externalDragging && hasDocument ? (
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-[10px] border-2 border-dashed border-blue-500 bg-blue-50/85 dark:border-blue-400 dark:bg-blue-950/70">
+          <span className="text-sm font-bold text-blue-700 dark:text-blue-200">松开以在新标签中打开</span>
+        </div>
+      ) : null}
+
       {hasDocument ? (
         <LiveMarkdownEditor
           ref={editorRef}
@@ -117,7 +129,7 @@ export function ConversionInputCard({
         <div
           className={cn(
             "mk-drop-zone m-3 flex min-h-[300px] flex-1 flex-col items-center justify-center rounded-[12px] p-5 text-center transition-all",
-            isDragging && "border-blue-500 bg-blue-50",
+            (isDragging || externalDragging) && "border-blue-500 bg-blue-50",
           )}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}

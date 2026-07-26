@@ -7,7 +7,7 @@ import { EditorView, drawSelection, keymap, placeholder as cmPlaceholder, rectan
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { livePreviewPlugin } from "./cm/live-preview";
-import { markdownFormattingKeymap } from "./cm/formatting-keymap";
+import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownEditorTheme } from "./cm/theme";
 
 export type LiveMarkdownEditorProps = {
@@ -93,6 +93,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
 
     const extensions: Extension[] = [
       history(),
+      markdownIndentUnit,
       drawSelection(),
       rectangularSelection(),
       EditorView.lineWrapping,

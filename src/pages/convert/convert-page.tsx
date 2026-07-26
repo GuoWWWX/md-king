@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useTauriFileDrop } from "@/hooks/use-tauri-file-drop";
 import { useVaultStore } from "@/stores/vault-store";
 import { DocumentTabBar } from "@/components/editor/document-tab-bar";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
@@ -110,6 +111,8 @@ export function ConvertPage() {
   // 这种在 effect 之外发起的读取，晚回来的旧结果会把新模板的样式覆盖掉。
   const previewStyleVersionRef = useRef(0);
   const selectedTemplate = useMemo(() => templateOptions.find((template) => template.id === templateId) ?? templateOptions[0], [templateId, templateOptions]);
+  // 桌面端整窗接收拖放：拖进来的文件不必在已打开的目录里，各自开一个标签。
+  const { isDragging: isWindowDragging } = useTauriFileDrop((paths) => openDroppedPaths(paths));
 
   useEffect(() => {
     if (isConverting || pendingImportPaths.length === 0) return undefined;
@@ -218,6 +221,29 @@ export function ConvertPage() {
       });
   }, [templateId]);
 
+  /// 从窗口拖入的文件。刻意不经过 vault 命令——那套会拒绝目录外的路径，
+  /// 而拖进来的文件本来就多半不在当前打开的目录里。read_markdown_file
+  /// 可以读任意路径，代价是这些标签没有 vault 的乐观锁与自动保存基准。
+  async function openDroppedPaths(paths: string[]) {
+    let lastId: string | undefined;
+    let failed = 0;
+
+    for (const path of paths) {
+      try {
+        const text = await readMarkdownFileFromPath(path);
+        lastId = openExternalDocument(path, text);
+      } catch {
+        failed += 1;
+      }
+    }
+
+    if (lastId) {
+      const opened = paths.length - failed;
+      toast.success(opened > 1 ? `已打开 ${opened} 个文档` : `已打开：${paths[paths.length - 1].split(/[\/]/).pop()}`);
+    }
+    if (failed > 0) toast.error(`${failed} 个文件读取失败`);
+  }
+
   function confirmCloseScratchTab(tab: DocumentTab) {
     setClosingScratchTab(tab);
     return new Promise<boolean>((resolve) => {
@@ -235,13 +261,14 @@ export function ConvertPage() {
   /// 否则新开一个——和文件树点击走同一套去重逻辑，避免同一个文件开出两个标签。
   function openExternalDocument(path: string, content: string) {
     const normalized = path.replace(/\\/g, "/");
-    openVaultTab({
+    const id = openVaultTab({
       path: normalized,
       absolutePath: path,
       title: normalized.split("/").pop() ?? normalized,
       content,
     });
     setOutputNameEdited(false);
+    return id;
   }
 
   /// 只上传本次新增的记录：后端会重新读盘再合并回写，
@@ -743,17 +770,18 @@ export function ConvertPage() {
         onBatchImport={isTauriEnvironment() ? runBatchImport : undefined}
         onPasteClipboard={handleReadClipboard}
         onConfirmCloseScratch={confirmCloseScratchTab}
-        trailing={showPreviewPanel || isNarrow ? undefined : (
+        trailing={isNarrow ? undefined : (
+          // 开关常驻顶栏：收起后如果按钮跟着面板一起消失，用户得去别处找入口。
           <Button
             variant="ghost"
             size="icon-xs"
             className="size-7 shrink-0 rounded-[8px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            onClick={() => setPreviewVisible(true)}
-            title="展开预览与导出"
+            onClick={() => setPreviewVisible(!previewVisible)}
+            title={showPreviewPanel ? "收起预览与导出" : "展开预览与导出"}
             tooltipSide="bottom"
-            aria-label="展开预览与导出"
+            aria-label={showPreviewPanel ? "收起预览与导出" : "展开预览与导出"}
           >
-            <PanelRightOpen className="size-4" />
+            {showPreviewPanel ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
           </Button>
         )}
       />
@@ -764,7 +792,7 @@ export function ConvertPage() {
         style={{ gridTemplateColumns: showPreviewPanel ? `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` : "minmax(0,1fr)" }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
-          <ConversionInputCard hasDocument={Boolean(activeTab)} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
+          <ConversionInputCard hasDocument={Boolean(activeTab)} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} externalDragging={isWindowDragging} />
         </div>
 
         {showPreviewPanel ? (
@@ -786,7 +814,6 @@ export function ConvertPage() {
               zoom={previewZoom}
               setZoom={setPreviewZoom}
               onExpand={() => setPreviewExpanded(true)}
-              onCollapse={() => setPreviewVisible(false)}
               footer={renderConvertFooter("shrink-0 rounded-none border-x-0 border-b-0 px-0 pb-0", true)}
               className="min-h-0 min-w-0"
             />
@@ -814,7 +841,6 @@ function ConvertPreviewPanel({
   zoom,
   setZoom,
   onExpand,
-  onCollapse,
   footer,
   onOpenAdvancedStyle,
   expanded = false,
@@ -832,8 +858,6 @@ function ConvertPreviewPanel({
   zoom: number;
   setZoom: (value: number | ((current: number) => number)) => void;
   onExpand: () => void;
-  /// 折叠整个面板。放大预览模式下不传，那里没有可折叠的语义。
-  onCollapse?: () => void;
   /// 导出区：模板、输出目录、文件名、转换按钮。挂在面板底部而不是页面底部，
   /// 编辑区因此能拿到完整高度。
   footer?: ReactNode;
@@ -880,14 +904,6 @@ function ConvertPreviewPanel({
             <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onExpand} title="放大查看" aria-label="放大查看">
               <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
             </Button>
-          ) : null}
-          {onCollapse ? (
-            <>
-              <span className="h-4 w-px bg-slate-200 dark:bg-zinc-700" />
-              <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onCollapse} title="收起预览与导出" aria-label="收起预览与导出">
-                <PanelRightClose className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              </Button>
-            </>
           ) : null}
         </div>
       </div>
