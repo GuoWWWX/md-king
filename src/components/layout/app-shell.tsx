@@ -92,6 +92,9 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
                 max={FILE_TREE_WIDTH_RANGE.max}
                 onResize={setFileTreeWidth}
                 ariaLabel="调整文件树宽度"
+                // 容器本身零宽，但仍会占掉一份 flex gap。负 margin 抵消掉，
+                // 让这道缝和图标栏那边一样宽。
+                className="-ml-2.5"
               />
             </>
           ) : null}

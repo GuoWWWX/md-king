@@ -67,23 +67,29 @@ export function ResizableDivider({ orientation = "vertical", size, min, max, onR
   }
 
   return (
-    <div
-      role="separator"
-      aria-label={ariaLabel}
-      aria-orientation={orientation}
-      className={cn(
-        "group flex shrink-0 items-center justify-center",
-        orientation === "vertical" ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize",
-        className,
-      )}
-      onPointerDown={handlePointerDown}
-    >
-      <span
+    // 外层零尺寸、只作定位上下文：分隔条一旦真的参与 flex 布局，自身宽度
+    // 加上两侧 gap 会在面板之间撑出一道明显比别处宽的缝。让它浮在既有
+    // gap 上，命中区域向两侧扩，视觉上就只剩那道 gap 本身。
+    <div className={cn("relative self-stretch", orientation === "vertical" ? "w-0" : "h-0", className)}>
+      <div
+        role="separator"
+        aria-label={ariaLabel}
+        aria-orientation={orientation}
         className={cn(
-          "rounded-full bg-slate-200 transition group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500",
-          orientation === "vertical" ? "h-16 w-1 group-hover:h-24" : "h-1 w-16 group-hover:w-24",
+          "group absolute flex items-center justify-center",
+          orientation === "vertical"
+            ? "inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize"
+            : "inset-x-0 top-1/2 h-4 -translate-y-1/2 cursor-row-resize",
         )}
-      />
+        onPointerDown={handlePointerDown}
+      >
+        <span
+          className={cn(
+            "rounded-full bg-transparent transition group-hover:bg-blue-400 dark:group-hover:bg-blue-500",
+            orientation === "vertical" ? "h-16 w-1 group-hover:h-24" : "h-1 w-16 group-hover:w-24",
+          )}
+        />
+      </div>
     </div>
   );
 }
