@@ -162,21 +162,23 @@ function App() {
     }
   }, [activePage, setActivePage]);
 
-  const renderPage = () => {
-    switch (activePage) {
-      case "templates":
-        return <TemplatesPage />;
-      case "history":
-        return <HistoryPage />;
-      case "settings":
-        return <SettingsPage />;
-      case "about":
-        return <AboutPage />;
-      case "convert":
-      default:
-        return <ConvertPage />;
-    }
-  };
+  // 转换页常驻挂载、非激活时藏起来：里面有编辑器的正文、光标和撤销历史，
+  // 切去设置页再回来不该丢。其余页面按需挂载，没有需要保留的状态。
+  //
+  // 激活时用 contents 让转换页自己的 flex 布局直接作用在 main 的子级上，
+  // 隐藏时必须换成真正生成盒子的 hidden —— contents 不生成盒子，
+  // display:none 会被它压掉，页面根本藏不住。
+  const renderPage = () => (
+    <>
+      <div className={activePage === "convert" ? "contents" : "hidden"} aria-hidden={activePage !== "convert"}>
+        <ConvertPage />
+      </div>
+      {activePage === "templates" ? <TemplatesPage /> : null}
+      {activePage === "history" ? <HistoryPage /> : null}
+      {activePage === "settings" ? <SettingsPage /> : null}
+      {activePage === "about" ? <AboutPage /> : null}
+    </>
+  );
 
   if (isFloatingWindow) {
     return (

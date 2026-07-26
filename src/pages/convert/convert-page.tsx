@@ -18,6 +18,7 @@ import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, 
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
+import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
 
 type ConvertMode = "markdown" | "file";
@@ -137,6 +138,19 @@ export function ConvertPage() {
     conversionVersionRef.current += 1;
     setConvertResult(null);
   }, [markdown, mode]);
+
+  // 文件树点开某个文件时，正文由 AppShell 那条链路送进来。
+  // 一并把输出名的「已手改」标记清掉：否则用户改过一次文件名后，
+  // 后面在树里点开的每个文件都会沿用那个名字，导出时互相覆盖。
+  useEffect(() => {
+    registerVaultContentSink(({ absolutePath, content }) => {
+      setMarkdown(content);
+      setMarkdownSourcePath(absolutePath);
+      setMode("markdown");
+      setOutputNameEdited(false);
+    });
+    return () => registerVaultContentSink(undefined);
+  }, []);
 
   useEffect(() => {
     if (!outputNameEdited) setOutputNameDraft(autoOutputName);

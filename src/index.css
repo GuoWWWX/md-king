@@ -1005,6 +1005,94 @@ select {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16) !important;
   }
 
+  /* 48px 窄图标栏：复用 mk-sidebar-panel 的底色，但要压掉它为宽栏写的
+     max-[980px] 强制居中分支（那些 !important 规则在 48px 下会打架）。 */
+  .mk-activity-bar .mk-sidebar-label {
+    display: none !important;
+  }
+
+  .mk-activity-bar .mk-sidebar-icon-button {
+    width: 2.25rem !important;
+    min-width: 2.25rem !important;
+    height: 2.25rem !important;
+    padding-inline: 0 !important;
+    margin-inline: auto !important;
+    justify-content: center !important;
+  }
+
+  .mk-activity-bar-footer {
+    border-top-color: rgba(226, 232, 240, 0.8);
+  }
+
+  .mk-file-tree-panel {
+    background: #f8fafc;
+  }
+
+  .mk-file-tree-switcher {
+    color: #334155 !important;
+    background: transparent !important;
+  }
+
+  .mk-file-tree-switcher:hover,
+  .mk-file-tree-switcher[aria-expanded="true"] {
+    background: rgba(226, 232, 240, 0.62) !important;
+  }
+
+  .mk-file-tree-tool {
+    color: #64748b !important;
+    background: transparent !important;
+  }
+
+  .mk-file-tree-tool:hover:not(:disabled) {
+    color: #0f172a !important;
+    background: rgba(226, 232, 240, 0.72) !important;
+  }
+
+  .mk-file-tree-search,
+  .mk-file-tree-rename-input {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #0f172a;
+  }
+
+  .mk-file-tree-search::placeholder {
+    color: #94a3b8;
+  }
+
+  .mk-file-tree-search:focus-visible,
+  .mk-file-tree-rename-input:focus-visible {
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  }
+
+  .mk-file-tree-row {
+    color: #334155;
+    /* 行高只有 28px，用 transition 会让快速滚动时留下拖影 */
+    transition: background-color 120ms ease;
+  }
+
+  .mk-file-tree-row:hover {
+    background: rgba(226, 232, 240, 0.62);
+  }
+
+  .mk-file-tree-row:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.45);
+    outline-offset: -2px;
+  }
+
+  .mk-file-tree-row-active,
+  .mk-file-tree-row-active:hover {
+    color: #16395f;
+    background: rgba(191, 219, 254, 0.55);
+    font-weight: 600;
+  }
+
+  .mk-file-tree-notice {
+    border-bottom: 1px solid rgba(251, 191, 36, 0.4);
+    background: rgba(254, 243, 199, 0.6);
+    color: #92400e;
+  }
+
   .mk-theme-cycle-button {
     border-color: #e2e8f0 !important;
     color: #334155 !important;
@@ -1131,6 +1219,130 @@ select {
     border: 1px solid rgba(226, 232, 240, 0.82);
     background: #ffffff;
     box-shadow: none;
+  }
+
+  /* CodeMirror 实时预览编辑器：排版由这里定，着色由 cm/theme.ts 的 HighlightStyle 定。
+     分开的理由是深浅色只需要换颜色，字号/字重/间距这些排版规则两个主题完全一致。 */
+  .mk-cm-host {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .mk-cm-host .cm-editor {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .mk-cm-heading {
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  /* 标题上下留白用 padding 而非 margin：CM 的行高测量按 padding 算，
+     用 margin 会导致 requestMeasure 之后仍然算不准滚动位置。 */
+  .mk-cm-h1 {
+    font-size: 1.75em;
+    padding-top: 0.5em;
+    padding-bottom: 0.14em;
+  }
+
+  .mk-cm-h2 {
+    font-size: 1.45em;
+    padding-top: 0.44em;
+    padding-bottom: 0.12em;
+  }
+
+  .mk-cm-h3 {
+    font-size: 1.24em;
+    padding-top: 0.38em;
+  }
+
+  .mk-cm-h4 {
+    font-size: 1.1em;
+    padding-top: 0.32em;
+  }
+
+  .mk-cm-h5,
+  .mk-cm-h6 {
+    font-size: 1em;
+    padding-top: 0.28em;
+  }
+
+  .mk-cm-strong {
+    font-weight: 700;
+  }
+
+  .mk-cm-em {
+    font-style: italic;
+  }
+
+  .mk-cm-strike {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+
+  .mk-cm-inline-code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+    padding: 0.1em 0.34em;
+    border-radius: 4px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    background: rgba(241, 245, 249, 0.85);
+  }
+
+  .mk-cm-link {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    cursor: text;
+  }
+
+  /* 引用的左边框走 box-shadow 而不是 border-left：border 会挤压行内容的可用宽度，
+     导致光标进出引用块时整行文字左右跳动。 */
+  .mk-cm-quote-line {
+    padding-left: 14px !important;
+    box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.66);
+    background: rgba(248, 250, 252, 0.7);
+    color: #475569;
+  }
+
+  .mk-cm-list-line {
+    padding-left: 6px !important;
+  }
+
+  .mk-cm-bullet {
+    display: inline-block;
+    min-width: 1em;
+    text-align: center;
+    color: #2563eb;
+  }
+
+  .mk-cm-code-line {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    background: rgba(241, 245, 249, 0.82);
+    box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-code-first {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    box-shadow:
+      inset 1px 0 0 rgba(226, 232, 240, 0.95),
+      inset -1px 0 0 rgba(226, 232, 240, 0.95),
+      inset 0 1px 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-code-last {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow:
+      inset 1px 0 0 rgba(226, 232, 240, 0.95),
+      inset -1px 0 0 rgba(226, 232, 240, 0.95),
+      inset 0 -1px 0 rgba(226, 232, 240, 0.95);
   }
 
   .mk-drop-zone {
@@ -1332,6 +1544,75 @@ select {
     box-shadow: none !important;
   }
 
+  .dark .mk-activity-bar-footer {
+    border-top-color: rgba(212, 212, 216, 0.18);
+  }
+
+  .dark .mk-file-tree-panel {
+    background: #202020 !important;
+  }
+
+  .dark .mk-file-tree-switcher {
+    color: #e5e7eb !important;
+  }
+
+  .dark .mk-file-tree-switcher:hover,
+  .dark .mk-file-tree-switcher[aria-expanded="true"] {
+    background: rgba(82, 82, 82, 0.46) !important;
+  }
+
+  .dark .mk-file-tree-tool {
+    color: #a1a1aa !important;
+  }
+
+  .dark .mk-file-tree-tool:hover:not(:disabled) {
+    color: #f4f4f5 !important;
+    background: rgba(82, 82, 82, 0.46) !important;
+  }
+
+  /* 底色/边框故意让全局的 `.dark input` 规则接管，和其余深色输入框保持一致；
+     但那条规则带 !important，焦点环必须同样加 !important 才压得住，否则聚焦无反馈。 */
+  .dark .mk-file-tree-search,
+  .dark .mk-file-tree-rename-input {
+    border-color: rgba(212, 212, 216, 0.22);
+    background: #282828;
+    color: #f4f4f5;
+  }
+
+  .dark .mk-file-tree-search::placeholder {
+    color: #71717a;
+  }
+
+  .dark .mk-file-tree-search:focus-visible,
+  .dark .mk-file-tree-rename-input:focus-visible {
+    border-color: rgba(96, 165, 250, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18) !important;
+  }
+
+  .dark .mk-file-tree-row {
+    color: #d4d4d8;
+  }
+
+  .dark .mk-file-tree-row:hover {
+    background: rgba(82, 82, 82, 0.4);
+  }
+
+  .dark .mk-file-tree-row:focus-visible {
+    outline-color: rgba(96, 165, 250, 0.5);
+  }
+
+  .dark .mk-file-tree-row-active,
+  .dark .mk-file-tree-row-active:hover {
+    color: #f8fafc;
+    background: rgba(59, 130, 246, 0.28);
+  }
+
+  .dark .mk-file-tree-notice {
+    border-bottom-color: rgba(217, 119, 6, 0.36);
+    background: rgba(120, 53, 15, 0.32);
+    color: #fcd34d;
+  }
+
   .dark .mk-theme-cycle-button:hover {
     color: #ffffff !important;
     background: #323232 !important;
@@ -1436,6 +1717,43 @@ select {
     background:
       linear-gradient(145deg, rgba(43, 43, 43, 0.96), rgba(31, 31, 31, 0.92)),
       #2b2b2b !important;
+  }
+
+  /* CodeMirror 深色：只覆盖带背景/边框的几条，字号字重沿用浅色段不重复写。 */
+  .dark .mk-cm-inline-code {
+    border-color: rgba(212, 212, 216, 0.2) !important;
+    background: rgba(63, 63, 70, 0.6) !important;
+  }
+
+  .dark .mk-cm-quote-line {
+    box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.5) !important;
+    background: rgba(63, 63, 70, 0.28) !important;
+    color: #cbd5e1 !important;
+  }
+
+  .dark .mk-cm-bullet {
+    color: #93c5fd !important;
+  }
+
+  .dark .mk-cm-code-line {
+    background: rgba(24, 24, 27, 0.72) !important;
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-first {
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18),
+      inset 0 1px 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-last {
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18),
+      inset 0 -1px 0 rgba(212, 212, 216, 0.18) !important;
   }
 
   .dark .mk-editor-tool-button {
