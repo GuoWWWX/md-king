@@ -3,12 +3,15 @@ use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{Cursor, Read};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use zip::ZipArchive;
 
 use crate::core::config::{load_config, save_config};
-use crate::core::template_style::{reset_template_style_config, save_template_style_config};
+use crate::core::template_style::{
+    reset_template_style_config, reset_template_style_configs, save_template_style_config,
+};
+use crate::storage::atomic::write_atomic;
 use crate::storage::paths::{templates_dir, templates_path};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -202,7 +205,7 @@ pub fn import_template(request: ImportTemplateRequest) -> Result<Template, Strin
 }
 
 pub fn save_user_templates(templates: Vec<Template>) -> Result<Vec<Template>, String> {
-    load_user_templates_checked()?;
+    let previous_templates = load_user_templates_checked()?;
     let path = templates_path().map_err(|error| format!("获取模板路径失败：{error}"))?;
     let user_templates: Vec<Template> = templates
         .into_iter()
@@ -210,8 +213,45 @@ pub fn save_user_templates(templates: Vec<Template>) -> Result<Vec<Template>, St
         .collect();
     let content = serde_json::to_string_pretty(&user_templates)
         .map_err(|error| format!("序列化模板失败：{error}"))?;
-    fs::write(path, content).map_err(|error| format!("写入模板失败：{error}"))?;
+    write_atomic(&path, &content).map_err(|error| format!("写入模板失败：{error}"))?;
+
+    let retained_ids: HashSet<&str> = user_templates
+        .iter()
+        .map(|template| template.id.as_str())
+        .collect();
+    let removed_templates: Vec<&Template> = previous_templates
+        .iter()
+        .filter(|template| !retained_ids.contains(template.id.as_str()))
+        .collect();
+    for removed in &removed_templates {
+        remove_user_template_directory(removed);
+    }
+    let removed_ids: Vec<String> = removed_templates
+        .iter()
+        .map(|template| template.id.clone())
+        .collect();
+    // 模板列表已经写盘成功，这里失败只是残留了几条用不到的样式配置，
+    // 不能因此把整个保存判为失败、让前端回滚。但也不能完全咽下去：
+    // 样式文件损坏时正是靠这条日志才知道后续保存为什么会一直报错。
+    if let Err(error) = reset_template_style_configs(&removed_ids) {
+        eprintln!("清理已删除模板的样式配置失败：{error}");
+    }
+
     Ok(user_templates)
+}
+
+fn remove_user_template_directory(template: &Template) {
+    let mut components = Path::new(&template.id).components();
+    let safe_id =
+        matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
+    if safe_id {
+        if let Ok(root) = templates_dir() {
+            let template_dir = root.join(&template.id);
+            if template_dir.is_dir() {
+                let _ = fs::remove_dir_all(template_dir);
+            }
+        }
+    }
 }
 
 fn load_user_templates() -> Vec<Template> {
