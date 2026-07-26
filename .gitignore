@@ -28,7 +28,14 @@ dist-ssr
 .claude/
 .playwright-mcp/
 __scaffold_md_king/
+scripts/*.local.bat
 
 # Tauri / Rust build outputs
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# 冒烟测试的一次性调试脚本与生成产物（保留 .md 素材本身）
+docs/conversion-smoke-test/mk-*.cjs
+docs/conversion-smoke-test/**/*.docx
+docs/conversion-smoke-test/**/*.pdf
+docs/conversion-smoke-test/word-rendered/
