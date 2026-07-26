@@ -1314,6 +1314,57 @@ select {
       inset 0 -1px 0 rgba(226, 232, 240, 0.95);
   }
 
+  /* 渲染态的 ``` 围栏行：内容已被 replace 掉，这里只保留一小段高度当作
+     代码块的上下留白，并画出圆角边框。压到 0 会让背景块贴着正文，很挤。 */
+  .mk-cm-code-fence {
+    font-size: 0;
+    line-height: 0;
+    height: 18px;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    background: rgba(241, 245, 249, 0.82);
+    box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-code-fence-first {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    box-shadow:
+      inset 1px 0 0 rgba(226, 232, 240, 0.95),
+      inset -1px 0 0 rgba(226, 232, 240, 0.95),
+      inset 0 1px 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-code-fence-last {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow:
+      inset 1px 0 0 rgba(226, 232, 240, 0.95),
+      inset -1px 0 0 rgba(226, 232, 240, 0.95),
+      inset 0 -1px 0 rgba(226, 232, 240, 0.95);
+  }
+
+  /* 语言名画在代码块左上角。用伪元素而不是插 widget：widget 会占据文档流，
+     把首行代码顶下去，而且每次重建都要比对 eq。 */
+  .cm-line[data-code-language]::before {
+    content: attr(data-code-language);
+    position: absolute;
+    left: 12px;
+    top: 4px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(100, 116, 139, 0.85);
+    pointer-events: none;
+  }
+
+  .cm-line[data-code-language] {
+    position: relative;
+  }
+
   .mk-drop-zone {
     border: 1px dashed rgba(37, 99, 235, 0.34);
     background:
@@ -1723,6 +1774,31 @@ select {
       inset 1px 0 0 rgba(212, 212, 216, 0.18),
       inset -1px 0 0 rgba(212, 212, 216, 0.18),
       inset 0 -1px 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-fence {
+    background: rgba(24, 24, 27, 0.72) !important;
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-fence-first {
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18),
+      inset 0 1px 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-fence-last {
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18),
+      inset 0 -1px 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .cm-line[data-code-language]::before {
+    color: rgba(161, 161, 170, 0.85);
   }
 
   .dark .mk-editor-tool-button {

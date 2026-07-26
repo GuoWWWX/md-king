@@ -215,16 +215,49 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
 function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, rangeFrom: number, rangeTo: number): void {
   const state = collector.state;
   const doc = state.doc;
+
+  const firstLine = doc.lineAt(ref.from);
+  const lastLine = doc.lineAt(Math.min(ref.to, doc.length));
+  // 光标落在代码块任意一行上就整块回到源码态，和标题、引用的处理一致；
+  // 移开后把 ``` 围栏收起来，只留下背景块本身作为边界提示。
+  const editing = onLines(collector, ref.from, ref.to);
+
+  // 语言标记（```java 的 java）通过 data 属性交给 CSS 伪元素画在左上角。
+  // 用属性而不是 widget：widget 会插进文档流占掉一行高度，把首行内容顶下去。
+  const infoNode = ref.node.getChild("CodeInfo");
+  const language = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+
+  // 行号范围先和可见区间取交集：一个两千行的代码块若按 node.from/node.to 全量铺行装饰，
+  // 一次滚动就会产生两千个装饰对象，可见区间优化就白做了。
   const start = doc.lineAt(Math.max(ref.from, rangeFrom));
   const end = doc.lineAt(Math.min(Math.max(ref.to, ref.from), rangeTo));
 
-  const firstLine = doc.lineAt(ref.from).number;
-  const lastLine = doc.lineAt(Math.min(ref.to, doc.length)).number;
-
   for (let lineNumber = start.number; lineNumber <= end.number; lineNumber += 1) {
     const line = doc.line(lineNumber);
-    const edge = lineNumber === firstLine ? " mk-cm-code-first" : lineNumber === lastLine ? " mk-cm-code-last" : "";
+    const isFence = lineNumber === firstLine.number || lineNumber === lastLine.number;
+
+    if (isFence && !editing) {
+      // 整行 replace 掉围栏。跨行装饰必须由 StateField 提供，所以这里只能
+      // 逐行处理：把这一行的字符全部隐藏，行本身仍然存在（高度靠 CSS 压到 0）。
+      hide(collector, line.from, line.to);
+      addLine(collector, line.from, lineNumber === firstLine.number ? "mk-cm-code-fence mk-cm-code-fence-first" : "mk-cm-code-fence mk-cm-code-fence-last");
+      continue;
+    }
+
+    const edge = lineNumber === firstLine.number
+      ? " mk-cm-code-first"
+      : lineNumber === lastLine.number
+        ? " mk-cm-code-last"
+        : "";
     addLine(collector, line.from, `mk-cm-code-line${edge}`);
+  }
+
+  // 只有渲染态才挂语言标签：编辑态首行显示的就是 ```java 本身，
+  // 再叠一个标签会和源码文字重合。
+  if (!editing && language && firstLine.from >= rangeFrom && firstLine.from <= rangeTo) {
+    collector.decorations.push(
+      Decoration.line({ attributes: { "data-code-language": language } }).range(firstLine.from),
+    );
   }
 }
 
