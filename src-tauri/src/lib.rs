@@ -10,11 +10,12 @@ pub use core::template::{
 };
 
 use commands::{
-    append_history, check_pandoc, clear_history, convert_markdown, get_app_config, get_app_status,
-    get_template_style_config, get_template_style_configs, import_template, list_history,
-    list_templates, load_preview_image, open_output_path, read_markdown_file,
-    reset_template_style_config, reveal_output_path, save_app_config, save_history,
-    save_template_style_config, save_templates,
+    append_history, check_pandoc, clear_history, convert_markdown, create_vault_entry,
+    delete_vault_entry, get_app_config, get_app_status, get_template_style_config,
+    get_template_style_configs, import_template, list_history, list_templates, list_vault_entries,
+    load_preview_image, open_output_path, open_vault, read_markdown_file, read_vault_file,
+    rename_vault_entry, reset_template_style_config, reveal_output_path, save_app_config,
+    save_history, save_template_style_config, save_templates, write_vault_file,
 };
 use core::config::load_config;
 use tauri::Manager;
@@ -93,7 +94,14 @@ pub fn run() {
             system::startup_files::take_open_files,
             read_markdown_file,
             load_preview_image,
-            convert_markdown
+            convert_markdown,
+            open_vault,
+            list_vault_entries,
+            read_vault_file,
+            write_vault_file,
+            create_vault_entry,
+            rename_vault_entry,
+            delete_vault_entry
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

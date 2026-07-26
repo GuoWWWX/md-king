@@ -21,6 +21,13 @@ export type AppConfig = {
   accentColor: AccentColor;
   defaultConflictStrategy: DefaultConflictStrategy;
   keepConversionLog: boolean;
+  vaultRoot?: string;
+  recentVaults: string[];
+  autoSave: boolean;
+  autoSaveDelayMs: number;
+  fileTreeWidth?: number;
+  /** 相对 vaultRoot 的路径，始终使用 `/` 分隔。 */
+  lastOpenedFile?: string;
 };
 
 export type AppStatus = {

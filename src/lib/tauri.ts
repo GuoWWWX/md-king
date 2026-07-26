@@ -38,6 +38,12 @@ const browserAppConfig: AppConfig = {
   accentColor: "blue",
   defaultConflictStrategy: "overwrite",
   keepConversionLog: true,
+  vaultRoot: undefined,
+  recentVaults: [],
+  autoSave: true,
+  autoSaveDelayMs: 1000,
+  fileTreeWidth: undefined,
+  lastOpenedFile: undefined,
 };
 
 const builtInTemplates: Template[] = [
