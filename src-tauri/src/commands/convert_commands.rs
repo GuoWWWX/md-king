@@ -148,3 +148,49 @@ mod tests {
         assert_eq!(percent_decode("bad%FF.png"), "bad%FF.png");
     }
 }
+
+/// 接收前端栅格化好的图片（base64），落到临时目录后返回路径。
+/// Mermaid 图走这条路：DOCX 不支持 SVG，必须先转成 PNG 再交给 Pandoc。
+#[tauri::command]
+pub fn write_temp_image(data_base64: String, extension: Option<String>) -> Result<String, String> {
+    // 前端可能直接把整个 data URL 传过来，容错地剥掉前缀。
+    let payload = data_base64
+        .split_once(",")
+        .map(|(_, rest)| rest)
+        .unwrap_or(&data_base64);
+
+    let bytes = STANDARD
+        .decode(payload.trim())
+        .map_err(|error| format!("图片数据解码失败：{error}"))?;
+
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err("图片超过 20 MB，无法写入。".to_string());
+    }
+
+    crate::core::convert::write_temp_image(&bytes, extension.as_deref().unwrap_or("png"))
+}
+
+#[cfg(test)]
+mod temp_image_tests {
+    use super::*;
+
+    #[test]
+    fn writes_temp_image_and_rejects_bad_payload() {
+        // 带 data URL 前缀也要能吃下：前端有时直接把 canvas.toDataURL 的结果传过来。
+        let png_1x1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/AF+AVjKAAAAAElFTkSuQmCC";
+        let path = write_temp_image(png_1x1.to_string(), Some("png".to_string()))
+            .expect("valid base64 should be written");
+        assert!(std::path::Path::new(&path).is_file());
+        assert!(path.ends_with(".png"));
+        let _ = std::fs::remove_file(&path);
+
+        // 非法 base64 必须拒绝，不能落一个坏文件让 Pandoc 去踩。
+        assert!(write_temp_image("not-base64!!".to_string(), None).is_err());
+
+        // 扩展名只放行字母数字，防止路径注入。
+        let path = write_temp_image(png_1x1.to_string(), Some("../evil".to_string()))
+            .expect("bad extension should fall back to png");
+        assert!(path.ends_with(".png"));
+        let _ = std::fs::remove_file(&path);
+    }
+}

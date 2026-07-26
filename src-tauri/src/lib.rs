@@ -15,7 +15,7 @@ use commands::{
     get_template_style_configs, import_template, list_history, list_templates, list_vault_entries,
     load_preview_image, open_output_path, open_vault, read_markdown_file, read_vault_file,
     rename_vault_entry, reset_template_style_config, reveal_output_path, save_app_config,
-    save_history, save_template_style_config, save_templates, write_vault_file,
+    save_history, save_template_style_config, save_templates, write_temp_image, write_vault_file,
 };
 use core::config::load_config;
 use tauri::Manager;
@@ -95,6 +95,7 @@ pub fn run() {
             read_markdown_file,
             load_preview_image,
             convert_markdown,
+            write_temp_image,
             open_vault,
             list_vault_entries,
             read_vault_file,

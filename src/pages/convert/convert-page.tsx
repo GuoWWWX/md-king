@@ -21,6 +21,7 @@ import { useAppStore } from "@/stores/app-store";
 import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useTauriFileDrop } from "@/hooks/use-tauri-file-drop";
+import { inlineMermaidImages } from "@/lib/mermaid-export";
 import { useVaultStore } from "@/stores/vault-store";
 import { DocumentTabBar } from "@/components/editor/document-tab-bar";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
@@ -296,8 +297,15 @@ export function ConvertPage() {
     const conversionVersion = conversionVersionRef.current;
     setIsConverting(true);
     try {
+      // mermaid 块要先栅格化成 PNG 落盘再引用：DOCX 不支持 SVG，
+      // Pandoc 遇到 SVG 会把那张图整个跳过。
+      const { markdown: preparedInput, failed: mermaidFailed } = await inlineMermaidImages(input);
+      if (mermaidFailed > 0) {
+        toast.warning(`${mermaidFailed} 张图表未能导出，已保留原始代码块`);
+      }
+
       const result = await convertMarkdown({
-        input,
+        input: preparedInput,
         inputKind: "text",
         sourcePath: markdownSourcePath,
         output: buildOutputPath(appConfig?.defaultOutputDir, outputName),

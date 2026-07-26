@@ -9,6 +9,7 @@ import { TooltipButton } from "@/components/ui/tooltip";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
 import { resolvePreviewImageSource } from "@/lib/tauri";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
+import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -435,6 +436,83 @@ function MathBlock({ text, style, className }: { text: string; style?: CSSProper
     );
   }
   return <div className={cn("md-king-math text-center", className)} style={style} dangerouslySetInnerHTML={{ __html: markup }} />;
+}
+
+/**
+ * 代码块左上角的语言标签。
+ *
+ * 位置和编辑器侧的 .mk-cm-code-fence::before 对齐——此前预览放在右上角，
+ * 同一份文档左右两栏的标签一个在左一个在右，看着像两个不同的东西。
+ */
+function CodeLanguageLabel({ label, backgroundColor }: { label: string; backgroundColor?: string }) {
+  const dark = Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
+  return (
+    <span
+      className="absolute left-2 top-1 text-[8px] font-bold uppercase tracking-wide"
+      style={{ color: syntaxPalette(backgroundColor).comment, opacity: dark ? 0.9 : 0.85 }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Word 预览里的 Mermaid 图。
+ *
+ * 和编辑器共用 lib/mermaid 的渲染与缓存，所以左右两栏拿到的是同一张图。
+ * 渲染是异步的，先给一个占位再补上——直接返回空会让分页测高拿到 0 高度。
+ */
+function MermaidBlock({ source, dark, style, className }: { source: string; dark: boolean; style?: CSSProperties; className?: string }) {
+  const [svg, setSvg] = useState(() => getCachedMermaidSvg(source, dark)?.svg);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    const cached = getCachedMermaidSvg(source, dark);
+    if (cached) {
+      setSvg(cached.svg);
+      setError(undefined);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setError(undefined);
+    void renderMermaid(source, dark)
+      .then((result) => {
+        if (!cancelled) setSvg(result.svg);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setError(cause instanceof Error ? cause.message : "图表渲染失败");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dark, source]);
+
+  if (error) {
+    return (
+      <div className={cn("whitespace-pre-wrap break-words rounded border border-rose-200 bg-rose-50 px-3 py-2 font-mono text-[0.8em] text-rose-600", className)} style={style}>
+        {error}
+      </div>
+    );
+  }
+
+  if (!svg) {
+    return (
+      <div className={cn("flex items-center justify-center px-3 py-6 text-[0.8em] text-slate-400", className)} style={style}>
+        正在渲染图表…
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn("md-king-mermaid flex justify-center", className)}
+      style={style}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
 }
 
 function textSegments(text: string): PreviewTextSegment[] {
@@ -1229,6 +1307,29 @@ function renderMarkdownBlocks({
     if (block.type === "code") {
       const languageLabel = codeLanguageLabel(block.language);
       const backgroundColor = drafts.code.backgroundColor === "transparent" ? undefined : drafts.code.backgroundColor;
+
+      // mermaid 块渲染成图而不是代码。外框沿用代码块的背景与边框，
+      // 这样它和编辑器里那个带 MERMAID 标签的框看起来是同一个东西。
+      if (isMermaidLanguage(block.language)) {
+        rendered.push(
+          <div
+            key={index}
+            className={cn("relative overflow-hidden", selectedRing(selectedStyle, "source-code"))}
+            style={{
+              backgroundColor,
+              border: codeBlockBorder(drafts.code),
+              borderRadius: 0,
+              padding: `${Math.max(0, drafts.code.codePaddingY) + 22}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
+              marginTop: drafts.code.beforeSpacing,
+              marginBottom: drafts.code.afterSpacing,
+            }}
+          >
+            <CodeLanguageLabel label="mermaid" backgroundColor={backgroundColor} />
+            <MermaidBlock source={block.text} dark={Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45)} />
+          </div>,
+        );
+        return;
+      }
       rendered.push(
         <pre
           key={index}
@@ -1242,14 +1343,7 @@ function renderMarkdownBlocks({
             padding: `${Math.max(0, drafts.code.codePaddingY) + (languageLabel ? 22 : 0)}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
           }}
         >
-          {languageLabel ? (
-            <span
-              className="absolute right-2 top-1 rounded px-1.5 py-0.5 text-[8px] font-semibold tracking-wide"
-              style={{ color: syntaxPalette(backgroundColor).comment, backgroundColor: backgroundColor && hexToLuminance(backgroundColor) < 0.45 ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)" }}
-            >
-              {languageLabel}
-            </span>
-          ) : null}
+          {languageLabel ? <CodeLanguageLabel label={languageLabel} backgroundColor={backgroundColor} /> : null}
           <code>{renderHighlightedCode(block.text, block.language, drafts.code)}</code>
         </pre>,
       );

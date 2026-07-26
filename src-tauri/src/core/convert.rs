@@ -2052,6 +2052,26 @@ fn make_temp_path(prefix: &str, extension: &str) -> PathBuf {
         .join(format!("{prefix}-{process_id}-{timestamp}.{extension}"))
 }
 
+/// 把前端栅格化好的图片写进临时目录，返回绝对路径。
+///
+/// Mermaid 图在浏览器侧渲染成 SVG 再画进 canvas 得到 PNG——DOCX 不支持 SVG，
+/// Pandoc 遇到 SVG 会直接跳过那张图。转换前需要把这些 PNG 落到磁盘上，
+/// 才能在 Markdown 里用普通的图片语法引用它们。
+pub fn write_temp_image(bytes: &[u8], extension: &str) -> Result<String, String> {
+    let safe_extension = if extension.chars().all(|ch| ch.is_ascii_alphanumeric()) && !extension.is_empty() {
+        extension
+    } else {
+        "png"
+    };
+
+    let path = make_temp_path("mermaid", safe_extension);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("创建临时目录失败：{error}"))?;
+    }
+    fs::write(&path, bytes).map_err(|error| format!("写入临时图片失败：{error}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 fn make_sibling_temp_path(output_path: &Path, prefix: &str, extension: &str) -> PathBuf {
     let file_name = make_temp_path(prefix, extension)
         .file_name()
