@@ -6,7 +6,7 @@ use tauri::AppHandle;
 
 use crate::core::config::load_config;
 use crate::core::convert::{convert_markdown, ConvertRequest};
-use crate::core::history::{list_history_items, save_history_items, HistoryItem};
+use crate::core::history::{append_history_items, HistoryItem};
 use crate::storage::paths::app_data_dir;
 
 #[cfg(windows)]
@@ -60,28 +60,26 @@ pub fn handle_startup_context_action(app: AppHandle) {
             result.ok, result.error_code, result.message, result.output
         ));
         let now = Utc::now().to_rfc3339();
-        let mut history = list_history_items();
-        history.insert(
-            0,
-            HistoryItem {
-                id: format!("context-{}", Utc::now().timestamp_millis()),
-                input_path: result.input.clone(),
-                output_path: result.output.clone(),
-                template_id: result.template_id.clone(),
-                status: if result.ok { "success" } else { "failed" }.to_string(),
-                duration_ms: Some(result.duration_ms),
-                error_code: result.error_code.clone(),
-                error_message: if result.ok {
-                    None
-                } else {
-                    result.message.clone()
-                },
-                created_at: now.clone(),
-                finished_at: Some(now),
+        // 走 append 而不是自己读-改-写：右键菜单是独立进程，
+        // 主窗口/悬浮球可能正好在同一时刻写入，整份覆盖会互相抹掉记录。
+        let item = HistoryItem {
+            id: format!("context-{}", Utc::now().timestamp_millis()),
+            input_path: result.input.clone(),
+            output_path: result.output.clone(),
+            template_id: result.template_id.clone(),
+            status: if result.ok { "success" } else { "failed" }.to_string(),
+            duration_ms: Some(result.duration_ms),
+            error_code: result.error_code.clone(),
+            error_message: if result.ok {
+                None
+            } else {
+                result.message.clone()
             },
-        );
-        history.truncate(20);
-        if let Err(error) = save_history_items(history) {
+            created_at: now.clone(),
+            finished_at: Some(now),
+            simulated: None,
+        };
+        if let Err(error) = append_history_items(vec![item]) {
             write_context_log(&format!("save history failed: {error}"));
         }
         app.exit(0);

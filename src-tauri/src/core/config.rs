@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::storage::atomic::write_atomic;
 use crate::storage::paths::config_path;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -122,7 +123,7 @@ pub fn save_config(config: AppConfig) -> Result<AppConfig, String> {
     let config = normalize_config(config);
     let content = serde_json::to_string_pretty(&config)
         .map_err(|error| format!("序列化配置失败：{error}"))?;
-    fs::write(path, content).map_err(|error| format!("写入配置失败：{error}"))?;
+    write_atomic(&path, &content).map_err(|error| format!("写入配置失败：{error}"))?;
     Ok(config)
 }
 
