@@ -244,6 +244,13 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
       continue;
     }
 
+    if (editing) {
+      // 编辑态就是裸源码：连背景和边框一起撤掉，只留等宽字体。
+      // 留着框会让「正在编辑的那几行」和收起态长得几乎一样，反而看不出状态差别。
+      addLine(collector, line.from, "mk-cm-code-raw");
+      continue;
+    }
+
     const edge = lineNumber === firstLine.number
       ? " mk-cm-code-first"
       : lineNumber === lastLine.number

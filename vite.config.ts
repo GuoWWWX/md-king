@@ -21,6 +21,13 @@ export default defineConfig(async () => ({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("lucide-react")) return "icons";
+          // language-data 会带进十几个 lang-* 包，单独分出去，
+          // 否则主 chunk 会被一堆用不到的语言语法撑大。
+          // 括号是必需的：|| 和 && 混写时优先级会让最后一个条件独立成真。
+          const isCoreLezer = id.includes("@lezer/common") || id.includes("@lezer/highlight") || id.includes("@lezer/markdown");
+          if (id.includes("@codemirror/language-data") || id.includes("@codemirror/lang-") || (id.includes("@lezer/") && !isCoreLezer)) {
+            return "cm-languages";
+          }
           if (id.includes("@codemirror") || id.includes("@lezer")) return "codemirror";
           if (id.includes("react") || id.includes("react-dom")) return "react";
           if (id.includes("radix-ui")) return "radix";

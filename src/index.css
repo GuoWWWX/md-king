@@ -1314,6 +1314,13 @@ select {
       inset 0 -1px 0 rgba(226, 232, 240, 0.95);
   }
 
+  /* 编辑态：只保留等宽字体，背景和边框全撤。用户点进来就是要改源码，
+     此时留着装饰框会让编辑态和收起态难以分辨。 */
+  .mk-cm-code-raw {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+  }
+
   /* 渲染态的 ``` 围栏行：内容已被 replace 掉，这里只保留一小段高度当作
      代码块的上下留白，并画出圆角边框。压到 0 会让背景块贴着正文，很挤。 */
   .mk-cm-code-fence {

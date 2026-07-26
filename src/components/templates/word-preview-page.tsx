@@ -8,6 +8,7 @@ import { AppSurface } from "@/components/ui/app-surface";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
 import { resolvePreviewImageSource } from "@/lib/tauri";
+import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -356,10 +357,10 @@ function hexToLuminance(value: string) {
 }
 
 function syntaxPalette(backgroundColor: string | undefined) {
+  // 深色底用亮色调色板。颜色值来自 lib/syntax-palette，编辑器那边取同一份，
+  // 否则同一段代码在左右两栏会是两种配色。
   const dark = Boolean(backgroundColor && backgroundColor !== "transparent" && hexToLuminance(backgroundColor) < 0.45);
-  return dark
-    ? { keyword: "#C084FC", string: "#86EFAC", comment: "#94A3B8", number: "#FBBF24", function: "#67E8F9", operator: "#F9A8D4", plain: "#E2E8F0" }
-    : { keyword: "#7C3AED", string: "#15803D", comment: "#64748B", number: "#B45309", function: "#0369A1", operator: "#BE185D", plain: "#111827" };
+  return syntaxPaletteFor(dark);
 }
 
 function renderHighlightedCode(text: string, language: string | undefined, draft: StyleDraft) {

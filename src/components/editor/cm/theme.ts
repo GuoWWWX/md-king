@@ -1,4 +1,5 @@
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { darkSyntaxPalette, lightSyntaxPalette } from "@/lib/syntax-palette";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
@@ -94,15 +95,19 @@ const lightHighlight = HighlightStyle.define(
     { tag: tags.strikethrough, color: "#64748b" },
     { tag: tags.link, color: "#1d4ed8" },
     { tag: tags.url, color: "#2563eb" },
-    { tag: tags.monospace, color: "#b91c1c" },
+    { tag: tags.monospace, color: lightSyntaxPalette.plain },
     { tag: tags.quote, color: "#475569" },
     { tag: tags.list, color: "#334155" },
     { tag: tags.contentSeparator, color: "#94a3b8" },
-    { tag: tags.labelName, color: "#7c3aed" },
-    { tag: tags.comment, color: "#94a3b8" },
-    { tag: tags.keyword, color: "#7c3aed" },
-    { tag: tags.string, color: "#047857" },
-    { tag: tags.number, color: "#b45309" },
+    { tag: tags.labelName, color: lightSyntaxPalette.keyword },
+    // 以下几项和 Word 预览共用同一份调色板，同一段代码左右两栏必须同色。
+    { tag: tags.comment, color: lightSyntaxPalette.comment },
+    { tag: [tags.keyword, tags.modifier, tags.self, tags.null, tags.atom, tags.bool], color: lightSyntaxPalette.keyword },
+    { tag: [tags.string, tags.special(tags.string), tags.regexp], color: lightSyntaxPalette.string },
+    { tag: [tags.number, tags.integer, tags.float], color: lightSyntaxPalette.number },
+    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: lightSyntaxPalette.function },
+    { tag: [tags.operator, tags.punctuation, tags.bracket], color: lightSyntaxPalette.operator },
+    { tag: [tags.typeName, tags.className], color: lightSyntaxPalette.function },
     // processingInstruction 就是 `**` `#` `>` 这些标记本身。
     // 光标进入时它们会重新出现，颜色调淡以免抢走正文的视觉重心。
     { tag: tags.processingInstruction, color: "#94a3b8" },
@@ -121,15 +126,18 @@ const darkHighlight = HighlightStyle.define(
     { tag: tags.strikethrough, color: "#94a3b8" },
     { tag: tags.link, color: "#93c5fd" },
     { tag: tags.url, color: "#7dd3fc" },
-    { tag: tags.monospace, color: "#fca5a5" },
+    { tag: tags.monospace, color: darkSyntaxPalette.plain },
     { tag: tags.quote, color: "#cbd5e1" },
     { tag: tags.list, color: "#e2e8f0" },
     { tag: tags.contentSeparator, color: "#64748b" },
-    { tag: tags.labelName, color: "#c4b5fd" },
-    { tag: tags.comment, color: "#71717a" },
-    { tag: tags.keyword, color: "#c4b5fd" },
-    { tag: tags.string, color: "#6ee7b7" },
-    { tag: tags.number, color: "#fcd34d" },
+    { tag: tags.labelName, color: darkSyntaxPalette.keyword },
+    { tag: tags.comment, color: darkSyntaxPalette.comment },
+    { tag: [tags.keyword, tags.modifier, tags.self, tags.null, tags.atom, tags.bool], color: darkSyntaxPalette.keyword },
+    { tag: [tags.string, tags.special(tags.string), tags.regexp], color: darkSyntaxPalette.string },
+    { tag: [tags.number, tags.integer, tags.float], color: darkSyntaxPalette.number },
+    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: darkSyntaxPalette.function },
+    { tag: [tags.operator, tags.punctuation, tags.bracket], color: darkSyntaxPalette.operator },
+    { tag: [tags.typeName, tags.className], color: darkSyntaxPalette.function },
     { tag: tags.processingInstruction, color: "#71717a" },
   ],
   { themeType: "dark" },

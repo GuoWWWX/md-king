@@ -1,6 +1,7 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
+import { languages } from "@codemirror/language-data";
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -119,7 +120,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       ]),
       // GFM 显式带上：删除线/表格/任务列表都在里面，
       // markdownLanguage 作为 base 已含 GFM，但显式声明能保证换 base 时不悄悄丢功能。
-      markdown({ base: markdownLanguage, extensions: GFM, addKeymap: false }),
+      // codeLanguages 是代码块高亮的开关：不传的话 lang-markdown 只把围栏内
+      // 认成一整块 monospace，语言级 token 无从区分，编辑器和 Word 预览的
+      // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
+      markdown({ base: markdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
       livePreviewPlugin,
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
