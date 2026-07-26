@@ -3401,6 +3401,13 @@ fn normalize_template_style_xml(
         }
     }
 
+    // 用户没保存过样式时，标题仍要对齐前端展示的默认值。
+    if let Some(style_id) = capture_style_id(style_xml) {
+        if let Some((align, half_points)) = default_heading_style_overrides(&style_id) {
+            return apply_default_heading_style(style_xml, align, half_points);
+        }
+    }
+
     if apply_default_template_style {
         return normalize_default_report_style_xml(style_xml, markdown_features);
     }
@@ -3441,6 +3448,54 @@ fn normalize_default_report_style_xml(
         }
         _ => style_xml.to_string(),
     }
+}
+
+/// 内置模板在「用户从未保存过样式配置」时的标题默认值。
+///
+/// 这些值必须和前端 createDefaultStyleDraft 保持一致。不补这一层的话，
+/// reference.docx 里的原始定义会直接生效——那份文件里 Heading1 是
+/// jc=center、sz=40，而模板界面上「一级标题」显示的是左对齐 22pt，
+/// 用户改都没改就已经不一致了。
+///
+/// 只纠正对齐和字号两项，其余（keepNext、spacing、outlineLvl、字体、颜色）
+/// 保留 reference.docx 的定义——整段替换 pPr 会把大纲级别一起丢掉，
+/// 那会让 Word 的导航窗格失效。
+fn default_heading_style_overrides(style_id: &str) -> Option<(&'static str, u32)> {
+    match style_id {
+        // (对齐, 字号的 half-point 值)
+        "Heading1" => Some(("left", 44)),
+        "Heading2" => Some(("left", 36)),
+        "Heading3" => Some(("left", 32)),
+        "Heading4" => Some(("left", 30)),
+        "Heading5" => Some(("left", 28)),
+        "Heading6" => Some(("left", 24)),
+        _ => None,
+    }
+}
+
+/// 把标题样式的对齐与字号纠正到前端默认值。
+fn apply_default_heading_style(style_xml: &str, align: &str, half_points: u32) -> String {
+    // 两种写法都要吃下：自闭合的 <w:pPr ... /> 和成对的 <w:pPr ...>...</w:pPr>。
+    // 写成一个 [^>]*(?:/>|>...) 的形式在无属性的 <w:pPr> 上会失配。
+    let paragraph_re = Regex::new(r#"(?s)<w:pPr\b[^>]*/>|<w:pPr\b[^>]*>.*?</w:pPr>"#)
+        .expect("valid style paragraph regex");
+    let aligned = if let Some(found) = paragraph_re.find(style_xml) {
+        let replaced = align_paragraph_properties(found.as_str(), align);
+        format!("{}{}{}", &style_xml[..found.start()], replaced, &style_xml[found.end()..])
+    } else {
+        style_xml.replace(
+            "</w:style>",
+            &format!(r#"<w:pPr><w:jc w:val="{align}" /></w:pPr></w:style>"#),
+        )
+    };
+
+    // sz 和 szCs 要一起改：只改 sz 会让 Word 里的西文与中文字号不一致。
+    let sz_re = Regex::new(r#"<w:sz w:val="\d+" />"#).expect("valid size regex");
+    let sz_cs_re = Regex::new(r#"<w:szCs w:val="\d+" />"#).expect("valid complex size regex");
+    let with_size = sz_re.replace(&aligned, format!(r#"<w:sz w:val="{half_points}" />"#).as_str());
+    sz_cs_re
+        .replace(&with_size, format!(r#"<w:szCs w:val="{half_points}" />"#).as_str())
+        .to_string()
 }
 
 fn capture_style_id(style_xml: &str) -> Option<String> {
@@ -5554,6 +5609,7 @@ mod tests {
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_report_heading_numbering_config, document_style_config_from_value,
+        normalize_template_style_xml,
         footer_page_number_xml, has_supported_text_extension, heading_numbering_config_from_value,
         image_style_config_from_value, mark_task_list_paragraphs,
         markdown_feature_config_from_value, normalize_default_report_styles_xml,
@@ -7195,4 +7251,23 @@ mod tests {
 
         let _ = fs::remove_file(path);
     }
+    /// reference.docx 里 Heading1 是 jc=center、sz=40，而模板界面上
+    /// 「一级标题」显示的是左对齐 22pt。不补默认值的话，用户什么都没改
+    /// 就已经预览左对齐、导出居中了。
+    #[test]
+    fn heading_styles_fall_back_to_frontend_defaults() {
+        let heading1 = r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1" /><w:pPr><w:keepNext /><w:outlineLvl w:val="0" /><w:jc w:val="center" /></w:pPr><w:rPr><w:sz w:val="40" /><w:szCs w:val="40" /></w:rPr></w:style>"#;
+        let features = default_markdown_feature_config();
+
+        let normalized = normalize_template_style_xml(heading1, &features, None, false);
+
+        assert!(normalized.contains(r#"<w:jc w:val="left" />"#), "对齐应纠正为左对齐");
+        assert!(!normalized.contains(r#"<w:jc w:val="center" />"#), "不应残留居中");
+        assert!(normalized.contains(r#"<w:sz w:val="44" />"#), "字号应纠正为 22pt");
+        assert!(normalized.contains(r#"<w:szCs w:val="44" />"#), "复杂文本字号要一起改");
+        // 大纲级别不能被顺手抹掉，否则 Word 的导航窗格会失效。
+        assert!(normalized.contains(r#"<w:outlineLvl w:val="0" />"#), "应保留大纲级别");
+        assert!(normalized.contains("<w:keepNext />"), "应保留段中不分页");
+    }
+
 }
