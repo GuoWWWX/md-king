@@ -1292,7 +1292,9 @@ select {
     font-size: 0.88em;
     padding-left: 12px !important;
     padding-right: 12px !important;
-    background: rgba(241, 245, 249, 0.82);
+    /* 和 Word 预览侧的代码块同色（slate-50 纯色）。此前用 slate-100 加透明度，
+       叠在白底上比预览暗一档，左右并排时左边明显发灰。 */
+    background: #f8fafc;
     box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
   }
 
@@ -1322,7 +1324,8 @@ select {
     padding: 24px 12px 12px;
     border: 1px solid rgba(226, 232, 240, 0.95);
     border-radius: 8px;
-    background: rgba(248, 250, 252, 0.72);
+    /* 同上，与预览侧的图表外框同色，不带透明度。 */
+    background: #f8fafc;
   }
 
   .mk-cm-mermaid-canvas {
@@ -1369,7 +1372,9 @@ select {
     height: 18px;
     padding-left: 12px !important;
     padding-right: 12px !important;
-    background: rgba(241, 245, 249, 0.82);
+    /* 和 Word 预览侧的代码块同色（slate-50 纯色）。此前用 slate-100 加透明度，
+       叠在白底上比预览暗一档，左右并排时左边明显发灰。 */
+    background: #f8fafc;
     box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
   }
 
