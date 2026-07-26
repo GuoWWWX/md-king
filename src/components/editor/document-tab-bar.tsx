@@ -1,5 +1,5 @@
 import { ClipboardPaste, FilePlus2, FileText, FileType2, Plus, UploadCloud, X } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ContextMenu } from "radix-ui";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -13,10 +13,12 @@ type DocumentTabBarProps = {
   onPasteClipboard: () => void | Promise<void>;
   /// 关闭一个有内容的临时标签前问一次。不传就直接关。
   onConfirmCloseScratch?: (tab: DocumentTab) => Promise<boolean>;
+  /// 右侧额外按钮，比如「展开预览」。
+  trailing?: ReactNode;
   className?: string;
 };
 
-export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onPasteClipboard, onConfirmCloseScratch, className }: DocumentTabBarProps) {
+export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onPasteClipboard, onConfirmCloseScratch, trailing, className }: DocumentTabBarProps) {
   const tabs = useDocumentTabsStore((state) => state.tabs);
   const activeTabId = useDocumentTabsStore((state) => state.activeTabId);
   const setActiveTab = useDocumentTabsStore((state) => state.setActiveTab);
@@ -70,6 +72,8 @@ export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onP
           ))
         )}
       </div>
+
+      {trailing}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

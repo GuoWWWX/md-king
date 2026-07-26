@@ -1,5 +1,5 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Maximize2, PanelsTopLeft, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Maximize2, PanelRightClose, PanelRightOpen, PanelsTopLeft, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
 import { TemplateStyleManager } from "@/components/templates/template-style-manager";
@@ -19,6 +19,8 @@ import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { useVaultStore } from "@/stores/vault-store";
 import { DocumentTabBar } from "@/components/editor/document-tab-bar";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
@@ -53,6 +55,11 @@ export function ConvertPage() {
   const openScratchTab = useDocumentTabsStore((state) => state.openScratchTab);
   const updateTabContent = useDocumentTabsStore((state) => state.updateTabContent);
   const openVaultTab = useDocumentTabsStore((state) => state.openVaultTab);
+  const previewVisible = useVaultStore((state) => state.previewVisible);
+  const setPreviewVisible = useVaultStore((state) => state.setPreviewVisible);
+  // 窄屏下三栏挤不开，直接不渲染预览——不是藏起来而是不跑那条解析+分页管线。
+  const isNarrow = useMediaQuery("(max-width: 1100px)");
+  const showPreviewPanel = previewVisible && !isNarrow;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   // 正文的唯一来源是活动标签。revision 只在外部灌入内容时递增，
   // 用户逐字输入不动它——每次内容变化都让编辑器全量替换会打断输入、丢光标。
@@ -508,12 +515,12 @@ export function ConvertPage() {
       });
   }
 
-  function renderConvertFooter(className?: string) {
+  function renderConvertFooter(className?: string, stacked = false) {
     const canRevealOutput = Boolean(convertResult?.ok && !convertResult.simulated && convertResult.output);
 
     return (
       <section className={cn("flex min-h-0 flex-col justify-center gap-2 rounded-[12px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", className)}>
-        <div className="flex min-w-0 items-center gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80">
+        <div className={cn("flex min-w-0 gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-start" : "items-center")}>
           <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
             <CheckCircle2 className="size-3.5" />
           </div>
@@ -530,7 +537,7 @@ export function ConvertPage() {
           ) : null}
         </div>
 
-        <div className="grid min-w-0 grid-cols-[180px_minmax(150px,0.8fr)_minmax(180px,1fr)_150px] items-center gap-2 max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1">
+        <div className={cn("grid min-w-0 items-center gap-2", stacked ? "grid-cols-1" : "grid-cols-[180px_minmax(150px,0.8fr)_minmax(180px,1fr)_150px] max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1")}>
           <Select value={templateId} onValueChange={(value) => {
             setTemplateId(value);
             setCurrentTemplateId(value);
@@ -726,58 +733,65 @@ export function ConvertPage() {
         </DialogContent>
       </Dialog>
 
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[40px_minmax(0,1fr)_96px] gap-3 overflow-hidden max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]">
+    <div className={cn("grid h-full min-h-0 flex-1 gap-3 overflow-hidden", showPreviewPanel ? "grid-rows-[40px_minmax(0,1fr)]" : "grid-rows-[40px_minmax(0,1fr)_96px] max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]")}>
       <DocumentTabBar
         onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
         onImportFile={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
         onBatchImport={isTauriEnvironment() ? runBatchImport : undefined}
         onPasteClipboard={handleReadClipboard}
         onConfirmCloseScratch={confirmCloseScratchTab}
+        trailing={showPreviewPanel || isNarrow ? undefined : (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="size-7 shrink-0 rounded-[8px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            onClick={() => setPreviewVisible(true)}
+            title="展开预览与导出"
+            tooltipSide="bottom"
+            aria-label="展开预览与导出"
+          >
+            <PanelRightOpen className="size-4" />
+          </Button>
+        )}
       />
 
       <div
         ref={splitPaneRef}
         className="grid min-h-0 min-w-0 gap-0 overflow-hidden max-[1100px]:flex max-[1100px]:min-h-0 max-[1100px]:flex-col max-[1100px]:overflow-y-auto max-[1100px]:overflow-x-hidden max-[1100px]:pb-3"
-        style={{ gridTemplateColumns: `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` }}
+        style={{ gridTemplateColumns: showPreviewPanel ? `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` : "minmax(0,1fr)" }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
           <ConversionInputCard hasDocument={Boolean(activeTab)} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
         </div>
 
-        <div
-          className="group flex min-h-0 cursor-col-resize items-center justify-center px-1 max-[1100px]:hidden"
-          onPointerDown={handlePreviewResizeStart}
-          role="separator"
-          aria-label="调整 Word 预览宽度"
-        >
-          <span className="h-16 w-1 rounded-full bg-slate-200 transition group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
-        </div>
+        {showPreviewPanel ? (
+          <>
+            <div
+              className="group flex min-h-0 cursor-col-resize items-center justify-center px-1"
+              onPointerDown={handlePreviewResizeStart}
+              role="separator"
+              aria-label="调整 Word 预览宽度"
+            >
+              <span className="h-16 w-1 rounded-full bg-slate-200 transition group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
+            </div>
 
-        <ConvertPreviewPanel
-          markdown={markdown}
-          markdownSourcePath={markdownSourcePath}
-          outputName={outputName}
-          styleConfig={previewStyleConfig}
-          zoom={previewZoom}
-          setZoom={setPreviewZoom}
-          onExpand={() => setPreviewExpanded(true)}
-          className="min-h-0 min-w-0 max-[1100px]:hidden"
-        />
-
-        <ConvertPreviewPanel
-          markdown={markdown}
-          markdownSourcePath={markdownSourcePath}
-          outputName={outputName}
-          styleConfig={previewStyleConfig}
-          zoom={previewZoom}
-          setZoom={setPreviewZoom}
-          onExpand={() => setPreviewExpanded(true)}
-          className="hidden min-h-[460px] min-w-0 max-[1100px]:block max-[1100px]:shrink-0"
-          previewClassName="h-[460px]"
-        />
+            <ConvertPreviewPanel
+              markdown={markdown}
+              markdownSourcePath={markdownSourcePath}
+              outputName={outputName}
+              styleConfig={previewStyleConfig}
+              zoom={previewZoom}
+              setZoom={setPreviewZoom}
+              onExpand={() => setPreviewExpanded(true)}
+              onCollapse={() => setPreviewVisible(false)}
+              footer={renderConvertFooter("shrink-0 rounded-none border-x-0 border-b-0 px-0 pb-0", true)}
+              className="min-h-0 min-w-0"
+            />
+          </>
+        ) : null}
       </div>
 
-      {renderConvertFooter()}
+      {showPreviewPanel ? null : renderConvertFooter()}
 
     </div>
     </>
@@ -797,6 +811,8 @@ function ConvertPreviewPanel({
   zoom,
   setZoom,
   onExpand,
+  onCollapse,
+  footer,
   onOpenAdvancedStyle,
   expanded = false,
   showTocPage = false,
@@ -813,6 +829,11 @@ function ConvertPreviewPanel({
   zoom: number;
   setZoom: (value: number | ((current: number) => number)) => void;
   onExpand: () => void;
+  /// 折叠整个面板。放大预览模式下不传，那里没有可折叠的语义。
+  onCollapse?: () => void;
+  /// 导出区：模板、输出目录、文件名、转换按钮。挂在面板底部而不是页面底部，
+  /// 编辑区因此能拿到完整高度。
+  footer?: ReactNode;
   onOpenAdvancedStyle?: () => void;
   expanded?: boolean;
   showTocPage?: boolean;
@@ -857,6 +878,14 @@ function ConvertPreviewPanel({
               <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
             </Button>
           ) : null}
+          {onCollapse ? (
+            <>
+              <span className="h-4 w-px bg-slate-200 dark:bg-zinc-700" />
+              <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onCollapse} title="收起预览与导出" aria-label="收起预览与导出">
+                <PanelRightClose className="size-3.5 text-slate-500 dark:text-zinc-400" />
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
@@ -876,6 +905,7 @@ function ConvertPreviewPanel({
           viewportClassName="bg-transparent p-2 dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80"
         />
       </div>
+      {footer ? <div className="mt-2.5 shrink-0 border-t border-slate-200 pt-2.5 dark:border-zinc-700/70">{footer}</div> : null}
     </AppSurface>
   );
 }
