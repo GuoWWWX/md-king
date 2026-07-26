@@ -1,4 +1,5 @@
 import { WidgetType } from "@codemirror/view";
+import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 
 /**
  * 无序列表的排版化圆点。
@@ -30,6 +31,62 @@ export class BulletWidget extends WidgetType {
   }
 
   /** 圆点是纯展示，不吞事件——让点击照常落到编辑器上定位光标。 */
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/**
+ * Mermaid 图表。
+ *
+ * mermaid 的渲染是异步的，widget 的 toDOM 必须同步返回，所以这里先返回一个
+ * 容器：命中缓存就直接填图（切换光标进出时不会闪空白），否则先占位再异步补上。
+ */
+export class MermaidWidget extends WidgetType {
+  constructor(
+    private readonly source: string,
+    private readonly dark: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: MermaidWidget): boolean {
+    return other.source === this.source && other.dark === this.dark;
+  }
+
+  toDOM(): HTMLElement {
+    const host = document.createElement("div");
+    host.className = "mk-cm-mermaid";
+    host.setAttribute("role", "img");
+
+    const cached = getCachedMermaidSvg(this.source, this.dark);
+    if (cached) {
+      host.innerHTML = cached.svg;
+      return host;
+    }
+
+    host.dataset.state = "loading";
+    host.textContent = "正在渲染图表…";
+
+    void renderMermaid(this.source, this.dark)
+      .then(({ svg }) => {
+        // 容器可能已经被 CM 回收（用户快速滚动或改了源码），
+        // 这时候往里写东西没有意义，isConnected 判掉。
+        if (!host.isConnected) return;
+        delete host.dataset.state;
+        host.innerHTML = svg;
+      })
+      .catch((error: unknown) => {
+        if (!host.isConnected) return;
+        host.dataset.state = "error";
+        // 语法错误要给出原文，否则用户不知道图为什么画不出来。
+        host.textContent = error instanceof Error ? error.message : "图表渲染失败";
+      });
+
+    return host;
+  }
+
+  /** 不吞事件：点击照常落到编辑器上，光标进入后就还原成源码。 */
   ignoreEvent(): boolean {
     return false;
   }

@@ -1314,6 +1314,38 @@ select {
       inset 0 -1px 0 rgba(226, 232, 240, 0.95);
   }
 
+  /* Mermaid 图容器。图本身由 mermaid 生成的 SVG 负责，这里只管外框和状态。 */
+  .mk-cm-mermaid {
+    display: flex;
+    justify-content: center;
+    margin: 8px 0;
+    padding: 12px;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.72);
+    overflow-x: auto;
+  }
+
+  .mk-cm-mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .mk-cm-mermaid[data-state="loading"],
+  .mk-cm-mermaid[data-state="error"] {
+    justify-content: flex-start;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .mk-cm-mermaid[data-state="error"] {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(254, 242, 242, 0.8);
+    color: #b91c1c;
+    white-space: pre-wrap;
+  }
+
   /* 编辑态：只保留等宽字体，背景和边框全撤。用户点进来就是要改源码，
      此时留着装饰框会让编辑态和收起态难以分辨。 */
   .mk-cm-code-raw {
@@ -1781,6 +1813,17 @@ select {
       inset 1px 0 0 rgba(212, 212, 216, 0.18),
       inset -1px 0 0 rgba(212, 212, 216, 0.18),
       inset 0 -1px 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-mermaid {
+    border-color: rgba(212, 212, 216, 0.18);
+    background: rgba(24, 24, 27, 0.6);
+  }
+
+  .dark .mk-cm-mermaid[data-state="error"] {
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(69, 10, 10, 0.5);
+    color: #fca5a5;
   }
 
   .dark .mk-cm-code-fence {

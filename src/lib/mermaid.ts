@@ -1,0 +1,175 @@
+/**
+ * Mermaid 渲染服务。
+ *
+ * 编辑器装饰层、Word 预览、DOCX 导出三处都要拿同一张图，所以渲染、缓存、
+ * 栅格化都收在这里。mermaid 本体约 500KB，用动态 import 让它只在文档里
+ * 真的出现 mermaid 代码块时才下载。
+ */
+
+type RenderResult = { svg: string; width: number; height: number };
+
+const svgCache = new Map<string, RenderResult>();
+const pngCache = new Map<string, string>();
+/** 同一段源码并发渲染时共用一个 promise，避免重复初始化 mermaid。 */
+const inflight = new Map<string, Promise<RenderResult>>();
+
+let mermaidReady: Promise<typeof import("mermaid").default> | undefined;
+let currentTheme: "default" | "dark" = "default";
+
+async function loadMermaid(dark: boolean) {
+  const wanted = dark ? "dark" : "default";
+  if (!mermaidReady) {
+    mermaidReady = import("mermaid").then(({ default: mermaid }) => {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: wanted,
+        // securityLevel 保持 strict：图里的文本来自用户文档，
+        // 放开会让 mermaid 允许内联脚本和外部资源。
+        securityLevel: "strict",
+        fontFamily: "inherit",
+      });
+      currentTheme = wanted;
+      return mermaid;
+    });
+  }
+
+  const mermaid = await mermaidReady;
+  if (currentTheme !== wanted) {
+    // 主题变了要重新初始化并清缓存，否则深色模式下拿到的还是浅色图。
+    mermaid.initialize({ startOnLoad: false, theme: wanted, securityLevel: "strict", fontFamily: "inherit" });
+    currentTheme = wanted;
+    svgCache.clear();
+    pngCache.clear();
+  }
+  return mermaid;
+}
+
+function cacheKey(source: string, dark: boolean) {
+  return `${dark ? "d" : "l"}:${source}`;
+}
+
+let renderSeq = 0;
+
+/** 读缓存，命中时调用方可以同步拿到图，避免闪一下空白再出现。 */
+export function getCachedMermaidSvg(source: string, dark: boolean): RenderResult | undefined {
+  return svgCache.get(cacheKey(source.trim(), dark));
+}
+
+export async function renderMermaid(source: string, dark: boolean): Promise<RenderResult> {
+  const trimmed = source.trim();
+  const key = cacheKey(trimmed, dark);
+
+  const cached = svgCache.get(key);
+  if (cached) return cached;
+
+  const pending = inflight.get(key);
+  if (pending) return pending;
+
+  const task = (async () => {
+    const mermaid = await loadMermaid(dark);
+    renderSeq += 1;
+    // id 必须唯一：mermaid 会用它做 DOM 元素 id 和 SVG 内部的 clip-path 引用，
+    // 重复 id 会让同一页里的多张图互相串。
+    const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, trimmed);
+    const size = measureSvg(svg);
+    const result = { svg, ...size };
+    svgCache.set(key, result);
+    return result;
+  })();
+
+  inflight.set(key, task);
+  try {
+    return await task;
+  } finally {
+    inflight.delete(key);
+  }
+}
+
+/**
+ * 从 SVG 文本里读出尺寸。
+ *
+ * 优先 viewBox：mermaid 输出的 width/height 常常是 `100%`，直接拿去做
+ * canvas 尺寸会得到 NaN。
+ */
+function measureSvg(svg: string): { width: number; height: number } {
+  const viewBox = svg.match(/viewBox="([\d.\-\s]+)"/);
+  if (viewBox) {
+    const parts = viewBox[1].trim().split(/\s+/).map(Number);
+    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+      return { width: parts[2], height: parts[3] };
+    }
+  }
+
+  const width = Number(svg.match(/\bwidth="(\d+(?:\.\d+)?)"/)?.[1]);
+  const height = Number(svg.match(/\bheight="(\d+(?:\.\d+)?)"/)?.[1]);
+  if (width > 0 && height > 0) return { width, height };
+
+  return { width: 800, height: 400 };
+}
+
+/**
+ * 把渲染好的 SVG 栅格化成 PNG data URL。
+ *
+ * DOCX 不支持 SVG——Pandoc 遇到 SVG 会直接跳过那张图，所以导出前必须转成
+ * 位图。scale 默认 2 是为了在 Word 里放大看仍然清晰；再高会让文档体积
+ * 明显膨胀。
+ */
+export async function mermaidToPngDataUrl(source: string, dark: boolean, scale = 2): Promise<string> {
+  const trimmed = source.trim();
+  const key = `${cacheKey(trimmed, dark)}:${scale}`;
+  const cached = pngCache.get(key);
+  if (cached) return cached;
+
+  const { svg, width, height } = await renderMermaid(trimmed, dark);
+  const dataUrl = await svgToPng(svg, width, height, scale);
+  pngCache.set(key, dataUrl);
+  return dataUrl;
+}
+
+function svgToPng(svg: string, width: number, height: number, scale: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // 走 data URL 而不是 blob URL：blob URL 会让 canvas 被标记成
+    // tainted，随后 toDataURL 抛 SecurityError。
+    const encoded = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(withExplicitSize(svg, width, height))}`;
+    const image = new Image();
+
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("无法创建画布上下文"));
+        return;
+      }
+      // 白底：PNG 默认透明，插进 Word 后在深色页面上会看不清线条。
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/png"));
+    };
+
+    image.onerror = () => reject(new Error("图表栅格化失败"));
+    image.src = encoded;
+  });
+}
+
+/**
+ * 给 SVG 补上像素尺寸。
+ *
+ * 浏览器把 `width="100%"` 的 SVG 画进 canvas 时会当成 0 宽，
+ * 必须换成具体数值才画得出来。
+ */
+function withExplicitSize(svg: string, width: number, height: number) {
+  let output = svg.replace(/\bwidth="[^"]*"/, `width="${width}"`);
+  output = output.replace(/\bheight="[^"]*"/, `height="${height}"`);
+  if (!/\bwidth=/.test(output)) {
+    output = output.replace(/<svg\b/, `<svg width="${width}" height="${height}"`);
+  }
+  return output;
+}
+
+/** 判断一个代码块的语言标记是不是 mermaid。 */
+export function isMermaidLanguage(language: string | undefined) {
+  return language?.trim().toLowerCase() === "mermaid";
+}

@@ -6,7 +6,7 @@ import { Annotation, Compartment, EditorState, type Extension } from "@codemirro
 import { EditorView, drawSelection, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { livePreviewPlugin } from "./cm/live-preview";
+import { livePreviewPlugin, mermaidBlockExtension } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownEditorTheme } from "./cm/theme";
 
@@ -49,6 +49,9 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
+  // mermaid 的块级装饰带着深浅色：主题变了图要重画，
+  // 否则深色模式下拿到的还是缓存里的浅色版本。
+  const mermaidCompartment = useRef(new Compartment()).current;
 
   // 回调放 ref 里读：EditorView 只创建一次，闭包捕获的是首次渲染的函数，
   // 直接用会一直调到过期的 props。
@@ -126,6 +129,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
       markdown({ base: markdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
       livePreviewPlugin,
+      mermaidCompartment.of(mermaidBlockExtension(isDark)),
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
       EditorView.contentAttributes.of({ "aria-label": "Markdown 输入内容" }),
@@ -158,8 +162,13 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
 
   // 主题热替换：只换 compartment 内容，view 保持不变，所以光标和 undo 历史都在。
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: themeCompartment.reconfigure(markdownEditorTheme(isDark)) });
-  }, [isDark, themeCompartment]);
+    viewRef.current?.dispatch({
+      effects: [
+        themeCompartment.reconfigure(markdownEditorTheme(isDark)),
+        mermaidCompartment.reconfigure(mermaidBlockExtension(isDark)),
+      ],
+    });
+  }, [isDark, mermaidCompartment, themeCompartment]);
 
   useEffect(() => {
     viewRef.current?.dispatch({

@@ -1,9 +1,10 @@
 import { syntaxTree } from "@codemirror/language";
-import type { EditorState, Range } from "@codemirror/state";
+import { isMermaidLanguage } from "@/lib/mermaid";
+import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import { selectionOnLines, selectionTouches } from "./selection-utils";
-import { BulletWidget } from "./widgets";
+import { BulletWidget, MermaidWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -227,6 +228,11 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   const infoNode = ref.node.getChild("CodeInfo");
   const language = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : "";
 
+  // mermaid 块在渲染态整块换成图。跨行 replace 只能由 StateField 提供
+  // （CM 要在算视口前知道块高度），所以这里只打个标记，实际替换在
+  // mermaidBlockField 里做。
+  if (!editing && isMermaidLanguage(language)) return;
+
   // 行号范围先和可见区间取交集：一个两千行的代码块若按 node.from/node.to 全量铺行装饰，
   // 一次滚动就会产生两千个装饰对象，可见区间优化就白做了。
   const start = doc.lineAt(Math.max(ref.from, rangeFrom));
@@ -372,3 +378,71 @@ export const livePreviewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
   provide: (plugin) =>
     EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomics ?? Decoration.none),
 });
+
+
+/**
+ * Mermaid 的块级装饰。
+ *
+ * 必须用 StateField 而不是 ViewPlugin：跨行的 `Decoration.replace` 和
+ * `block: true` 的 widget 要在 CM 计算视口之前就存在，ViewPlugin 提供的装饰
+ * 那时还没生成——放错层不会报错，只是静默不生效。
+ *
+ * 代价是这里要遍历整篇文档而不是可见区。可以接受：mermaid 块通常一篇文档里
+ * 只有几个，远少于内联标记的数量。
+ */
+function buildMermaidBlocks(state: EditorState, dark: boolean): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "FencedCode") return undefined;
+
+      const infoNode = ref.node.getChild("CodeInfo");
+      const language = infoNode ? state.doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+      if (!isMermaidLanguage(language)) return false;
+
+      // 光标落在块内任意一行就让它保持源码态，交给内联层按普通代码块渲染。
+      const first = state.doc.lineAt(ref.from);
+      const last = state.doc.lineAt(Math.min(ref.to, state.doc.length));
+      const editing = state.selection.ranges.some((range) => range.from <= last.to && range.to >= first.from);
+      if (editing) return false;
+
+      const body = extractFenceBody(state, ref.from, ref.to);
+      if (!body.trim()) return false;
+
+      builder.add(
+        first.from,
+        last.to,
+        Decoration.replace({ widget: new MermaidWidget(body, dark), block: true }),
+      );
+      return false;
+    },
+  });
+
+  return builder.finish();
+}
+
+/** 取围栏之间的正文，去掉首尾的 ``` 行。 */
+function extractFenceBody(state: EditorState, from: number, to: number): string {
+  const first = state.doc.lineAt(from);
+  const last = state.doc.lineAt(Math.min(to, state.doc.length));
+  if (last.number <= first.number) return "";
+
+  const bodyStart = state.doc.line(first.number + 1).from;
+  // 末行是收尾围栏时不要带进来；文档结尾缺收尾围栏时它就是正文的一部分。
+  const closing = /^\s*(```|~~~)/.test(last.text);
+  const bodyEnd = closing ? state.doc.line(last.number - 1>= first.number + 1 ? last.number - 1 : first.number + 1).to : last.to;
+  if (bodyEnd <= bodyStart) return "";
+  return state.doc.sliceString(bodyStart, bodyEnd);
+}
+
+/// 深浅色作为 field 的一部分：主题切换时要重画图，否则深色模式下
+/// 拿到的还是上次缓存的浅色版本。
+export function mermaidBlockExtension(dark: boolean): Extension {
+  const field = StateField.define<DecorationSet>({
+    create: (state) => buildMermaidBlocks(state, dark),
+    update: (value, tr) => (tr.docChanged || tr.selection ? buildMermaidBlocks(tr.state, dark) : value),
+    provide: (self) => EditorView.decorations.from(self),
+  });
+  return field;
+}

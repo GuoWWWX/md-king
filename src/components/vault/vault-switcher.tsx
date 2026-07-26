@@ -49,7 +49,8 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="w-[min(360px,calc(100vw-2rem))] min-w-[240px]">
+      {/* 宽度跟随触发器：写死 360px 会比文件树面板本身还宽，弹出来明显溢出。 */}
+      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[200px]">
         <DropdownMenuLabel>最近打开的目录</DropdownMenuLabel>
         {recentVaults.length === 0 ? (
           <p className="px-1.5 py-2 text-xs text-slate-500 dark:text-zinc-400">暂无记录</p>
