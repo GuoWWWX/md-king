@@ -1,6 +1,12 @@
 import { extractMarkdownTitle } from "@/lib/convert-utils";
 import type { ConvertResult, HistoryItem } from "@/types";
 
+export const MAX_HISTORY_ITEMS = 10_000;
+
+export function limitHistory(items: HistoryItem[]) {
+  return items.slice(0, MAX_HISTORY_ITEMS);
+}
+
 export function buildHistoryItem(result: ConvertResult): HistoryItem {
   const now = new Date().toISOString();
   const title = extractMarkdownTitle(result.input);

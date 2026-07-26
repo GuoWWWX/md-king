@@ -4,9 +4,11 @@ use crate::core::template::{
 };
 use crate::core::template_style::{
     get_template_style_config as get_template_style_config_core,
+    get_template_style_configs as get_template_style_configs_core,
     reset_template_style_config as reset_template_style_config_core,
     save_template_style_config as save_template_style_config_core, TemplateStyleConfig,
 };
+use std::collections::HashMap;
 
 #[tauri::command]
 pub fn list_templates() -> Vec<Template> {
@@ -29,6 +31,13 @@ pub fn get_template_style_config(
     template_id: String,
 ) -> Result<Option<TemplateStyleConfig>, String> {
     get_template_style_config_core(template_id)
+}
+
+#[tauri::command]
+pub fn get_template_style_configs(
+    template_ids: Vec<String>,
+) -> Result<HashMap<String, TemplateStyleConfig>, String> {
+    get_template_style_configs_core(template_ids)
 }
 
 #[tauri::command]

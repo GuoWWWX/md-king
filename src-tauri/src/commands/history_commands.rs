@@ -1,5 +1,5 @@
 use crate::core::history::{
-    clear_history_items, list_history_items, save_history_items, HistoryItem,
+    append_history_items, clear_history_items, list_history_items, save_history_items, HistoryItem,
 };
 
 #[tauri::command]
@@ -10,6 +10,11 @@ pub fn list_history() -> Vec<HistoryItem> {
 #[tauri::command]
 pub fn save_history(history: Vec<HistoryItem>) -> Result<Vec<HistoryItem>, String> {
     save_history_items(history)
+}
+
+#[tauri::command]
+pub fn append_history(items: Vec<HistoryItem>) -> Result<Vec<HistoryItem>, String> {
+    append_history_items(items)
 }
 
 #[tauri::command]
