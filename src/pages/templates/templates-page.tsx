@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckSquare, ChevronDown, FilePlus, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
+import { CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FilePlus, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { TemplateGalleryCard } from "@/components/templates/template-gallery-card";
 import { TemplateEditDrawer } from "@/components/templates/template-edit-drawer";
@@ -20,8 +20,9 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { getTemplateStyleConfig, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
+import { getTemplateStyleConfig, getTemplateStyleConfigs, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
 import { getTemplateCategory, getTemplateGroups, isFixedTemplateGroup, loadCustomTemplateGroups, saveCustomTemplateGroups, toTemplateGroupName } from "@/lib/template-categories";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
@@ -132,7 +133,12 @@ export function TemplatesPage() {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | undefined>();
   const [styleTemplate, setStyleTemplate] = useState<Template | undefined>();
+  // 从「编辑样式」这类明确指向样式的入口进来时，直接落在样式 tab；
+  // 通用入口（工具栏、卡片菜单的「样式管理器」）仍从模板信息开始。
+  const [styleTemplateTab, setStyleTemplateTab] = useState<"info" | "styles">("info");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templatePageSize, setTemplatePageSize] = useState(12);
   const [previewTemplateId, setPreviewTemplateId] = useState<string | undefined>(currentTemplateId ?? appConfig?.defaultTemplateId);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(currentTemplateId ?? appConfig?.defaultTemplateId ?? "default-report"));
   const [cardPreviewStyleConfigs, setCardPreviewStyleConfigs] = useState<Record<string, TemplateStyleConfig>>({});
@@ -144,7 +150,12 @@ export function TemplatesPage() {
   const groups = useMemo(() => getTemplateGroups(templates, customGroups), [customGroups, templates]);
 
   useEffect(() => {
-    setSelectedGroups((current) => current.filter((group) => groups.includes(group)));
+    // filter 总会返回新数组，无条件 set 会让 selectedGroups 每次换引用，
+    // 进而连锁把分页重置到第 1 页 —— 内容没变时必须保持原引用。
+    setSelectedGroups((current) => {
+      const next = current.filter((group) => groups.includes(group));
+      return next.length === current.length ? current : next;
+    });
   }, [groups]);
 
   const filterGroups = useMemo(() => groups.filter((group) => group !== "全部"), [groups]);
@@ -155,10 +166,34 @@ export function TemplatesPage() {
     return templates.filter((template) => selectedGroupSet.has(getTemplateCategory(template.tags, template.isBuiltIn)));
   }, [selectedGroupSet, selectedGroups.length, templates]);
 
+  const templatePageCount = Math.max(1, Math.ceil(filteredTemplates.length / templatePageSize));
+  const currentTemplatePage = Math.min(templatePage, templatePageCount);
+  const templatePageStart = (currentTemplatePage - 1) * templatePageSize;
+  const pagedTemplates = useMemo(
+    () => filteredTemplates.slice(templatePageStart, templatePageStart + templatePageSize),
+    [filteredTemplates, templatePageSize, templatePageStart],
+  );
+  const pagedTemplateIds = useMemo(() => pagedTemplates.map((template) => template.id), [pagedTemplates]);
+
   const filteredTemplateIds = useMemo(() => filteredTemplates.map((template) => template.id), [filteredTemplates]);
-  const selectedFilteredCount = selectedIds.filter((id) => filteredTemplateIds.includes(id)).length;
-  const isCurrentGroupAllSelected = filteredTemplateIds.length > 0 && filteredTemplateIds.every((id) => selectedIds.includes(id));
-  const highlightedTemplate = templates.find((item) => item.id === previewTemplateId) ?? templates.find((item) => item.id === currentTemplateId) ?? templates.find((item) => item.isDefault) ?? filteredTemplates[0];
+  const filteredTemplateIdSet = useMemo(() => new Set(filteredTemplateIds), [filteredTemplateIds]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedFilteredCount = selectedIds.filter((id) => filteredTemplateIdSet.has(id)).length;
+  const isCurrentGroupAllSelected = filteredTemplateIds.length > 0 && filteredTemplateIds.every((id) => selectedIdSet.has(id));
+  // 预览面板跟随的是用户选中的模板本身，不能只在当前页里找 ——
+  // 否则翻页后选中项不在本页，预览会静默跳到别的模板。
+  const highlightedTemplate = filteredTemplates.find((item) => item.id === previewTemplateId)
+    ?? filteredTemplates.find((item) => item.id === currentTemplateId)
+    ?? filteredTemplates.find((item) => item.isDefault)
+    ?? pagedTemplates[0];
+
+  useEffect(() => {
+    setTemplatePage(1);
+  }, [selectedGroups]);
+
+  useEffect(() => {
+    if (templatePage > templatePageCount) setTemplatePage(templatePageCount);
+  }, [templatePage, templatePageCount]);
 
   useEffect(() => {
     if (highlightedTemplate || templates.length === 0) return;
@@ -183,7 +218,7 @@ export function TemplatesPage() {
   }, [highlightedTemplate]);
 
   useEffect(() => {
-    if (filteredTemplateIds.length === 0) {
+    if (pagedTemplateIds.length === 0) {
       setCardPreviewStyleConfigs({});
       return;
     }
@@ -191,30 +226,30 @@ export function TemplatesPage() {
     let cancelled = false;
     setCardPreviewStyleConfigs((current) => {
       const next: Record<string, TemplateStyleConfig> = {};
-      for (const id of filteredTemplateIds) {
+      for (const id of pagedTemplateIds) {
         next[id] = current[id] ?? mergeTemplateStyleConfig(id);
       }
       return next;
     });
 
-    void Promise.all(
-      filteredTemplateIds.map(async (id) => {
-        try {
-          const storedConfig = await getTemplateStyleConfig(id);
-          return [id, mergeTemplateStyleConfig(id, storedConfig ?? undefined)] as const;
-        } catch {
-          return [id, mergeTemplateStyleConfig(id)] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setCardPreviewStyleConfigs(Object.fromEntries(entries));
-    });
+    void getTemplateStyleConfigs(pagedTemplateIds)
+      .then((storedConfigs) => {
+        if (cancelled) return;
+        setCardPreviewStyleConfigs(Object.fromEntries(
+          pagedTemplateIds.map((id) => [id, mergeTemplateStyleConfig(id, storedConfigs[id])]),
+        ));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCardPreviewStyleConfigs(Object.fromEntries(
+          pagedTemplateIds.map((id) => [id, mergeTemplateStyleConfig(id)]),
+        ));
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [filteredTemplateIds, styleTemplate?.id]);
+  }, [pagedTemplateIds, styleTemplate?.id]);
 
   function syncCustomGroups(nextGroups: string[]) {
     setCustomGroups(nextGroups);
@@ -276,6 +311,12 @@ export function TemplatesPage() {
     setStyleTemplate(template);
   }
 
+  function openStyleManager(template: Template | undefined, tab: "info" | "styles") {
+    if (!template) return;
+    setStyleTemplateTab(tab);
+    setStyleTemplate(template);
+  }
+
   async function handleImport(request: ImportTemplateRequest) {
     const template = await importTemplate(request);
     if (request.isDefault && appConfig) {
@@ -317,17 +358,18 @@ export function TemplatesPage() {
   }
 
   async function deleteTemplates(ids: string[]) {
-    const targets = templates.filter((template) => ids.includes(template.id));
+    const targetIdSet = new Set(ids);
+    const targets = templates.filter((template) => targetIdSet.has(template.id));
     const protectedTargets = targets.filter((template) => template.isBuiltIn);
     if (protectedTargets.length > 0) {
       toast.error("系统模板不能删除，可以只删除用户创建或导入的模板");
       return;
     }
     if (targets.length === 0) return;
-    const nextTemplates = templates.filter((template) => !ids.includes(template.id));
+    const nextTemplates = templates.filter((template) => !targetIdSet.has(template.id));
     const fallbackTemplate = nextTemplates.find((template) => template.isDefault) ?? nextTemplates[0];
-    const deletedDefault = appConfig ? ids.includes(appConfig.defaultTemplateId) : false;
-    const deletedCurrent = currentTemplateId ? ids.includes(currentTemplateId) : false;
+    const deletedDefault = appConfig ? targetIdSet.has(appConfig.defaultTemplateId) : false;
+    const deletedCurrent = currentTemplateId ? targetIdSet.has(currentTemplateId) : false;
 
     try {
       await persistTemplates(nextTemplates);
@@ -338,8 +380,8 @@ export function TemplatesPage() {
       if (deletedCurrent) {
         setCurrentTemplateId(fallbackTemplate?.id);
       }
-      setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
-      if (previewTemplateId && ids.includes(previewTemplateId)) setPreviewTemplateId(fallbackTemplate?.id);
+      setSelectedIds((current) => current.filter((id) => !targetIdSet.has(id)));
+      if (previewTemplateId && targetIdSet.has(previewTemplateId)) setPreviewTemplateId(fallbackTemplate?.id);
       toast.success(`已删除 ${targets.length} 个模板`);
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "删除模板失败"));
@@ -356,7 +398,7 @@ export function TemplatesPage() {
   }
 
   function unselectCurrentGroup() {
-    setSelectedIds((current) => current.filter((id) => !filteredTemplateIds.includes(id)));
+    setSelectedIds((current) => current.filter((id) => !filteredTemplateIdSet.has(id)));
   }
 
   function toggleCurrentGroupSelection() {
@@ -414,7 +456,7 @@ export function TemplatesPage() {
   if (styleTemplate) {
     return (
       <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
-        <TemplateStyleManager embedded template={styleTemplate} groups={groups} onSaveTemplate={saveTemplateFromStyleManager} onRequestClose={() => setStyleTemplate(undefined)} />
+        <TemplateStyleManager embedded template={styleTemplate} initialTab={styleTemplateTab} groups={groups} onSaveTemplate={saveTemplateFromStyleManager} onRequestClose={() => setStyleTemplate(undefined)} />
       </div>
     );
   }
@@ -520,7 +562,7 @@ export function TemplatesPage() {
           </DropdownMenu>
 
           <div className="ml-auto flex min-w-0 items-center max-[640px]:ml-0 max-[640px]:w-full">
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full" onClick={() => setStyleTemplate(highlightedTemplate)} disabled={!highlightedTemplate}>
+            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full" onClick={() => openStyleManager(highlightedTemplate, "info")} disabled={!highlightedTemplate}>
               <Palette className="size-4" />
               样式管理器
             </Button>
@@ -576,20 +618,20 @@ export function TemplatesPage() {
           ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
-            {filteredTemplates.map((template) => (
+            {pagedTemplates.map((template) => (
               <TemplateGalleryCard
                 key={template.id}
                 template={template}
                 previewStyleConfig={cardPreviewStyleConfigs[template.id]}
                 isCurrent={currentTemplateId === template.id}
                 isPreviewed={highlightedTemplate?.id === template.id}
-                isSelected={selectedIds.includes(template.id)}
+                isSelected={selectedIdSet.has(template.id)}
                 onPreview={(target) => setPreviewTemplateId(target.id)}
                 onToggleSelect={toggleSelect}
                 onUse={useTemplate}
                 onSetDefault={setDefaultTemplate}
                 onEdit={setEditingTemplate}
-                onStyleManager={setStyleTemplate}
+                onStyleManager={(target) => openStyleManager(target, "info")}
                 onDelete={(target) => deleteTemplates([target.id])}
               />
             ))}
@@ -598,8 +640,40 @@ export function TemplatesPage() {
           )}
 
           <div className="mk-template-list-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-blue-100/70 px-3 py-2 text-xs text-slate-500 dark:border-zinc-700/70 dark:text-zinc-400">
-            <span>共 {filteredTemplates.length} 个模板</span>
-            <span className="rounded-[9px] bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">已选 {selectedIds.length}</span>
+            <span>
+              {filteredTemplates.length === 0 ? "共 0 条" : `显示 ${templatePageStart + 1}-${Math.min(templatePageStart + templatePageSize, filteredTemplates.length)}，共 ${filteredTemplates.length} 条`}
+            </span>
+            <div className="ml-auto flex items-center justify-end gap-2">
+              <Select
+                value={String(templatePageSize)}
+                onValueChange={(value) => {
+                  setTemplatePageSize(Number(value));
+                  setTemplatePage(1);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[104px] rounded-[9px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-8" aria-label="每页显示模板数量">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[12, 24, 48, 96].map((size) => <SelectItem key={size} value={String(size)}>{size} 条/页</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon-xs" onClick={() => setTemplatePage(1)} disabled={currentTemplatePage === 1} title="第一页" aria-label="第一页">
+                  <ChevronsLeft className="size-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon-xs" onClick={() => setTemplatePage((page) => Math.max(1, page - 1))} disabled={currentTemplatePage === 1} title="上一页" aria-label="上一页">
+                  <ChevronLeft className="size-3.5" />
+                </Button>
+                <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">第 {currentTemplatePage} / {templatePageCount} 页</span>
+                <Button variant="ghost" size="icon-xs" onClick={() => setTemplatePage((page) => Math.min(templatePageCount, page + 1))} disabled={currentTemplatePage === templatePageCount} title="下一页" aria-label="下一页">
+                  <ChevronRight className="size-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon-xs" onClick={() => setTemplatePage(templatePageCount)} disabled={currentTemplatePage === templatePageCount} title="最后一页" aria-label="最后一页">
+                  <ChevronsRight className="size-3.5" />
+                </Button>
+              </div>
+            </div>
           </div>
         </section>
       </section>
@@ -625,7 +699,7 @@ export function TemplatesPage() {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
             <PrimaryActionButton disabled={!highlightedTemplate} onClick={() => highlightedTemplate ? void setDefaultTemplate(highlightedTemplate) : undefined}>设为默认</PrimaryActionButton>
-            <SoftActionButton disabled={!highlightedTemplate} onClick={() => highlightedTemplate ? setStyleTemplate(highlightedTemplate) : undefined}>编辑样式</SoftActionButton>
+            <SoftActionButton disabled={!highlightedTemplate} onClick={() => openStyleManager(highlightedTemplate, "styles")}>编辑样式</SoftActionButton>
           </div>
         </AppSurface>
 
@@ -652,7 +726,7 @@ export function TemplatesPage() {
         onCreate={handleCreate}
         onComplete={(template) => {
           setPreviewTemplateId(template.id);
-          setStyleTemplate(template);
+          openStyleManager(template, "info");
         }}
       />
       <TemplateEditDrawer
@@ -664,7 +738,7 @@ export function TemplatesPage() {
         onSetDefault={setDefaultTemplate}
         onOpenStyleManager={(template) => {
           setEditingTemplate(undefined);
-          setStyleTemplate(template);
+          openStyleManager(template, "styles");
         }}
       />
       <GroupManageDialog open={groupDialogOpen} groups={groups.filter((group) => group !== "全部")} onOpenChange={setGroupDialogOpen} onCreate={handleCreateGroup} onDelete={(group) => void handleDeleteGroup(group)} />

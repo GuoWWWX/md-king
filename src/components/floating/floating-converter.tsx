@@ -9,9 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { actionableConversionWarnings, buildDocxOutputName, buildOutputPath } from "@/lib/convert-utils";
-import { buildHistoryItem } from "@/lib/conversion-history";
+import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { readMarkdownFile } from "@/lib/markdown-files";
-import { convertMarkdown, saveHistory } from "@/lib/tauri";
+import { convertMarkdown, appendHistory } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -120,7 +120,7 @@ type FloatingConverterProps = {
 };
 
 export function FloatingConverter({ systemWindow = false }: FloatingConverterProps) {
-  const { appConfig, templates, history, currentTemplateId, setHistory, setCurrentTemplateId } = useAppStore();
+  const { appConfig, templates, currentTemplateId, setHistory, setCurrentTemplateId } = useAppStore();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState(loadInitialPosition);
   const [dragging, setDragging] = useState(false);
@@ -520,10 +520,13 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     toast.error("没有识别到可转换的 Markdown/TXT 文件或文本");
   }
 
-  async function persistHistory(nextItems: HistoryItem[]) {
-    setHistory(nextItems);
+  /// 悬浮球运行在独立 WebviewWindow，自带一份 store 快照。只上传新增项，
+  /// 由后端读盘合并，避免把主窗口同期写入的记录整体覆盖掉。
+  async function persistHistory(newItems: HistoryItem[]) {
+    if (newItems.length === 0) return;
+    setHistory(limitHistory([...newItems, ...useAppStore.getState().history]));
     try {
-      await saveHistory(nextItems);
+      setHistory(await appendHistory(newItems));
     } catch {
       // 浏览器预览或文件写入失败时，本地状态仍保留。
     }
@@ -567,8 +570,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
           updateTask(task.id, { status: "failed", message: userFacingErrorMessage(error, "转换失败") });
         }
       }
-      const nextHistory = [...results.map(buildHistoryItem), ...history].slice(0, 20);
-      await persistHistory(nextHistory);
+      await persistHistory(results.map(buildHistoryItem));
       const failedCount = results.filter((result) => !result.ok).length;
       const warningCount = results.reduce((total, result) => total + actionableConversionWarnings(result.warnings).length, 0);
       showFloatingToast(systemWindow, failedCount > 0 ? "error" : warningCount > 0 ? "info" : "success", failedCount > 0 ? `批量转换完成，${failedCount} 个失败` : `已完成 ${results.length} 个转换任务${warningCount > 0 ? `，${warningCount} 条提示待检查` : ""}`);

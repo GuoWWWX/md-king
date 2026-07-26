@@ -1,7 +1,8 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, ClipboardPaste, FileText, FolderOpen, Loader2, Maximize2, PanelsTopLeft, Trash2, UploadCloud, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, ClipboardPaste, FileText, FolderOpen, Loader2, Maximize2, PanelsTopLeft, Settings2, Trash2, UploadCloud, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
+import { TemplateStyleManager } from "@/components/templates/template-style-manager";
 import { WordPreviewPage, type PreviewOutlineItem } from "@/components/templates/word-preview-page";
 import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
 import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { actionableConversionWarnings, buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
-import { buildHistoryItem } from "@/lib/conversion-history";
+import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveAppConfig, saveHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
+import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -42,7 +43,7 @@ const fallbackTemplate: Template = {
 };
 
 export function ConvertPage() {
-  const { appConfig, templates, history, currentTemplateId, pendingImportPaths, setAppConfig, setHistory, setCurrentTemplateId, clearPendingImportPaths } = useAppStore();
+  const { appConfig, templates, currentTemplateId, pendingImportPaths, setAppConfig, setHistory, setCurrentTemplateId, clearPendingImportPaths } = useAppStore();
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
   const [markdown, setMarkdown] = useState("");
@@ -60,6 +61,7 @@ export function ConvertPage() {
   const [previewWidth, setPreviewWidth] = useState(520);
   const [previewZoom, setPreviewZoom] = useState(40);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [expandedStyleEditorOpen, setExpandedStyleEditorOpen] = useState(false);
   const [previewPageCount, setPreviewPageCount] = useState(1);
   const [previewSidebarView, setPreviewSidebarView] = useState<PreviewSidebarView>("pages");
   const [previewSidebarWidth, setPreviewSidebarWidth] = useState(208);
@@ -68,33 +70,52 @@ export function ConvertPage() {
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const expandedPreviewRef = useRef<HTMLDivElement>(null);
   const conversionVersionRef = useRef(0);
+  // 预览样式的读取是异步的，切模板与关闭样式编辑器都会触发。用递增版本号
+  // 而不是 effect 局部的 cancelled 标志：后者管不到 closeExpandedStyleEditor
+  // 这种在 effect 之外发起的读取，晚回来的旧结果会把新模板的样式覆盖掉。
+  const previewStyleVersionRef = useRef(0);
+  const selectedTemplate = useMemo(() => templateOptions.find((template) => template.id === templateId) ?? templateOptions[0], [templateId, templateOptions]);
 
   useEffect(() => {
-    if (isConverting || pendingImportPaths.length === 0) return;
+    if (isConverting || pendingImportPaths.length === 0) return undefined;
 
     const paths = pendingImportPaths;
-    clearPendingImportPaths();
     setConvertResult(null);
 
     if (paths.length > 1) {
+      clearPendingImportPaths();
       setBatchImportPaths(paths);
       setSelectedBatchImportPaths(paths);
       setBatchImportDialogOpen(true);
       setMode("file");
-      return;
+      return undefined;
     }
 
+    // 刻意等读完再清队列：读到一半用户切走页面时，本组件被卸载、setMarkdown 落空，
+    // 路径留在队列里，切回来会自动重试，不至于凭空丢文件。
+    // 反过来若在这里就清空，effect 自己的依赖 pendingImportPaths 会立刻变化，
+    // 从而触发 cleanup —— 那时再排队回去就成了死循环。
+    let cancelled = false;
     const path = paths[0];
     void readMarkdownFileFromPath(path)
       .then((text) => {
+        if (cancelled) return;
+        clearPendingImportPaths();
         setMarkdown(text);
         setMarkdownSourcePath(path);
         setMode("markdown");
         toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
       })
       .catch((error) => {
+        if (cancelled) return;
+        // 读失败也要清掉，否则每次切回本页都会重试并重复弹同一个错误。
+        clearPendingImportPaths();
         toast.error(userFacingErrorMessage(error, "读取启动文件失败"));
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [clearPendingImportPaths, isConverting, pendingImportPaths]);
 
   useEffect(() => {
@@ -141,25 +162,28 @@ export function ConvertPage() {
   }, [previewExpanded, markdown, previewStyleConfig, previewZoom]);
 
   useEffect(() => {
-    let cancelled = false;
+    const version = ++previewStyleVersionRef.current;
     setPreviewStyleConfig(mergeTemplateStyleConfig(templateId));
     void getTemplateStyleConfig(templateId)
       .then((storedConfig) => {
-        if (!cancelled) setPreviewStyleConfig(mergeTemplateStyleConfig(templateId, storedConfig ?? undefined));
+        if (version !== previewStyleVersionRef.current) return;
+        setPreviewStyleConfig(mergeTemplateStyleConfig(templateId, storedConfig ?? undefined));
       })
       .catch(() => {
-        if (!cancelled) setPreviewStyleConfig(mergeTemplateStyleConfig(templateId));
+        if (version !== previewStyleVersionRef.current) return;
+        setPreviewStyleConfig(mergeTemplateStyleConfig(templateId));
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [templateId]);
 
-  async function persistHistory(nextHistory: HistoryItem[]) {
-    setHistory(nextHistory);
+  /// 只上传本次新增的记录：后端会重新读盘再合并回写，
+  /// 避免悬浮球窗口、右键菜单进程在转换期间写入的记录被本窗口的旧快照覆盖。
+  async function persistHistory(newItems: HistoryItem[]) {
+    if (newItems.length === 0) return;
+    // 先按当前最新的 store 值乐观更新，保证 UI 立即可见；getState 而非渲染期快照，
+    // 使连续两次转换不会互相覆盖。
+    setHistory(limitHistory([...newItems, ...useAppStore.getState().history]));
     try {
-      await saveHistory(nextHistory);
+      setHistory(await appendHistory(newItems));
     } catch {
       // 浏览器预览或文件系统失败时，内存历史仍可用。
     }
@@ -187,8 +211,7 @@ export function ConvertPage() {
       });
       if (conversionVersion !== conversionVersionRef.current) return;
       setConvertResult(result);
-      const nextHistory = [buildHistoryItem(result), ...history].slice(0, 20);
-      await persistHistory(nextHistory);
+      await persistHistory([buildHistoryItem(result)]);
       toast[result.ok && !result.simulated ? "success" : result.simulated ? "info" : "error"](result.message ?? (result.ok ? "转换完成" : "转换失败"));
       const actionableWarnings = actionableConversionWarnings(result.warnings);
       if (result.ok && actionableWarnings.length > 0) {
@@ -199,7 +222,7 @@ export function ConvertPage() {
       const message = userFacingErrorMessage(error, "转换调用失败");
       const result: ConvertResult = { ok: false, input, templateId, durationMs: 0, warnings: [], errorCode: "INVOKE_FAILED", message };
       setConvertResult(result);
-      await persistHistory([buildHistoryItem(result), ...history].slice(0, 20));
+      await persistHistory([buildHistoryItem(result)]);
       toast.error(message);
     } finally {
       setIsConverting(false);
@@ -267,8 +290,7 @@ export function ConvertPage() {
         results.push(result);
       }
 
-      const nextHistory = [...results.map(buildHistoryItem), ...history].slice(0, 20);
-      await persistHistory(nextHistory);
+      await persistHistory(results.map(buildHistoryItem));
       const successCount = results.filter((result) => result.ok && !result.simulated).length;
       const failedCount = results.length - successCount;
       const warningCount = results.reduce((total, result) => total + actionableConversionWarnings(result.warnings).length, 0);
@@ -277,7 +299,7 @@ export function ConvertPage() {
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "批量转换失败"));
       if (results.length > 0) {
-        await persistHistory([...results.map(buildHistoryItem), ...history].slice(0, 20));
+        await persistHistory(results.map(buildHistoryItem));
       }
     } finally {
       setIsConverting(false);
@@ -412,6 +434,24 @@ export function ConvertPage() {
     setPreviewSidebarView(view);
   }
 
+  function closeExpandedStyleEditor() {
+    setExpandedStyleEditorOpen(false);
+    // 关编辑器时重新拉一次配置，把编辑器里的保存结果同步到预览。
+    // 这次读取要和切模板的读取抢同一个 state，所以共用版本号：
+    // 用户关掉编辑器后马上切模板，这条晚回来的结果必须被丢弃。
+    const version = ++previewStyleVersionRef.current;
+    const currentTemplate = templateId;
+    void getTemplateStyleConfig(currentTemplate)
+      .then((storedConfig) => {
+        if (version !== previewStyleVersionRef.current) return;
+        setPreviewStyleConfig(mergeTemplateStyleConfig(currentTemplate, storedConfig ?? undefined));
+      })
+      .catch(() => {
+        if (version !== previewStyleVersionRef.current) return;
+        setPreviewStyleConfig(mergeTemplateStyleConfig(currentTemplate));
+      });
+  }
+
   function renderConvertFooter(className?: string) {
     const canRevealOutput = Boolean(convertResult?.ok && !convertResult.simulated && convertResult.output);
 
@@ -483,6 +523,22 @@ export function ConvertPage() {
     );
   }
 
+  if (expandedStyleEditorOpen) {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
+        <TemplateStyleManager
+          embedded
+          template={selectedTemplate}
+          initialTab="styles"
+          previewMarkdown={markdown}
+          previewMarkdownSourcePath={markdownSourcePath}
+          closeLabel="返回放大预览"
+          onRequestClose={closeExpandedStyleEditor}
+        />
+      </div>
+    );
+  }
+
   if (previewExpanded) {
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -491,10 +547,12 @@ export function ConvertPage() {
             <h2 className="truncate text-lg font-black tracking-[-0.02em] text-slate-950 dark:text-zinc-50">Word 预览</h2>
             <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
           </div>
-          <Button variant="ghost" size="sm" className="h-8 rounded-[10px]" onClick={() => setPreviewExpanded(false)}>
-            <ArrowLeft className="size-4" />
-            返回转换页
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="ghost" size="sm" className="h-8 rounded-[10px]" onClick={() => setPreviewExpanded(false)}>
+              <ArrowLeft className="size-4" />
+              返回转换页
+            </Button>
+          </div>
         </header>
         <div
           ref={expandedPreviewRef}
@@ -526,6 +584,7 @@ export function ConvertPage() {
             zoom={previewZoom}
             setZoom={setPreviewZoom}
             onExpand={() => undefined}
+            onOpenAdvancedStyle={() => setExpandedStyleEditorOpen(true)}
             expanded
             showTocPage
             thumbnailContainer={previewThumbnailContainer}
@@ -682,6 +741,7 @@ function ConvertPreviewPanel({
   zoom,
   setZoom,
   onExpand,
+  onOpenAdvancedStyle,
   expanded = false,
   showTocPage = false,
   thumbnailContainer,
@@ -697,6 +757,7 @@ function ConvertPreviewPanel({
   zoom: number;
   setZoom: (value: number | ((current: number) => number)) => void;
   onExpand: () => void;
+  onOpenAdvancedStyle?: () => void;
   expanded?: boolean;
   showTocPage?: boolean;
   thumbnailContainer?: HTMLDivElement | null;
@@ -720,6 +781,14 @@ function ConvertPreviewPanel({
           <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
+          {onOpenAdvancedStyle ? (
+            <>
+              <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onOpenAdvancedStyle} title="高级样式" aria-label="高级样式">
+                <Settings2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
+              </Button>
+              <span className="h-4 w-px bg-slate-200 dark:bg-zinc-700" />
+            </>
+          ) : null}
           <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} title="缩小预览" aria-label="缩小预览">
             <ZoomOut className="size-3.5 text-slate-500 dark:text-zinc-400" />
           </Button>

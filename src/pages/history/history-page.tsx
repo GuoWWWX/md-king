@@ -1,5 +1,5 @@
-import { CheckCircle2, CheckSquare, Clock3, FileText, RotateCcw, Search, Trash2, XCircle, type LucideIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckCircle2, CheckSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock3, FileText, RotateCcw, Search, Trash2, XCircle, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { HistoryRecordCard } from "@/components/history/history-record-card";
 import { AppSurface } from "@/components/ui/app-surface";
@@ -36,6 +36,8 @@ export function HistoryPage() {
   const [templateId, setTemplateId] = useState("all");
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(20);
 
   const filteredHistory = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -47,16 +49,35 @@ export function HistoryPage() {
     });
   }, [history, query, status, templateId]);
 
-  const grouped = groupHistory(filteredHistory);
+  const historyPageCount = Math.max(1, Math.ceil(filteredHistory.length / historyPageSize));
+  const currentHistoryPage = Math.min(historyPage, historyPageCount);
+  const historyPageStart = (currentHistoryPage - 1) * historyPageSize;
+  const pagedHistory = useMemo(
+    () => filteredHistory.slice(historyPageStart, historyPageStart + historyPageSize),
+    [filteredHistory, historyPageStart, historyPageSize],
+  );
+  const grouped = groupHistory(pagedHistory);
   const filteredHistoryIds = useMemo(() => filteredHistory.map((item) => item.id), [filteredHistory]);
-  const selectedFilteredCount = selectedIds.filter((id) => filteredHistoryIds.includes(id)).length;
-  const isCurrentFilterAllSelected = filteredHistoryIds.length > 0 && filteredHistoryIds.every((id) => selectedIds.includes(id));
+  const filteredHistoryIdSet = useMemo(() => new Set(filteredHistoryIds), [filteredHistoryIds]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedFilteredCount = selectedIds.filter((id) => filteredHistoryIdSet.has(id)).length;
+  const isCurrentFilterAllSelected = filteredHistoryIds.length > 0 && filteredHistoryIds.every((id) => selectedIdSet.has(id));
   const successCount = filteredHistory.filter((item) => item.status === "success").length;
   const failedCount = filteredHistory.filter((item) => item.status === "failed").length;
   const pendingCount = filteredHistory.filter((item) => item.status === "pending").length;
-  const selectedRecord = filteredHistory.find((item) => item.id === selectedHistoryId) ?? filteredHistory[0];
+  // 在整个筛选结果里找选中项，而不是只在当前页找：否则翻页会静默把右侧详情
+  // 换成新一页的第一条，用户以为自己还在看原来那条记录。
+  const selectedRecord = filteredHistory.find((item) => item.id === selectedHistoryId) ?? pagedHistory[0];
   const selectedTemplateName = selectedRecord ? templates.find((template) => template.id === selectedRecord.templateId)?.name ?? selectedRecord.templateId ?? "未指定模板" : "";
   const hasActiveFilters = query.trim() !== "" || status !== "all" || templateId !== "all";
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [query, status, templateId]);
+
+  useEffect(() => {
+    if (historyPage > historyPageCount) setHistoryPage(historyPageCount);
+  }, [historyPage, historyPageCount]);
 
   function resetFilters() {
     setQuery("");
@@ -86,14 +107,17 @@ export function HistoryPage() {
 
   async function deleteHistory(ids: string[]) {
     const targetIds = Array.from(new Set(ids));
-    const targets = history.filter((item) => targetIds.includes(item.id));
+    const targetIdSet = new Set(targetIds);
+    const targets = history.filter((item) => targetIdSet.has(item.id));
     if (targets.length === 0) return;
 
     const previousHistory = history;
-    const nextHistory = history.filter((item) => !targetIds.includes(item.id));
+    const previousSelectedIds = selectedIds;
+    const previousSelectedHistoryId = selectedHistoryId;
+    const nextHistory = history.filter((item) => !targetIdSet.has(item.id));
     setHistory(nextHistory);
-    setSelectedIds((current) => current.filter((id) => !targetIds.includes(id)));
-    if (selectedHistoryId && targetIds.includes(selectedHistoryId)) {
+    setSelectedIds((current) => current.filter((id) => !targetIdSet.has(id)));
+    if (selectedHistoryId && targetIdSet.has(selectedHistoryId)) {
       setSelectedHistoryId(null);
     }
 
@@ -102,7 +126,10 @@ export function HistoryPage() {
       setHistory(saved);
       toast.success(`已删除 ${targets.length} 条历史记录`);
     } catch (error) {
+      // 回滚必须连选中态一起恢复，否则记录回来了、勾选和详情却没了。
       setHistory(previousHistory);
+      setSelectedIds(previousSelectedIds);
+      setSelectedHistoryId(previousSelectedHistoryId);
       toast.error(userFacingErrorMessage(error, "删除历史记录失败"));
     }
   }
@@ -117,7 +144,7 @@ export function HistoryPage() {
   }
 
   function unselectCurrentFilter() {
-    setSelectedIds((current) => current.filter((id) => !filteredHistoryIds.includes(id)));
+    setSelectedIds((current) => current.filter((id) => !filteredHistoryIdSet.has(id)));
   }
 
   function toggleCurrentFilterSelection() {
@@ -205,7 +232,7 @@ export function HistoryPage() {
           </Button>
         </div>
 
-        <div className="min-h-0 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           {filteredHistory.length === 0 ? (
             <section className="flex min-h-[280px] flex-col items-center justify-center rounded-[14px] border border-dashed border-blue-100/80 bg-white/24 p-8 text-center dark:border-zinc-700/70 dark:bg-zinc-900/50">
               <div className="mb-4 flex size-14 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600 shadow-inner dark:bg-blue-500/16 dark:text-blue-200">
@@ -226,7 +253,7 @@ export function HistoryPage() {
                     item={item}
                     templates={templates}
                     selected={selectedRecord?.id === item.id}
-                    checked={selectedIds.includes(item.id)}
+                    checked={selectedIdSet.has(item.id)}
                     onSelect={(record) => setSelectedHistoryId(record.id)}
                     onToggleChecked={toggleSelect}
                     onDelete={(record) => void deleteHistory([record.id])}
@@ -237,6 +264,42 @@ export function HistoryPage() {
           ) : null)}
           </div>
           )}
+        </div>
+        <div className="mt-2 flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-blue-100/70 bg-white/54 px-3 py-2 text-xs text-slate-500 dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:text-zinc-400">
+          <span>
+            {filteredHistory.length === 0 ? "共 0 条" : `显示 ${historyPageStart + 1}-${Math.min(historyPageStart + historyPageSize, filteredHistory.length)}，共 ${filteredHistory.length} 条`}
+          </span>
+          <div className="ml-auto flex items-center justify-end gap-2">
+            <Select
+              value={String(historyPageSize)}
+              onValueChange={(value) => {
+                setHistoryPageSize(Number(value));
+                setHistoryPage(1);
+              }}
+            >
+              <SelectTrigger className="h-8 w-[104px] rounded-[9px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-8" aria-label="每页显示条数">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} 条/页</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage(1)} disabled={currentHistoryPage === 1} title="第一页" aria-label="第一页">
+                <ChevronsLeft className="size-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.max(1, page - 1))} disabled={currentHistoryPage === 1} title="上一页" aria-label="上一页">
+                <ChevronLeft className="size-3.5" />
+              </Button>
+              <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">第 {currentHistoryPage} / {historyPageCount} 页</span>
+              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))} disabled={currentHistoryPage === historyPageCount} title="下一页" aria-label="下一页">
+                <ChevronRight className="size-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage(historyPageCount)} disabled={currentHistoryPage === historyPageCount} title="最后一页" aria-label="最后一页">
+                <ChevronsRight className="size-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
 
