@@ -21,6 +21,7 @@ export default defineConfig(async () => ({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("lucide-react")) return "icons";
+          if (id.includes("@codemirror") || id.includes("@lezer")) return "codemirror";
           if (id.includes("react") || id.includes("react-dom")) return "react";
           if (id.includes("radix-ui")) return "radix";
           if (id.includes("markdown-it")) return "markdown";
