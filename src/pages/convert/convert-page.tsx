@@ -60,6 +60,9 @@ export function ConvertPage() {
   // 窄屏下三栏挤不开，直接不渲染预览——不是藏起来而是不跑那条解析+分页管线。
   const isNarrow = useMediaQuery("(max-width: 1100px)");
   const showPreviewPanel = previewVisible && !isNarrow;
+  // 窄屏挂不出右侧面板，导出栏必须回到页面底部，否则没有任何入口能转换。
+  // 用户主动收起时则一并隐藏——收起就是为了要一个干净的编辑界面。
+  const showBottomFooter = isNarrow;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   // 正文的唯一来源是活动标签。revision 只在外部灌入内容时递增，
   // 用户逐字输入不动它——每次内容变化都让编辑器全量替换会打断输入、丢光标。
@@ -733,7 +736,7 @@ export function ConvertPage() {
         </DialogContent>
       </Dialog>
 
-    <div className={cn("grid h-full min-h-0 flex-1 gap-3 overflow-hidden", showPreviewPanel ? "grid-rows-[40px_minmax(0,1fr)]" : "grid-rows-[40px_minmax(0,1fr)_96px] max-[1100px]:grid-rows-[auto_minmax(0,1fr)_auto]")}>
+    <div className={cn("grid h-full min-h-0 flex-1 gap-3 overflow-hidden", showBottomFooter ? "grid-rows-[auto_minmax(0,1fr)_auto]" : "grid-rows-[40px_minmax(0,1fr)]")}>
       <DocumentTabBar
         onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
         onImportFile={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
@@ -791,7 +794,7 @@ export function ConvertPage() {
         ) : null}
       </div>
 
-      {showPreviewPanel ? null : renderConvertFooter()}
+      {showBottomFooter ? renderConvertFooter() : null}
 
     </div>
     </>
