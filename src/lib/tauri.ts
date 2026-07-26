@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { limitHistory } from "@/lib/conversion-history";
 import type { AppConfig, AppStatus, ConvertRequest, ConvertResult, HistoryItem, ImportTemplateRequest, PandocStatus, Template, TemplateStyleConfig } from "@/types";
 
 type TauriWindow = Window & {
@@ -287,6 +288,18 @@ export function getTemplateStyleConfig(templateId: string) {
   return Promise.resolve(browserTemplateStyleConfigs[templateId] ?? null);
 }
 
+export function getTemplateStyleConfigs(templateIds: string[]) {
+  if (isTauriEnvironment()) {
+    return invoke<Record<string, TemplateStyleConfig>>("get_template_style_configs", { templateIds });
+  }
+
+  return Promise.resolve(Object.fromEntries(
+    templateIds.flatMap((templateId) => browserTemplateStyleConfigs[templateId]
+      ? [[templateId, browserTemplateStyleConfigs[templateId]]]
+      : []),
+  ));
+}
+
 export function saveTemplateStyleConfig(config: TemplateStyleConfig) {
   if (isTauriEnvironment()) {
     return invoke<TemplateStyleConfig>("save_template_style_config", { config });
@@ -320,6 +333,17 @@ export function saveHistory(history: HistoryItem[]) {
   }
 
   browserHistory = history;
+  return Promise.resolve(browserHistory);
+}
+
+/// 追加而非覆盖：后端会重新读盘再插入，避免另一个窗口/进程的写入被本窗口的旧快照抹掉。
+export function appendHistory(items: HistoryItem[]) {
+  if (isTauriEnvironment()) {
+    return invoke<HistoryItem[]>("append_history", { items });
+  }
+
+  const newIds = new Set(items.map((item) => item.id));
+  browserHistory = limitHistory([...items, ...browserHistory.filter((item) => !newIds.has(item.id))]);
   return Promise.resolve(browserHistory);
 }
 
