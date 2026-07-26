@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import MarkdownIt from "markdown-it";
+import katexPlugin from "@vscode/markdown-it-katex";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 import { AppSurface } from "@/components/ui/app-surface";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
@@ -45,14 +48,16 @@ type PreviewBlock =
   | { type: "paragraph"; segments: PreviewTextSegment[] }
   | { type: "quote"; segments: PreviewTextSegment[] }
   | { type: "code"; text: string; language?: string }
+  | { type: "math"; text: string }
   | { type: "hr" }
   | { type: "list"; items: PreviewListItem[] }
   | { type: "image"; src?: string; alt?: string; caption?: string }
-  | { type: "table"; caption?: string; rows: string[][] };
+  | { type: "table"; caption?: string; rows: PreviewTableCell[][] };
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
-type PreviewTextSegment = { text: string; code?: boolean };
+type PreviewTextSegment = { text: string; code?: boolean; math?: boolean; bold?: boolean; italic?: boolean; strike?: boolean; link?: string };
 type PreviewListItem = { segments: PreviewTextSegment[]; level: number; ordered: boolean; index: number; task?: "checked" | "unchecked" };
+type PreviewTableCell = { segments: PreviewTextSegment[] };
 type MarkdownInlineToken = {
   type: string;
   content?: string;
@@ -61,7 +66,81 @@ type MarkdownInlineToken = {
   children?: MarkdownInlineToken[] | null;
 };
 
-const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false });
+// Pandoc 导出侧开启了 tex_math_single_backslash，支持 \(...\) 与 \[...\]，
+// 但 @vscode/markdown-it-katex 只认 $ 分隔符，缺这条规则预览会把分隔符当转义字符吃掉。
+function backslashMathPlugin(md: MarkdownIt) {
+  md.block.ruler.before("fence", "math_block_backslash", (state, startLine, endLine, silent) => {
+    const start = state.bMarks[startLine] + state.tShift[startLine];
+    const max = state.eMarks[startLine];
+    if (state.src.slice(start, start + 2) !== "\\[") return false;
+
+    let closeLine = -1;
+    let content = "";
+    const firstRest = state.src.slice(start + 2, max);
+    const inlineClose = firstRest.indexOf("\\]");
+
+    if (inlineClose >= 0) {
+      if (firstRest.slice(inlineClose + 2).trim()) return false;
+      closeLine = startLine;
+      content = firstRest.slice(0, inlineClose);
+    } else {
+      const parts = [firstRest];
+      let line = startLine + 1;
+      while (line < endLine) {
+        const text = state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line]);
+        const closeIndex = text.indexOf("\\]");
+        if (closeIndex >= 0) {
+          if (text.slice(closeIndex + 2).trim()) return false;
+          parts.push(text.slice(0, closeIndex));
+          closeLine = line;
+          break;
+        }
+        parts.push(text);
+        line += 1;
+      }
+      content = parts.join("\n");
+    }
+
+    if (closeLine < 0 || !content.trim()) return false;
+    if (silent) return true;
+
+    const token = state.push("math_block", "math", 0);
+    token.block = true;
+    token.content = content.trim();
+    token.markup = "\\[";
+    token.map = [startLine, closeLine + 1];
+    state.line = closeLine + 1;
+    return true;
+  });
+
+  md.inline.ruler.before("escape", "math_inline_backslash", (state, silent) => {
+    const start = state.pos;
+    if (state.src.charCodeAt(start) !== 0x5c) return false;
+
+    const open = state.src.slice(start, start + 2);
+    if (open !== "\\(" && open !== "\\[") return false;
+
+    const close = open === "\\(" ? "\\)" : "\\]";
+    const end = state.src.indexOf(close, start + 2);
+    if (end < 0) return false;
+
+    const content = state.src.slice(start + 2, end).trim();
+    if (!content) return false;
+    if (!silent) {
+      const token = state.push(open === "\\(" ? "math_inline" : "math_inline_double", "math", 0);
+      token.content = content;
+      token.markup = open;
+    }
+    state.pos = end + close.length;
+    return true;
+  });
+}
+
+const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
+  .use(backslashMathPlugin);
+// 与 Rust 端 is_math_fence_language 保持一致，避免预览与导出对 ```math 的判定不同。
+const mathFenceLanguages = new Set(["math", "latex", "tex", "formula", "equation", "公式"]);
 const PT_TO_PX = 4 / 3;
 const CSS_DPI = 96;
 const PAPER_SIZE_PX = {
@@ -96,9 +175,23 @@ function cmToPx(value: number) {
   return (value / 2.54) * CSS_DPI;
 }
 
+/**
+ * 行高在样式管理器里是纯文本输入（见 template-style-manager.tsx 的「表格体行高」），
+ * 用户可以填任意内容。`Number("abc")` 是 NaN，而 `draft.lineHeight || 1.5` 这种写法
+ * 又拦不住它——非空字符串本身是 truthy，兜底值根本轮不到。NaN 会一路传进
+ * estimateBlockHeight，让 paginateBlocks 的 `usedHeight + blockHeight > pageContentHeight`
+ * 恒为 false，分页彻底失效、整篇内容挤在第一页。
+ *
+ * 这里和 Rust 导出侧的 read_line_height_key（convert.rs）对齐：只接受有限正数，
+ * 其余一律回退，保证预览和导出对同一份非法输入给出相同结果。
+ */
+function resolveLineHeightValue(value: string | number | undefined, fallback = 1.5) {
+  const lineHeight = Number(value);
+  return Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : fallback;
+}
+
 function resolveLineHeightPx(draft: StyleDraft) {
-  const lineHeight = Number(draft.lineHeight);
-  return ptToPx(draft.fontSize) * (Number.isFinite(lineHeight) ? lineHeight : 1.5);
+  return ptToPx(draft.fontSize) * resolveLineHeightValue(draft.lineHeight);
 }
 
 function isSelected(selectedStyle: StyleNode | undefined, id: string) {
@@ -219,8 +312,24 @@ const syntaxKeywords: Record<string, string[]> = {
   sql: ["and", "as", "by", "case", "create", "delete", "desc", "distinct", "from", "group", "having", "insert", "into", "join", "left", "limit", "not", "null", "on", "or", "order", "right", "select", "set", "table", "update", "values", "where"],
 };
 
+// 与 Rust 端 parse_fence_language 对齐：既要吃掉 ```{.math} 这类 Pandoc attribute 语法，
+// 也要跳过 ```{#id key=value} 里的非语言 token，否则预览与导出会认出不同的语言。
+function parseFenceLanguage(info?: string) {
+  const trimmed = info?.trim() ?? "";
+  if (!trimmed) return undefined;
+
+  const normalized = trimmed.startsWith("{") && trimmed.endsWith("}") ? trimmed.slice(1, -1) : trimmed;
+  for (const token of normalized.split(/\s+/)) {
+    const candidate = token.trim().replace(/^\.+/, "");
+    if (!candidate || candidate.startsWith("#") || candidate.includes("=")) continue;
+    const language = candidate.replace(/[^\p{L}\p{N}+#\-_.]/gu, "");
+    if (language) return language;
+  }
+  return undefined;
+}
+
 function normalizeCodeLanguage(info?: string) {
-  const raw = info?.trim().split(/\s+/)[0]?.replace(/^language-/, "").toLowerCase() ?? "";
+  const raw = parseFenceLanguage(info)?.replace(/^language-/, "").toLowerCase();
   if (!raw) return undefined;
   if (raw === "jsx") return "javascript";
   if (raw === "tsx") return "typescript";
@@ -277,17 +386,54 @@ function renderHighlightedCode(text: string, language: string | undefined, draft
   return nodes;
 }
 
+function canMergeSegments(a: PreviewTextSegment, b: PreviewTextSegment) {
+  if (a.math || b.math) return false;
+  return Boolean(a.code) === Boolean(b.code)
+    && Boolean(a.bold) === Boolean(b.bold)
+    && Boolean(a.italic) === Boolean(b.italic)
+    && Boolean(a.strike) === Boolean(b.strike)
+    && a.link === b.link;
+}
+
 function mergeTextSegments(segments: PreviewTextSegment[]) {
   return segments.reduce<PreviewTextSegment[]>((merged, segment) => {
     if (!segment.text) return merged;
     const last = merged[merged.length - 1];
-    if (last && Boolean(last.code) === Boolean(segment.code)) {
+    if (last && canMergeSegments(last, segment)) {
       last.text += segment.text;
       return merged;
     }
     merged.push({ ...segment });
     return merged;
   }, []);
+}
+
+function renderKatexMarkup(text: string, displayMode: boolean) {
+  try {
+    return katex.renderToString(text, { displayMode, throwOnError: true, output: "html", strict: false });
+  } catch {
+    return undefined;
+  }
+}
+
+function MathInline({ text }: { text: string }) {
+  const markup = renderKatexMarkup(text, false);
+  if (!markup) {
+    return <span className="rounded bg-rose-50 px-1 font-mono text-[0.9em] text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">{text}</span>;
+  }
+  return <span className="md-king-math" dangerouslySetInnerHTML={{ __html: markup }} />;
+}
+
+function MathBlock({ text, style, className }: { text: string; style?: CSSProperties; className?: string }) {
+  const markup = renderKatexMarkup(text, true);
+  if (!markup) {
+    return (
+      <div className={cn("whitespace-pre-wrap break-words rounded border border-rose-200 bg-rose-50 px-3 py-2 text-center font-mono text-[0.85em] text-rose-600 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300", className)} style={style}>
+        {text}
+      </div>
+    );
+  }
+  return <div className={cn("md-king-math text-center", className)} style={style} dangerouslySetInnerHTML={{ __html: markup }} />;
 }
 
 function textSegments(text: string): PreviewTextSegment[] {
@@ -298,17 +444,52 @@ function plainText(segments: PreviewTextSegment[]) {
   return segments.map((segment) => segment.text).join("");
 }
 
+// markdown-it 的 inline children 是扁平的 open/close 流，不是嵌套树，
+// 所以这里用一个标记栈来跟踪加粗、斜体、删除线、链接的作用范围。
 function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): PreviewTextSegment[] {
   if (!token) return [];
   const children = token.children ?? [];
   if (children.length === 0) return textSegments(token.content ?? "");
 
-  return mergeTextSegments(children.flatMap((child) => {
-    if (child.type === "code_inline") return [{ text: child.content ?? "", code: true }];
-    if (child.type === "softbreak" || child.type === "hardbreak") return [{ text: "\n" }];
-    if (child.children?.length) return inlineSegmentsFromToken(child);
-    return textSegments(child.content ?? "");
-  }));
+  const segments: PreviewTextSegment[] = [];
+  const marks = { bold: 0, italic: 0, strike: 0 };
+  const linkStack: string[] = [];
+
+  const currentMarks = (): Omit<PreviewTextSegment, "text"> => ({
+    bold: marks.bold > 0 || undefined,
+    italic: marks.italic > 0 || undefined,
+    strike: marks.strike > 0 || undefined,
+    link: linkStack[linkStack.length - 1],
+  });
+
+  for (const child of children) {
+    switch (child.type) {
+      case "strong_open": marks.bold += 1; break;
+      case "strong_close": marks.bold = Math.max(0, marks.bold - 1); break;
+      case "em_open": marks.italic += 1; break;
+      case "em_close": marks.italic = Math.max(0, marks.italic - 1); break;
+      case "s_open": marks.strike += 1; break;
+      case "s_close": marks.strike = Math.max(0, marks.strike - 1); break;
+      case "link_open": linkStack.push(markdownTokenAttribute(child, "href") ?? ""); break;
+      case "link_close": linkStack.pop(); break;
+      case "code_inline": segments.push({ ...currentMarks(), text: child.content ?? "", code: true }); break;
+      case "math_inline":
+      case "math_inline_double": segments.push({ text: child.content ?? "", math: true }); break;
+      case "softbreak":
+      case "hardbreak": segments.push({ text: "\n" }); break;
+      case "image": segments.push({ ...currentMarks(), text: plainText(inlineSegmentsFromToken(child)) }); break;
+      default:
+        // 未识别但带子节点的 token（例如插件产生的容器）仍然递归展开，避免整段文字丢失。
+        if (child.children?.length) {
+          segments.push(...inlineSegmentsFromToken(child).map((segment) => (segment.math ? segment : { ...currentMarks(), ...segment })));
+        } else if (child.content) {
+          segments.push({ ...currentMarks(), text: child.content });
+        }
+        break;
+    }
+  }
+
+  return mergeTextSegments(segments);
 }
 
 function markdownTokenAttribute(token: MarkdownInlineToken, name: string) {
@@ -334,18 +515,37 @@ function joinTextSegmentGroups(groups: PreviewTextSegment[][], separator: string
   return mergeTextSegments(groups.flatMap((group, index) => (index === 0 ? group : [{ text: separator }, ...group])));
 }
 
+function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined {
+  const style: CSSProperties = {};
+  if (segment.bold) style.fontWeight = 700;
+  if (segment.italic) style.fontStyle = "italic";
+  if (segment.strike) style.textDecorationLine = "line-through";
+  if (segment.link !== undefined) {
+    // Word 默认 Hyperlink 样式就是蓝色加下划线，预览保持一致。
+    style.color = "#0563C1";
+    style.textDecorationLine = segment.strike ? "line-through underline" : "underline";
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
+}
+
 function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle?: StyleNode) {
   return segments.map((segment, index) => {
-    if (!segment.code || !inlineCodeEnabled) return segment.text;
-    return (
-      <code
-        key={`${keyPrefix}-${index}`}
-        className={cn("mx-0.5 rounded px-1 py-0.5", selectedRing(selectedStyle, "inline-code"))}
-        style={inlineCodeStyle(inlineCodeDraft)}
-      >
-        {segment.text}
-      </code>
-    );
+    if (segment.math) return <MathInline key={`${keyPrefix}-math-${index}`} text={segment.text} />;
+
+    const markStyle = inlineMarkStyle(segment);
+    if (segment.code && inlineCodeEnabled) {
+      return (
+        <code
+          key={`${keyPrefix}-${index}`}
+          className={cn("mx-0.5 rounded px-1 py-0.5", selectedRing(selectedStyle, "inline-code"))}
+          style={{ ...inlineCodeStyle(inlineCodeDraft), ...markStyle }}
+        >
+          {segment.text}
+        </code>
+      );
+    }
+    if (!markStyle) return segment.text;
+    return <span key={`${keyPrefix}-fmt-${index}`} style={markStyle}>{segment.text}</span>;
   });
 }
 
@@ -599,8 +799,19 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
       continue;
     }
 
+    if (token.type === "math_block" || token.type === "math_block_eqno") {
+      blocks.push({ type: "math", text: token.content.trim() });
+      continue;
+    }
+
     if (token.type === "fence" || token.type === "code_block") {
-      blocks.push({ type: "code", text: token.content.trimEnd(), language: token.type === "fence" ? normalizeCodeLanguage(token.info) : undefined });
+      const language = token.type === "fence" ? normalizeCodeLanguage(token.info) : undefined;
+      // ```math / ```latex 等围栏在导出时会被 Rust 端转成 $$...$$，预览必须同样按公式渲染。
+      if (language && mathFenceLanguages.has(language)) {
+        blocks.push({ type: "math", text: token.content.trim() });
+        continue;
+      }
+      blocks.push({ type: "code", text: token.content.trimEnd(), language });
       continue;
     }
 
@@ -633,13 +844,13 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
     }
 
     if (token.type === "table_open") {
-      const rows: string[][] = [];
-      let currentRow: string[] | undefined;
+      const rows: PreviewTableCell[][] = [];
+      let currentRow: PreviewTableCell[] | undefined;
       index += 1;
       while (index < tokens.length && tokens[index].type !== "table_close") {
         if (tokens[index].type === "tr_open") currentRow = [];
         if ((tokens[index].type === "td_open" || tokens[index].type === "th_open") && tokens[index + 1]?.type === "inline") {
-          currentRow?.push(tokens[index + 1].content);
+          currentRow?.push({ segments: inlineSegmentsFromToken(tokens[index + 1]) });
         }
         if (tokens[index].type === "tr_close" && currentRow) {
           rows.push(currentRow);
@@ -685,6 +896,13 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
     return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
   }
 
+  if (block.type === "math") {
+    // 公式按行数估高，分式/求和等纵向结构再留一点余量。
+    const lines = block.text.split(/\\\\|\r?\n/).length;
+    const tall = /\\frac|\\sum|\\int|\\prod|\\begin|\\lim|\^|_/.test(block.text) ? 1.6 : 1.2;
+    return ptToPx(drafts.normal.beforeSpacing + drafts.normal.afterSpacing) + lines * resolveLineHeightPx(drafts.normal) * tall;
+  }
+
   if (block.type === "hr") {
     const draft = drafts["horizontal-rule"];
     return ptToPx(draft.beforeSpacing + draft.afterSpacing + Math.max(0.25, draft.borderWidth));
@@ -713,7 +931,11 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   const tableCaptionHeight = block.caption && tableCaptionDraft
     ? resolveLineHeightPx(tableCaptionDraft) + ptToPx(tableCaptionDraft.beforeSpacing + tableCaptionDraft.afterSpacing)
     : 0;
-  return 10 + tableCaptionHeight + Math.max(1, block.rows.length) * Math.max(tableDraft.minRowHeight, ptToPx(tableDraft.bodyFontSize) * Number(tableDraft.bodyLineHeight || 1.5) + tableDraft.cellPaddingY * 2);
+  const tableRowHeight = Math.max(
+    tableDraft.minRowHeight,
+    ptToPx(tableDraft.bodyFontSize) * resolveLineHeightValue(tableDraft.bodyLineHeight) + tableDraft.cellPaddingY * 2,
+  );
+  return 10 + tableCaptionHeight + Math.max(1, block.rows.length) * tableRowHeight;
 }
 
 function splitTextByLength(text: string, maxChars: number) {
@@ -748,6 +970,8 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
     }
 
     if (block.type === "hr") return [block];
+    // 公式整体不可切分，拆开会得到两段无法解析的 LaTeX。
+    if (block.type === "math") return [block];
 
     if (block.type === "list") {
       const pages: PreviewBlock[] = [];
@@ -834,7 +1058,7 @@ function createFallbackBlocks(imageCaption: string, tableCaption: string): Previ
     { type: "code", language: "javascript", text: "const docx = convertMarkdown(input);\nsaveAs(docx, \"report.docx\");" },
     { type: "image", caption: imageCaption },
     { type: "hr" },
-    { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]] },
+    { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]].map((row) => row.map((cell) => ({ segments: textSegments(cell) }))) },
   ];
 }
 
@@ -1031,6 +1255,22 @@ function renderMarkdownBlocks({
       return;
     }
 
+    if (block.type === "math") {
+      rendered.push(
+        <MathBlock
+          key={index}
+          text={block.text}
+          className={cn("break-words", selectedRing(selectedStyle, "normal"))}
+          style={{
+            ...textStyle(drafts.normal),
+            textAlign: "center",
+            textIndent: 0,
+          }}
+        />,
+      );
+      return;
+    }
+
     if (block.type === "hr") {
       const draft = drafts["horizontal-rule"];
       rendered.push(
@@ -1120,7 +1360,7 @@ function renderMarkdownBlocks({
           {columnWidths.length > 0 ? <colgroup>{columnWidths.map((width, widthIndex) => <col key={widthIndex} style={{ width }} />)}</colgroup> : null}
           {header ? (
             <thead>
-              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{cell}</th>)}</tr>
+              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle)}</th>)}</tr>
             </thead>
           ) : null}
           <tbody>
@@ -1135,7 +1375,7 @@ function renderMarkdownBlocks({
                       backgroundColor: tableStyle.rowStripe && rowIndex % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
                     }}
                   >
-                    {cell}
+                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle)}
                   </td>
                 ))}
               </tr>
@@ -1199,13 +1439,19 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
 
   const tableWidth = `${table.fitToPageWidth ? 100 : table.tableWidthPercent}%`;
   const tableMargin = table.tableHorizontalAlign === "center" ? "0 auto" : table.tableHorizontalAlign === "right" ? "0 0 0 auto" : "0";
-  const baseBorderWidth = table.outerBorderStrong ? Math.max(1.5, table.borderWidth + 0.5) : table.borderWidth;
+  // 与 Rust 侧 table_style_config_from_value 对齐：外边框加粗是对四向宽度的后置加成，
+  // 且宽度 0 表示「无边框」，不能用 || 兜底成基准宽度。
+  const outerBorderWidth = (value: number) => {
+    const width = Number.isFinite(value) ? value : table.borderWidth;
+    return table.outerBorderStrong && width > 0 ? width + 0.5 : width;
+  };
+  const baseBorderWidth = outerBorderWidth(table.borderWidth);
   const baseBorder = border(baseBorderWidth, table.borderStyle, table.borderColor);
   const sideBorders = {
-    borderTop: border(table.borderTopWidth || baseBorderWidth, table.borderStyle, table.borderColor),
-    borderRight: border(table.borderRightWidth || baseBorderWidth, table.borderStyle, table.borderColor),
-    borderBottom: border(table.borderBottomWidth || baseBorderWidth, table.borderStyle, table.borderColor),
-    borderLeft: border(table.borderLeftWidth || baseBorderWidth, table.borderStyle, table.borderColor),
+    borderTop: border(outerBorderWidth(table.borderTopWidth), table.borderStyle, table.borderColor),
+    borderRight: border(outerBorderWidth(table.borderRightWidth), table.borderStyle, table.borderColor),
+    borderBottom: border(outerBorderWidth(table.borderBottomWidth), table.borderStyle, table.borderColor),
+    borderLeft: border(outerBorderWidth(table.borderLeftWidth), table.borderStyle, table.borderColor),
   };
   const headerBorder = border(tableHeader.headerBorderWidth, table.borderStyle, tableHeader.headerBorderColor);
   const bodyBorder = border(tableBody.bodyBorderWidth, table.borderStyle, tableBody.bodyBorderColor);
@@ -1348,7 +1594,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             renderAsThumbnail: thumbnail,
             tableStyle: markdownTableStyle,
           })}
-          {footerEnabled && footerContent ? <div className="absolute bottom-5 left-0 right-0 px-8 text-center text-[9px] text-slate-300">{footerContent}</div> : null}
+          {footerEnabled && footerContent ? <div className="absolute bottom-5 left-0 right-0 px-8 text-center text-[9px] text-black">{footerContent}</div> : null}
         </div>
       </div>
     );
@@ -1427,7 +1673,6 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         className={cn(
           "min-h-0 flex-1 rounded-lg bg-slate-200/60 p-3 2xl:p-4",
           interactiveViewport ? "cursor-grab select-none overflow-auto active:cursor-grabbing" : "overflow-y-auto overflow-x-hidden",
-          interactiveViewport && "flex flex-wrap content-start items-start justify-start gap-5",
           interactiveViewport && isDraggingPreview && "cursor-grabbing",
           viewportClassName,
         )}
@@ -1437,7 +1682,14 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         onPointerCancel={stopPreviewDrag}
         onPointerLeave={stopPreviewDrag}
       >
-        {previewPages.map((pageBlocks, pageIndex) => renderPreviewPage(pageBlocks, pageIndex))}
+        {interactiveViewport ? (
+          <div className={cn(
+            "flex min-h-full min-w-full content-start items-start gap-5",
+            previewPages.length === 1 ? "w-max justify-center" : "flex-wrap justify-start",
+          )}>
+            {previewPages.map((pageBlocks, pageIndex) => renderPreviewPage(pageBlocks, pageIndex))}
+          </div>
+        ) : previewPages.map((pageBlocks, pageIndex) => renderPreviewPage(pageBlocks, pageIndex))}
       </div>
       {thumbnailContainer && onThumbnailPageSelect ? createPortal(
         <div className="contents">

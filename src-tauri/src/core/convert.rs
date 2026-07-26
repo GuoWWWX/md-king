@@ -1262,14 +1262,19 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
             None
         };
     let border_width = read_table_number("borderWidth", 1.0);
-    let outer_border_width = if table
+    // 外边框加粗必须作用在读取之后：四向宽度前端总会写入合法值，
+    // 把加粗量当作 read_table_number 的 default 会让这个开关永远走不到。
+    let outer_border_strong = table
         .get("outerBorderStrong")
         .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        border_width + 0.5
-    } else {
-        border_width
+        .unwrap_or(false);
+    let outer_border_width = |key: &str| {
+        let width = read_table_number(key, border_width);
+        if outer_border_strong && width > 0.0 {
+            width + 0.5
+        } else {
+            width
+        }
     };
 
     Some(TableStyleConfig {
@@ -1280,10 +1285,10 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
         border_style: read_style_string(table, "borderStyle", "solid"),
         border_color: read_style_color(table, "borderColor", "CBD5E1"),
         border_width,
-        border_top_width: read_table_number("borderTopWidth", outer_border_width),
-        border_right_width: read_table_number("borderRightWidth", outer_border_width),
-        border_bottom_width: read_table_number("borderBottomWidth", outer_border_width),
-        border_left_width: read_table_number("borderLeftWidth", outer_border_width),
+        border_top_width: outer_border_width("borderTopWidth"),
+        border_right_width: outer_border_width("borderRightWidth"),
+        border_bottom_width: outer_border_width("borderBottomWidth"),
+        border_left_width: outer_border_width("borderLeftWidth"),
         show_inner_vertical_border: table
             .get("showInnerVerticalBorder")
             .and_then(Value::as_bool)
@@ -1413,6 +1418,13 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
     let styles = config.get("styles")?;
     let mut mapped_styles = HashMap::new();
 
+    // 这几项在界面上没有独立入口，历史配置里可能整体缺失、也可能只写了一部分字段。
+    // 直接 or_else 只能兜住「整体缺失」，残缺对象会让没写到的字段静默落回 Rust 默认值，
+    // 所以这里改成字段级合并：先取基准样式，再用自身已有的字段覆盖。
+    let body_text = merge_style_value(styles.get("normal"), styles.get("body-text"));
+    let bullet_list = merge_style_value(styles.get("normal"), styles.get("bullet-list"));
+    let numbered_list = merge_style_value(styles.get("normal"), styles.get("numbered-list"));
+
     for (style_id, style) in [
         ("title", styles.get("title")),
         ("heading-1", styles.get("heading-1")),
@@ -1422,10 +1434,7 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
         ("heading-5", styles.get("heading-5")),
         ("heading-6", styles.get("heading-6")),
         ("normal", styles.get("normal")),
-        (
-            "body-text",
-            styles.get("body-text").or_else(|| styles.get("normal")),
-        ),
+        ("body-text", body_text.as_ref()),
         ("caption", styles.get("caption")),
         (
             "table-caption",
@@ -1433,14 +1442,8 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
                 .get("table-caption")
                 .or_else(|| styles.get("caption")),
         ),
-        (
-            "bullet-list",
-            styles.get("bullet-list").or_else(|| styles.get("normal")),
-        ),
-        (
-            "numbered-list",
-            styles.get("numbered-list").or_else(|| styles.get("normal")),
-        ),
+        ("bullet-list", bullet_list.as_ref()),
+        ("numbered-list", numbered_list.as_ref()),
         ("nested-list", styles.get("nested-list")),
     ] {
         if let Some(style) = style {
@@ -1466,6 +1469,26 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
             table_caption,
         },
     )
+}
+
+/// 用 `base` 作为基准、`override_value` 的已有字段逐个覆盖，产出一份完整的样式对象。
+/// 任一侧缺失时退化为另一侧；两侧都没有则返回 None。
+fn merge_style_value(base: Option<&Value>, override_value: Option<&Value>) -> Option<Value> {
+    match (base.and_then(Value::as_object), override_value) {
+        (Some(base_map), Some(override_value)) => match override_value.as_object() {
+            Some(override_map) => {
+                let mut merged = base_map.clone();
+                for (key, value) in override_map {
+                    merged.insert(key.clone(), value.clone());
+                }
+                Some(Value::Object(merged))
+            }
+            None => Some(override_value.clone()),
+        },
+        (Some(base_map), None) => Some(Value::Object(base_map.clone())),
+        (None, Some(override_value)) => Some(override_value.clone()),
+        (None, None) => None,
+    }
 }
 
 fn caption_style_config_from_value(style_id: &str, style: &Value) -> CaptionStyleConfig {
@@ -2500,22 +2523,17 @@ fn normalize_document_xml(
 ) -> String {
     let xml = force_table_width_percent(xml);
     let xml = if markdown_features.horizontal_rule {
-        normalize_horizontal_rule_paragraphs(
-            &xml,
-            block_style.map(|style| &style.horizontal_rule),
-        )
+        normalize_horizontal_rule_paragraphs(&xml, block_style.map(|style| &style.horizontal_rule))
     } else {
         remove_horizontal_rule_paragraphs(&xml)
     };
-    let active_table_style = table_style
-        .cloned()
-        .or_else(|| {
-            apply_default_table_style.then(|| {
-                // A built-in template has no saved style config yet. In that case,
-                // retain the document's actual printable width instead of assuming A4.
-                default_table_style_config(document_content_width_twips(&xml))
-            })
-        });
+    let active_table_style = table_style.cloned().or_else(|| {
+        apply_default_table_style.then(|| {
+            // A built-in template has no saved style config yet. In that case,
+            // retain the document's actual printable width instead of assuming A4.
+            default_table_style_config(document_content_width_twips(&xml))
+        })
+    });
     let xml = if let Some(table_style) = active_table_style.as_ref() {
         normalize_table_cells(&xml, table_style)
     } else {
@@ -3247,7 +3265,7 @@ fn field_xml(instruction: &str) -> String {
 }
 
 fn footer_run_style_xml() -> &'static str {
-    r#"<w:color w:val="94A3B8" /><w:sz w:val="18" /><w:szCs w:val="18" />"#
+    r#"<w:color w:val="000000" /><w:sz w:val="18" /><w:szCs w:val="18" />"#
 }
 
 fn escape_xml_text(value: &str) -> String {
@@ -4858,7 +4876,8 @@ fn normalize_heading_paragraph(
 }
 
 fn replace_paragraph_style_id(paragraph_xml: &str, style_id: &str) -> String {
-    let style = Regex::new(r#"<w:pStyle\s+w:val="[^"]+"\s*/>"#).expect("valid paragraph style regex");
+    let style =
+        Regex::new(r#"<w:pStyle\s+w:val="[^"]+"\s*/>"#).expect("valid paragraph style regex");
     style
         .replace(paragraph_xml, format!(r#"<w:pStyle w:val="{style_id}" />"#))
         .to_string()
@@ -5087,12 +5106,17 @@ fn border_xml(style: &str, width: f64, color: &str) -> String {
 }
 
 fn border_xml_with_space(style: &str, width: f64, color: &str, space: u32) -> String {
-    let value = match style.trim() {
-        "dashed" => "dashed",
-        "dotted" => "dotted",
-        "double" => "double",
-        "none" => "nil",
-        _ => "single",
+    // 宽度 <= 0 表示用户想要「无边框」，此前 width.max(0.5) 会把 0 抬成半磅细线。
+    let value = if width <= 0.0 {
+        "nil"
+    } else {
+        match style.trim() {
+            "dashed" => "dashed",
+            "dotted" => "dotted",
+            "double" => "double",
+            "none" => "nil",
+            _ => "single",
+        }
     };
     let size = if value == "nil" {
         0
@@ -5508,8 +5532,7 @@ mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
-        create_heading_numbering_xml,
-        default_heading_mappings, default_markdown_feature_config,
+        create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_report_heading_numbering_config, document_style_config_from_value,
         footer_page_number_xml, has_supported_text_extension, heading_numbering_config_from_value,
         image_style_config_from_value, mark_task_list_paragraphs,
@@ -6437,6 +6460,7 @@ mod tests {
         let output = footer_page_number_xml("plain-total");
 
         assert!(output.contains("PAGE"));
+        assert!(output.contains(r#"<w:color w:val="000000" />"#));
         assert!(!output.contains("NUMPAGES"));
         assert!(!output.contains("<w:t> 共 </w:t>"));
         assert!(!output.contains("<w:t> / </w:t>"));
@@ -6586,7 +6610,9 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
+        assert!(output.contains(
+            r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#
+        ));
         assert!(output.contains(r#"<w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="2" /><w:numId w:val="9100" />"#));
@@ -6936,8 +6962,12 @@ mod tests {
         );
 
         assert!(output.contains(r#"<w:pStyle w:val="Title" /></w:pPr><w:r><w:t>项目报告</w:t>"#));
-        assert!(output.contains(r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
-        assert!(output.contains(r#"<w:pStyle w:val="Heading2" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
+        assert!(output.contains(
+            r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#
+        ));
+        assert!(output.contains(
+            r#"<w:pStyle w:val="Heading2" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="9100" />"#
+        ));
         assert!(output.contains("<w:t>项目概览</w:t>"));
         assert!(output.contains("<w:t>核心结论</w:t>"));
         assert!(!output.contains("<w:t>1. 项目概览</w:t>"));

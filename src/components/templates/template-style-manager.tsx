@@ -23,6 +23,10 @@ type TemplateStyleManagerProps = {
   open?: boolean;
   template?: Template;
   embedded?: boolean;
+  initialTab?: "info" | "styles" | "page" | "mapping";
+  previewMarkdown?: string;
+  previewMarkdownSourcePath?: string;
+  closeLabel?: string;
   groups?: string[];
   onDirtyChange?: (dirty: boolean) => void;
   onOpenChange?: (open: boolean) => void;
@@ -35,7 +39,7 @@ const editorTabs = [
   { id: "styles", label: "样式设计" },
   { id: "page", label: "页面设置" },
   { id: "mapping", label: "Markdown 规则" },
-];
+] as const;
 
 const markdownMappingStyleIds: Record<string, string> = {
   "Heading 1": "heading-1",
@@ -243,9 +247,13 @@ const paperSizeOptions: Array<{ value: PageSettingsDraft["paperSize"]; label: st
   { value: "Tabloid", label: "Tabloid", description: "11 x 17 in" },
 ];
 
+// 类型里还有 page-total / plain-total，但两端实现都不输出 NUMPAGES
+// （见 convert.rs 的 renders_plain_page_number_without_total_pages 测试），
+// 与 page / plain 完全等价，暴露出来只会让用户以为能显示总页数。
 const footerPageNumberFormats: Array<{ value: PageSettingsDraft["footerPageNumberFormat"]; label: string }> = [
   { value: "page", label: "第 1 页" },
   { value: "plain", label: "1" },
+  { value: "dash", label: "- 1 -" },
   { value: "none", label: "不显示页码" },
 ];
 
@@ -273,8 +281,8 @@ function headingLevelFromStyleId(styleId: string) {
   return Number(styleId.replace("heading-", "")) || 2;
 }
 
-export function TemplateStyleManager({ open = true, template, embedded = false, groups = [], onDirtyChange, onOpenChange, onRequestClose, onSaveTemplate }: TemplateStyleManagerProps) {
-  const [activeTab, setActiveTab] = useState("info");
+export function TemplateStyleManager({ open = true, template, embedded = false, initialTab = "info", previewMarkdown, previewMarkdownSourcePath, closeLabel, groups = [], onDirtyChange, onOpenChange, onRequestClose, onSaveTemplate }: TemplateStyleManagerProps) {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [query, setQuery] = useState("");
   const [activeStyleId, setActiveStyleId] = useState("heading-2");
   const [styleConfig, setStyleConfig] = useState<TemplateStyleConfig>(() => createDefaultTemplateStyleConfig(template?.id ?? "default-report"));
@@ -343,8 +351,14 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
 
   useEffect(() => {
     if (!open) return;
+    // 只在打开或切换模板时回到初始 tab。保存会刷新 template.updatedAt，
+    // 若把 setActiveTab 留在下面那个 effect 里，保存后界面会突然跳回第一个 tab。
+    setActiveTab(initialTab);
+  }, [initialTab, open, template?.id]);
+
+  useEffect(() => {
+    if (!open) return;
     const templateId = template?.id ?? "default-report";
-    setActiveTab("info");
     setTemplateName(template?.name ?? "");
     setTemplateCategory(template?.tags[0] ?? (template?.isBuiltIn ? "系统" : "未分组"));
     setTemplateTagsText((template?.tags ?? []).slice(1).join(" / "));
@@ -360,6 +374,8 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
         setSavedConfig(nextConfig);
       })
       .catch((error) => {
+        // 快速切换模板时晚到的失败响应不能覆盖已加载好的配置，否则用户再点保存会写坏当前模板。
+        if (cancelled) return;
         const fallback = createDefaultTemplateStyleConfig(templateId);
         setStyleConfig(fallback);
         setSavedConfig(fallback);
@@ -372,7 +388,11 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
     return () => {
       cancelled = true;
     };
-  }, [open, template?.id, template?.updatedAt]);
+    // 刻意不依赖 template.updatedAt：保存基础信息会刷新它，
+    // 触发的这次重新加载会与紧随其后的样式保存竞态，把刚写入的草稿覆盖回旧值。
+    // 需要重新拉取配置的场景只有「打开」和「换模板」两种。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, template?.id]);
 
   function updateDraft<K extends keyof StyleDraft>(key: K, value: StyleDraft[K]) {
     setStyleConfig((current) => ({
@@ -586,7 +606,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
             </div>
             <SoftActionButton className="h-10 shrink-0 rounded-full border-slate-200 bg-white text-slate-500 hover:text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50" onClick={requestCloseEditor}>
               {embedded ? <ArrowLeft className="size-4" /> : <X className="size-4" />}
-              {embedded ? "返回模板中心" : "关闭"}
+              {closeLabel ?? (embedded ? "返回模板中心" : "关闭")}
             </SoftActionButton>
           </div>
         </header>
@@ -645,7 +665,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
               ) : (
                 <StyleProperties selectedStyle={selectedStyle} setActiveStyleId={setActiveStyleId} draft={currentDraft} bodyDraft={styleConfig.styles.normal ?? createDefaultStyleDraft("normal")} markdownFeatures={styleConfig.markdownFeatures} markdownRules={styleConfig.markdownRules} activeListLevel={activeListLevel} setActiveListLevel={setActiveListLevel} updateDraft={updateDraft} patchDraft={patchDraft} patchMarkdownFeatures={patchMarkdownFeatures} isLoading={isLoading} />
               )}
-              <PreviewColumn selectedStyle={isDocumentStructureSelection ? undefined : selectedStyle} styleConfig={styleConfig} zoom={zoom} setZoom={setZoom} />
+              <PreviewColumn selectedStyle={isDocumentStructureSelection ? undefined : selectedStyle} styleConfig={styleConfig} zoom={zoom} setZoom={setZoom} markdown={previewMarkdown} markdownSourcePath={previewMarkdownSourcePath} />
             </div>
           ) : null}
           {activeTab === "page" ? <TabScrollArea><PageSettingsPanel pageSettings={styleConfig.pageSettings} patchPageSettings={patchPageSettings} /></TabScrollArea> : null}
@@ -1488,7 +1508,7 @@ function formatPaperPreviewLabel(pageSettings: PageSettingsDraft) {
   return `${paper?.label ?? pageSettings.paperSize} · ${orientation}`;
 }
 
-function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selectedStyle?: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void }) {
+function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, markdown, markdownSourcePath }: { selectedStyle?: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void; markdown?: string; markdownSourcePath?: string }) {
   function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
     if (!event.ctrlKey) return;
     event.preventDefault();
@@ -1507,7 +1527,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom }: { selected
         </div>
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
-        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} badgeText={selectedStyle ? `当前：${selectedStyle.displayName}` : "文档结构预览"} interactiveViewport viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
+        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} markdown={markdown} markdownSourcePath={markdownSourcePath} paginate={Boolean(markdown?.trim())} showTocPage badgeText={selectedStyle ? `当前：${selectedStyle.displayName}` : "文档结构预览"} interactiveViewport viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
       </div>
     </aside>
   );

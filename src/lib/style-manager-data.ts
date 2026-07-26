@@ -688,6 +688,9 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
 
 export function createDefaultTemplateStyleConfig(templateId: string): TemplateStyleConfig {
   const styles = Object.fromEntries(styleNodes.map((node) => [node.id, createDefaultStyleDraft(node.id)]));
+  // body-text 没有独立的样式节点（界面上不单独暴露），但导出侧会按 Word 的 BodyText 样式读取它，
+  // 这里必须先建出完整草稿，否则后面的 { ...styles["body-text"] } 会展开 undefined，产出残缺对象。
+  styles["body-text"] = createDefaultStyleDraft("body-text");
   if (templateId === "default-report") {
     styles.title = {
       ...styles.title,
@@ -699,17 +702,6 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     };
     styles.normal = {
       ...styles.normal,
-      chineseFont: "宋体",
-      latinFont: "Times New Roman",
-      fontSize: 12,
-      lineHeight: "1.25",
-      beforeSpacing: 0,
-      afterSpacing: 0,
-      firstLineIndent: 2,
-      color: "#111827",
-    };
-    styles["body-text"] = {
-      ...styles["body-text"],
       chineseFont: "宋体",
       latinFont: "Times New Roman",
       fontSize: 12,
@@ -794,6 +786,10 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles["source-code"] = { ...styles["source-code"], fontSize: 9, codeBlockPreset: "terminal", backgroundColor: "#0F172A", color: "#E2E8F0", codeBorderColor: "#334155", codeBorderRadius: 0, codePaddingX: 14, codePaddingY: 12 };
     styles.table = { ...styles.table, tablePreset: "grid", tableLayout: "fixed", rowStripe: false, borderColor: "#64748B", headerBackgroundColor: "#F1F5F9", headerBorderColor: "#64748B", bodyBorderColor: "#64748B" };
   }
+
+  // body-text 不在 styleNodes 中（UI 不单独编辑），必须从 normal 派生出完整草稿，
+  // 否则导出侧读到残缺对象会静默回退到 Rust 硬编码默认值。
+  styles["body-text"] = { ...styles.normal, styleId: "body-text" };
 
   styles["bullet-list"] = inheritListTextFromBody(styles["bullet-list"], styles.normal);
   styles["numbered-list"] = inheritListTextFromBody(styles["numbered-list"], styles.normal);
