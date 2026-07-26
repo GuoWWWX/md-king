@@ -49,6 +49,12 @@ export function ConvertPage() {
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
   const [markdown, setMarkdown] = useState("");
   const [markdownSourcePath, setMarkdownSourcePath] = useState<string>();
+  // 只有「外部灌入新文档」才递增：打开文件、粘贴、导入都算，用户逐字输入不算。
+  // 编辑器靠它决定何时做全量替换——每次内容变化都替换会打断输入、丢光标。
+  const [documentRevision, setDocumentRevision] = useState(0);
+  const documentKey = `${markdownSourcePath ?? "untitled"}#${documentRevision}`;
+  const isDark = (appConfig?.themeMode ?? "light") === "dark"
+    || ((appConfig?.themeMode ?? "light") === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const autoOutputName = useMemo(() => buildDocxOutputName(markdown), [markdown]);
   const [outputNameDraft, setOutputNameDraft] = useState(() => buildDocxOutputName(""));
   const [outputNameEdited, setOutputNameEdited] = useState(false);
@@ -103,6 +109,7 @@ export function ConvertPage() {
         if (cancelled) return;
         clearPendingImportPaths();
         setMarkdown(text);
+        setDocumentRevision((value) => value + 1);
         setMarkdownSourcePath(path);
         setMode("markdown");
         toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
@@ -145,6 +152,7 @@ export function ConvertPage() {
   useEffect(() => {
     registerVaultContentSink(({ absolutePath, content }) => {
       setMarkdown(content);
+      setDocumentRevision((value) => value + 1);
       setMarkdownSourcePath(absolutePath);
       setMode("markdown");
       setOutputNameEdited(false);
@@ -322,6 +330,7 @@ export function ConvertPage() {
 
   function handleFileTextLoad(text: string, file: File) {
     setMarkdown(text);
+    setDocumentRevision((value) => value + 1);
     setMarkdownSourcePath(undefined);
     setMode("markdown");
     toast.success(`已载入文件：${file.name}`);
@@ -333,6 +342,7 @@ export function ConvertPage() {
       if (!path) return;
       const text = await readMarkdownFileFromPath(path);
       setMarkdown(text);
+      setDocumentRevision((value) => value + 1);
       setMarkdownSourcePath(path);
       setMode("markdown");
       toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
@@ -349,6 +359,7 @@ export function ConvertPage() {
     try {
       const text = await navigator.clipboard.readText();
       setMarkdown(text);
+      setDocumentRevision((value) => value + 1);
       setMarkdownSourcePath(undefined);
       setMode("markdown");
       toast.success(text.trim() ? "已从剪贴板读取到编辑区" : "剪贴板为空，已清空编辑区");
@@ -682,7 +693,7 @@ export function ConvertPage() {
         style={{ gridTemplateColumns: `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
-          <ConversionInputCard mode={mode} markdown={markdown} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
+          <ConversionInputCard mode={mode} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} />
         </div>
 
         <div

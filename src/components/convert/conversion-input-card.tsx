@@ -1,70 +1,44 @@
-import { Bold, ChevronDown, ClipboardPaste, Code2, FileText, Image, Italic, Link, List, ListOrdered, Maximize2, Quote, Table2, UploadCloud, type LucideIcon } from "lucide-react";
-import { type ChangeEvent, type DragEvent, type ReactNode, useRef, useState } from "react";
+import { ClipboardPaste, FileText, Maximize2, UploadCloud } from "lucide-react";
+import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipButton, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { EditorToolbar } from "@/components/editor/editor-toolbar";
+import { LiveMarkdownEditor, type LiveMarkdownEditorHandle } from "@/components/editor/live-markdown-editor";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 
 type ConversionInputCardProps = {
   markdown: string;
+  /// 换文档时变化的 key：内容变化不触发编辑器重载，只有它变了才做全量替换。
+  documentKey: string;
   mode?: "markdown" | "file";
   disabled?: boolean;
+  isDark?: boolean;
   onChange: (value: string) => void;
   onFileTextLoad: (text: string, file: File) => void;
   onNativeFileSelect?: () => void | Promise<void>;
   onBatchSelect?: () => void | Promise<void>;
   onReadClipboard: () => void | Promise<void>;
+  onRequestSave?: () => void;
 };
 
-type ToolbarAction = "bold" | "italic" | "code" | "quote" | "link" | "image" | "table";
-type ListKind = "bullet" | "ordered" | "task";
-
-const toolbarGroups: Array<{ label: string; items: Array<{ action: ToolbarAction; label: string; icon: LucideIcon }> }> = [
-  {
-    label: "格式",
-    items: [
-      { action: "bold", label: "加粗", icon: Bold },
-      { action: "italic", label: "斜体", icon: Italic },
-    ],
-  },
-  {
-    label: "结构",
-    items: [
-      { action: "quote", label: "引用块", icon: Quote },
-    ],
-  },
-  {
-    label: "插入",
-    items: [
-      { action: "link", label: "链接", icon: Link },
-      { action: "image", label: "图片", icon: Image },
-      { action: "table", label: "表格", icon: Table2 },
-    ],
-  },
-];
-
-const headingOptions = [
-  { level: 1, label: "一级标题" },
-  { level: 2, label: "二级标题" },
-  { level: 3, label: "三级标题" },
-  { level: 4, label: "四级标题" },
-  { level: 5, label: "五级标题" },
-  { level: 6, label: "六级标题" },
-] as const;
-
-const listOptions: Array<{ kind: ListKind; label: string; marker: string; icon: LucideIcon }> = [
-  { kind: "bullet", label: "无序列表", marker: "-", icon: List },
-  { kind: "ordered", label: "有序列表", marker: "1.", icon: ListOrdered },
-  { kind: "task", label: "任务列表", marker: "- [ ]", icon: List },
-];
-
-export function ConversionInputCard({ markdown, mode = "markdown", disabled = false, onChange, onFileTextLoad, onNativeFileSelect, onBatchSelect, onReadClipboard }: ConversionInputCardProps) {
+export function ConversionInputCard({
+  markdown,
+  documentKey,
+  mode = "markdown",
+  disabled = false,
+  isDark = false,
+  onChange,
+  onFileTextLoad,
+  onNativeFileSelect,
+  onBatchSelect,
+  onReadClipboard,
+  onRequestSave,
+}: ConversionInputCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<LiveMarkdownEditorHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -110,246 +84,79 @@ export function ConversionInputCard({ markdown, mode = "markdown", disabled = fa
     void loadMarkdownFile(files[0]);
   }
 
-  function replaceSelection(nextText: string, cursorOffset = nextText.length) {
-    const textarea = textareaRef.current;
-    if (!textarea || disabled) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const nextValue = `${markdown.slice(0, start)}${nextText}${markdown.slice(end)}`;
-    onChange(nextValue);
-    window.requestAnimationFrame(() => {
-      textarea.focus();
-      const cursor = start + cursorOffset;
-      textarea.setSelectionRange(cursor, cursor);
-    });
-  }
-
-  function wrapSelection(before: string, after = before, placeholder = "文本") {
-    const textarea = textareaRef.current;
-    if (!textarea || disabled) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = markdown.slice(start, end) || placeholder;
-    const nextText = `${before}${selected}${after}`;
-    replaceSelection(nextText, before.length + selected.length);
-  }
-
-  function insertLine(marker: string, placeholder: string) {
-    const textarea = textareaRef.current;
-    if (!textarea || disabled) return;
-
-    const lineStart = markdown.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
-    const prefix = textarea.selectionStart === lineStart ? "" : "\n";
-    const selected = markdown.slice(textarea.selectionStart, textarea.selectionEnd) || placeholder;
-    const nextText = `${prefix}${marker} ${selected}\n`;
-    replaceSelection(nextText, prefix.length + marker.length + 1 + selected.length);
-  }
-
-  function handleToolbarAction(action: ToolbarAction) {
-    if (disabled) return;
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const lineStart = markdown.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
-    const atLineStart = textarea.selectionStart === lineStart;
-    const prefix = atLineStart ? "" : "\n";
-
-    if (action === "bold") wrapSelection("**");
-    if (action === "italic") wrapSelection("*");
-    if (action === "code") wrapSelection("`");
-    if (action === "quote") replaceSelection(`${prefix}> 引用内容\n`, prefix.length + 2);
-    if (action === "link") replaceSelection("[链接文本](https://)", 6);
-    if (action === "image") replaceSelection("![图片说明](图片地址)", 7);
-    if (action === "table") replaceSelection(`${prefix}| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n`);
-  }
-
-  function handleHeading(level: number) {
-    insertLine("#".repeat(level), "标题");
-  }
-
-  function handleList(kind: ListKind) {
-    const option = listOptions.find((item) => item.kind === kind);
-    if (!option) return;
-    insertLine(option.marker, kind === "task" ? "待办事项" : "列表项");
-  }
-
-  function insertCodeBlock() {
-    const textarea = textareaRef.current;
-    if (!textarea || disabled) return;
-
-    const lineStart = markdown.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
-    const prefix = textarea.selectionStart === lineStart ? "" : "\n";
-    const selected = markdown.slice(textarea.selectionStart, textarea.selectionEnd) || "代码";
-    const nextText = `${prefix}\`\`\`\n${selected}\n\`\`\`\n`;
-    replaceSelection(nextText, prefix.length + 4);
-  }
-
   const showMarkdownEditor = mode === "markdown";
-  const showDropZone = mode === "file";
-  const singlePane = showMarkdownEditor !== showDropZone;
 
   return (
     <section className={cn("mk-card flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] max-[760px]:min-h-[300px]", isExpanded ? "fixed inset-6 z-50 h-auto bg-white/95 shadow-2xl dark:bg-slate-950" : "h-full max-[1100px]:h-auto")}>
-      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-700/70 dark:bg-slate-950/35">
-        <div className="scrollbar-none flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden py-1 text-slate-700 dark:text-slate-300">
-          {showMarkdownEditor ? (
-            <>
-              <ToolbarMenuButton
-                label="标题级别"
-                triggerText="H"
-                disabled={disabled}
-              >
-                <DropdownMenuLabel>标题级别</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {headingOptions.map(({ level, label }) => (
-                  <DropdownMenuItem key={level} onSelect={() => handleHeading(level)}>
-                    <span className="w-7 font-mono text-xs text-slate-400 dark:text-zinc-500">H{level}</span>
-                    {label}
-                  </DropdownMenuItem>
-                ))}
-              </ToolbarMenuButton>
-              <ToolbarMenuButton
-                label="列表样式"
-                icon={List}
-                disabled={disabled}
-              >
-                <DropdownMenuLabel>列表样式</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {listOptions.map(({ kind, label, marker, icon: Icon }) => (
-                  <DropdownMenuItem key={kind} onSelect={() => handleList(kind)}>
-                    <Icon className="size-3.5 text-slate-500 dark:text-zinc-400" />
-                    <span className="min-w-0 flex-1">{label}</span>
-                    <span className="font-mono text-xs text-slate-400 dark:text-zinc-500">{marker}</span>
-                  </DropdownMenuItem>
-                ))}
-              </ToolbarMenuButton>
-              <ToolbarMenuButton
-                label="代码格式"
-                icon={Code2}
-                disabled={disabled}
-              >
-                <DropdownMenuLabel>代码格式</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => handleToolbarAction("code")}>
-                  <Code2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-                  行内代码
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={insertCodeBlock}>
-                  <Code2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-                  代码块
-                </DropdownMenuItem>
-              </ToolbarMenuButton>
-              <ToolbarMenuSeparator />
-              {toolbarGroups.map((group, groupIndex) => (
-                <div key={group.label} className="flex shrink-0 items-center gap-1" aria-label={group.label}>
-                  {groupIndex > 0 ? <ToolbarMenuSeparator /> : null}
-                  {group.items.map(({ action, label, icon: Icon }) => (
-                    <TooltipButton
-                      key={action}
-                      type="button"
-                      className="mk-editor-tool-button flex size-8 items-center justify-center rounded-[8px] border border-transparent text-slate-700 transition hover:-translate-y-px hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
-                      disabled={disabled || !showMarkdownEditor}
-                      tooltip={label}
-                      tooltipSide="bottom"
-                      aria-label={label}
-                      onClick={() => handleToolbarAction(action)}
-                    >
-                      <Icon className="size-3.5" />
-                    </TooltipButton>
-                  ))}
-                </div>
-              ))}
-            </>
-          ) : <div className="h-8" />}
-        </div>
-        <TooltipButton type="button" className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" disabled={disabled} aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"} tooltip={isExpanded ? "退出放大" : "放大编辑区"} tooltipSide="bottom" onClick={() => setIsExpanded((value) => !value)}>
-          <Maximize2 className="size-3.5" />
-        </TooltipButton>
-      </div>
-
-      <div className={cn("grid min-h-0 flex-1 gap-3", singlePane ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_280px] max-[1180px]:grid-cols-1")}>
-        {showMarkdownEditor ? (
-        <div className="min-h-0 max-[1100px]:min-h-[360px] max-[760px]:min-h-[256px]">
-          <Textarea
-            ref={textareaRef}
-            id="conversion-markdown-editor"
-            name="markdown"
-            aria-label="Markdown 输入内容"
-            className="h-full min-h-[300px] resize-none rounded-none border-0 bg-transparent p-5 font-mono text-xs leading-6 text-slate-800 shadow-none focus-visible:ring-0 max-[760px]:min-h-[240px] dark:text-slate-200 dark:placeholder:text-slate-500"
-            value={markdown}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder={"# 文档标题\n\n把需要转换的 Markdown 粘贴到这里..."}
+      <EditorToolbar
+        getView={() => editorRef.current?.getView() ?? null}
+        disabled={disabled || !showMarkdownEditor}
+        className={showMarkdownEditor ? undefined : "justify-end"}
+        trailing={
+          <TooltipButton
+            type="button"
+            className="mk-editor-tool-button flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-px hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:translate-y-0 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
             disabled={disabled}
-          />
-        </div>
-        ) : null}
+            aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"}
+            tooltip={isExpanded ? "退出放大" : "放大编辑区"}
+            tooltipSide="bottom"
+            onClick={() => setIsExpanded((value) => !value)}
+          >
+            <Maximize2 className="size-3.5" />
+          </TooltipButton>
+        }
+      />
 
-        {showDropZone ? (
-        <div
-          className={cn(
-            "mk-drop-zone flex min-h-[300px] flex-col items-center justify-center rounded-[12px] p-5 text-center transition-all",
-            !singlePane && "max-[1180px]:hidden",
-            isDragging && "border-blue-500 bg-blue-50",
-          )}
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-        >
-          <input ref={inputRef} type="file" accept={markdownFileAccept} className="hidden" onChange={handleInputChange} disabled={disabled} />
-          <div className="mk-file-cube mb-5 flex size-20 items-center justify-center rounded-[16px] text-white">
-            <FileText className="size-10" />
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3">
+        {showMarkdownEditor ? (
+          <div className="min-h-0 max-[1100px]:min-h-[360px] max-[760px]:min-h-[256px]">
+            <LiveMarkdownEditor
+              ref={editorRef}
+              documentKey={documentKey}
+              initialContent={markdown}
+              readOnly={disabled}
+              isDark={isDark}
+              placeholder={"# 文档标题\n\n把需要转换的 Markdown 粘贴到这里..."}
+              onDocChanged={onChange}
+              onRequestSave={onRequestSave}
+              className="h-full"
+            />
           </div>
-          <h4 className="text-lg font-black text-blue-700">导入 Markdown / TXT</h4>
-          <p className="mt-2 max-w-[250px] text-xs leading-5 text-blue-900/55">选择单个文本文件可载入编辑区；批量导入后可勾选需要转换的文件。</p>
-          <div className="mt-5 flex flex-col gap-2">
-            <Button type="button" onClick={() => onNativeFileSelect ? void Promise.resolve(onNativeFileSelect()) : inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">
-              <UploadCloud className="size-4" />
-              选择文件
-            </Button>
-            {onBatchSelect ? (
-              <Button type="button" variant="outline" className="rounded-[10px] border-white/70 bg-white/70 text-blue-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-700" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
+        ) : (
+          <div
+            className={cn(
+              "mk-drop-zone flex min-h-[300px] flex-col items-center justify-center rounded-[12px] p-5 text-center transition-all",
+              isDragging && "border-blue-500 bg-blue-50",
+            )}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+          >
+            <input ref={inputRef} type="file" accept={markdownFileAccept} className="hidden" onChange={handleInputChange} disabled={disabled} />
+            <div className="mk-file-cube mb-5 flex size-20 items-center justify-center rounded-[16px] text-white">
+              <FileText className="size-10" />
+            </div>
+            <h4 className="text-lg font-black text-blue-700">导入 Markdown / TXT</h4>
+            <p className="mt-2 max-w-[250px] text-xs leading-5 text-blue-900/55">选择单个文本文件可载入编辑区；批量导入后可勾选需要转换的文件。</p>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button type="button" onClick={() => onNativeFileSelect ? void Promise.resolve(onNativeFileSelect()) : inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">
                 <UploadCloud className="size-4" />
-                批量导入
+                选择文件
               </Button>
-            ) : null}
-            <Button type="button" variant="ghost" className="rounded-[10px] text-blue-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:text-white" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
-              <ClipboardPaste className="size-4" />
-              粘贴剪贴板
-            </Button>
+              {onBatchSelect ? (
+                <Button type="button" variant="outline" className="rounded-[10px] border-white/70 bg-white/70 text-blue-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-700" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
+                  <UploadCloud className="size-4" />
+                  批量导入
+                </Button>
+              ) : null}
+              <Button type="button" variant="ghost" className="rounded-[10px] text-blue-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:text-white" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
+                <ClipboardPaste className="size-4" />
+                粘贴剪贴板
+              </Button>
+            </div>
           </div>
-        </div>
-        ) : null}
+        )}
       </div>
     </section>
-  );
-}
-
-function ToolbarMenuSeparator() {
-  return <span className="mx-1 h-5 w-px shrink-0 bg-slate-200 dark:bg-zinc-700" aria-hidden="true" />;
-}
-
-function ToolbarMenuButton({ label, icon: Icon, triggerText, disabled = false, children }: { label: string; icon?: LucideIcon; triggerText?: string; disabled?: boolean; children: ReactNode }) {
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="mk-editor-tool-button flex h-8 items-center gap-1 rounded-[8px] border border-transparent px-2 text-slate-700 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
-              disabled={disabled}
-              aria-label={label}
-            >
-              {triggerText ? <span className="text-sm font-bold leading-none">{triggerText}</span> : Icon ? <Icon className="size-3.5" /> : null}
-              <ChevronDown className="size-3 opacity-65" />
-            </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="start" className="min-w-36 p-1.5">
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
