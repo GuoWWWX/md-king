@@ -1,8 +1,6 @@
-import { ClipboardPaste, FilePlus2, FileText, FileType2, Plus, UploadCloud, X } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { FileText, FileType2, X } from "lucide-react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { cn } from "@/lib/utils";
 
@@ -18,14 +16,25 @@ type DocumentTabBarProps = {
   className?: string;
 };
 
-export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onPasteClipboard, onConfirmCloseScratch, trailing, className }: DocumentTabBarProps) {
+export function DocumentTabBar({ onConfirmCloseScratch, trailing, className }: DocumentTabBarProps) {
   const tabs = useDocumentTabsStore((state) => state.tabs);
   const activeTabId = useDocumentTabsStore((state) => state.activeTabId);
   const setActiveTab = useDocumentTabsStore((state) => state.setActiveTab);
   const closeTab = useDocumentTabsStore((state) => state.closeTab);
   const closeOtherTabs = useDocumentTabsStore((state) => state.closeOtherTabs);
   const closeAllTabs = useDocumentTabsStore((state) => state.closeAllTabs);
+  const moveTab = useDocumentTabsStore((state) => state.moveTab);
   const listRef = useRef<HTMLDivElement>(null);
+  const tabDragRef = useRef<{
+    tabId?: string;
+    startX: number;
+    startScrollLeft: number;
+    moved: boolean;
+    hasTarget: boolean;
+    lastBeforeId?: string;
+  } | null>(null);
+  const suppressTabClickRef = useRef(false);
+  const [draggedTabId, setDraggedTabId] = useState<string>();
 
   // 切到被滚动条挡住的标签时把它带回视野，否则用键盘或程序化激活后
   // 用户看不到当前在哪个文档上。
@@ -51,9 +60,99 @@ export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onP
     void requestClose(tab);
   }
 
+  function handleTabListPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !listRef.current) return;
+    const target = event.target as HTMLElement;
+    const tab = target.closest<HTMLElement>("[data-tab-id]");
+    // 关闭按钮只处理关闭，不启动标签拖动；标签和空白区都由同一套 Pointer 逻辑处理。
+    if (target.closest("button")) return;
+    // 顶部标签位于桌面窗口标题栏，Tauri 在少数拖动场景会吞掉 pointerup 后的 click。
+    // 按下即激活与 VS Code 的标签行为一致，也确保随后开始拖拽时目标文档已经切换。
+    if (tab?.dataset.tabId) setActiveTab(tab.dataset.tabId);
+    tabDragRef.current = {
+      tabId: tab?.dataset.tabId,
+      startX: event.clientX,
+      startScrollLeft: listRef.current.scrollLeft,
+      moved: false,
+      hasTarget: false,
+    };
+    listRef.current.setPointerCapture(event.pointerId);
+  }
+
+  function handleTabListPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = tabDragRef.current;
+    if (!drag || !listRef.current) return;
+    const delta = event.clientX - drag.startX;
+    if (!drag.moved && Math.abs(delta) < 4) return;
+    drag.moved = true;
+    event.preventDefault();
+
+    if (!drag.tabId) {
+      listRef.current.scrollLeft = drag.startScrollLeft - delta;
+      return;
+    }
+
+    setDraggedTabId(drag.tabId);
+
+    // 拖到列表左右边缘时自动滚动，便于把标签移到当前可视区域之外。
+    const listRect = listRef.current.getBoundingClientRect();
+    const edgeDistance = 28;
+    if (event.clientX < listRect.left + edgeDistance) {
+      listRef.current.scrollLeft -= 12;
+    } else if (event.clientX > listRect.right - edgeDistance) {
+      listRef.current.scrollLeft += 12;
+    }
+
+    const tabNodes = Array.from(listRef.current.querySelectorAll<HTMLElement>("[data-tab-id]"))
+      .filter((node) => node.dataset.tabId !== drag.tabId);
+    const beforeId = tabNodes.find((node) => {
+      const rect = node.getBoundingClientRect();
+      return event.clientX < rect.left + rect.width / 2;
+    })?.dataset.tabId;
+
+    if (!drag.hasTarget || drag.lastBeforeId !== beforeId) {
+      drag.hasTarget = true;
+      drag.lastBeforeId = beforeId;
+      moveTab(drag.tabId, beforeId);
+    }
+  }
+
+  function finishTabListPointerDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = tabDragRef.current;
+    if (!drag) return;
+    if (drag.moved) {
+      // Pointer 拖动结束后浏览器会紧接着派发 click；只拦住这一次，
+      // 避免某些环境没有派发 click 时把下一次正常选标签也吞掉。
+      suppressTabClickRef.current = true;
+      window.setTimeout(() => {
+        suppressTabClickRef.current = false;
+      }, 0);
+    }
+    tabDragRef.current = null;
+    setDraggedTabId(undefined);
+    if (listRef.current?.hasPointerCapture(event.pointerId)) listRef.current.releasePointerCapture(event.pointerId);
+  }
+
+  function suppressClickAfterTabDrag(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!suppressTabClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressTabClickRef.current = false;
+  }
+
   return (
-    <div className={cn("flex h-10 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/70 dark:bg-zinc-900/80", className)}>
-      <div ref={listRef} className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden" role="tablist" aria-label="打开的文档">
+    <div className={cn("mk-document-tab-bar flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
+      <div
+        ref={listRef}
+        className="scrollbar-none flex min-w-0 flex-1 select-none cursor-grab items-center gap-1 overflow-x-auto overflow-y-hidden active:cursor-grabbing"
+        role="tablist"
+        aria-label="打开的文档"
+        onPointerDown={handleTabListPointerDown}
+        onPointerMove={handleTabListPointerMove}
+        onPointerUp={finishTabListPointerDrag}
+        onPointerCancel={finishTabListPointerDrag}
+        onClickCapture={suppressClickAfterTabDrag}
+      >
         {tabs.length === 0 ? (
           <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或新建一个</span>
         ) : (
@@ -62,6 +161,7 @@ export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onP
               key={tab.id}
               tab={tab}
               active={tab.id === activeTabId}
+              dragged={tab.id === draggedTabId}
               tabCount={tabs.length}
               onSelect={() => setActiveTab(tab.id)}
               onRequestClose={() => void requestClose(tab)}
@@ -75,43 +175,6 @@ export function DocumentTabBar({ onNewDocument, onImportFile, onBatchImport, onP
 
       {trailing}
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="size-7 shrink-0 rounded-[8px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            title="新建或导入文档"
-            tooltipSide="bottom"
-            aria-label="新建或导入文档"
-          >
-            <Plus className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-40 p-1.5">
-          <DropdownMenuItem onSelect={onNewDocument}>
-            <FilePlus2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-            新建文档
-          </DropdownMenuItem>
-          {onImportFile ? (
-            <DropdownMenuItem onSelect={() => void Promise.resolve(onImportFile())}>
-              <UploadCloud className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              导入文件
-            </DropdownMenuItem>
-          ) : null}
-          {onBatchImport ? (
-            <DropdownMenuItem onSelect={() => void Promise.resolve(onBatchImport())}>
-              <UploadCloud className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              批量导入
-            </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => void Promise.resolve(onPasteClipboard())}>
-            <ClipboardPaste className="size-3.5 text-slate-500 dark:text-zinc-400" />
-            粘贴剪贴板
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }
@@ -125,11 +188,12 @@ type DocumentTabItemProps = {
   onAuxClick: (event: ReactMouseEvent) => void;
   onCloseOthers: () => void;
   onCloseAll: () => void;
+  dragged: boolean;
 };
 
 const contextItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-[6px] px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
-function DocumentTabItem({ tab, active, tabCount, onSelect, onRequestClose, onAuxClick, onCloseOthers, onCloseAll }: DocumentTabItemProps) {
+function DocumentTabItem({ tab, active, tabCount, onSelect, onRequestClose, onAuxClick, onCloseOthers, onCloseAll, dragged }: DocumentTabItemProps) {
   const [hoveringClose, setHoveringClose] = useState(false);
   const Icon = tab.kind === "scratch" ? FileType2 : FileText;
   // 脏标记平时是个圆点，鼠标移到它上面才变成关闭叉——VS Code 的做法，
@@ -146,15 +210,17 @@ function DocumentTabItem({ tab, active, tabCount, onSelect, onRequestClose, onAu
           role="tab"
           aria-selected={active}
           tabIndex={0}
+          data-mk-context-menu
           title={tab.path ?? tab.title}
           className={cn(
-            "group flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
+            "mk-document-tab group flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
             active
-              ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-500/40 dark:bg-blue-500/16 dark:text-blue-100"
-              : "border-transparent text-slate-600 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800",
+              ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-zinc-600/80 dark:bg-zinc-700/76 dark:text-zinc-50"
+              : "border-transparent text-slate-600 hover:bg-slate-100 dark:border-zinc-700/45 dark:bg-zinc-800/72 dark:text-zinc-300 dark:hover:bg-zinc-700/80",
             // 临时文档没有落盘，用虚线边框提示它随时可能丢。
             tab.kind === "scratch" && "border-dashed",
             tab.kind === "scratch" && !active && "border-slate-300 dark:border-zinc-600",
+            dragged && "opacity-55",
           )}
           onClick={onSelect}
           onAuxClick={onAuxClick}

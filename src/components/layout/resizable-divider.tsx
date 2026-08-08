@@ -13,13 +13,32 @@ type ResizableDividerProps = {
   ariaLabel: string;
   /// 面板在分隔条之前（默认）时向右/下拖变大；面板在之后则方向相反。
   from?: "start" | "end";
+  /// 收起态仍保留命中区。拖过最小尺寸一小段才收起，反向拖过同样距离才恢复，
+  /// 既避免误触，也让一次连续拖拽能直接来回切换。
+  collapsed?: boolean;
+  collapseThreshold?: number;
+  onCollapsedChange?: (collapsed: boolean) => void;
   className?: string;
 };
 
+export const RESIZABLE_PANEL_COLLAPSE_THRESHOLD = 24;
+
 /// 抽取自 convert-page 里两处几乎一样的 pointer 拖拽逻辑。
-/// 监听挂在 window 而非元素上：拖快时指针会甩出这条 8px 宽的细条，
+/// 监听挂在 window 而非元素上：拖快时指针会甩出这条 6px 宽的细条，
 /// 只监听元素会掉帧、甚至丢掉 pointerup 导致拖拽状态卡住。
-export function ResizableDivider({ orientation = "vertical", size, min, max, onResize, ariaLabel, from = "start", className }: ResizableDividerProps) {
+export function ResizableDivider({
+  orientation = "vertical",
+  size,
+  min,
+  max,
+  onResize,
+  ariaLabel,
+  from = "start",
+  collapsed = false,
+  collapseThreshold = RESIZABLE_PANEL_COLLAPSE_THRESHOLD,
+  onCollapsedChange,
+  className,
+}: ResizableDividerProps) {
   const isDraggingRef = useRef(false);
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -28,7 +47,7 @@ export function ResizableDivider({ orientation = "vertical", size, min, max, onR
 
     const divider = event.currentTarget;
     const rect = divider.getBoundingClientRect();
-    const origin = orientation === "vertical"
+    let origin = orientation === "vertical"
       ? (from === "start" ? rect.left : rect.right)
       : (from === "start" ? rect.top : rect.bottom);
 
@@ -38,7 +57,8 @@ export function ResizableDivider({ orientation = "vertical", size, min, max, onR
       const siblingRect = sibling?.getBoundingClientRect();
       startSize = orientation === "vertical" ? (siblingRect?.width ?? min) : (siblingRect?.height ?? min);
     }
-    const baseSize = startSize;
+    let baseSize = collapsed ? min : startSize;
+    let collapsedDuringDrag = collapsed;
 
     isDraggingRef.current = true;
     divider.setPointerCapture(event.pointerId);
@@ -47,8 +67,32 @@ export function ResizableDivider({ orientation = "vertical", size, min, max, onR
 
     const move = (moveEvent: PointerEvent) => {
       if (!isDraggingRef.current) return;
-      const delta = orientation === "vertical" ? moveEvent.clientX - origin : moveEvent.clientY - origin;
+      const pointerPosition = orientation === "vertical" ? moveEvent.clientX : moveEvent.clientY;
+      const delta = pointerPosition - origin;
       const next = from === "start" ? baseSize + delta : baseSize - delta;
+
+      if (onCollapsedChange) {
+        if (!collapsedDuringDrag && next <= min - collapseThreshold) {
+          // 先写回最小值，工具栏直接展开时也保持预期尺寸。
+          onResize(min);
+          collapsedDuringDrag = true;
+          onCollapsedChange(true);
+          return;
+        }
+
+        if (collapsedDuringDrag && next >= min + collapseThreshold) {
+          // 恢复的一刻固定落在最小宽度；后续移动才继续放大，避免跳宽。
+          onResize(min);
+          collapsedDuringDrag = false;
+          origin = pointerPosition;
+          baseSize = min;
+          onCollapsedChange(false);
+          return;
+        }
+
+        if (collapsedDuringDrag) return;
+      }
+
       onResize(Math.min(max, Math.max(min, Math.round(next))));
     };
 
@@ -85,7 +129,7 @@ export function ResizableDivider({ orientation = "vertical", size, min, max, onR
       >
         <span
           className={cn(
-            "rounded-full bg-transparent transition group-hover:bg-blue-400 dark:group-hover:bg-blue-500",
+            "rounded-full bg-transparent transition",
             orientation === "vertical" ? "h-16 w-1 group-hover:h-24" : "h-1 w-16 group-hover:w-24",
           )}
         />

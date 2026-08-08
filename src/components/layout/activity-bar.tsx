@@ -1,4 +1,4 @@
-import { FileText, History, Info, LayoutTemplate, Monitor, Moon, PanelLeftOpen, Settings, ShieldCheck, Sun, type LucideIcon } from "lucide-react";
+import { FileText, History, Info, LayoutTemplate, Monitor, Moon, Settings, ShieldCheck, Sun, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -31,8 +31,6 @@ type ActivityBarProps = {
   themeMode?: ThemeMode;
   onNavigate: (page: string) => void;
   onToggleThemeMode?: () => void;
-  fileTreeVisible?: boolean;
-  onShowFileTree?: () => void;
 };
 
 export function ActivityBar({
@@ -41,13 +39,9 @@ export function ActivityBar({
   themeMode = "light",
   onNavigate,
   onToggleThemeMode,
-  fileTreeVisible = true,
-  onShowFileTree,
 }: ActivityBarProps) {
   const activeTheme = themeModes.find((item) => item.mode === themeMode) ?? themeModes[0];
   const ThemeIcon = activeTheme.icon;
-  // 折叠交互单一职责：只有转换页在用文件树，其他页面出现「展开」按钮纯属噪音。
-  const showExpandFileTree = !fileTreeVisible && activePage === "convert" && Boolean(onShowFileTree);
 
   return (
     <aside
@@ -82,19 +76,6 @@ export function ActivityBar({
       <div className="min-h-0 flex-1" />
 
       <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700">
-        {showExpandFileTree ? (
-          <Button
-            variant="outline"
-            className="mk-sidebar-icon-button size-9 shrink-0 justify-center rounded-[8px] px-0"
-            onClick={onShowFileTree}
-            title="展开文件树"
-            tooltipSide="right"
-            aria-label="展开文件树"
-          >
-            <PanelLeftOpen className="size-4" />
-          </Button>
-        ) : null}
-
         <Button
           variant="outline"
           className="mk-theme-cycle-button mk-sidebar-icon-button size-9 shrink-0 justify-center rounded-[8px] px-0"

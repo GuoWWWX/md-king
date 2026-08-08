@@ -239,6 +239,45 @@ export function renameVaultEntry(root: string, path: string, newName: string) {
   return delay(toEntry(nextPath, isDir));
 }
 
+export function moveVaultEntry(root: string, path: string, targetDir: string) {
+  if (isTauriEnvironment()) {
+    return invoke<VaultEntry>("move_vault_entry", { root, path, targetDir });
+  }
+
+  const isDir = mockDirs.has(path);
+  if (!isDir && !mockFiles.has(path)) return Promise.reject(vaultError("NOT_FOUND", "要移动的文件不存在"));
+  if (targetDir && !mockDirs.has(targetDir)) return Promise.reject(vaultError("NOT_FOUND", "目标文件夹不存在"));
+  if (isDir && targetDir && (targetDir === path || targetDir.startsWith(`${path}/`))) {
+    return Promise.reject(vaultError("INVALID_NAME", "不能将文件夹移动到自身或其子目录中"));
+  }
+
+  const nextPath = joinPath(targetDir, baseNameOf(path));
+  if (nextPath === path) return delay(toEntry(path, isDir));
+  if (mockPathExists(nextPath)) return Promise.reject(vaultError("EXISTS", "目标文件夹中已有同名文件或目录"));
+
+  if (isDir) {
+    const prefix = `${path}/`;
+    for (const dir of [...mockDirs]) {
+      if (dir === path || dir.startsWith(prefix)) {
+        mockDirs.delete(dir);
+        mockDirs.add(nextPath + dir.slice(path.length));
+      }
+    }
+    for (const [filePath, file] of [...mockFiles]) {
+      if (filePath.startsWith(prefix)) {
+        mockFiles.delete(filePath);
+        mockFiles.set(nextPath + filePath.slice(path.length), file);
+      }
+    }
+  } else {
+    const file = mockFiles.get(path);
+    mockFiles.delete(path);
+    mockFiles.set(nextPath, { content: file?.content ?? "", modifiedMs: Date.now() });
+  }
+
+  return delay(toEntry(nextPath, isDir));
+}
+
 export function deleteVaultEntry(root: string, path: string, recursive: boolean) {
   if (isTauriEnvironment()) {
     return invoke<void>("delete_vault_entry", { root, path, recursive });

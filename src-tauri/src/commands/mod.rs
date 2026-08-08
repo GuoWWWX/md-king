@@ -14,6 +14,6 @@ pub use template_commands::{
     reset_template_style_config, save_template_style_config, save_templates,
 };
 pub use vault_commands::{
-    create_vault_entry, delete_vault_entry, list_vault_entries, open_vault, read_vault_file,
-    rename_vault_entry, write_vault_file,
+    create_vault_entry, delete_vault_entry, list_vault_entries, move_vault_entry, open_vault,
+    read_vault_file, rename_vault_entry, write_vault_file,
 };

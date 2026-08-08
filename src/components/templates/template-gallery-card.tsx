@@ -1,4 +1,5 @@
 import { CheckSquare, Edit3, Star, Trash2 } from "lucide-react";
+import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,8 @@ import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { getTemplateCategory } from "@/lib/template-categories";
 import { cn } from "@/lib/utils";
 import type { Template, TemplateStyleConfig } from "@/types";
+
+const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
 type TemplateGalleryCardProps = {
   template: Template;
@@ -31,18 +34,21 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
   const visibleTags = template.isBuiltIn ? [] : template.tags.filter((tag) => tag !== category && tag !== "内置").slice(0, 4);
 
   return (
-    <AppSurface
-      as="article"
-      padding="sm"
-      radius="sm"
-      interactive
-      className={cn(
-        "mk-template-card group relative cursor-pointer overflow-hidden transition",
-        isPreviewed && "mk-template-card-previewed border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
-        isSelected && "bg-white/88 dark:bg-zinc-900/74",
-      )}
-      onClick={() => onPreview(template)}
-    >
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <AppSurface
+          as="article"
+          padding="sm"
+          radius="sm"
+          interactive
+          data-mk-context-menu
+          className={cn(
+            "mk-template-card group relative cursor-pointer overflow-hidden transition",
+            isPreviewed && "mk-template-card-previewed border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
+            isSelected && "bg-white/88 dark:bg-zinc-900/74",
+          )}
+          onClick={() => onPreview(template)}
+        >
       {isPreviewed ? (
         <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70 dark:border-blue-500/50" />
       ) : null}
@@ -128,6 +134,25 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
           </Button>
         </div>
       )}
-    </AppSurface>
+        </AppSurface>
+      </ContextMenu.Trigger>
+
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onPreview(template)}>预览模板</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onUse(template); }}>使用此模板</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onToggleSelect(template)}>选择模板</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSetDefault(template)} disabled={template.isDefault}>设为默认模板</ContextMenu.Item>
+          <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+          {template.isBuiltIn ? (
+            <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onStyleManager(template); }}>编辑样式</ContextMenu.Item>
+          ) : (
+            <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onEdit(template); }}>编辑模板信息</ContextMenu.Item>
+          )}
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onStyleManager(template); }}>打开样式管理器</ContextMenu.Item>
+          <ContextMenu.Item className={cn(contextMenuItemClass, "text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 dark:text-red-300 dark:data-[highlighted]:bg-red-500/12 dark:data-[highlighted]:text-red-200")} onSelect={() => onDelete(template)} disabled={template.isBuiltIn}>删除模板</ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }

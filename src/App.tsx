@@ -80,6 +80,16 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // 自定义 ContextMenu 仍会收到事件；这里只负责兜底屏蔽 WebView/浏览器原生菜单。
+    const preventNativeContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest("[data-mk-context-menu]")) event.preventDefault();
+    };
+    document.addEventListener("contextmenu", preventNativeContextMenu, true);
+    return () => document.removeEventListener("contextmenu", preventNativeContextMenu, true);
+  }, []);
+
+  useEffect(() => {
     Promise.allSettled([getAppStatus(), getAppConfig(), listTemplates(), listHistory(), checkPandoc()]).then((results) => {
       const [statusResult, configResult, templatesResult, historyResult, pandocResult] = results;
 

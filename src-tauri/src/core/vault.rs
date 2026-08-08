@@ -851,6 +851,55 @@ pub fn rename_entry(root: &Path, relative: &str, new_name: &str) -> Result<Vault
     entry_at(root, &target_relative)
 }
 
+/// 在同一个 vault 内移动文件或目录。移动目录时必须拒绝目标落在自身子树中，
+/// 否则 Windows 会报一个不直观的系统错误，其他平台还可能造成递归路径问题。
+pub fn move_entry(root: &Path, relative: &str, target_dir: &str) -> Result<VaultEntry, String> {
+    let source_relative = validate_relative_path(relative)?;
+    let target_dir_relative = if target_dir.trim().is_empty() {
+        None
+    } else {
+        Some(validate_relative_path(target_dir)?)
+    };
+    let source = resolve_in_vault(root, relative)?;
+    let source_meta = fs::metadata(&source).map_err(|error| io_error_message("移动", &error))?;
+    let destination_dir = match target_dir_relative.as_ref() {
+        Some(dir) => resolve_in_vault(root, &to_relative_string(dir))?,
+        None => root.to_path_buf(),
+    };
+    let destination_meta = fs::metadata(&destination_dir).map_err(|error| io_error_message("移动", &error))?;
+
+    if !destination_meta.is_dir() {
+        return Err(vault_err(CODE_NOT_FOUND, "目标不是文件夹。"));
+    }
+    if source_meta.is_dir() && target_dir_relative.as_ref().is_some_and(|dir| dir.starts_with(&source_relative)) {
+        return Err(vault_err(CODE_INVALID_NAME, "不能将文件夹移动到自身或其子目录中。"));
+    }
+
+    let source_name = source_relative
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| vault_err(CODE_INVALID_NAME, "路径中包含无法识别的字符。"))?;
+    let target_relative = target_dir_relative
+        .as_ref()
+        .map(|dir| format!("{}/{}", to_relative_string(dir), source_name))
+        .unwrap_or_else(|| source_name.to_string());
+    let target = resolve_in_vault(root, &target_relative)?;
+
+    if target == source {
+        return entry_at(root, relative);
+    }
+    if target.exists() {
+        return Err(vault_err(CODE_EXISTS, "目标文件夹中已有同名文件或目录。"));
+    }
+    if !source_meta.is_dir() {
+        ensure_allowed_file(&source)?;
+        ensure_allowed_file(&target)?;
+    }
+
+    fs::rename(&source, &target).map_err(|error| io_error_message("移动", &error))?;
+    entry_at(root, &target_relative)
+}
+
 pub fn delete_entry(root: &Path, relative: &str, recursive: bool) -> Result<(), String> {
     let absolute = resolve_in_vault(root, relative)?;
     let meta = fs::metadata(&absolute).map_err(|error| io_error_message("删除", &error))?;
@@ -1388,6 +1437,28 @@ mod tests {
         assert!(rename_entry(scratch.vault(), "note.md", "CON").is_err());
     }
 
+    #[test]
+    fn move_entry_moves_files_and_directories_without_allowing_recursive_moves() {
+        let scratch = Scratch::new("move-entry");
+        scratch.dir("notes/child");
+        scratch.dir("archive");
+        scratch.file("notes/draft.md", b"draft");
+
+        let moved_file = move_entry(scratch.vault(), "notes/draft.md", "archive")
+            .expect("file should move into another directory");
+        assert_eq!(moved_file.path, "archive/draft.md");
+        assert!(scratch.join("archive/draft.md").is_file());
+
+        let moved_dir = move_entry(scratch.vault(), "notes", "archive")
+            .expect("directory should move into another directory");
+        assert_eq!(moved_dir.path, "archive/notes");
+        assert!(scratch.join("archive/notes/child").is_dir());
+
+        let error = move_entry(scratch.vault(), "archive/notes", "archive/notes/child")
+            .expect_err("directory must not move into its own child");
+        assert_eq!(error_code(&error), CODE_INVALID_NAME);
+    }
+
     #[cfg(windows)]
     #[test]
     fn rejects_paths_that_escape_through_a_junction() {
@@ -1450,5 +1521,3 @@ mod tests {
         assert_eq!(listing.entries.len(), MAX_VAULT_ENTRIES);
     }
 }
-
-

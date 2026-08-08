@@ -1792,7 +1792,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             <TooltipButton
               key={pageIndex}
               type="button"
-              className="group relative w-fit max-w-full justify-self-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
+              className="group relative h-fit w-fit max-w-full justify-self-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
+              style={{ height: paperHeight * thumbnailScale + 32 }}
               onClick={() => onThumbnailPageSelect(pageIndex + 1)}
               tooltip={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
               tooltipSide="right"

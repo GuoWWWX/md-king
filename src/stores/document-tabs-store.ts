@@ -29,6 +29,8 @@ type DocumentTabsState = {
   /// 新建一个临时文档。source 只用于生成标题。
   openScratchTab: (input: { title: string; content: string }) => string;
   setActiveTab: (id: string) => void;
+  /// 拖动标签排序；beforeId 为空表示移到末尾。
+  moveTab: (id: string, beforeId?: string) => void;
   /// 用户编辑：只改内容和脏标记，不动 revision（动了会打断输入）。
   updateTabContent: (id: string, content: string) => void;
   /// 外部替换内容（重新载入、冲突后重载），递增 revision 让编辑器全量刷新。
@@ -98,6 +100,17 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
   },
 
   setActiveTab: (activeTabId) => set({ activeTabId }),
+
+  moveTab: (id, beforeId) => set((state) => {
+    const fromIndex = state.tabs.findIndex((tab) => tab.id === id);
+    if (fromIndex < 0 || id === beforeId) return state;
+
+    const nextTabs = [...state.tabs];
+    const [movedTab] = nextTabs.splice(fromIndex, 1);
+    const targetIndex = beforeId ? nextTabs.findIndex((tab) => tab.id === beforeId) : nextTabs.length;
+    nextTabs.splice(targetIndex < 0 ? nextTabs.length : targetIndex, 0, movedTab);
+    return { tabs: nextTabs };
+  }),
 
   updateTabContent: (id, content) => set((state) => ({
     tabs: state.tabs.map((tab) => {

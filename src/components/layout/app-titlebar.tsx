@@ -1,7 +1,6 @@
-import { Copy, Minus, Square, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Columns2, Copy, Minus, PanelLeft, PanelRight, Square, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
-import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +20,16 @@ function isTauriEnvironment() {
   return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
 }
 
-export function AppTitlebar() {
+type AppTitlebarProps = {
+  fileTreeVisible?: boolean;
+  onToggleFileTree?: () => void;
+  showDocumentDrawerControl?: boolean;
+  documentDrawerOpen?: boolean;
+  onToggleDocumentDrawer?: () => void;
+  documentTabsOffset?: number;
+};
+
+export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, documentTabsOffset = 0 }: AppTitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const canControlWindow = isTauriEnvironment();
 
@@ -79,37 +87,60 @@ export function AppTitlebar() {
   }
 
   return (
-    <div className="mk-titlebar flex h-10 shrink-0 select-none items-center border-b border-white/70 bg-white/72 text-slate-700 backdrop-blur-xl">
-      <div className="flex h-full w-[200px] items-center gap-2.5 px-4" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
-        <MdKingLogo className="size-6 shrink-0" />
-        <div className="min-w-0 leading-none" data-tauri-drag-region>
-          <div className="text-[15px] font-black tracking-tight text-slate-950" data-tauri-drag-region>MD King</div>
-        </div>
+    <div className="mk-titlebar flex h-9 shrink-0 select-none items-center border-b border-white/70 bg-white/72 text-slate-700 backdrop-blur-xl">
+      <div className="flex h-full w-[176px] items-center gap-2 px-3" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
+        {onToggleFileTree ? (
+          <TitlebarButton
+            label={fileTreeVisible ? "收起文件树" : "展开文件树"}
+            onClick={onToggleFileTree}
+          >
+            {fileTreeVisible ? <PanelStateIcon side="left" /> : <PanelLeft className="size-4" />}
+          </TitlebarButton>
+        ) : null}
       </div>
 
       <div
-        className="flex h-full min-w-0 flex-1 items-center justify-end gap-3 px-4 text-xs font-semibold text-slate-500"
-        data-tauri-drag-region
-        onDoubleClick={handleDoubleClick}
-      >
-      </div>
+        id="mk-titlebar-document-tabs"
+        className="flex h-full min-w-0 flex-1 items-stretch"
+        style={{ marginLeft: documentTabsOffset }}
+      />
 
       <div className="flex h-full shrink-0 items-center">
+        {showDocumentDrawerControl && onToggleDocumentDrawer ? (
+          <>
+            <TitlebarButton
+              label={documentDrawerOpen ? "关闭文档侧栏" : "打开文档侧栏"}
+              onClick={onToggleDocumentDrawer}
+            >
+              {documentDrawerOpen ? <PanelStateIcon side="right" /> : <PanelRight className="size-4" />}
+            </TitlebarButton>
+            <span className="mx-1 h-4 w-px bg-slate-200 dark:bg-zinc-700" aria-hidden />
+          </>
+        ) : null}
         <TitlebarButton disabled={!canControlWindow} label="最小化" onClick={() => handleWindowAction("minimize")}>
-          <Minus className="size-4" />
+          <Minus className="size-3.5" />
         </TitlebarButton>
         <TitlebarButton disabled={!canControlWindow} label={isMaximized ? "还原窗口" : "最大化"} onClick={() => handleWindowAction("toggleMaximize")}>
-          {isMaximized ? <Copy className="size-3.5" /> : <Square className="size-3.5" />}
+          {isMaximized ? <Copy className="size-3" /> : <Square className="size-3" />}
         </TitlebarButton>
         <TitlebarButton disabled={!canControlWindow} label="关闭" danger onClick={() => handleWindowAction("close")}>
-          <X className="size-4" />
+          <X className="size-3.5" />
         </TitlebarButton>
       </div>
     </div>
   );
 }
 
-function TitlebarButton({ label, danger = false, disabled = false, onClick, children }: { label: string; danger?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+function PanelStateIcon({ side }: { side: "left" | "right" }) {
+  return (
+    <span className="relative block size-4" aria-hidden="true">
+      <span className={cn("absolute inset-y-0.5 bg-current", side === "left" ? "left-0.5 right-1/2" : "left-1/2 right-0.5")} />
+      <Columns2 className="relative size-4" />
+    </span>
+  );
+}
+
+function TitlebarButton({ label, danger = false, disabled = false, onClick, children }: { label: string; danger?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   const title = disabled ? `${label}仅在桌面端可用` : label;
 
   return (
@@ -120,7 +151,7 @@ function TitlebarButton({ label, danger = false, disabled = false, onClick, chil
       tooltipSide="bottom"
       disabled={disabled}
       className={cn(
-        "mk-titlebar-button relative z-10 flex h-10 w-10 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",
+        "mk-titlebar-button relative z-10 flex h-9 w-8 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",
         danger && !disabled && "mk-titlebar-button-danger hover:bg-red-500 hover:text-white",
       )}
       onPointerDown={(event) => event.stopPropagation()}

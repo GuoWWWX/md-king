@@ -1,19 +1,26 @@
-import { ClipboardPaste, FileText, Maximize2, UploadCloud } from "lucide-react";
-import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
+import { redo, undo } from "@codemirror/commands";
+import { ClipboardPaste, FileText, UploadCloud } from "lucide-react";
+import { type ChangeEvent, type DragEvent, useEffect, useRef, useState, type ReactNode } from "react";
+import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { LiveMarkdownEditor, type LiveMarkdownEditorHandle } from "@/components/editor/live-markdown-editor";
-import { TooltipButton } from "@/components/ui/tooltip";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
+import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/lib/document-outline";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
+
+const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
 type ConversionInputCardProps = {
   markdown: string;
   /// 换文档时变化的 key：内容变化不触发编辑器重载，只有它变了才做全量替换。
   documentKey: string;
+  documentTabId?: string;
   /// 一个标签都没打开时显示引导区，而不是一个空编辑器。
   hasDocument?: boolean;
+  /// 编辑卡片顶部的文档上下文信息，不单独渲染成卡片。
+  documentInfo?: ReactNode;
   disabled?: boolean;
   isDark?: boolean;
   onChange: (value: string) => void;
@@ -30,7 +37,9 @@ type ConversionInputCardProps = {
 export function ConversionInputCard({
   markdown,
   documentKey,
+  documentTabId,
   hasDocument = true,
+  documentInfo,
   disabled = false,
   isDark = false,
   onChange,
@@ -44,7 +53,23 @@ export function ConversionInputCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<LiveMarkdownEditorHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!documentTabId) return undefined;
+
+    const handleHeadingReveal = (event: Event) => {
+      const target = (event as CustomEvent<MarkdownOutlineRevealTarget>).detail;
+      if (!target || target.tabId !== documentTabId) return;
+      const view = editorRef.current?.getView();
+      if (!view) return;
+      const line = view.state.doc.line(Math.min(Math.max(1, target.line), view.state.doc.lines));
+      view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+      view.focus();
+    };
+
+    window.addEventListener(markdownOutlineRevealEvent, handleHeadingReveal);
+    return () => window.removeEventListener(markdownOutlineRevealEvent, handleHeadingReveal);
+  }, [documentTabId]);
 
   async function loadMarkdownFile(file: File) {
     try {
@@ -88,23 +113,71 @@ export function ConversionInputCard({
     void loadMarkdownFile(files[0]);
   }
 
-  return (
-    <section className={cn("mk-card relative flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] max-[760px]:min-h-[300px]", isExpanded ? "fixed inset-6 z-50 h-auto bg-white/95 shadow-2xl dark:bg-slate-950" : "h-full max-[1100px]:h-auto")}>
-      {/* 实时渲染下用户直接敲 Markdown 语法即可，格式工具栏是多余的一层；
-          加粗/斜体这类快捷键保留在编辑器的 keymap 里。放大按钮浮在右上角，
-          不为它单独占一条工具栏的高度。 */}
-      <TooltipButton
-        type="button"
-        className="mk-editor-tool-button absolute right-2 top-2 z-10 flex size-8 items-center justify-center rounded-[8px] border border-slate-200 bg-white/90 text-slate-600 backdrop-blur transition hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-        disabled={disabled}
-        aria-label={isExpanded ? "退出放大编辑区" : "放大编辑区"}
-        tooltip={isExpanded ? "退出放大" : "放大编辑区"}
-        tooltipSide="left"
-        onClick={() => setIsExpanded((value) => !value)}
-      >
-        <Maximize2 className="size-3.5" />
-      </TooltipButton>
+  function getEditorView() {
+    return editorRef.current?.getView() ?? null;
+  }
 
+  async function copyEditorSelection() {
+    const view = getEditorView();
+    if (!view) return;
+    const selection = view.state.selection.main;
+    const text = view.state.sliceDoc(selection.from, selection.to);
+    if (!text) {
+      toast.info("请先选中要复制的内容");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("已复制选中内容");
+    } catch {
+      toast.error("复制失败");
+    }
+  }
+
+  async function cutEditorSelection() {
+    const view = getEditorView();
+    if (!view || view.state.selection.main.empty) return copyEditorSelection();
+    await copyEditorSelection();
+    const { from, to } = view.state.selection.main;
+    view.dispatch({ changes: { from, to } });
+  }
+
+  async function pasteIntoEditor() {
+    const view = getEditorView();
+    if (!view) return onReadClipboard();
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      const { from, to } = view.state.selection.main;
+      view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });
+      view.focus();
+    } catch {
+      toast.error("读取剪贴板失败");
+    }
+  }
+
+  function selectAllEditorText() {
+    const view = getEditorView();
+    if (!view) return;
+    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+    view.focus();
+  }
+
+  function undoEditor() {
+    const view = getEditorView();
+    if (view) undo(view);
+  }
+
+  function redoEditor() {
+    const view = getEditorView();
+    if (view) redo(view);
+  }
+
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <section data-mk-context-menu className="mk-card relative flex h-full min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[5px] max-[1100px]:h-auto max-[760px]:min-h-[300px]">
+      {documentInfo}
       {/* 拖放提示要盖在编辑器上：已有文档时引导区不渲染，
           没有这层的话桌面端拖文件进来毫无视觉反馈。 */}
       {externalDragging && hasDocument ? (
@@ -159,6 +232,22 @@ export function ConversionInputCard({
           </div>
         </div>
       )}
-    </section>
+        </section>
+      </ContextMenu.Trigger>
+
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={undoEditor} disabled={!hasDocument}>撤销</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={redoEditor} disabled={!hasDocument}>重做</ContextMenu.Item>
+          <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void cutEditorSelection()} disabled={!hasDocument}>剪切</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}>复制</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}>粘贴</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}>全选</ContextMenu.Item>
+          <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onRequestSave?.()} disabled={!hasDocument || !onRequestSave}>保存文档</ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }

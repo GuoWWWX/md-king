@@ -13,7 +13,7 @@ use commands::{
     append_history, check_pandoc, clear_history, convert_markdown, create_vault_entry,
     delete_vault_entry, get_app_config, get_app_status, get_template_style_config,
     get_template_style_configs, import_template, list_history, list_templates, list_vault_entries,
-    load_preview_image, open_output_path, open_vault, read_markdown_file, read_vault_file,
+    load_preview_image, move_vault_entry, open_output_path, open_vault, read_markdown_file, read_vault_file,
     rename_vault_entry, reset_template_style_config, reveal_output_path, save_app_config,
     save_history, save_template_style_config, save_templates, write_temp_image, write_vault_file,
 };
@@ -102,6 +102,7 @@ pub fn run() {
             write_vault_file,
             create_vault_entry,
             rename_vault_entry,
+            move_vault_entry,
             delete_vault_entry
         ])
         .run(tauri::generate_context!())

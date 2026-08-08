@@ -1,4 +1,5 @@
 import { AlertCircle, CheckCircle2, CheckSquare, Clock, Copy, ExternalLink, Trash2 } from "lucide-react";
+import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { AppSurface, SoftActionButton } from "@/components/ui/app-surface";
@@ -9,6 +10,8 @@ import { openOutputPath } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import type { HistoryItem, Template } from "@/types";
+
+const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
 type HistoryRecordCardProps = {
   item: HistoryItem;
@@ -55,18 +58,21 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
   const canOpenOutput = isSuccess && !item.simulated && Boolean(item.outputPath);
 
   return (
-    <AppSurface
-      as="article"
-      variant="solid"
-      radius="sm"
-      className={cn(
-        "relative min-w-0 overflow-hidden",
-        selected && "border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
-        checked && "bg-white/88 dark:bg-zinc-900/88",
-      )}
-      interactive={Boolean(onSelect)}
-      onClick={() => onSelect?.(item)}
-    >
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <AppSurface
+          as="article"
+          variant="solid"
+          radius="sm"
+          data-mk-context-menu
+          className={cn(
+            "relative min-w-0 overflow-hidden",
+            selected && "border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
+            checked && "bg-white/88 dark:bg-zinc-900/88",
+          )}
+          interactive={Boolean(onSelect)}
+          onClick={() => onSelect?.(item)}
+        >
       {selected ? <span className="pointer-events-none absolute inset-1 rounded-[6px] border border-blue-200/70 dark:border-blue-500/50" /> : null}
 
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -133,6 +139,23 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
           ) : null}
         </div>
       ) : null}
-    </AppSurface>
+        </AppSurface>
+      </ContextMenu.Trigger>
+
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSelect?.(item)} disabled={!onSelect}>查看记录详情</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.inputPath, "输入路径已复制")} disabled={!item.inputPath}>复制输入路径</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.outputPath, "输出路径已复制")} disabled={!item.outputPath}>复制输出路径</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void openFile(item.outputPath)} disabled={!canOpenOutput}>打开生成文件</ContextMenu.Item>
+          {onDelete ? (
+            <>
+              <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+              <ContextMenu.Item className={cn(contextMenuItemClass, "text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 dark:text-red-300 dark:data-[highlighted]:bg-red-500/12 dark:data-[highlighted]:text-red-200")} onSelect={() => onDelete(item)}>删除记录</ContextMenu.Item>
+            </>
+          ) : null}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }

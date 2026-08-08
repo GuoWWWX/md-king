@@ -1,12 +1,16 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Maximize2, PanelRightClose, PanelRightOpen, PanelsTopLeft, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, MoreHorizontal, PanelsTopLeft, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
+import { createPortal } from "react-dom";
+import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { ConversionInputCard } from "@/components/convert/conversion-input-card";
+import { RESIZABLE_PANEL_COLLAPSE_THRESHOLD } from "@/components/layout/resizable-divider";
 import { TemplateStyleManager } from "@/components/templates/template-style-manager";
 import { WordPreviewPage, type PreviewOutlineItem } from "@/components/templates/word-preview-page";
 import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
@@ -15,7 +19,7 @@ import { actionableConversionWarnings, buildDocxOutputName, buildDocxOutputNameF
 import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
 import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
-import { userFacingErrorMessage } from "@/lib/user-facing-errors";
+import { parseVaultError, userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
@@ -23,6 +27,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useTauriFileDrop } from "@/hooks/use-tauri-file-drop";
 import { inlineMermaidImages } from "@/lib/mermaid-export";
 import { useVaultStore } from "@/stores/vault-store";
+import { writeVaultFile } from "@/lib/vault";
 import { DocumentTabBar } from "@/components/editor/document-tab-bar";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
@@ -31,9 +36,102 @@ type PreviewSidebarView = "pages" | "outline";
 const previewZoomMin = 20;
 const previewZoomMax = 200;
 const previewZoomStep = 10;
+const previewMinWidth = 460;
+const previewContextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
 function clampPreviewZoom(value: number) {
   return Math.min(previewZoomMax, Math.max(previewZoomMin, value));
+}
+
+function stripMarkdownExtension(value: string) {
+  return value.replace(/\.(?:md|markdown)$/i, "");
+}
+
+type DocumentInfoBarProps = {
+  tab?: DocumentTab;
+  previewVisible: boolean;
+  onTogglePreview: () => void;
+  canSave: boolean;
+  onSave: () => void;
+  onCopyPath: () => void;
+  onRevealPath: () => void;
+};
+
+function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath }: DocumentInfoBarProps) {
+  const pathParts = (tab?.path ?? "").split(/[\\/]/).filter(Boolean);
+  const crumbs = pathParts.length > 0
+    ? pathParts.map((part, index) => index === pathParts.length - 1 ? stripMarkdownExtension(part) : part)
+    : tab
+      ? [stripMarkdownExtension(tab.title)]
+      : [];
+
+  return (
+    <div className="flex h-8 shrink-0 min-w-0 items-center gap-1.5 border-b border-slate-200 pl-3 pr-1.5 text-xs dark:border-zinc-800">
+      <FileText className="size-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
+      {crumbs.length > 0 ? (
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+          {crumbs.map((crumb, index) => (
+            <span key={`${crumb}-${index}`} className="flex min-w-0 items-center gap-1">
+              {index > 0 ? <ChevronRight className="size-3 shrink-0 text-slate-300 dark:text-zinc-600" /> : null}
+              <span className={cn("truncate", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}>
+                {crumb}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <span className="truncate text-slate-400 dark:text-zinc-500">选择或导入 Markdown 文档</span>
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className={cn(
+            "mk-preview-toggle size-7 rounded-[4px] border-0 p-0 shadow-none",
+            previewVisible
+              ? "bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600 dark:hover:text-white"
+              : "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+          )}
+          title={previewVisible ? "隐藏 Word 预览" : "显示 Word 预览"}
+          aria-label={previewVisible ? "隐藏 Word 预览" : "显示 Word 预览"}
+          aria-pressed={previewVisible}
+          onClick={onTogglePreview}
+        >
+          <FileSearch className="size-3.5" strokeWidth={previewVisible ? 2.5 : 1.75} />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              title="更多文档操作"
+              aria-label="更多文档操作"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem onSelect={onSave} disabled={!canSave || !tab?.dirty}>
+              <Save className="size-3.5 text-slate-500 dark:text-zinc-400" />
+              保存文档
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onCopyPath} disabled={!tab?.path}>
+              <Copy className="size-3.5 text-slate-500 dark:text-zinc-400" />
+              复制文档路径
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onRevealPath} disabled={!tab?.absolutePath}>
+              <FolderOpen className="size-3.5 text-slate-500 dark:text-zinc-400" />
+              在资源管理器中显示
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
 }
 
 const fallbackTemplate: Template = {
@@ -49,16 +147,24 @@ const fallbackTemplate: Template = {
 };
 
 export function ConvertPage() {
-  const { appConfig, templates, currentTemplateId, pendingImportPaths, setAppConfig, setHistory, setCurrentTemplateId, clearPendingImportPaths } = useAppStore();
+  const { activePage, appConfig, templates, currentTemplateId, pendingImportPaths, setAppConfig, setHistory, setCurrentTemplateId, clearPendingImportPaths } = useAppStore();
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const [templateId, setTemplateId] = useState(currentTemplateId || appConfig?.defaultTemplateId || fallbackTemplate.id);
   const tabs = useDocumentTabsStore((state) => state.tabs);
   const activeTabId = useDocumentTabsStore((state) => state.activeTabId);
   const openScratchTab = useDocumentTabsStore((state) => state.openScratchTab);
   const updateTabContent = useDocumentTabsStore((state) => state.updateTabContent);
+  const markTabClean = useDocumentTabsStore((state) => state.markTabClean);
   const openVaultTab = useDocumentTabsStore((state) => state.openVaultTab);
   const previewVisible = useVaultStore((state) => state.previewVisible);
   const setPreviewVisible = useVaultStore((state) => state.setPreviewVisible);
+  const vaultRoot = useVaultStore((state) => state.vaultRoot);
+  const activeFilePath = useVaultStore((state) => state.activeFilePath);
+  const activeFileEol = useVaultStore((state) => state.activeFileEol);
+  const activeFileHasBom = useVaultStore((state) => state.activeFileHasBom);
+  const activeFileModifiedMs = useVaultStore((state) => state.activeFileModifiedMs);
+  const setActiveFileModifiedMs = useVaultStore((state) => state.setActiveFileModifiedMs);
+  const setSaveState = useVaultStore((state) => state.setSaveState);
   // 窄屏下三栏挤不开，直接不渲染预览——不是藏起来而是不跑那条解析+分页管线。
   const isNarrow = useMediaQuery("(max-width: 1100px)");
   const showPreviewPanel = previewVisible && !isNarrow;
@@ -69,8 +175,12 @@ export function ConvertPage() {
   // 正文的唯一来源是活动标签。revision 只在外部灌入内容时递增，
   // 用户逐字输入不动它——每次内容变化都让编辑器全量替换会打断输入、丢光标。
   const markdown = activeTab?.content ?? "";
+  // 预览会完整解析并分页，长文档输入时允许它在编辑器更新后追赶；
+  // 保存、导出、文件名推导仍必须使用 markdown，不能因此拿到旧内容。
+  const deferredPreviewMarkdown = useDeferredValue(markdown);
   const markdownSourcePath = activeTab?.absolutePath;
   const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
+  const canSaveActiveDocument = Boolean(activeTab?.kind === "vault" && activeTab.path && vaultRoot && activeTab.path === activeFilePath && activeFileModifiedMs !== undefined);
 
   function setMarkdown(next: string) {
     if (!activeTabId) {
@@ -79,6 +189,52 @@ export function ConvertPage() {
       return;
     }
     updateTabContent(activeTabId, next);
+    if (activeTab?.kind === "vault" && activeTab.path === activeFilePath) setSaveState("dirty");
+  }
+
+  async function saveActiveDocument(silent = false) {
+    if (saveInFlightRef.current || !activeTab || activeTab.kind !== "vault" || !vaultRoot || !activeTab.path || activeTab.path !== activeFilePath || activeFileModifiedMs === undefined) return;
+    saveInFlightRef.current = true;
+    setSaveState("saving");
+    try {
+      const saved = await writeVaultFile({ root: vaultRoot, path: activeTab.path, content: markdown, eol: activeFileEol, hasBom: activeFileHasBom, expectedModifiedMs: activeFileModifiedMs, allowEmpty: true });
+      markTabClean(activeTab.id);
+      setActiveFileModifiedMs(saved.modifiedMs);
+      setSaveState("saved");
+      if (!silent) toast.success("文档已保存");
+    } catch (error) {
+      const { code, message } = parseVaultError(error, "保存文档失败");
+      setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
+      toast.error(message);
+    } finally {
+      saveInFlightRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (!appConfig?.autoSave || !activeTab?.dirty || activeTab.kind !== "vault" || !activeTab.path || activeTab.path !== activeFilePath || activeFileModifiedMs === undefined) return undefined;
+    const delay = Math.min(10_000, Math.max(300, appConfig.autoSaveDelayMs || 1000));
+    const timer = window.setTimeout(() => void saveActiveDocument(true), delay);
+    return () => window.clearTimeout(timer);
+  }, [activeFileModifiedMs, activeFilePath, activeTab?.dirty, activeTab?.id, activeTab?.kind, activeTab?.path, appConfig?.autoSave, appConfig?.autoSaveDelayMs, markdown]);
+
+  async function copyActiveDocumentPath() {
+    if (!activeTab?.path) return;
+    try {
+      await navigator.clipboard.writeText(activeTab.path);
+      toast.success("文档路径已复制");
+    } catch {
+      toast.error("复制路径失败");
+    }
+  }
+
+  async function revealActiveDocument() {
+    if (!activeTab?.absolutePath) return;
+    try {
+      await revealOutputPath(activeTab.absolutePath);
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "无法在资源管理器中显示文档"));
+    }
   }
   const isDark = (appConfig?.themeMode ?? "light") === "dark"
     || ((appConfig?.themeMode ?? "light") === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -94,6 +250,7 @@ export function ConvertPage() {
   // 是为了把「弹窗 + 按钮点击」这套异步交互包成一个可 await 的 Promise。
   const [closingScratchTab, setClosingScratchTab] = useState<DocumentTab>();
   const closeScratchResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const saveInFlightRef = useRef(false);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(templateId));
   const [previewWidth, setPreviewWidth] = useState(520);
   const [previewZoom, setPreviewZoom] = useState(40);
@@ -104,6 +261,7 @@ export function ConvertPage() {
   const [previewSidebarWidth, setPreviewSidebarWidth] = useState(208);
   const [previewOutline, setPreviewOutline] = useState<PreviewOutlineItem[]>([]);
   const [previewThumbnailContainer, setPreviewThumbnailContainer] = useState<HTMLDivElement | null>(null);
+  const [titlebarTabHost, setTitlebarTabHost] = useState<HTMLElement | null>(null);
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const expandedPreviewRef = useRef<HTMLDivElement>(null);
   const conversionVersionRef = useRef(0);
@@ -111,6 +269,10 @@ export function ConvertPage() {
   // 而不是 effect 局部的 cancelled 标志：后者管不到 closeExpandedStyleEditor
   // 这种在 effect 之外发起的读取，晚回来的旧结果会把新模板的样式覆盖掉。
   const previewStyleVersionRef = useRef(0);
+
+  useEffect(() => {
+    setTitlebarTabHost(document.getElementById("mk-titlebar-document-tabs"));
+  }, []);
   const selectedTemplate = useMemo(() => templateOptions.find((template) => template.id === templateId) ?? templateOptions[0], [templateId, templateOptions]);
   // 桌面端整窗接收拖放：拖进来的文件不必在已打开的目录里，各自开一个标签。
   const { isDragging: isWindowDragging } = useTauriFileDrop((paths) => openDroppedPaths(paths));
@@ -473,16 +635,38 @@ export function ConvertPage() {
     }
   }
 
-  function handlePreviewResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+  function handlePreviewResizeStart(event: ReactPointerEvent<HTMLDivElement>, collapsed: boolean) {
     const container = splitPaneRef.current;
-    if (!container) return;
+    if (!container || event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const rect = container.getBoundingClientRect();
+    let origin = event.clientX;
+    let baseWidth = collapsed ? previewMinWidth : previewWidth;
+    let collapsedDuringDrag = collapsed;
     const move = (moveEvent: PointerEvent) => {
-      const nextWidth = rect.right - moveEvent.clientX - 12;
-      const maxWidth = Math.max(460, rect.width * 0.68);
-      setPreviewWidth(Math.min(maxWidth, Math.max(460, nextWidth)));
+      const nextWidth = baseWidth - (moveEvent.clientX - origin);
+
+      if (!collapsedDuringDrag && nextWidth <= previewMinWidth - RESIZABLE_PANEL_COLLAPSE_THRESHOLD) {
+        setPreviewWidth(previewMinWidth);
+        collapsedDuringDrag = true;
+        setPreviewVisible(false);
+        return;
+      }
+
+      if (collapsedDuringDrag && nextWidth >= previewMinWidth + RESIZABLE_PANEL_COLLAPSE_THRESHOLD) {
+        setPreviewWidth(previewMinWidth);
+        collapsedDuringDrag = false;
+        origin = moveEvent.clientX;
+        baseWidth = previewMinWidth;
+        setPreviewVisible(true);
+        return;
+      }
+
+      if (collapsedDuringDrag) return;
+
+      const maxWidth = Math.max(previewMinWidth, rect.width - 6);
+      setPreviewWidth(Math.min(maxWidth, Math.max(previewMinWidth, Math.round(nextWidth))));
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -557,8 +741,8 @@ export function ConvertPage() {
     const canRevealOutput = Boolean(convertResult?.ok && !convertResult.simulated && convertResult.output);
 
     return (
-      <section className={cn("flex min-h-0 flex-col justify-center gap-2 rounded-[12px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", className)}>
-        <div className={cn("flex min-w-0 gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-start" : "items-center")}>
+      <section className={cn("mk-convert-footer flex min-h-0 flex-col justify-center gap-2 rounded-[5px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", className)}>
+        <div className={cn("flex min-w-0 gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-center" : "items-center")}>
           <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
             <CheckCircle2 className="size-3.5" />
           </div>
@@ -580,7 +764,7 @@ export function ConvertPage() {
             setTemplateId(value);
             setCurrentTemplateId(value);
           }}>
-            <SelectTrigger className="h-10 w-full min-w-0 rounded-[10px] border-slate-200 bg-white text-xs font-bold text-blue-800 shadow-none data-[size=default]:h-10">
+            <SelectTrigger className="mk-convert-control h-10 w-full min-w-0 rounded-[10px] border-slate-200 bg-white text-xs font-bold text-blue-800 shadow-none data-[size=default]:h-10">
               <SelectValue placeholder="选择模板" />
             </SelectTrigger>
             <SelectContent>
@@ -593,7 +777,7 @@ export function ConvertPage() {
           </Select>
           <TooltipButton
             type="button"
-            className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-left text-xs font-bold text-blue-800 shadow-none transition hover:bg-slate-50 dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
+            className="mk-convert-control flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-left text-xs font-bold text-blue-800 shadow-none transition hover:bg-slate-50 dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
             onClick={() => void handleSelectOutputDir()}
             tooltip={outputDirLabel}
           >
@@ -601,7 +785,7 @@ export function ConvertPage() {
             <span className="min-w-0 truncate">{outputDirLabel}</span>
           </TooltipButton>
           <TooltipAnchor content={outputPath}>
-            <div className="flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100">
+            <div className="mk-convert-control flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100">
               <FileText className="size-4 shrink-0" />
               <Input
                 value={outputNameDraft}
@@ -624,6 +808,17 @@ export function ConvertPage() {
     );
   }
 
+  const documentTabs = (
+    <DocumentTabBar
+      className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78"
+      onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
+      onImportFile={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
+      onBatchImport={isTauriEnvironment() ? runBatchImport : undefined}
+      onPasteClipboard={handleReadClipboard}
+      onConfirmCloseScratch={confirmCloseScratchTab}
+    />
+  );
+
   if (expandedStyleEditorOpen) {
     return (
       <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
@@ -642,7 +837,7 @@ export function ConvertPage() {
 
   if (previewExpanded) {
     return (
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-zinc-800">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-black tracking-[-0.02em] text-slate-950 dark:text-zinc-50">Word 预览</h2>
@@ -657,7 +852,7 @@ export function ConvertPage() {
         </header>
         <div
           ref={expandedPreviewRef}
-          className="grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_10px_minmax(0,1fr)] gap-0 bg-slate-50/80 p-4 dark:bg-zinc-900/70 max-[900px]:!grid-cols-1"
+          className="grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)] gap-0 bg-slate-50/80 p-[5px] dark:bg-zinc-900/70 max-[900px]:!grid-cols-1"
           style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
         >
           <WordPreviewSidebar
@@ -678,7 +873,7 @@ export function ConvertPage() {
             <span className="h-10 w-1 rounded-full bg-slate-300/75 transition group-hover:h-16 group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
           </div>
           <ConvertPreviewPanel
-            markdown={markdown}
+            markdown={deferredPreviewMarkdown}
             markdownSourcePath={markdownSourcePath}
             outputName={outputName}
             styleConfig={previewStyleConfig}
@@ -691,7 +886,7 @@ export function ConvertPage() {
             thumbnailContainer={previewThumbnailContainer}
             onThumbnailPageSelect={scrollToPreviewPage}
             onPreviewOutlineChange={setPreviewOutline}
-            className="h-full rounded-[12px]"
+            className="h-full rounded-[5px]"
             previewClassName="h-full"
           />
         </div>
@@ -702,6 +897,7 @@ export function ConvertPage() {
 
   return (
     <>
+      {activePage === "convert" && titlebarTabHost ? createPortal(documentTabs, titlebarTabHost) : null}
       <Dialog open={batchImportDialogOpen} onOpenChange={(open) => { if (!open) closeBatchImportDialog(); }}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
           <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
@@ -771,51 +967,44 @@ export function ConvertPage() {
         </DialogContent>
       </Dialog>
 
-    <div className={cn("grid h-full min-h-0 flex-1 gap-3 overflow-hidden", showBottomFooter ? "grid-rows-[auto_minmax(0,1fr)_auto]" : "grid-rows-[40px_minmax(0,1fr)]")}>
-      <DocumentTabBar
-        onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
-        onImportFile={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
-        onBatchImport={isTauriEnvironment() ? runBatchImport : undefined}
-        onPasteClipboard={handleReadClipboard}
-        onConfirmCloseScratch={confirmCloseScratchTab}
-        trailing={isNarrow ? undefined : (
-          // 开关常驻顶栏：收起后如果按钮跟着面板一起消失，用户得去别处找入口。
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="size-7 shrink-0 rounded-[8px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            onClick={() => setPreviewVisible(!previewVisible)}
-            title={showPreviewPanel ? "收起预览与导出" : "展开预览与导出"}
-            tooltipSide="bottom"
-            aria-label={showPreviewPanel ? "收起预览与导出" : "展开预览与导出"}
-          >
-            {showPreviewPanel ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-          </Button>
-        )}
-      />
-
+    <div className={cn("grid h-full min-h-0 flex-1 gap-[5px] overflow-hidden", showBottomFooter ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]")}>
       <div
         ref={splitPaneRef}
         className="grid min-h-0 min-w-0 gap-0 overflow-hidden max-[1100px]:flex max-[1100px]:min-h-0 max-[1100px]:flex-col max-[1100px]:overflow-y-auto max-[1100px]:overflow-x-hidden max-[1100px]:pb-3"
-        style={{ gridTemplateColumns: showPreviewPanel ? `minmax(0,1fr) 12px minmax(460px,${previewWidth}px)` : "minmax(0,1fr)" }}
+        style={{ gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : showPreviewPanel ? `minmax(0,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` : "minmax(0,1fr) 5px" }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
-          <ConversionInputCard hasDocument={Boolean(activeTab)} markdown={markdown} documentKey={documentKey} isDark={isDark} onChange={setMarkdown} onFileTextLoad={handleFileTextLoad} onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined} onBatchSelect={runBatchImport} onReadClipboard={handleReadClipboard} disabled={isConverting} externalDragging={isWindowDragging} />
+          <ConversionInputCard
+            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={() => setPreviewVisible(!previewVisible)} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} />}
+            hasDocument={Boolean(activeTab)}
+            markdown={markdown}
+            documentKey={documentKey}
+            documentTabId={activeTabId}
+            isDark={isDark}
+            onChange={setMarkdown}
+            onFileTextLoad={handleFileTextLoad}
+            onNativeFileSelect={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
+            onBatchSelect={runBatchImport}
+            onReadClipboard={handleReadClipboard}
+            onRequestSave={canSaveActiveDocument ? () => void saveActiveDocument(false) : undefined}
+            disabled={isConverting}
+            externalDragging={isWindowDragging}
+          />
         </div>
 
         {showPreviewPanel ? (
           <>
             <div
-              className="group flex min-h-0 cursor-col-resize items-center justify-center px-1"
-              onPointerDown={handlePreviewResizeStart}
+              className="group flex min-h-0 cursor-col-resize items-center justify-center"
+              onPointerDown={(event) => handlePreviewResizeStart(event, false)}
               role="separator"
               aria-label="调整 Word 预览宽度"
             >
-              <span className="h-16 w-1 rounded-full bg-slate-200 transition group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
+              <span className="h-16 w-1 rounded-full bg-transparent" />
             </div>
 
             <ConvertPreviewPanel
-              markdown={markdown}
+              markdown={deferredPreviewMarkdown}
               markdownSourcePath={markdownSourcePath}
               outputName={outputName}
               styleConfig={previewStyleConfig}
@@ -826,6 +1015,13 @@ export function ConvertPage() {
               className="min-h-0 min-w-0"
             />
           </>
+        ) : !isNarrow ? (
+          <div
+            className="group min-h-0 cursor-col-resize"
+            onPointerDown={(event) => handlePreviewResizeStart(event, true)}
+            role="separator"
+            aria-label="拖动展开 Word 预览"
+          />
         ) : null}
       </div>
 
@@ -885,8 +1081,23 @@ function ConvertPreviewPanel({
     setZoom((value) => clampPreviewZoom(value + direction * previewZoomStep));
   }
 
+  async function copyPreviewMarkdown() {
+    if (!markdown.trim()) {
+      toast.info("暂无可复制的 Markdown 内容");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(markdown);
+      toast.success("Markdown 内容已复制");
+    } catch {
+      toast.error("复制失败");
+    }
+  }
+
   return (
-    <AppSurface as="aside" padding="none" radius="md" className={cn("flex min-h-0 flex-col overflow-hidden p-3", className)}>
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <AppSurface as="aside" padding="none" radius="md" data-mk-context-menu className={cn("flex min-h-0 flex-col overflow-hidden p-3", className)}>
       <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
@@ -933,7 +1144,18 @@ function ConvertPreviewPanel({
         />
       </div>
       {footer ? <div className="mt-2.5 shrink-0 border-t border-slate-200 pt-2.5 dark:border-zinc-700/70">{footer}</div> : null}
-    </AppSurface>
+        </AppSurface>
+      </ContextMenu.Trigger>
+
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => void copyPreviewMarkdown()} disabled={!markdown.trim()}>复制 Markdown</ContextMenu.Item>
+          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => setZoom(40)} disabled={zoom === 40}>重置预览缩放</ContextMenu.Item>
+          {onOpenAdvancedStyle ? <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onOpenAdvancedStyle}>打开高级样式</ContextMenu.Item> : null}
+          {!expanded ? <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onExpand}>放大查看预览</ContextMenu.Item> : null}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
 
@@ -979,7 +1201,7 @@ function WordPreviewSidebar({
   }
 
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[12px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
+    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
       <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-[8px] bg-slate-100 p-1 dark:bg-zinc-900">
         <button
           type="button"
@@ -1005,7 +1227,7 @@ function WordPreviewSidebar({
             <p className="text-xs font-black text-slate-500 dark:text-zinc-400">页面缩略图</p>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount} 页</span>
           </div>
-          <div ref={onThumbnailContainerChange} className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fit,minmax(104px,1fr))] content-start gap-2 overflow-x-hidden overflow-y-auto pr-1 max-[900px]:max-h-[120px]" />
+            <div ref={onThumbnailContainerChange} className="grid min-h-0 flex-1 auto-rows-max items-start content-start grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-2 overflow-x-hidden overflow-y-auto pr-1 max-[900px]:max-h-[120px]" />
         </section>
       ) : (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">

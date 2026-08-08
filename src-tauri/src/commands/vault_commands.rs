@@ -1,7 +1,7 @@
 use crate::core::config::{load_config, save_config, MAX_RECENT_VAULTS};
 use crate::core::vault::{
     canonical_root, create_entry, delete_entry, display_path, list_entries, read_file,
-    rename_entry, write_file, VaultEntry, VaultFileContent, VaultListing, VaultWriteResult,
+    move_entry, rename_entry, write_file, VaultEntry, VaultFileContent, VaultListing, VaultWriteResult,
 };
 
 /// 每个命令都自己重新规范化一次 root，而不是信任前端传回来的字符串。
@@ -81,6 +81,16 @@ pub fn rename_vault_entry(
 ) -> Result<VaultEntry, String> {
     let root = resolve_root(&root)?;
     rename_entry(&root, &path, &new_name)
+}
+
+#[tauri::command]
+pub fn move_vault_entry(
+    root: String,
+    path: String,
+    target_dir: String,
+) -> Result<VaultEntry, String> {
+    let root = resolve_root(&root)?;
+    move_entry(&root, &path, &target_dir)
 }
 
 #[tauri::command]

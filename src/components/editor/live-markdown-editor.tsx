@@ -19,7 +19,7 @@ export type LiveMarkdownEditorProps = {
   readOnly?: boolean;
   isDark: boolean;
   placeholder?: string;
-  /** 内部 debounce 200ms 后调用——Word 预览那条管线很重，不能每个按键跑一遍。 */
+  /** 内部按文档体量 debounce 后调用——Word 预览那条管线很重，不能每个按键跑一遍。 */
   onDocChanged: (text: string) => void;
   /** 每次真实用户输入立即调用，不 debounce。给「未保存」状态用，脏标记必须是即时的。 */
   onDirty?: () => void;
@@ -39,7 +39,11 @@ export type LiveMarkdownEditorHandle = {
 /** 标记「这次改动来自外部载入而非用户输入」，避免把程序化替换误报成脏数据。 */
 const externalUpdate = Annotation.define<boolean>();
 
-const DOC_CHANGE_DEBOUNCE_MS = 200;
+function docChangeDebounceMs(length: number): number {
+  if (length >= 300_000) return 700;
+  if (length >= 80_000) return 400;
+  return 200;
+}
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
   { documentKey, initialContent, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, className },
@@ -91,7 +95,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null;
         onDocChangedRef.current(text);
-      }, DOC_CHANGE_DEBOUNCE_MS);
+      }, docChangeDebounceMs(text.length));
     }
 
     const extensions: Extension[] = [

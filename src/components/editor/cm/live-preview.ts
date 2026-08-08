@@ -4,7 +4,7 @@ import { RangeSetBuilder, StateField, type EditorState, type Extension, type Ran
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import { selectionOnLines, selectionTouches } from "./selection-utils";
-import { BulletWidget, MermaidWidget } from "./widgets";
+import { BulletWidget, MermaidWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -191,10 +191,17 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
   const node = ref.node;
   const parentList = node.parent?.parent;
   const ordered = parentList?.name === "OrderedList";
+  const taskItem = node.parent?.getChild("Task") != null;
 
   addLine(collector, line.from, ordered ? "mk-cm-list-line mk-cm-list-ordered" : "mk-cm-list-line");
 
   if (onLines(collector, ref.from, ref.to)) return;
+  // 任务项用 TaskMarker 的复选框作为唯一符号，不能再额外留一个普通圆点。
+  // 列表符号后的空格一并隐藏；TaskMarker 之后原有的空格会保留，正好是符号与正文的一个英文字符间距。
+  if (taskItem) {
+    hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
+    return;
+  }
   // 有序列表的 `1.` 本身就是要读的内容，只有无序列表的 `-`/`*`/`+` 换成排版化圆点。
   if (ordered) return;
 
@@ -274,6 +281,17 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   }
 }
 
+/** GFM 会为列表开头的 `[ ]` / `[x]` 生成专用 TaskMarker，正文方括号不会命中。 */
+function handleTaskMarker(collector: DecorationCollector, ref: SyntaxNodeRef): void {
+  const marker = collector.state.doc.sliceString(ref.from, ref.to);
+  if (!/^\[(?: |x|X)\]$/.test(marker)) return;
+  // 只在光标靠近标记本身时回到源码态，正文仍保持复选框，和行内代码的手感一致。
+  if (touches(collector, ref.from, ref.to)) return;
+  const widget = Decoration.replace({ widget: new TaskCheckboxWidget(marker[1].toLowerCase() === "x") });
+  collector.decorations.push(widget.range(ref.from, ref.to));
+  collector.atomics.push(widget.range(ref.from, ref.to));
+}
+
 function buildDecorations(view: EditorView): { decorations: DecorationSet; atomics: DecorationSet } {
   const state = view.state;
   const collector: DecorationCollector = { state, focused: view.hasFocus, decorations: [], atomics: [] };
@@ -304,6 +322,9 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
             return;
           case "InlineCode":
             handleInlineWrapper(collector, ref, "CodeMark", "mk-cm-inline-code");
+            return;
+          case "TaskMarker":
+            handleTaskMarker(collector, ref);
             return;
           case "Link":
             handleLink(collector, ref);
