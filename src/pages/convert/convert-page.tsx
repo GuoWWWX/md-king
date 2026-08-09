@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, MoreHorizontal, PanelsTopLeft, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { ContextMenu } from "radix-ui";
@@ -30,6 +30,9 @@ import { useVaultStore } from "@/stores/vault-store";
 import { writeVaultFile } from "@/lib/vault";
 import { DocumentTabBar } from "@/components/editor/document-tab-bar";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { findMarkdownHeadingLine, isExternalDocumentLink, resolveVaultDocumentLink } from "@/lib/document-links";
+import { markdownOutlineRevealEvent } from "@/lib/document-outline";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
 
 type PreviewSidebarView = "pages" | "outline";
@@ -55,15 +58,22 @@ type DocumentInfoBarProps = {
   onSave: () => void;
   onCopyPath: () => void;
   onRevealPath: () => void;
+  onLocatePath: (path: string) => void;
+  readingMode: boolean;
+  onToggleReadingMode: () => void;
 };
 
-function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath }: DocumentInfoBarProps) {
+function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode }: DocumentInfoBarProps) {
   const pathParts = (tab?.path ?? "").split(/[\\/]/).filter(Boolean);
   const crumbs = pathParts.length > 0
-    ? pathParts.map((part, index) => index === pathParts.length - 1 ? stripMarkdownExtension(part) : part)
+    ? pathParts.map((part, index) => ({
+        label: index === pathParts.length - 1 ? stripMarkdownExtension(part) : part,
+        path: pathParts.slice(0, index + 1).join("/"),
+      }))
     : tab
-      ? [stripMarkdownExtension(tab.title)]
+      ? [{ label: stripMarkdownExtension(tab.title), path: "" }]
       : [];
+  const canLocate = tab?.kind === "vault" && Boolean(tab.path);
 
   return (
     <div className="flex h-8 shrink-0 min-w-0 items-center gap-1.5 border-b border-slate-200 pl-3 pr-1.5 text-xs dark:border-zinc-800">
@@ -71,11 +81,21 @@ function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave
       {crumbs.length > 0 ? (
         <div className="flex min-w-0 items-center gap-1 overflow-hidden">
           {crumbs.map((crumb, index) => (
-            <span key={`${crumb}-${index}`} className="flex min-w-0 items-center gap-1">
+            <span key={`${crumb.path}-${index}`} className="flex min-w-0 items-center gap-1">
               {index > 0 ? <ChevronRight className="size-3 shrink-0 text-slate-300 dark:text-zinc-600" /> : null}
-              <span className={cn("truncate", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}>
-                {crumb}
-              </span>
+              {canLocate ? (
+                <TooltipButton
+                  type="button"
+                  tooltip={`在文件树中定位：${crumb.label}`}
+                  tooltipSide="bottom"
+                  className={cn("min-w-0 truncate rounded-[4px] px-0.5 py-0.5 text-left transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}
+                  onClick={() => onLocatePath(crumb.path)}
+                >
+                  {crumb.label}
+                </TooltipButton>
+              ) : (
+                <span className={cn("truncate", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}>{crumb.label}</span>
+              )}
             </span>
           ))}
         </div>
@@ -83,6 +103,9 @@ function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave
         <span className="truncate text-slate-400 dark:text-zinc-500">选择或导入 Markdown 文档</span>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <Button type="button" variant="ghost" size="icon-xs" className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-transparent hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100" title={readingMode ? "编辑模式" : "阅读模式"} aria-label={readingMode ? "编辑模式" : "阅读模式"} aria-pressed={readingMode} onClick={onToggleReadingMode}>
+          {readingMode ? <PenLine className="size-3.5" /> : <BookOpen className="size-3.5" />}
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -181,6 +204,33 @@ export function ConvertPage() {
   const markdownSourcePath = activeTab?.absolutePath;
   const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
   const canSaveActiveDocument = Boolean(activeTab?.kind === "vault" && activeTab.path && vaultRoot && activeTab.path === activeFilePath && activeFileModifiedMs !== undefined);
+  const [readingMode, setReadingMode] = useState(false);
+
+  async function handleOpenLink(target: string) {
+    const value = target.trim();
+    if (!value) return;
+    if (value.startsWith("#")) {
+      const line = findMarkdownHeadingLine(markdown, value);
+      if (line && activeTabId) window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, { detail: { tabId: activeTabId, line } }));
+      return;
+    }
+    if (isExternalDocumentLink(value)) {
+      if (isTauriEnvironment()) await openUrl(value);
+      else window.open(value, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const currentPath = activeTab?.path ?? "";
+    const available = useVaultStore.getState().entries.filter((entry) => !entry.isDir).map((entry) => entry.path);
+    const path = resolveVaultDocumentLink(value, currentPath, available);
+    if (!path) { toast.error("未找到链接文档"); return; }
+    try {
+      const absolutePath = vaultRoot ? `${vaultRoot.replace(/[\\/]$/, "")}/${path}` : path;
+      const content = await readMarkdownFileFromPath(absolutePath);
+      openExternalDocument(path, content);
+    } catch {
+      toast.error("打开链接文档失败");
+    }
+  }
 
   function setMarkdown(next: string) {
     if (!activeTabId) {
@@ -886,6 +936,7 @@ export function ConvertPage() {
             thumbnailContainer={previewThumbnailContainer}
             onThumbnailPageSelect={scrollToPreviewPage}
             onPreviewOutlineChange={setPreviewOutline}
+            onOpenLink={(target) => void handleOpenLink(target)}
             className="h-full rounded-[5px]"
             previewClassName="h-full"
           />
@@ -975,7 +1026,7 @@ export function ConvertPage() {
       >
         <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
           <ConversionInputCard
-            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={() => setPreviewVisible(!previewVisible)} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} />}
+            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={() => setPreviewVisible(!previewVisible)} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} />}
             hasDocument={Boolean(activeTab)}
             markdown={markdown}
             documentKey={documentKey}
@@ -989,6 +1040,8 @@ export function ConvertPage() {
             onRequestSave={canSaveActiveDocument ? () => void saveActiveDocument(false) : undefined}
             disabled={isConverting}
             externalDragging={isWindowDragging}
+            readingMode={readingMode}
+            onOpenLink={(target) => void handleOpenLink(target)}
           />
         </div>
 
@@ -1012,6 +1065,7 @@ export function ConvertPage() {
               setZoom={setPreviewZoom}
               onExpand={() => setPreviewExpanded(true)}
               footer={renderConvertFooter("shrink-0 rounded-none border-x-0 border-b-0 px-0 pb-0", true)}
+              onOpenLink={(target) => void handleOpenLink(target)}
               className="min-h-0 min-w-0"
             />
           </>
@@ -1052,6 +1106,7 @@ function ConvertPreviewPanel({
   thumbnailContainer,
   onThumbnailPageSelect,
   onPreviewOutlineChange,
+  onOpenLink,
   className,
   previewClassName,
 }: {
@@ -1071,6 +1126,7 @@ function ConvertPreviewPanel({
   thumbnailContainer?: HTMLDivElement | null;
   onThumbnailPageSelect?: (page: number) => void;
   onPreviewOutlineChange?: (items: PreviewOutlineItem[]) => void;
+  onOpenLink?: (target: string) => void;
   className?: string;
   previewClassName?: string;
 }) {
@@ -1137,6 +1193,7 @@ function ConvertPreviewPanel({
           thumbnailContainer={thumbnailContainer}
           onThumbnailPageSelect={onThumbnailPageSelect}
           onPreviewOutlineChange={onPreviewOutlineChange}
+          onOpenLink={onOpenLink}
           showHeader={false}
           interactiveViewport
           className={cn("max-h-none min-h-0 overflow-hidden border-0 bg-transparent p-0 shadow-none", previewClassName)}

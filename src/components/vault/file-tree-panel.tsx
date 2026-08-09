@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ChevronsDown, ChevronsUp, FilePlus2, FolderPlus, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { AlertTriangle, ChevronsDownUp, ChevronsUpDown, FilePlus2, FolderOpen, FolderPlus, Loader2, LocateFixed, RefreshCw, Search, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { ResizableDivider } from "@/components/layout/resizable-divider";
 import { Button } from "@/components/ui/button";
 import { CreateEntryDialog, DeleteEntryDialog } from "@/components/vault/vault-dialogs";
-import { FileTreeNode, type FileTreeNodeAction } from "@/components/vault/file-tree-node";
+import { FileTreeNode, vaultTreeNodeId, type FileTreeNodeAction } from "@/components/vault/file-tree-node";
 import { VaultSwitcher } from "@/components/vault/vault-switcher";
-import { createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, renameVaultEntry, selectVaultDirectory } from "@/lib/vault";
+import { createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, renameVaultEntry, selectVaultDirectory, copyVaultEntry, showInExplorer, copyTextToClipboard, readPathsFromClipboard } from "@/lib/vault";
 import { parseVaultError } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { FILE_TREE_WIDTH_RANGE, useVaultStore } from "@/stores/vault-store";
@@ -30,11 +30,6 @@ type VisibleRow = {
 
 type DropPlacement = "before" | "after" | "inside";
 
-type DropTarget = {
-  path: string;
-  placement: DropPlacement;
-};
-
 type ManualOrder = Record<string, string[]>;
 
 const FILE_TREE_ORDER_KEY_PREFIX = "md-king-vault-order:";
@@ -56,9 +51,9 @@ function ancestorsOf(path: string) {
 
 /// 目录在前、同类按中文排序：Windows 资源管理器和 Obsidian 都是这个顺序，
 /// 用 localeCompare("zh-CN") 让「文档」排在「zebra」之前而不是按 UTF-16 码点乱序。
-function compareEntries(left: VaultEntry, right: VaultEntry, manualOrder?: string[]) {
-  const leftOrder = manualOrder?.indexOf(left.name) ?? -1;
-  const rightOrder = manualOrder?.indexOf(right.name) ?? -1;
+function compareEntries(left: VaultEntry, right: VaultEntry, manualRanks?: ReadonlyMap<string, number>) {
+  const leftOrder = manualRanks?.get(left.name) ?? -1;
+  const rightOrder = manualRanks?.get(right.name) ?? -1;
   if (leftOrder >= 0 || rightOrder >= 0) {
     if (leftOrder < 0) return 1;
     if (rightOrder < 0) return -1;
@@ -100,7 +95,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
   const expandedDirs = useVaultStore((state) => state.expandedDirs);
   const treeQuery = useVaultStore((state) => state.treeQuery);
   const isLoadingTree = useVaultStore((state) => state.isLoadingTree);
-  const activeFilePath = useVaultStore((state) => state.activeFilePath);
+  const hasActiveFile = useVaultStore((state) => Boolean(state.activeFilePath));
+  const locateRequest = useVaultStore((state) => state.locateRequest);
   const setVaultRoot = useVaultStore((state) => state.setVaultRoot);
   const pushRecentVault = useVaultStore((state) => state.pushRecentVault);
   const removeRecentVault = useVaultStore((state) => state.removeRecentVault);
@@ -111,15 +107,16 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
   const toggleDir = useVaultStore((state) => state.toggleDir);
   const expandDirs = useVaultStore((state) => state.expandDirs);
   const collapseAllDirs = useVaultStore((state) => state.collapseAllDirs);
+  const setCopiedEntryPath = useVaultStore((state) => state.setCopiedEntryPath);
 
   const [renamingPath, setRenamingPath] = useState<string>();
   const [createTarget, setCreateTarget] = useState<{ parentDir: string; isDir: boolean }>();
   const [deleteTarget, setDeleteTarget] = useState<VaultEntry>();
-  const [draggingEntry, setDraggingEntry] = useState<VaultEntry>();
-  const [dropTarget, setDropTarget] = useState<DropTarget>();
   const [manualOrder, setManualOrder] = useState<ManualOrder>({});
   /// truncated 降级下已按需拉过的目录，避免同一目录被反复请求。
   const loadedDirsRef = useRef(new Set<string>());
+  const locateFrameRef = useRef<number | undefined>(undefined);
+  const locateTimerRef = useRef<number | undefined>(undefined);
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.isDir && entry.hasChildren).map((entry) => entry.path),
     [entries],
@@ -186,6 +183,39 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     }
   }, [mergeEntries, truncated, vaultRoot]);
 
+  useEffect(() => {
+    if (!locateRequest) return;
+    const { path } = locateRequest;
+    const parentPaths = ancestorsOf(path);
+    if (useVaultStore.getState().treeQuery) setTreeQuery("");
+    expandDirs(parentPaths);
+
+    const revealNode = () => {
+      if (locateFrameRef.current !== undefined) window.cancelAnimationFrame(locateFrameRef.current);
+      locateFrameRef.current = window.requestAnimationFrame(() => {
+        locateFrameRef.current = window.requestAnimationFrame(() => {
+          const element = document.getElementById(vaultTreeNodeId(path));
+          if (!element) return;
+          element.scrollIntoView({ block: "center", behavior: "smooth" });
+          element.classList.remove("mk-file-tree-row-located");
+          void element.offsetWidth;
+          element.classList.add("mk-file-tree-row-located");
+          if (locateTimerRef.current !== undefined) window.clearTimeout(locateTimerRef.current);
+          locateTimerRef.current = window.setTimeout(() => {
+            element.classList.remove("mk-file-tree-row-located");
+          }, 1400);
+        });
+      });
+    };
+
+    void Promise.all(parentPaths.map((parent) => ensureDirLoaded(parent))).then(revealNode);
+  }, [ensureDirLoaded, expandDirs, locateRequest, setTreeQuery]);
+
+  useEffect(() => () => {
+    if (locateFrameRef.current !== undefined) window.cancelAnimationFrame(locateFrameRef.current);
+    if (locateTimerRef.current !== undefined) window.clearTimeout(locateTimerRef.current);
+  }, []);
+
   function handleToggle(path: string) {
     if (!expandedDirs.has(path)) void ensureDirLoaded(path);
     toggleDir(path);
@@ -215,6 +245,46 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     if (nextActivePath) useVaultStore.setState({ activeFilePath: nextActivePath });
   }
 
+  function updateEntriesAfterMove(entry: VaultEntry, moved: VaultEntry, destinationDir: string) {
+    const currentState = useVaultStore.getState();
+    const sourcePrefix = `${entry.path}/`;
+    const targetPrefix = `${moved.path}/`;
+    const remapped = currentState.entries.map((current) => {
+      if (current.path === entry.path) return moved;
+      if (entry.isDir && current.path.startsWith(sourcePrefix)) {
+        return { ...current, path: `${targetPrefix}${current.path.slice(sourcePrefix.length)}` };
+      }
+      return current;
+    });
+
+    let nextEntries = remapped;
+    if (currentState.truncated) {
+      // 懒加载树里看不到的子项不能据此判空；只确认目标目录现在必然有子项。
+      nextEntries = remapped.map((current) => (
+        current.isDir && current.path === destinationDir && !current.hasChildren
+          ? { ...current, hasChildren: true }
+          : current
+      ));
+    } else {
+      const parentsWithChildren = new Set(remapped.map((current) => parentOf(current.path)));
+      nextEntries = remapped.map((current) => {
+        if (!current.isDir) return current;
+        const hasChildren = parentsWithChildren.has(current.path);
+        return hasChildren === current.hasChildren ? current : { ...current, hasChildren };
+      });
+    }
+
+    setEntries(nextEntries, currentState.truncated);
+
+    if (entry.isDir) {
+      loadedDirsRef.current = new Set([...loadedDirsRef.current].map((path) => (
+        path === entry.path || path.startsWith(sourcePrefix)
+          ? `${moved.path}${path.slice(entry.path.length)}`
+          : path
+      )));
+    }
+  }
+
   function orderedSiblingNames(parent: string, excludedPath: string | undefined, order: ManualOrder) {
     const siblings = entries.filter((entry) => parentOf(entry.path) === parent && entry.path !== excludedPath);
     const knownNames = new Set(siblings.map((entry) => entry.name));
@@ -241,7 +311,9 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
       const sourceParent = parentOf(entry.path);
       const destinationParent = placement === "inside" ? target.path : parentOf(target.path);
       if (sourceParent !== destinationParent && next[sourceParent]) {
-        next[sourceParent] = next[sourceParent].filter((name) => name !== entry.name);
+        const remaining = next[sourceParent].filter((name) => name !== entry.name);
+        if (remaining.length > 0) next[sourceParent] = remaining;
+        else delete next[sourceParent];
       }
 
       const names = orderedSiblingNames(destinationParent, entry.path, next)
@@ -276,25 +348,46 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     });
   }
 
+  function updateManualOrderAfterDelete(entry: VaultEntry) {
+    setManualOrder((current) => {
+      const next = { ...current };
+      const parent = parentOf(entry.path);
+      if (next[parent]) {
+        const remaining = next[parent].filter((name) => name !== entry.name);
+        if (remaining.length > 0) next[parent] = remaining;
+        else delete next[parent];
+      }
+      if (entry.isDir) {
+        for (const orderParent of Object.keys(next)) {
+          if (orderParent === entry.path || orderParent.startsWith(`${entry.path}/`)) delete next[orderParent];
+        }
+      }
+      persistManualOrder(vaultRoot, next);
+      return next;
+    });
+  }
+
   async function handleMoveEntry(entry: VaultEntry, target: VaultEntry, placement: DropPlacement) {
     const destinationDir = placement === "inside" ? target.path : parentOf(target.path);
     if (!vaultRoot || entry.path === target.path) return;
     if (placement === "inside" && !target.isDir) return;
     if (entry.isDir && (destinationDir === entry.path || destinationDir.startsWith(`${entry.path}/`))) return;
 
+    // 同目录拖动只改变展示顺序，不做无意义的磁盘操作和整树刷新。
+    if (parentOf(entry.path) === destinationDir) {
+      updateManualOrderAfterMove(entry, entry, target, placement);
+      return;
+    }
+
     try {
       const moved = await moveVaultEntry(vaultRoot, entry.path, destinationDir);
       remapOpenVaultPaths(entry.path, moved.path, entry.isDir);
       updateManualOrderAfterMove(entry, moved, target, placement);
+      updateEntriesAfterMove(entry, moved, destinationDir);
       if (destinationDir) expandDirs([destinationDir, ...ancestorsOf(destinationDir)]);
-      await handleRefresh();
-      toast.success(`已移动「${entry.name}」到「${target.name}」`);
     } catch (error) {
       const { message } = parseVaultError(error, "移动文件失败");
       toast.error(message);
-    } finally {
-      setDraggingEntry(undefined);
-      setDropTarget(undefined);
     }
   }
 
@@ -334,6 +427,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     if (!vaultRoot || !deleteTarget) return;
     try {
       await deleteVaultEntry(vaultRoot, deleteTarget.path, deleteTarget.isDir);
+      updateManualOrderAfterDelete(deleteTarget);
       await handleRefresh();
       toast.success(`已删除 ${deleteTarget.name}`);
     } catch (error) {
@@ -342,11 +436,92 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     }
   }
 
-  function handleNodeAction(action: FileTreeNodeAction, entry: VaultEntry) {
+  async function handleNodeAction(action: FileTreeNodeAction, entry: VaultEntry) {
     if (action === "rename") setRenamingPath(entry.path);
     if (action === "delete") setDeleteTarget(entry);
     if (action === "new-file") setCreateTarget({ parentDir: entry.path, isDir: false });
     if (action === "new-folder") setCreateTarget({ parentDir: entry.path, isDir: true });
+
+    if (action === "copy-relative-path") {
+      try {
+        await copyTextToClipboard(entry.path);
+        toast.success("已复制相对路径");
+      } catch {
+        toast.error("复制失败");
+      }
+    }
+
+    if (action === "copy-absolute-path") {
+      if (!vaultRoot) return;
+      try {
+        const absolutePath = `${vaultRoot}\\${entry.path.replace(/\//g, "\\")}`;
+        await copyTextToClipboard(absolutePath);
+        toast.success("已复制绝对路径");
+      } catch {
+        toast.error("复制失败");
+      }
+    }
+
+    if (action === "show-in-explorer") {
+      if (!vaultRoot) return;
+      try {
+        const absolutePath = `${vaultRoot}\\${entry.path.replace(/\//g, "\\")}`;
+        await showInExplorer(absolutePath);
+      } catch (error) {
+        const { message } = parseVaultError(error, "打开失败");
+        toast.error(message);
+      }
+    }
+
+    if (action === "copy-entry") {
+      setCopiedEntryPath(entry.path);
+      toast.success(`已复制 ${entry.name}`);
+    }
+
+    if (action === "paste-entry") {
+      if (!vaultRoot) return;
+      const copiedPath = useVaultStore.getState().copiedEntryPath;
+      if (!copiedPath) {
+        // 尝试从系统剪贴板读取文件路径
+        try {
+          const paths = await readPathsFromClipboard();
+          if (paths.length === 0) {
+            toast.error("剪贴板中没有可粘贴的内容");
+            return;
+          }
+
+          // 确定粘贴目标目录
+          const targetDir = entry.isDir ? entry.path : parentOf(entry.path);
+
+          for (const sourcePath of paths) {
+            try {
+              await copyVaultEntry(vaultRoot, sourcePath, targetDir);
+            } catch (error) {
+              const { message } = parseVaultError(error, "粘贴失败");
+              toast.error(message);
+            }
+          }
+
+          await handleRefresh();
+          toast.success(`已粘贴 ${paths.length} 个项目`);
+        } catch (error) {
+          toast.error("无法读取剪贴板");
+        }
+        return;
+      }
+
+      // 内部复制
+      try {
+        const targetDir = entry.isDir ? entry.path : parentOf(entry.path);
+        await copyVaultEntry(vaultRoot, copiedPath, targetDir);
+        await handleRefresh();
+        const copiedEntry = entries.find((e) => e.path === copiedPath);
+        toast.success(`已粘贴 ${copiedEntry?.name ?? "文件"}`);
+      } catch (error) {
+        const { message } = parseVaultError(error, "粘贴失败");
+        toast.error(message);
+      }
+    }
   }
 
   const keyword = treeQuery.trim().toLowerCase();
@@ -362,7 +537,11 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
       if (bucket) bucket.push(entry);
       else byParent.set(key, [entry]);
     }
-    for (const [parent, bucket] of byParent) bucket.sort((left, right) => compareEntries(left, right, manualOrder[parent]));
+    for (const [parent, bucket] of byParent) {
+      const order = manualOrder[parent];
+      const ranks = order ? new Map(order.map((name, index) => [name, index])) : undefined;
+      bucket.sort((left, right) => compareEntries(left, right, ranks));
+    }
 
     // 搜索时用「命中项 + 其全部祖先」的白名单，并把祖先目录视作展开，
     // 这样命中深层文件也能直接看见，且不污染持久化的展开态。
@@ -447,6 +626,21 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
+            title="定位当前文档"
+            aria-label="在文件树中定位当前文档"
+            disabled={!vaultRoot || !hasActiveFile}
+            onClick={() => {
+              const activePath = useVaultStore.getState().activeFilePath;
+              if (activePath) useVaultStore.getState().requestLocatePath(activePath);
+            }}
+          >
+            <LocateFixed className="size-3.5" />
+          </Button>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="mk-file-tree-tool"
             title={allDirectoriesExpanded ? "全部收起" : "全部展开"}
             aria-label={allDirectoriesExpanded ? "全部收起目录" : "全部展开目录"}
             disabled={!vaultRoot || directoryPaths.length === 0}
@@ -455,7 +649,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
               else expandDirs(directoryPaths);
             }}
           >
-            {allDirectoriesExpanded ? <ChevronsUp className="size-3.5" /> : <ChevronsDown className="size-3.5" />}
+            {allDirectoriesExpanded ? <ChevronsDownUp className="size-3.5" /> : <ChevronsUpDown className="size-3.5" />}
           </Button>
         </div>
 
@@ -517,21 +711,12 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
               entry={entry}
               depth={depth}
               expanded={expanded}
-              active={entry.path === activeFilePath}
               renaming={entry.path === renamingPath}
               onToggle={handleToggle}
               onSelect={onOpenFile}
               onAction={handleNodeAction}
               onRenameSubmit={(target, nextName) => void handleRenameSubmit(target, nextName)}
               onRenameCancel={() => setRenamingPath(undefined)}
-              draggingPath={draggingEntry?.path}
-              dropTarget={dropTarget}
-              onDragStart={setDraggingEntry}
-              onDragEnd={() => {
-                setDraggingEntry(undefined);
-                setDropTarget(undefined);
-              }}
-              onDropTargetChange={setDropTarget}
               onDropIntoDirectory={(sourcePath, target, placement) => {
                 const source = entries.find((entry) => entry.path === sourcePath);
                 if (source) void handleMoveEntry(source, target, placement);
@@ -543,13 +728,13 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
         </ContextMenu.Trigger>
 
         <ContextMenu.Portal>
-          <ContextMenu.Content className="z-50 min-w-40 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800" onSelect={() => void handleOpenVault()}>打开文件夹</ContextMenu.Item>
+          <ContextMenu.Content className="z-50 w-fit rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleOpenVault()}><FolderOpen className="size-4" />打开文件夹</ContextMenu.Item>
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800" onSelect={() => setCreateTarget({ parentDir: "", isDir: false })} disabled={!vaultRoot}>新建文件</ContextMenu.Item>
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800" onSelect={() => setCreateTarget({ parentDir: "", isDir: true })} disabled={!vaultRoot}>新建文件夹</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: false })} disabled={!vaultRoot}><FilePlus2 className="size-4" />新建文件</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: true })} disabled={!vaultRoot}><FolderPlus className="size-4" />新建文件夹</ContextMenu.Item>
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800" onSelect={() => void handleRefresh()} disabled={!vaultRoot || isLoadingTree}>刷新文件树</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleRefresh()} disabled={!vaultRoot || isLoadingTree}><RefreshCw className="size-4" />刷新文件树</ContextMenu.Item>
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>

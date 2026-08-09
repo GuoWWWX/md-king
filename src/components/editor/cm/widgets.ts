@@ -1,6 +1,53 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 
+const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+/**
+ * 代码块右上角的复制按钮。
+ *
+ * 放在围栏首行末尾（side:1 widget），绝对定位浮在右上角；
+ * 点击后图标短暂切换成对勾再还原，给用户明确的操作反馈。
+ */
+export class CopyCodeWidget extends WidgetType {
+  constructor(private readonly code: string) {
+    super();
+  }
+
+  eq(other: CopyCodeWidget): boolean {
+    return other.code === this.code;
+  }
+
+  toDOM(): HTMLElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mk-cm-copy-code";
+    btn.setAttribute("aria-label", "复制代码");
+    btn.title = "复制代码";
+    btn.innerHTML = COPY_ICON;
+
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void navigator.clipboard.writeText(this.code).then(() => {
+        btn.innerHTML = CHECK_ICON;
+        btn.classList.add("mk-cm-copy-code--ok");
+        window.setTimeout(() => {
+          btn.innerHTML = COPY_ICON;
+          btn.classList.remove("mk-cm-copy-code--ok");
+        }, 1500);
+      });
+    });
+
+    return btn;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 /**
  * 无序列表的排版化圆点。
  *

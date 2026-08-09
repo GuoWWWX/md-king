@@ -303,3 +303,120 @@ export function deleteVaultEntry(root: string, path: string, recursive: boolean)
 
   return delay<void>(undefined);
 }
+
+export function copyVaultEntry(root: string, sourcePath: string, targetDir: string) {
+  if (isTauriEnvironment()) {
+    return invoke<VaultEntry>("copy_vault_entry", { root, sourcePath, targetDir });
+  }
+
+  const isDir = mockDirs.has(sourcePath);
+  if (!isDir && !mockFiles.has(sourcePath)) {
+    return Promise.reject(vaultError("NOT_FOUND", "要复制的文件不存在"));
+  }
+  if (targetDir && !mockDirs.has(targetDir)) {
+    return Promise.reject(vaultError("NOT_FOUND", "目标文件夹不存在"));
+  }
+  if (isDir && targetDir && targetDir.startsWith(`${sourcePath}/`)) {
+    return Promise.reject(vaultError("INVALID_NAME", "不能将文件夹复制到自身子目录中"));
+  }
+
+  const baseName = baseNameOf(sourcePath);
+  let finalName = baseName;
+  let counter = 1;
+
+  // 自动重命名避免冲突
+  while (mockPathExists(joinPath(targetDir, finalName))) {
+    const dotIndex = baseName.lastIndexOf(".");
+    if (dotIndex > 0) {
+      const stem = baseName.slice(0, dotIndex);
+      const ext = baseName.slice(dotIndex);
+      finalName = `${stem} (${counter})${ext}`;
+    } else {
+      finalName = `${baseName} (${counter})`;
+    }
+    counter++;
+    if (counter > 999) {
+      return Promise.reject(vaultError("EXISTS", "无法找到可用的文件名"));
+    }
+  }
+
+  const targetPath = joinPath(targetDir, finalName);
+
+  if (isDir) {
+    // 递归复制目录
+    const prefix = `${sourcePath}/`;
+    mockDirs.add(targetPath);
+
+    for (const dir of [...mockDirs]) {
+      if (dir.startsWith(prefix)) {
+        const relativePath = dir.slice(prefix.length);
+        mockDirs.add(joinPath(targetPath, relativePath));
+      }
+    }
+
+    for (const [filePath, file] of [...mockFiles]) {
+      if (filePath.startsWith(prefix)) {
+        const relativePath = filePath.slice(prefix.length);
+        mockFiles.set(joinPath(targetPath, relativePath), {
+          content: file.content,
+          modifiedMs: Date.now(),
+        });
+      }
+    }
+  } else {
+    const file = mockFiles.get(sourcePath);
+    mockFiles.set(targetPath, {
+      content: file?.content ?? "",
+      modifiedMs: Date.now(),
+    });
+  }
+
+  return delay(toEntry(targetPath, isDir));
+}
+
+export function showInExplorer(path: string) {
+  if (isTauriEnvironment()) {
+    return invoke<void>("show_in_explorer", { path });
+  }
+
+  // 浏览器环境无法打开文件管理器
+  return Promise.reject(new Error("浏览器环境不支持打开文件管理器"));
+}
+
+export async function copyTextToClipboard(text: string) {
+  if (isTauriEnvironment()) {
+    // Tauri 环境使用 Clipboard API 或 writeText plugin
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return Promise.reject(new Error("剪贴板 API 不可用"));
+  }
+
+  // 浏览器环境
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+
+  return Promise.reject(new Error("剪贴板 API 不可用"));
+}
+
+export async function readPathsFromClipboard(): Promise<string[]> {
+  if (!isTauriEnvironment()) {
+    // 浏览器环境从剪贴板读取文件路径不太可行，返回空数组
+    return [];
+  }
+
+  // Tauri 环境尝试读取剪贴板文本
+  if (navigator.clipboard?.readText) {
+    try {
+      const text = await navigator.clipboard.readText();
+      // 尝试解析为文件路径（Windows/Unix 路径格式）
+      const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+      return lines;
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}

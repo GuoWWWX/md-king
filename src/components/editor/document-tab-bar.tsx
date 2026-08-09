@@ -1,4 +1,4 @@
-import { FileText, FileType2, X } from "lucide-react";
+import { FileText, FileType2, X, Copy } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
@@ -191,7 +191,7 @@ type DocumentTabItemProps = {
   dragged: boolean;
 };
 
-const contextItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-[6px] px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
+const contextItemClass = "relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
 function DocumentTabItem({ tab, active, tabCount, onSelect, onRequestClose, onAuxClick, onCloseOthers, onCloseAll, dragged }: DocumentTabItemProps) {
   const [hoveringClose, setHoveringClose] = useState(false);
@@ -256,14 +256,14 @@ function DocumentTabItem({ tab, active, tabCount, onSelect, onRequestClose, onAu
       </ContextMenu.Trigger>
 
       <ContextMenu.Portal>
-        <ContextMenu.Content className="z-50 min-w-36 rounded-[10px] border border-slate-200 bg-white p-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          <ContextMenu.Item className={contextItemClass} onSelect={onRequestClose}>关闭</ContextMenu.Item>
-          <ContextMenu.Item className={contextItemClass} onSelect={onCloseOthers} disabled={tabCount <= 1}>关闭其他</ContextMenu.Item>
-          <ContextMenu.Item className={contextItemClass} onSelect={onCloseAll}>关闭全部</ContextMenu.Item>
+        <ContextMenu.Content className="z-50 w-fit rounded-[10px] border border-slate-200 bg-white p-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          <ContextMenu.Item className={contextItemClass} onSelect={onRequestClose}><X className="size-4" />关闭</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={onCloseOthers} disabled={tabCount <= 1}><X className="size-4" />关闭其他</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={onCloseAll}><X className="size-4" />关闭全部</ContextMenu.Item>
           {tab.path ? (
             <>
               <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-              <ContextMenu.Item className={contextItemClass} onSelect={() => void navigator.clipboard.writeText(tab.path ?? "")}>复制路径</ContextMenu.Item>
+              <ContextMenu.Item className={contextItemClass} onSelect={() => void navigator.clipboard.writeText(tab.path ?? "")}><Copy className="size-4" />复制路径</ContextMenu.Item>
             </>
           ) : null}
         </ContextMenu.Content>

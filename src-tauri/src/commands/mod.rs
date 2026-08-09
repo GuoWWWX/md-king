@@ -15,5 +15,5 @@ pub use template_commands::{
 };
 pub use vault_commands::{
     create_vault_entry, delete_vault_entry, list_vault_entries, move_vault_entry, open_vault,
-    read_vault_file, rename_vault_entry, write_vault_file,
+    read_vault_file, rename_vault_entry, write_vault_file, copy_vault_entry, show_in_explorer,
 };

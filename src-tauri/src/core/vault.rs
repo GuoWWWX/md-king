@@ -665,10 +665,16 @@ pub fn read_file(root: &Path, relative: &str) -> Result<VaultFileContent, String
         None => (text, false),
     };
     let eol = detect_eol(&text);
+    // 绝大多数 Markdown 是 LF；直接移动已有 String，避免打开大文件时再完整复制一份。
+    let content = if text.contains('\r') {
+        normalize_newlines(&text)
+    } else {
+        text
+    };
 
     Ok(VaultFileContent {
         path: to_relative_string(&validate_relative_path(relative)?),
-        content: normalize_newlines(&text),
+        content,
         eol: eol.to_string(),
         has_bom,
         modified_ms: modified_ms(&meta),
@@ -943,6 +949,134 @@ fn entry_at(root: &Path, relative: &str) -> Result<VaultEntry, String> {
         modified_ms: modified_ms(&meta),
         has_children: meta.is_dir() && dir_has_visible_children(&absolute),
     })
+}
+
+/// 复制文件或目录到目标位置，支持自动重命名避免冲突。
+///
+/// target_dir 为空字符串表示复制到 vault 根目录。
+/// 如果目标位置已有同名文件，自动在文件名后加 (1)、(2) 等后缀。
+pub fn copy_entry(
+    root: &Path,
+    source_relative: &str,
+    target_dir: &str,
+) -> Result<VaultEntry, String> {
+    let source_normalized = validate_relative_path(source_relative)?;
+    let source = resolve_in_vault(root, source_relative)?;
+    let source_meta = fs::metadata(&source)
+        .map_err(|error| io_error_message("复制", &error))?;
+
+    let destination_dir = if target_dir.trim().is_empty() {
+        root.to_path_buf()
+    } else {
+        let target_dir_normalized = validate_relative_path(target_dir)?;
+        resolve_in_vault(root, &to_relative_string(&target_dir_normalized))?
+    };
+
+    let destination_meta = fs::metadata(&destination_dir)
+        .map_err(|error| io_error_message("复制", &error))?;
+    if !destination_meta.is_dir() {
+        return Err(vault_err(CODE_NOT_FOUND, "目标不是文件夹。"));
+    }
+
+    // 不允许把目录复制到自己的子目录下
+    if source_meta.is_dir() {
+        let dest_rel = destination_dir
+            .strip_prefix(root)
+            .ok()
+            .and_then(|p| p.to_str())
+            .unwrap_or("");
+        let source_rel = to_relative_string(&source_normalized);
+        if !dest_rel.is_empty() && dest_rel.starts_with(&format!("{}/", source_rel)) {
+            return Err(vault_err(CODE_INVALID_NAME, "不能将文件夹复制到自身子目录中。"));
+        }
+    }
+
+    let source_name = source_normalized
+        .file_name()
+        .and_then(|v| v.to_str())
+        .ok_or_else(|| vault_err(CODE_INVALID_NAME, "路径中包含无法识别的字符。"))?;
+
+    // 自动重命名避免冲突
+    let (_final_name, final_path) = find_available_name(&destination_dir, source_name)?;
+
+    if !source_meta.is_dir() {
+        ensure_allowed_file(&source)?;
+        ensure_allowed_file(&final_path)?;
+    }
+
+    // 执行复制
+    if source_meta.is_dir() {
+        copy_dir_recursive(&source, &final_path)?;
+    } else {
+        fs::copy(&source, &final_path)
+            .map_err(|error| io_error_message("复制文件", &error))?;
+    }
+
+    // 计算相对路径
+    let target_relative = final_path
+        .strip_prefix(root)
+        .ok()
+        .and_then(|p| p.to_str())
+        .map(|s| s.replace('\\', "/"))
+        .ok_or_else(|| vault_err(CODE_OUT_OF_VAULT, "目标路径超出 vault 范围。"))?;
+
+    entry_at(root, &target_relative)
+}
+
+/// 找到可用的文件名，如果已存在则加 (1)、(2) 等后缀
+fn find_available_name(dir: &Path, base_name: &str) -> Result<(String, PathBuf), String> {
+    let mut candidate = dir.join(base_name);
+    if !candidate.exists() {
+        return Ok((base_name.to_string(), candidate));
+    }
+
+    // 分离文件名和扩展名
+    let (stem, ext) = match base_name.rfind('.') {
+        Some(pos) if pos > 0 => {
+            let stem = &base_name[..pos];
+            let ext = &base_name[pos..]; // 包含 .
+            (stem, ext)
+        }
+        _ => (base_name, ""),
+    };
+
+    // 尝试 (1) 到 (999)
+    for i in 1..1000 {
+        let new_name = format!("{stem} ({i}){ext}");
+        candidate = dir.join(&new_name);
+        if !candidate.exists() {
+            return Ok((new_name, candidate));
+        }
+    }
+
+    Err(vault_err(CODE_EXISTS, "无法找到可用的文件名。"))
+}
+
+/// 递归复制目录
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest)
+        .map_err(|error| io_error_message("创建目录", &error))?;
+
+    let entries = fs::read_dir(source)
+        .map_err(|error| io_error_message("读取目录", &error))?;
+
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        let file_name = entry.file_name();
+        let dest_path = dest.join(&file_name);
+
+        let meta = entry.metadata()
+            .map_err(|error| io_error_message("读取文件信息", &error))?;
+
+        if meta.is_dir() {
+            copy_dir_recursive(&entry_path, &dest_path)?;
+        } else {
+            fs::copy(&entry_path, &dest_path)
+                .map_err(|error| io_error_message("复制文件", &error))?;
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

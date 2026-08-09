@@ -3,8 +3,8 @@ import { isMermaidLanguage } from "@/lib/mermaid";
 import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
-import { selectionOnLines, selectionTouches } from "./selection-utils";
-import { BulletWidget, MermaidWidget, TaskCheckboxWidget } from "./widgets";
+import { selectionOnLines, selectionTouches, selectionTouchesOnSameLine } from "./selection-utils";
+import { BulletWidget, CopyCodeWidget, MermaidWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -55,6 +55,11 @@ type DecorationCollector = {
 
 function touches(collector: DecorationCollector, from: number, to: number): boolean {
   return collector.focused && selectionTouches(collector.state, from, to);
+}
+
+// 列表标记和复选框专用：pad 不跨行，避免光标停在上一行末尾误触发下一行源码展开。
+function touchesSameLine(collector: DecorationCollector, from: number, to: number): boolean {
+  return collector.focused && selectionTouchesOnSameLine(collector.state, from, to);
 }
 
 function onLines(collector: DecorationCollector, from: number, to: number): boolean {
@@ -113,6 +118,19 @@ function bulletDepth(node: SyntaxNode): number {
     if (parent.name === "BulletList" || parent.name === "OrderedList") depth += 1;
   }
   return Math.max(0, depth - 1);
+}
+
+/** 任务列表的 `- [ ]` 是一个完整标记；显隐判断不能把列表符号和复选框拆开。 */
+function taskSourceRange(node: SyntaxNode): { from: number; to: number } | undefined {
+  let listItem: SyntaxNode | null = node;
+  while (listItem && listItem.name !== "ListItem") listItem = listItem.parent;
+  if (!listItem) return undefined;
+
+  const listMark = listItem.getChild("ListMark");
+  const task = listItem.getChild("Task");
+  const taskMarker = node.name === "TaskMarker" ? node : task?.getChild("TaskMarker");
+  if (!listMark || !taskMarker) return undefined;
+  return { from: listMark.from, to: taskMarker.to };
 }
 
 const headingPattern = /^ATXHeading([1-6])$/;
@@ -191,17 +209,20 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
   const node = ref.node;
   const parentList = node.parent?.parent;
   const ordered = parentList?.name === "OrderedList";
-  const taskItem = node.parent?.getChild("Task") != null;
+  const taskRange = taskSourceRange(node);
 
   addLine(collector, line.from, ordered ? "mk-cm-list-line mk-cm-list-ordered" : "mk-cm-list-line");
 
-  if (onLines(collector, ref.from, ref.to)) return;
   // 任务项用 TaskMarker 的复选框作为唯一符号，不能再额外留一个普通圆点。
-  // 列表符号后的空格一并隐藏；TaskMarker 之后原有的空格会保留，正好是符号与正文的一个英文字符间距。
-  if (taskItem) {
+  // `- [ ]` 作为一个整体判断：只有光标靠近这组标记时才一起显示源码，
+  // 光标落在正文的其他位置不能单独露出前面的短横线。
+  if (taskRange) {
+    if (touchesSameLine(collector, taskRange.from, taskRange.to)) return;
     hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
     return;
   }
+
+  if (touchesSameLine(collector, ref.from, ref.to)) return;
   // 有序列表的 `1.` 本身就是要读的内容，只有无序列表的 `-`/`*`/`+` 换成排版化圆点。
   if (ordered) return;
 
@@ -272,12 +293,20 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
     addLine(collector, line.from, `mk-cm-code-line${edge}`);
   }
 
-  // 只有渲染态才挂语言标签：编辑态首行显示的就是 ```java 本身，
-  // 再叠一个标签会和源码文字重合。
-  if (!editing && language && firstLine.from >= rangeFrom && firstLine.from <= rangeTo) {
-    collector.decorations.push(
-      Decoration.line({ attributes: { "data-code-language": language } }).range(firstLine.from),
-    );
+  // 只有渲染态才挂语言标签和复制按钮：编辑态首行显示的就是 ```java 本身。
+  if (!editing && firstLine.from >= rangeFrom && firstLine.from <= rangeTo) {
+    if (language) {
+      collector.decorations.push(
+        Decoration.line({ attributes: { "data-code-language": language } }).range(firstLine.from),
+      );
+    }
+    // 复制按钮作为 side:1 的 widget 挂在围栏首行末尾，绝对定位在右上角。
+    const codeText = extractFenceCodeText(state, ref.from, ref.to);
+    if (codeText) {
+      collector.decorations.push(
+        Decoration.widget({ widget: new CopyCodeWidget(codeText), side: 1 }).range(firstLine.to),
+      );
+    }
   }
 }
 
@@ -285,8 +314,9 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
 function handleTaskMarker(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const marker = collector.state.doc.sliceString(ref.from, ref.to);
   if (!/^\[(?: |x|X)\]$/.test(marker)) return;
-  // 只在光标靠近标记本身时回到源码态，正文仍保持复选框，和行内代码的手感一致。
-  if (touches(collector, ref.from, ref.to)) return;
+  // 用行级判定：字符级 touches(pad=1) 会向外扩一格，光标停在上一行末尾就会跨行误触发。
+  const sourceRange = taskSourceRange(ref.node) ?? ref;
+  if (touchesSameLine(collector, sourceRange.from, sourceRange.to)) return;
   const widget = Decoration.replace({ widget: new TaskCheckboxWidget(marker[1].toLowerCase() === "x") });
   collector.decorations.push(widget.range(ref.from, ref.to));
   collector.atomics.push(widget.range(ref.from, ref.to));
@@ -294,7 +324,7 @@ function handleTaskMarker(collector: DecorationCollector, ref: SyntaxNodeRef): v
 
 function buildDecorations(view: EditorView): { decorations: DecorationSet; atomics: DecorationSet } {
   const state = view.state;
-  const collector: DecorationCollector = { state, focused: view.hasFocus, decorations: [], atomics: [] };
+  const collector: DecorationCollector = { state, focused: view.hasFocus && !state.readOnly, decorations: [], atomics: [] };
   const tree = syntaxTree(state);
 
   for (const { from, to } of view.visibleRanges) {
@@ -455,6 +485,11 @@ function extractFenceBody(state: EditorState, from: number, to: number): string 
   const bodyEnd = closing ? state.doc.line(last.number - 1>= first.number + 1 ? last.number - 1 : first.number + 1).to : last.to;
   if (bodyEnd <= bodyStart) return "";
   return state.doc.sliceString(bodyStart, bodyEnd);
+}
+
+/** 取围栏代码块的纯文本正文（供复制按钮使用），去掉首尾围栏行。 */
+function extractFenceCodeText(state: EditorState, from: number, to: number): string {
+  return extractFenceBody(state, from, to);
 }
 
 /// 深浅色作为 field 的一部分：主题切换时要重画图，否则深色模式下

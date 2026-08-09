@@ -1,6 +1,7 @@
 import { redo, undo } from "@codemirror/commands";
-import { ClipboardPaste, FileText, UploadCloud } from "lucide-react";
-import { type ChangeEvent, type DragEvent, useEffect, useRef, useState, type ReactNode } from "react";
+import { EditorView } from "@codemirror/view";
+import { ClipboardPaste, FileText, UploadCloud, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save } from "lucide-react";
+import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 
-const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
+const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
 type ConversionInputCardProps = {
   markdown: string;
@@ -32,6 +33,8 @@ type ConversionInputCardProps = {
   /// 这个只负责把桌面端那条通道的高亮状态透进来。
   externalDragging?: boolean;
   onRequestSave?: () => void;
+  readingMode?: boolean;
+  onOpenLink?: (target: string) => void;
 };
 
 export function ConversionInputCard({
@@ -49,10 +52,21 @@ export function ConversionInputCard({
   onReadClipboard,
   externalDragging = false,
   onRequestSave,
+  readingMode = false,
+  onOpenLink,
 }: ConversionInputCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<LiveMarkdownEditorHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // 字符数统计去掉空白，行数排除空行，给用户有意义的计数。
+  const docStats = useMemo(() => {
+    if (!hasDocument || !markdown) return null;
+    const lines = markdown.split("\n");
+    const nonEmptyLines = lines.filter((l) => l.trim().length > 0).length;
+    const chars = markdown.replace(/\s/g, "").length;
+    return { chars, lines: nonEmptyLines };
+  }, [hasDocument, markdown]);
 
   useEffect(() => {
     if (!documentTabId) return undefined;
@@ -63,7 +77,10 @@ export function ConversionInputCard({
       const view = editorRef.current?.getView();
       if (!view) return;
       const line = view.state.doc.line(Math.min(Math.max(1, target.line), view.state.doc.lines));
-      view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+      view.dispatch({
+        selection: { anchor: line.from },
+        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+      });
       view.focus();
     };
 
@@ -191,11 +208,13 @@ export function ConversionInputCard({
           ref={editorRef}
           documentKey={documentKey}
           initialContent={markdown}
-          readOnly={disabled}
+          readOnly={disabled || readingMode}
           isDark={isDark}
           placeholder={"# 文档标题\n\n直接书写 Markdown，编辑器会实时渲染。"}
           onDocChanged={onChange}
           onRequestSave={onRequestSave}
+          onOpenLink={onOpenLink}
+          openLinksOnClick={readingMode}
           className="h-full"
         />
       ) : (
@@ -232,20 +251,25 @@ export function ConversionInputCard({
           </div>
         </div>
       )}
+        {docStats ? (
+          <div className="absolute bottom-2 right-3 select-none pointer-events-none text-[11px] text-slate-400 dark:text-zinc-500">
+            {docStats.chars.toLocaleString()} 字 · {docStats.lines.toLocaleString()} 行
+          </div>
+        ) : null}
         </section>
       </ContextMenu.Trigger>
 
       <ContextMenu.Portal>
-        <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={undoEditor} disabled={!hasDocument}>撤销</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={redoEditor} disabled={!hasDocument}>重做</ContextMenu.Item>
+        <ContextMenu.Content className="z-50 w-fit rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={undoEditor} disabled={!hasDocument}><Undo2 /><span className="flex-1">撤销</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+Z</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={redoEditor} disabled={!hasDocument}><Redo2 /><span className="flex-1">重做</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+Y</span></ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void cutEditorSelection()} disabled={!hasDocument}>剪切</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}>复制</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}>粘贴</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}>全选</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void cutEditorSelection()} disabled={!hasDocument}><Scissors /><span className="flex-1">剪切</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+X</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}><Copy /><span className="flex-1">复制</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+C</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}><Clipboard /><span className="flex-1">粘贴</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+V</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}><CheckSquare /><span className="flex-1">全选</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+A</span></ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onRequestSave?.()} disabled={!hasDocument || !onRequestSave}>保存文档</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onRequestSave?.()} disabled={!hasDocument || !onRequestSave}><Save /><span className="flex-1">保存</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+S</span></ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

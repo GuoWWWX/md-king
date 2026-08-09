@@ -41,6 +41,23 @@ export function selectionOnLines(state: EditorState, from: number, to: number): 
   return false;
 }
 
+/**
+ * 和 selectionTouches 一致，但 pad 不跨行。
+ *
+ * 光标停在行尾时，普通 touches(pad=1) 会把 +1 延伸到下一行的行首，
+ * 导致下一行行首的列表标记/复选框误触发。这里把 pad 限制在当前行边界内。
+ */
+export function selectionTouchesOnSameLine(state: EditorState, from: number, to: number, pad = 1): boolean {
+  const doc = state.doc;
+  const line = doc.lineAt(Math.min(from, doc.length));
+  const start = Math.max(from - pad, line.from);
+  const end = Math.min(to + pad, line.to);
+  for (const range of state.selection.ranges) {
+    if (range.from <= end && range.to >= start) return true;
+  }
+  return false;
+}
+
 /** 光标是否落在指定行号（1-based）上，供逐行装饰的代码块 / 引用使用。 */
 export function selectionOnLineNumber(state: EditorState, lineNumber: number): boolean {
   const doc = state.doc;

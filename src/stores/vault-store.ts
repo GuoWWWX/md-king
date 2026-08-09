@@ -73,6 +73,8 @@ type VaultState = {
   fileTreeVisible: boolean;
   fileTreeWidth: number;
   previewVisible: boolean;
+  locateRequest?: { path: string; id: number };
+  copiedEntryPath?: string;
 
   setVaultRoot: (root: string | undefined) => void;
   setRecentVaults: (recentVaults: string[]) => void;
@@ -93,6 +95,8 @@ type VaultState = {
   setFileTreeVisible: (fileTreeVisible: boolean) => void;
   setFileTreeWidth: (fileTreeWidth: number) => void;
   setPreviewVisible: (previewVisible: boolean) => void;
+  requestLocatePath: (path: string) => void;
+  setCopiedEntryPath: (path: string | undefined) => void;
 };
 
 export const useVaultStore = create<VaultState>((set, get) => ({
@@ -115,6 +119,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   fileTreeVisible: true,
   fileTreeWidth: DEFAULT_FILE_TREE_WIDTH,
   previewVisible: true,
+  locateRequest: undefined,
+  copiedEntryPath: undefined,
 
   setVaultRoot: (vaultRoot) => set({
     vaultRoot,
@@ -127,6 +133,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     activeFileModifiedMs: undefined,
     saveState: "clean",
     saveError: undefined,
+    locateRequest: undefined,
   }),
 
   setRecentVaults: (recentVaults) => set({ recentVaults: recentVaults.slice(0, MAX_RECENT_VAULTS) }),
@@ -198,4 +205,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   setFileTreeVisible: (fileTreeVisible) => set({ fileTreeVisible }),
   setFileTreeWidth: (fileTreeWidth) => set({ fileTreeWidth: clampFileTreeWidth(fileTreeWidth) }),
   setPreviewVisible: (previewVisible) => set({ previewVisible }),
+  requestLocatePath: (path) => set((state) => ({
+    fileTreeVisible: true,
+    locateRequest: { path, id: (state.locateRequest?.id ?? 0) + 1 },
+  })),
+  setCopiedEntryPath: (copiedEntryPath) => set({ copiedEntryPath }),
 }));

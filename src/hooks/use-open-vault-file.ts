@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { readVaultFile } from "@/lib/vault";
 import { useVaultStore } from "@/stores/vault-store";
@@ -30,13 +30,17 @@ export function useOpenVaultFile() {
   const vaultRoot = useVaultStore((state) => state.vaultRoot);
   const setActiveFile = useVaultStore((state) => state.setActiveFile);
   const setSaveState = useVaultStore((state) => state.setSaveState);
+  const requestVersionRef = useRef(0);
 
   return useCallback(
     async (relativePath: string) => {
       if (!vaultRoot) return;
+      const requestVersion = ++requestVersionRef.current;
 
       try {
         const file = await readVaultFile(vaultRoot, relativePath);
+        // 快速连续点击时，较早文件的磁盘读取可能更晚返回；只允许最后一次点击更新编辑区。
+        if (requestVersion !== requestVersionRef.current || useVaultStore.getState().vaultRoot !== vaultRoot) return;
         setActiveFile({
           path: file.path,
           eol: file.eol,
@@ -50,6 +54,7 @@ export function useOpenVaultFile() {
           content: file.content,
         });
       } catch (error) {
+        if (requestVersion !== requestVersionRef.current) return;
         const { code, message } = parseVaultError(error, "打开文件失败");
         if (code === "NOT_UTF8") {
           // 只读打开而不是直接失败：用户至少能看到内容，

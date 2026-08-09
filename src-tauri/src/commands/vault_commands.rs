@@ -1,7 +1,7 @@
 use crate::core::config::{load_config, save_config, MAX_RECENT_VAULTS};
 use crate::core::vault::{
     canonical_root, create_entry, delete_entry, display_path, list_entries, read_file,
-    move_entry, rename_entry, write_file, VaultEntry, VaultFileContent, VaultListing, VaultWriteResult,
+    move_entry, rename_entry, write_file, copy_entry, VaultEntry, VaultFileContent, VaultListing, VaultWriteResult,
 };
 
 /// 每个命令都自己重新规范化一次 root，而不是信任前端传回来的字符串。
@@ -34,9 +34,13 @@ pub fn list_vault_entries(
 }
 
 #[tauri::command]
-pub fn read_vault_file(root: String, path: String) -> Result<VaultFileContent, String> {
-    let root = resolve_root(&root)?;
-    read_file(&root, &path)
+pub async fn read_vault_file(root: String, path: String) -> Result<VaultFileContent, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = resolve_root(&root)?;
+        read_file(&root, &path)
+    })
+    .await
+    .map_err(|error| format!("LOCKED|读取文件任务失败：{error}"))?
 }
 
 #[tauri::command]
@@ -125,4 +129,53 @@ fn remember_vault(root: &str) {
     config.vault_root = Some(root.to_string());
     config.recent_vaults = recent;
     let _ = save_config(config);
+}
+
+#[tauri::command]
+pub fn copy_vault_entry(
+    root: String,
+    source_path: String,
+    target_dir: String,
+) -> Result<VaultEntry, String> {
+    let root = resolve_root(&root)?;
+    copy_entry(&root, &source_path, &target_dir)
+}
+
+#[tauri::command]
+pub fn show_in_explorer(path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&path);
+    if !path.exists() {
+        return Err("文件或目录不存在。".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("无法打开资源管理器：{}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("无法打开访达：{}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Linux 上尝试使用 xdg-open 打开父目录
+        if let Some(parent) = path.parent() {
+            std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| format!("无法打开文件管理器：{}", e))?;
+        }
+    }
+
+    Ok(())
 }

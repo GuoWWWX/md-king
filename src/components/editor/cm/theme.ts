@@ -16,6 +16,9 @@ import { tags } from "@lezer/highlight";
 const sharedTheme = EditorView.theme({
   "&": {
     height: "100%",
+    // 搜索面板靠绝对定位浮在右上角，定位上下文必须落在编辑器本体上，
+    // 否则它会相对更外层的滚动容器定位，滚动时跟着跑。
+    position: "relative",
     // 编辑器背景交给外层 .mk-editor-surface，这里透明避免叠出两层底色。
     backgroundColor: "transparent",
     color: "var(--foreground)",
@@ -36,7 +39,7 @@ const sharedTheme = EditorView.theme({
   },
   // 底部留白给到 40vh：写到文档末尾时最后一行仍能滚到屏幕中部，长文写作的基本手感。
   ".cm-line": {
-    padding: "0 2px",
+    padding: "0",
   },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--foreground)",
@@ -46,10 +49,106 @@ const sharedTheme = EditorView.theme({
     color: "var(--muted-foreground)",
   },
   ".cm-selectionBackground": {
-    borderRadius: "2px",
+    // drawSelection() 已禁用，这条规则不生效，选区由浏览器原生 ::selection 渲染。
+    backgroundColor: "transparent",
   },
   ".cm-activeLine": {
     backgroundColor: "transparent",
+  },
+  // 搜索面板：CM 默认把它当整行的 panel 布局，会横贯顶部并把正文往下挤。
+  // 外层 .cm-panels 改成绝对定位后就脱离了 panel 的高度计算，正文位置不受影响。
+  ".cm-panels": {
+    position: "absolute",
+    top: "0",
+    right: "0",
+    zIndex: "12",
+    width: "auto",
+    border: "none",
+    backgroundColor: "transparent",
+  },
+  ".cm-panels.cm-panels-top": {
+    borderBottom: "none",
+  },
+  ".cm-panel.cm-search": {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "4px",
+    // 悬浮框不能贴死边缘，右上角留出和滚动条的间距。
+    margin: "8px 12px 0 0",
+    padding: "6px",
+    maxWidth: "min(340px, calc(100vw - 32px))",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--popover, var(--background))",
+    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
+    fontFamily: "var(--font-sans, 'Geist Variable', sans-serif)",
+    fontSize: "11px",
+  },
+  ".cm-panel.cm-search br": {
+    // 官方模板用 <br> 换行分隔搜索行和替换行，flex 布局下它会占掉一整行宽度，
+    // 正好当作强制换行用，但要去掉默认高度免得多出一条空隙。
+    width: "100%",
+    height: "0",
+  },
+  ".cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label": {
+    fontFamily: "inherit",
+    fontSize: "11px",
+  },
+  ".cm-panel.cm-search input[name='search'], .cm-panel.cm-search input[name='replace']": {
+    width: "132px",
+    height: "24px",
+    padding: "0 6px",
+    borderRadius: "5px",
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--background)",
+    color: "var(--foreground)",
+    outline: "none",
+  },
+  ".cm-panel.cm-search input[name='search']:focus, .cm-panel.cm-search input[name='replace']:focus": {
+    borderColor: "var(--ring, rgba(37, 99, 235, 0.5))",
+  },
+  ".cm-panel.cm-search button:not([name='close'])": {
+    height: "24px",
+    padding: "0 8px",
+    borderRadius: "5px",
+    border: "1px solid var(--border)",
+    backgroundColor: "transparent",
+    backgroundImage: "none",
+    color: "var(--foreground)",
+    cursor: "pointer",
+  },
+  ".cm-panel.cm-search button:not([name='close']):hover": {
+    backgroundColor: "var(--accent, rgba(148, 163, 184, 0.18))",
+  },
+  ".cm-panel.cm-search label": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "3px",
+    color: "var(--muted-foreground)",
+    whiteSpace: "nowrap",
+  },
+  ".cm-panel.cm-search [name='close']": {
+    position: "static",
+    // 关掉官方那个绝对定位的大号 ×，改成排在最后的小按钮，免得盖住输入框。
+    order: "99",
+    padding: "0 4px",
+    border: "none",
+    background: "transparent",
+    color: "var(--muted-foreground)",
+    fontSize: "14px",
+    lineHeight: "1",
+    cursor: "pointer",
+  },
+  ".cm-panel.cm-search [name='close']:hover": {
+    color: "var(--foreground)",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "rgba(250, 204, 21, 0.32)",
+    borderRadius: "2px",
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "rgba(249, 115, 22, 0.48)",
   },
 });
 

@@ -32,6 +32,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   const openVaultFile = useOpenVaultFile();
   const [documentDrawerOpen, setDocumentDrawerOpen] = useState(false);
   const [documentDrawerView, setDocumentDrawerView] = useState<DocumentDrawerView>("outline");
+  const [documentDrawerWidth, setDocumentDrawerWidth] = useState(340);
 
   // 文件树只服务转换页：模板中心/历史/设置/关于跟 vault 无关，
   // 在那些页面留一条空侧栏既是噪音，也白占两百多像素。
@@ -115,7 +116,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
                 max={FILE_TREE_WIDTH_RANGE.max}
                 onResize={setFileTreeWidth}
                 collapsed={!showFileTree}
-                onCollapsedChange={setFileTreeVisible}
+                // onCollapsedChange 传的是「是否已收起」，和 visible 语义相反，必须取反。
+                onCollapsedChange={(collapsed) => setFileTreeVisible(!collapsed)}
                 ariaLabel="调整文件树宽度"
                 // 容器本身零宽，但仍会占掉一份 flex gap。负 margin 抵消掉，
                 // 让这道缝和图标栏那边一样宽。
@@ -135,7 +137,31 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
               {children}
             </div>
           </main>
-          {activePage === "convert" ? <DocumentSideDrawer open={documentDrawerOpen} onOpenChange={setDocumentDrawerOpen} view={documentDrawerView} onViewChange={handleDocumentDrawerViewChange} className={!previewVisible ? "-ml-[5px]" : undefined} /> : null}
+          {activePage === "convert" ? (
+            <>
+              <ResizableDivider
+                orientation="vertical"
+                size={documentDrawerWidth}
+                min={160}
+                max={520}
+                from="end"
+                onResize={setDocumentDrawerWidth}
+                collapsed={!documentDrawerOpen}
+                // 同上：collapsed=true 表示刚收起，对应 open=false。
+                onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
+                ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
+                className={previewVisible ? "-ml-[5px]" : "-ml-[10px]"}
+              />
+              {documentDrawerOpen ? (
+                <DocumentSideDrawer
+                  open
+                  width={documentDrawerWidth}
+                  view={documentDrawerView}
+                  onViewChange={handleDocumentDrawerViewChange}
+                />
+              ) : null}
+            </>
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,9 +1,11 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup, markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { syntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
+import { closeSearchPanel, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
-import { EditorView, drawSelection, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
+import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { livePreviewPlugin, mermaidBlockExtension } from "./cm/live-preview";
@@ -24,6 +26,8 @@ export type LiveMarkdownEditorProps = {
   /** 每次真实用户输入立即调用，不 debounce。给「未保存」状态用，脏标记必须是即时的。 */
   onDirty?: () => void;
   onRequestSave?: () => void;
+  onOpenLink?: (target: string) => void;
+  openLinksOnClick?: boolean;
   className?: string;
 };
 
@@ -46,13 +50,14 @@ function docChangeDebounceMs(length: number): number {
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
-  { documentKey, initialContent, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, className },
+  { documentKey, initialContent, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onOpenLink, openLinksOnClick = false, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
+  const livePreviewCompartment = useRef(new Compartment()).current;
   // mermaid 的块级装饰带着深浅色：主题变了图要重画，
   // 否则深色模式下拿到的还是缓存里的浅色版本。
   const mermaidCompartment = useRef(new Compartment()).current;
@@ -62,9 +67,13 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const onDocChangedRef = useRef(onDocChanged);
   const onDirtyRef = useRef(onDirty);
   const onRequestSaveRef = useRef(onRequestSave);
+  const onOpenLinkRef = useRef(onOpenLink);
+  const openLinksOnClickRef = useRef(openLinksOnClick);
   onDocChangedRef.current = onDocChanged;
   onDirtyRef.current = onDirty;
   onRequestSaveRef.current = onRequestSave;
+  onOpenLinkRef.current = onOpenLink;
+  openLinksOnClickRef.current = openLinksOnClick;
 
   const debounceRef = useRef<number | null>(null);
   // 首个 documentKey 已经由 initialContent 建进 state，不能在 mount 后再替换一次。
@@ -101,11 +110,35 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     const extensions: Extension[] = [
       history(),
       markdownIndentUnit,
-      drawSelection(),
+      // drawSelection() 去掉：它把每行选区背景填满整行宽度直到容器右边缘，
+      // 导致选区右侧无边距而文字右侧有 24px 边距，视觉上左右不对称。
+      // 改用浏览器原生 ::selection，选区只包裹被选中的字符宽度，和文字边距一致。
       rectangularSelection(),
       EditorView.lineWrapping,
+      EditorView.domEventHandlers({
+        click: (event, view) => {
+          if (!openLinksOnClickRef.current && !event.ctrlKey && !event.metaKey) return false;
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+          if (position === null) return false;
+
+          let node = syntaxTree(view.state).resolveInner(position, -1);
+          while (node.parent && node.name !== "Link" && node.name !== "Autolink") node = node.parent;
+          if (node.name !== "Link" && node.name !== "Autolink") return false;
+          const url = node.getChild("URL");
+          if (!url) return false;
+
+          const target = view.state.doc.sliceString(url.from, url.to).trim();
+          if (!target) return false;
+          event.preventDefault();
+          onOpenLinkRef.current?.(target);
+          return true;
+        },
+      }),
       // Prec 顺序即数组顺序：Mod-s 必须排在 defaultKeymap 之前，
       // 否则会被更靠前的绑定截胡（默认没绑 Mod-s，但保持这个顺序更稳）。
+      // 面板挂到顶部，配合 theme 里的绝对定位浮在右上角，不挤压正文布局。
+      search({ top: true }),
+      highlightSelectionMatches(),
       keymap.of([
         {
           key: "Mod-s",
@@ -116,6 +149,39 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
             return true;
           },
         },
+        // Ctrl+F / Ctrl+R 都开同一个面板（面板本身自带替换输入框）。
+        // 必须 preventDefault：Ctrl+R 在 WebView 里是刷新页面，一旦漏下去当前编辑内容就没了。
+        {
+          key: "Mod-f",
+          preventDefault: true,
+          run: (view) => {
+            openSearchPanel(view);
+            return true;
+          },
+        },
+        {
+          key: "Mod-r",
+          preventDefault: true,
+          run: (view) => {
+            openSearchPanel(view);
+            // 面板是下一帧才插进 DOM 的，同步 querySelector 拿不到替换框。
+            requestAnimationFrame(() => {
+              const replaceInput = view.dom.querySelector<HTMLInputElement>('.cm-panel.cm-search input[name="replace"]');
+              replaceInput?.select();
+            });
+            return true;
+          },
+        },
+        {
+          key: "Escape",
+          run: (view) => {
+            // 没开面板时返回 false，把 Esc 让给其他绑定（比如退出多光标）。
+            return closeSearchPanel(view);
+          },
+        },
+        // 剩下的面板内快捷键（Enter 下一个、Shift-Enter 上一个、Mod-Alt-g 跳转等）
+        // 直接复用官方绑定；它自带的 Mod-f/Mod-r/Escape 因为排在上面几条之后，不会抢先。
+        ...searchKeymap,
         // 这两条来自 lang-markdown，是列表续行和退格删标记的手感关键，
         // 必须排在 defaultKeymap 的 Enter/Backspace 之前。
         { key: "Enter", run: insertNewlineContinueMarkup },
@@ -132,7 +198,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 认成一整块 monospace，语言级 token 无从区分，编辑器和 Word 预览的
       // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
       markdown({ base: markdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
-      livePreviewPlugin,
+      livePreviewCompartment.of(livePreviewPlugin),
       mermaidCompartment.of(mermaidBlockExtension(isDark)),
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
@@ -173,6 +239,12 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       ],
     });
   }, [isDark, mermaidCompartment, themeCompartment]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: livePreviewCompartment.reconfigure(livePreviewPlugin),
+    });
+  }, [livePreviewCompartment, livePreviewPlugin]);
 
   useEffect(() => {
     viewRef.current?.dispatch({

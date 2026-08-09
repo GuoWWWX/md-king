@@ -8,6 +8,7 @@ import { AppSurface } from "@/components/ui/app-surface";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
 import { resolvePreviewImageSource } from "@/lib/tauri";
+import { nextMarkdownHeadingAnchor } from "@/lib/document-links";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ type WordPreviewPageProps = {
   thumbnailContainer?: HTMLElement | null;
   onThumbnailPageSelect?: (page: number) => void;
   onPreviewOutlineChange?: (items: PreviewOutlineItem[]) => void;
+  onOpenLink?: (target: string) => void;
   showPageFooter?: boolean;
   interactiveViewport?: boolean;
   className?: string;
@@ -607,24 +609,40 @@ function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined
   return Object.keys(style).length > 0 ? style : undefined;
 }
 
-function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle?: StyleNode) {
+function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void) {
   return segments.map((segment, index) => {
     if (segment.math) return <MathInline key={`${keyPrefix}-math-${index}`} text={segment.text} />;
 
     const markStyle = inlineMarkStyle(segment);
+    let content: ReactNode;
     if (segment.code && inlineCodeEnabled) {
-      return (
+      content = (
         <code
-          key={`${keyPrefix}-${index}`}
           className={cn("mx-0.5 rounded px-1 py-0.5", selectedRing(selectedStyle, "inline-code"))}
           style={{ ...inlineCodeStyle(inlineCodeDraft), ...markStyle }}
         >
           {segment.text}
         </code>
       );
+    } else {
+      content = markStyle ? <span style={markStyle}>{segment.text}</span> : segment.text;
     }
-    if (!markStyle) return segment.text;
-    return <span key={`${keyPrefix}-fmt-${index}`} style={markStyle}>{segment.text}</span>;
+
+    if (segment.link === undefined) return <span key={`${keyPrefix}-${index}`}>{content}</span>;
+    return (
+      <a
+        key={`${keyPrefix}-link-${index}`}
+        href={segment.link}
+        className="cursor-pointer"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpenLink(segment.link ?? "");
+        }}
+      >
+        {content}
+      </a>
+    );
   });
 }
 
@@ -852,7 +870,7 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
 function parseMarkdownPreview(markdown: string): PreviewBlock[] {
   const tokens = markdownParser.parse(markdown, {});
   const blocks: PreviewBlock[] = [];
-  let headingIndex = 0;
+  const headingAnchorCounts = new Map<string, number>();
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -861,8 +879,8 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
     if (token.type === "heading_open" && next?.type === "inline") {
       const level = Number(token.tag.slice(1));
       const normalizedLevel = Math.min(6, Math.max(1, level)) as HeadingLevel;
-      headingIndex += 1;
-      blocks.push({ type: "heading", level: normalizedLevel, text: plainText(inlineSegmentsFromToken(next)), anchorId: `heading-${headingIndex}` });
+      const text = plainText(inlineSegmentsFromToken(next));
+      blocks.push({ type: "heading", level: normalizedLevel, text, anchorId: nextMarkdownHeadingAnchor(text, headingAnchorCounts) });
       index += 2;
       continue;
     }
@@ -1217,6 +1235,7 @@ function renderMarkdownBlocks({
   inlineCodeDraft,
   inlineCodeEnabled,
   markdownSourcePath,
+  onOpenLink,
   renderAsThumbnail = false,
 }: {
   blocks: PreviewBlock[];
@@ -1225,6 +1244,7 @@ function renderMarkdownBlocks({
   inlineCodeDraft: StyleDraft;
   inlineCodeEnabled: boolean;
   markdownSourcePath?: string;
+  onOpenLink: (target: string) => void;
   renderAsThumbnail?: boolean;
   tableStyle: {
     imageStyle: CSSProperties;
@@ -1252,7 +1272,7 @@ function renderMarkdownBlocks({
     if (block.type === "heading") {
       const styleId = block.isDocumentTitle ? "title" : `heading-${block.level}`;
       rendered.push(
-        <div key={index} data-preview-heading-id={renderAsThumbnail ? undefined : block.anchorId} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={textStyle(drafts[styleId])}>
+        <div key={index} data-preview-heading-id={renderAsThumbnail ? undefined : block.anchorId} data-markdown-heading-id={renderAsThumbnail ? undefined : block.anchorId} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={textStyle(drafts[styleId])}>
           {block.number ? <span>{block.number} </span> : null}
           {block.text}
         </div>,
@@ -1281,7 +1301,7 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "paragraph") {
-      rendered.push(<p key={index} className={cn(selectedRing(selectedStyle, "normal"), "break-words")} style={textStyle(drafts.normal)}>{renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle)}</p>);
+      rendered.push(<p key={index} className={cn(selectedRing(selectedStyle, "normal"), "break-words")} style={textStyle(drafts.normal)}>{renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle, onOpenLink)}</p>);
       return;
     }
 
@@ -1298,7 +1318,7 @@ function renderMarkdownBlocks({
             padding: "8px 12px",
           }}
         >
-          {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `q-${index}`, selectedStyle)}
+          {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `q-${index}`, selectedStyle, onOpenLink)}
         </blockquote>,
       );
       return;
@@ -1407,7 +1427,7 @@ function renderMarkdownBlocks({
               return (
                 <div key={itemIndex} className={cn("break-words", selectedRing(selectedStyle, listStyleId))} style={itemStyle}>
                   <span aria-hidden="true" style={{ marginRight: markerGap }}>{marker}</span>
-                  {renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle)}
+                  {renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle, onOpenLink)}
                 </div>
               );
             }
@@ -1419,7 +1439,7 @@ function renderMarkdownBlocks({
                 style={{ ...itemStyle, gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: markerGap }}
               >
                 <span aria-hidden="true" className="whitespace-nowrap">{marker}</span>
-                <span className="min-w-0">{renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle)}</span>
+                <span className="min-w-0">{renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle, onOpenLink)}</span>
               </div>
             );
           })}
@@ -1455,7 +1475,7 @@ function renderMarkdownBlocks({
           {columnWidths.length > 0 ? <colgroup>{columnWidths.map((width, widthIndex) => <col key={widthIndex} style={{ width }} />)}</colgroup> : null}
           {header ? (
             <thead>
-              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle)}</th>)}</tr>
+              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle, onOpenLink)}</th>)}</tr>
             </thead>
           ) : null}
           <tbody>
@@ -1470,7 +1490,7 @@ function renderMarkdownBlocks({
                       backgroundColor: tableStyle.rowStripe && rowIndex % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
                     }}
                   >
-                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle)}
+                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle, onOpenLink)}
                   </td>
                 ))}
               </tr>
@@ -1486,7 +1506,7 @@ function renderMarkdownBlocks({
   return rendered;
 }
 
-export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, markdownSourcePath, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showTocPage = false, thumbnailContainer, onThumbnailPageSelect, onPreviewOutlineChange, showPageFooter = true, interactiveViewport = false, className, viewportClassName }: WordPreviewPageProps) {
+export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, markdownSourcePath, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showTocPage = false, thumbnailContainer, onThumbnailPageSelect, onPreviewOutlineChange, onOpenLink = () => {}, showPageFooter = true, interactiveViewport = false, className, viewportClassName }: WordPreviewPageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lastPreviewOutlineSignatureRef = useRef<string | undefined>(undefined);
   const dragStateRef = useRef({ dragging: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
@@ -1686,6 +1706,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             inlineCodeDraft: inlineCode,
             inlineCodeEnabled: styleConfig?.markdownFeatures.inlineCode ?? defaultMarkdownFeatures.inlineCode,
             markdownSourcePath,
+            onOpenLink,
             renderAsThumbnail: thumbnail,
             tableStyle: markdownTableStyle,
           })}

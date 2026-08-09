@@ -4,6 +4,10 @@ export type MarkdownOutlineItem = {
   line: number;
 };
 
+export type MarkdownOutlineNode = MarkdownOutlineItem & {
+  children: MarkdownOutlineNode[];
+};
+
 export type MarkdownOutlineRevealTarget = {
   tabId: string;
   line: number;
@@ -33,4 +37,38 @@ export function parseMarkdownOutline(markdown: string): MarkdownOutlineItem[] {
   }
 
   return outline;
+}
+
+/// 收集所有「有子标题」的行号，供顶部的一键折叠/展开使用。
+/// 叶子节点没有折叠态，放进集合只会让「是否已全部折叠」永远判不成立。
+export function collectOutlineParentLines(items: MarkdownOutlineItem[]): number[] {
+  const lines: number[] = [];
+
+  const walk = (nodes: MarkdownOutlineNode[]) => {
+    for (const node of nodes) {
+      if (!node.children.length) continue;
+      lines.push(node.line);
+      walk(node.children);
+    }
+  };
+
+  walk(buildMarkdownOutlineTree(items));
+  return lines;
+}
+
+/// 把扁平标题列表折成树：层级跳跃（H1 直接跟 H3）时按栈里最近的更浅标题挂载，
+/// 不补虚拟节点，保证渲染出的缩进和原文标题顺序一致。
+export function buildMarkdownOutlineTree(items: MarkdownOutlineItem[]): MarkdownOutlineNode[] {
+  const roots: MarkdownOutlineNode[] = [];
+  const stack: MarkdownOutlineNode[] = [];
+
+  for (const item of items) {
+    const node: MarkdownOutlineNode = { ...item, children: [] };
+    while (stack.length && stack[stack.length - 1].level >= node.level) stack.pop();
+    if (stack.length) stack[stack.length - 1].children.push(node);
+    else roots.push(node);
+    stack.push(node);
+  }
+
+  return roots;
 }
