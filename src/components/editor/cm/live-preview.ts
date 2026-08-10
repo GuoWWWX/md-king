@@ -204,6 +204,18 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
 }
 
+/**
+ * 分隔线 `---` / `***` / `___`：光标不在这一行时把源码整行隐藏，只留 CSS 横线。
+ * 光标在行上时还原成源码，让用户可以直接删除或修改。
+ */
+function handleHorizontalRule(collector: DecorationCollector, ref: SyntaxNodeRef): void {
+  const line = collector.state.doc.lineAt(ref.from);
+  addLine(collector, line.from, "mk-cm-hr");
+  if (cursorLine(collector, ref.from, ref.to)) return;
+  // 整行源码（`---`）替换成零宽内容，高度由 CSS 的 ::before 横线撑起来。
+  hide(collector, line.from, line.to);
+}
+
 function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const state = collector.state;
   const line = state.doc.lineAt(ref.from);
@@ -362,6 +374,9 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
             return;
           case "QuoteMark":
             handleQuoteMark(collector, ref);
+            return;
+          case "HorizontalRule":
+            handleHorizontalRule(collector, ref);
             return;
           case "ListMark":
             handleListMark(collector, ref);
