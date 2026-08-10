@@ -1507,6 +1507,43 @@ select {
     opacity: 1 !important;
   }
 
+  /* GFM 表格渲染态 widget */
+  .mk-cm-table-wrapper {
+    margin: 4px 0;
+    overflow-x: auto;
+    cursor: text;
+  }
+
+  .mk-cm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .mk-cm-table th,
+  .mk-cm-table td {
+    padding: 5px 12px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+    color: #1e293b;
+    white-space: nowrap;
+  }
+
+  .mk-cm-table th {
+    background: #f1f5f9;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .mk-cm-table tbody tr:nth-child(even) {
+    background: #f8fafc;
+  }
+
+  .mk-cm-table tbody tr:hover {
+    background: #eff6ff;
+  }
+
   .mk-drop-zone {
     border: 1px dashed rgba(37, 99, 235, 0.34);
     background:
@@ -2026,6 +2063,25 @@ select {
 
   .dark .mk-cm-copy-code--ok {
     color: #4ade80 !important;
+  }
+
+  .dark .mk-cm-table th,
+  .dark .mk-cm-table td {
+    border-color: rgba(212, 212, 216, 0.22);
+    color: #d4d4d8;
+  }
+
+  .dark .mk-cm-table th {
+    background: rgba(39, 39, 42, 0.8);
+    color: #f4f4f5;
+  }
+
+  .dark .mk-cm-table tbody tr:nth-child(even) {
+    background: rgba(39, 39, 42, 0.4);
+  }
+
+  .dark .mk-cm-table tbody tr:hover {
+    background: rgba(59, 130, 246, 0.12);
   }
 
   .dark .cm-line[data-code-language]::before,

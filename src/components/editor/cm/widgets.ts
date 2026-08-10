@@ -191,3 +191,152 @@ export class MermaidWidget extends WidgetType {
     return false;
   }
 }
+
+/**
+ * GFM 表格的渲染态 widget。
+ *
+ * 每行带源码位置信息，点击某行时精确把光标定位到该行源码处。
+ * update 只在 docChanged 时重建，光标移入不切换源码态，
+ * 用户可以直接在渲染态下点击定位、输入修改。
+ */
+export class TableWidget extends WidgetType {
+  constructor(
+    private readonly rows: { cells: { text: string; sourceFrom: number }[]; sourceFrom: number }[],
+    private readonly source: string,
+    private readonly tableFrom: number,
+    private readonly tableTo: number,
+    private readonly rawLines: string[],
+  ) {
+    super();
+  }
+
+  eq(other: TableWidget): boolean {
+    return other.source === this.source;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mk-cm-table-wrapper";
+
+    const table = document.createElement("table");
+    table.className = "mk-cm-table";
+
+    /** 重新拼装所有行（含原始分隔行），在指定列前/后插入空列，或在指定行前/后插入空行。 */
+    const rebuildSource = (action: { type: "insert-col"; colIndex: number; after: boolean } | { type: "insert-row"; rowIndex: number; after: boolean }) => {
+      const lines = [...this.rawLines];
+      if (action.type === "insert-col") {
+        const { colIndex, after } = action;
+        return lines.map((line) => {
+          const cells = line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|");
+          const insertAt = after ? colIndex + 1 : colIndex;
+          // 分隔行插入 ---- 格，其他行插入空格
+          const isSepar = /^[\s:|\\-]+$/.test(cells[0] ?? "");
+          cells.splice(insertAt, 0, isSepar ? " ---- " : "  ");
+          return `| ${cells.join(" | ")} |`;
+        }).join("\n");
+      } else {
+        // insert-row
+        const headerLine = lines[0] ?? "";
+        const colCount = headerLine.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").length;
+        const newRow = `| ${Array(colCount).fill("  ").join(" | ")} |`;
+        // rawLines 中 index 0=header, 1=separator, 2+= body rows
+        // action.rowIndex 是在 this.rows（已过滤分隔行）中的行号
+        // 转换到 rawLines 中的位置：header(0) + separator(1) + body offset
+        // rowIndex=0 是 header，body 行从 rowIndex=1 开始对应 rawLines[2+]
+        const rawInsertAt = action.rowIndex === 0
+          ? (action.after ? 2 : 1)   // after header: before separator→不允许，after header→ 插在separator前
+          : 2 + (action.rowIndex - 1) + (action.after ? 1 : 0);
+        lines.splice(rawInsertAt, 0, newRow);
+        return lines.join("\n");
+      }
+    };
+
+    const showContextMenu = (e: MouseEvent, colIndex: number, rowIndex: number) => {
+      e.preventDefault();
+      // 移除旧菜单
+      document.querySelectorAll(".mk-table-ctx-menu").forEach((el) => el.remove());
+
+      const menu = document.createElement("div");
+      menu.className = "mk-table-ctx-menu";
+      menu.style.cssText = `position:fixed;z-index:9999;background:var(--popover,#fff);border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,0.12);min-width:160px;font-size:13px;`;
+
+      const items: { label: string; action: Parameters<typeof rebuildSource>[0] }[] = [
+        { label: "在左侧插入列", action: { type: "insert-col", colIndex, after: false } },
+        { label: "在右侧插入列", action: { type: "insert-col", colIndex, after: true } },
+        { label: "在上方插入行", action: { type: "insert-row", rowIndex, after: false } },
+        { label: "在下方插入行", action: { type: "insert-row", rowIndex, after: true } },
+      ];
+
+      for (const item of items) {
+        const el = document.createElement("div");
+        el.textContent = item.label;
+        el.style.cssText = "padding:6px 10px;border-radius:5px;cursor:pointer;color:var(--foreground,#0f172a);";
+        el.addEventListener("mouseenter", () => { el.style.background = "var(--accent,#f1f5f9)"; });
+        el.addEventListener("mouseleave", () => { el.style.background = ""; });
+        el.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          menu.remove();
+          const newSource = rebuildSource(item.action);
+          view.dispatch({
+            changes: { from: this.tableFrom, to: this.tableTo, insert: newSource },
+            selection: { anchor: this.tableFrom },
+          });
+          view.focus();
+        });
+        menu.appendChild(el);
+      }
+
+      document.body.appendChild(menu);
+      const rect = { left: e.clientX, top: e.clientY };
+      menu.style.left = `${Math.min(rect.left, window.innerWidth - 180)}px`;
+      menu.style.top = `${Math.min(rect.top, window.innerHeight - 200)}px`;
+
+      const close = () => { menu.remove(); document.removeEventListener("mousedown", close); };
+      setTimeout(() => document.addEventListener("mousedown", close), 0);
+    };
+
+    const buildRow = (rowIndex: number, isHeader: boolean): HTMLTableRowElement => {
+      const tr = document.createElement("tr");
+      const row = this.rows[rowIndex];
+      row.cells.forEach((cell, colIndex) => {
+        const el = document.createElement(isHeader ? "th" : "td");
+        el.textContent = cell.text;
+        // 左键点击：把光标定位到该格的源码位置（触发 selection → StateField 重建 → 切源码态）
+        el.addEventListener("mousedown", (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          view.dispatch({ selection: { anchor: cell.sourceFrom } });
+          view.focus();
+        });
+        // 右键：上下文菜单
+        el.addEventListener("contextmenu", (e) => {
+          showContextMenu(e, colIndex, rowIndex);
+        });
+        tr.appendChild(el);
+      });
+      return tr;
+    };
+
+    if (this.rows.length > 0) {
+      const thead = document.createElement("thead");
+      thead.appendChild(buildRow(0, true));
+      table.appendChild(thead);
+    }
+
+    if (this.rows.length > 1) {
+      const tbody = document.createElement("tbody");
+      for (let i = 1; i < this.rows.length; i++) {
+        tbody.appendChild(buildRow(i, false));
+      }
+      table.appendChild(tbody);
+    }
+
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}

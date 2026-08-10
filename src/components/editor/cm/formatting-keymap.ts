@@ -38,6 +38,52 @@ function wrapSelection(view: EditorView, before: string, after = before, placeho
   return true;
 }
 
+/**
+ * 处理反引号输入的自动配对与围栏代码块补全。
+ *
+ * - 输入第 1 个 ` → 补成 `` 并把光标置于两个反引号之间
+ * - 光标已在两个反引号之间再输入第 2 个 ` → 变成 ``` 并把光标移到三个之后
+ * - 光标已在三个反引号之后再输入第 3 个 ` → 补全围栏代码块并把光标移到语言行尾
+ */
+function handleBacktick(view: EditorView): boolean {
+  if (view.state.readOnly) return false;
+  const { from, to } = view.state.selection.main;
+  if (from !== to) return false; // 有选区时走默认行为
+
+  const doc = view.state.doc;
+  const line = doc.lineAt(from);
+  const before = doc.sliceString(Math.max(line.from, from - 3), from);
+
+  // 已经是 ``` 在行首：补全代码围栏（插入语言行 + 结尾围栏，光标停在语言后面）
+  if (before === "```" && from - 3 === line.from) {
+    const insert = "\n\n```";
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from },
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
+  // 已经是 `` 在光标前：变成 ``` 光标移到三个后面
+  if (before.endsWith("``")) {
+    view.dispatch({
+      changes: { from, to, insert: "`" },
+      selection: { anchor: from + 1 },
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
+  // 普通情况：插入配对 `` 并把光标放在中间
+  view.dispatch({
+    changes: { from, to, insert: "``" },
+    selection: { anchor: from + 1 },
+    scrollIntoView: true,
+  });
+  return true;
+}
+
 /// 缩进用四个空格而不是制表符：Markdown 的列表嵌套按空格数判定层级，
 /// 制表符在不同渲染器里折算成的宽度不一致，写出来的文档换个工具就散架。
 export const markdownIndentUnit = indentUnit.of("    ");
@@ -61,4 +107,5 @@ export const markdownFormattingKeymap: KeyBinding[] = [
   { key: "Mod-i", run: (view) => wrapSelection(view, "*", "*", "斜体文本"), preventDefault: true },
   { key: "Mod-e", run: (view) => wrapSelection(view, "`", "`", "代码"), preventDefault: true },
   { key: "Mod-Shift-x", run: (view) => wrapSelection(view, "~~", "~~", "删除线"), preventDefault: true },
+  { key: "`", run: handleBacktick },
 ];

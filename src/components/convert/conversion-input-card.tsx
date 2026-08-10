@@ -210,7 +210,7 @@ export function ConversionInputCard({
           initialContent={markdown}
           readOnly={disabled || readingMode}
           isDark={isDark}
-          placeholder={"# 文档标题\n\n直接书写 Markdown，编辑器会实时渲染。"}
+          placeholder={undefined}
           onDocChanged={onChange}
           onRequestSave={onRequestSave}
           onOpenLink={onOpenLink}

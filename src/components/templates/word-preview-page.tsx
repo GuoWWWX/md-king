@@ -990,7 +990,12 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "code") {
-    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
+    if (isMermaidLanguage(block.language)) {
+      return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 480;
+    }
+    // 有语言标签时渲染顶部多 22px（语言标签行）+ 原来的 18px 底部padding，共需多加 22px。
+    const languageExtra = block.language ? 22 : 0;
+    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
   }
 
   if (block.type === "math") {
@@ -1063,6 +1068,9 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
     }
 
     if (block.type === "code") {
+      // Mermaid 块不可切分：切开后每段都丢失了 mermaid 语言标识，
+      // 渲染时变成普通文本而不是图，内容直接消失。整块保留，允许溢出一页。
+      if (isMermaidLanguage(block.language)) return [block];
       return splitTextByLength(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62) * 24).map((text) => ({ ...block, text }));
     }
 
@@ -1331,6 +1339,9 @@ function renderMarkdownBlocks({
       // mermaid 块渲染成图而不是代码。外框沿用代码块的背景与边框，
       // 这样它和编辑器里那个带 MERMAID 标签的框看起来是同一个东西。
       if (isMermaidLanguage(block.language)) {
+        // maxHeight 和 estimateBlockHeight 里的 480 保持一致：
+        // 渲染高度受约束后，分页器的估算才和实际占用空间对得上。
+        const mermaidMaxHeight = 480;
         rendered.push(
           <div
             key={index}
@@ -1342,6 +1353,8 @@ function renderMarkdownBlocks({
               padding: `${Math.max(0, drafts.code.codePaddingY) + 22}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
               marginTop: drafts.code.beforeSpacing,
               marginBottom: drafts.code.afterSpacing,
+              maxHeight: mermaidMaxHeight,
+              overflow: "hidden",
             }}
           >
             <CodeLanguageLabel label="mermaid" backgroundColor={backgroundColor} />
@@ -1641,7 +1654,9 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const mappedBlocks = applyHeadingMappings(activeBlocks, styleConfig?.markdownRules?.headingMappings ?? defaultMarkdownRules.headingMappings);
   const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-caption": tableCaption, "inline-code": inlineCode, "horizontal-rule": horizontalRule, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
   const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
-  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight);
+  // 估算值和实际渲染之间不可避免有误差（字体渲染、padding 取整等），
+  // 留 40px 安全边距，避免紧边界时块轻微溢出导致下一页顶部出现大片空白。
+  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight - 40);
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(mappedBlocks, previewDrafts);
   const tocPages = shouldPaginate && showTocPage
@@ -1693,7 +1708,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         data-preview-thumbnail-page-index={thumbnail ? pageIndex + 1 : undefined}
         className={cn(
           thumbnail ? "pointer-events-none" : interactiveViewport ? "shrink-0" : "mx-auto",
-          !thumbnail && !interactiveViewport && pageIndex > 0 && "mt-5",
+          !thumbnail && !interactiveViewport && pageIndex > 0 && "mt-0",
         )}
         style={thumbnail ? thumbnailPageScaleStyle : pageScaleStyle}
       >
@@ -1799,13 +1814,14 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         onPointerLeave={stopPreviewDrag}
       >
         {interactiveViewport ? (
-          <div className={cn(
-            "flex min-h-full min-w-full content-start items-start gap-5",
-            previewPages.length === 1 ? "w-max justify-center" : "flex-wrap justify-start",
-          )}>
+          <div className="flex min-h-full min-w-full flex-wrap content-start items-start justify-center gap-5">
             {previewPages.map((pageBlocks, pageIndex) => renderPreviewPage(pageBlocks, pageIndex))}
           </div>
-        ) : previewPages.map((pageBlocks, pageIndex) => renderPreviewPage(pageBlocks, pageIndex))}
+        ) : (
+          <div className="flex w-full flex-col gap-5 py-1">
+            {previewPages.map((pageBlocks, pageIndex) => renderPreviewPage(pageBlocks, pageIndex))}
+          </div>
+        )}
       </div>
       {thumbnailContainer && onThumbnailPageSelect ? createPortal(
         <div className="contents">

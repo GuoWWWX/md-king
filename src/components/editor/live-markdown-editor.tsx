@@ -8,7 +8,7 @@ import { Annotation, Compartment, EditorState, type Extension } from "@codemirro
 import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { livePreviewPlugin, mermaidBlockExtension } from "./cm/live-preview";
+import { livePreviewPlugin, mermaidBlockExtension, tableBlockExtension } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownEditorTheme } from "./cm/theme";
 
@@ -200,6 +200,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       markdown({ base: markdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
       livePreviewCompartment.of(livePreviewPlugin),
       mermaidCompartment.of(mermaidBlockExtension(isDark)),
+      tableBlockExtension,
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
       EditorView.contentAttributes.of({ "aria-label": "Markdown 输入内容" }),

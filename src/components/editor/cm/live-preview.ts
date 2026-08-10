@@ -4,7 +4,7 @@ import { RangeSetBuilder, StateField, type EditorState, type Extension, type Ran
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import { selectionOnLines, selectionTouches, selectionTouchesOnSameLine } from "./selection-utils";
-import { BulletWidget, CopyCodeWidget, MermaidWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -502,3 +502,89 @@ export function mermaidBlockExtension(dark: boolean): Extension {
   });
   return field;
 }
+
+/** 把一行 Markdown 表格源码解析成单元格数组，带每格的源码起始位置。 */
+function parseTableRow(line: string, lineFrom: number): { text: string; sourceFrom: number }[] {
+  const cells: { text: string; sourceFrom: number }[] = [];
+  const raw = line;
+  let pos = 0;
+
+  // 跳过行首 |
+  if (raw[pos] === "|") pos++;
+
+  while (pos < raw.length) {
+    const cellStart = pos;
+    let end = raw.indexOf("|", pos);
+    if (end < 0) end = raw.length;
+    const text = raw.slice(cellStart, end).trim();
+    // lineFrom 是行在文档中的起始偏移，加上格内起始位置得到文档绝对位置
+    cells.push({ text, sourceFrom: lineFrom + cellStart });
+    pos = end + 1;
+  }
+
+  return cells;
+}
+
+/** 判断是否是表格分隔行（`---` / `:---:` 等）。 */
+function isTableSeparator(line: string): boolean {
+  return /^\s*\|?[\s:|\\-]+\|.*$/.test(line);
+}
+
+function buildTableBlocks(state: EditorState): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "Table") return undefined;
+
+      const first = state.doc.lineAt(ref.from);
+      const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
+      const last = state.doc.lineAt(lastPos);
+
+      // 光标在表格范围内 → 退回源码态，让用户直接编辑 Markdown。
+      const editing = state.selection.ranges.some(
+        (range) => range.from <= last.to && range.to >= first.from,
+      );
+      if (editing) return false;
+
+      // 收集所有原始行（含分隔行），供插入行/列操作使用。
+      const rawLines: string[] = [];
+      for (let ln = first.number; ln <= last.number; ln++) {
+        rawLines.push(state.doc.line(ln).text);
+      }
+
+      // 解析所有行，跳过分隔行，带上每格的源码位置。
+      const rows: { cells: { text: string; sourceFrom: number }[]; sourceFrom: number }[] = [];
+      for (let ln = first.number; ln <= last.number; ln++) {
+        const line = state.doc.line(ln);
+        if (!isTableSeparator(line.text)) {
+          rows.push({ cells: parseTableRow(line.text, line.from), sourceFrom: line.from });
+        }
+      }
+      if (rows.length === 0) return false;
+
+      const source = state.doc.sliceString(first.from, last.to);
+
+      builder.add(
+        first.from,
+        last.to,
+        Decoration.replace({
+          widget: new TableWidget(rows, source, first.from, last.to, rawLines),
+          block: true,
+        }),
+      );
+      return false;
+    },
+  });
+
+  return builder.finish();
+}
+
+/** GFM 表格的块级装饰，和 Mermaid 一样用 StateField 而不是 ViewPlugin。 */
+export const tableBlockExtension: Extension = StateField.define<DecorationSet>({
+  create: (state) => buildTableBlocks(state),
+  // selection 变化也要重建：block:true widget 替换了多行，CM 的坐标映射（posAtCoords）
+  // 依赖最新的装饰信息，装饰过期会导致点击位置偏移到错误的行。
+  update: (value, tr) => (tr.docChanged || tr.selection ? buildTableBlocks(tr.state) : value),
+  provide: (self) => EditorView.decorations.from(self),
+});
