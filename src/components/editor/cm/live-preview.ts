@@ -3,7 +3,7 @@ import { isMermaidLanguage } from "@/lib/mermaid";
 import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
-import { selectionOnLines, selectionTouches, selectionTouchesOnSameLine } from "./selection-utils";
+import { selectionTouches, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { BulletWidget, CopyCodeWidget, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
@@ -62,8 +62,9 @@ function touchesSameLine(collector: DecorationCollector, from: number, to: numbe
   return collector.focused && selectionTouchesOnSameLine(collector.state, from, to);
 }
 
-function onLines(collector: DecorationCollector, from: number, to: number): boolean {
-  return collector.focused && selectionOnLines(collector.state, from, to);
+// 选区跨行时只在光标（head）所在行展开源码，其他行保持渲染态。
+function cursorLine(collector: DecorationCollector, from: number, to: number): boolean {
+  return collector.focused && cursorOnLines(collector.state, from, to);
 }
 
 /**
@@ -139,8 +140,8 @@ function handleHeading(collector: DecorationCollector, ref: SyntaxNodeRef, level
   const state = collector.state;
   addLine(collector, state.doc.lineAt(ref.from).from, `mk-cm-heading mk-cm-h${level}`);
 
-  // 标题是单行元素，用行粒度判定：光标在这一行上就完整还原 `### `，方便直接改级别。
-  if (onLines(collector, ref.from, ref.to)) return;
+  // 标题是单行元素：光标在这一行时展开源码，选区跨过此行时也展开（用 cursorLine 只看 head 所在行）。
+  if (cursorLine(collector, ref.from, ref.to)) return;
 
   const node = ref.node;
   for (const mark of childrenOfType(node, "HeaderMark")) {
@@ -198,8 +199,8 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   const line = state.doc.lineAt(ref.from);
   addLine(collector, line.from, "mk-cm-quote-line");
 
-  // QuoteMark 本身只占一个字符且必在单行内，行粒度判定等价于「光标在这一行」。
-  if (onLines(collector, ref.from, ref.to)) return;
+  // QuoteMark 本身只占一个字符且必在单行内，用 cursorLine 判定（选区跨行时只看光标所在行）。
+  if (cursorLine(collector, ref.from, ref.to)) return;
   hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
 }
 
@@ -247,9 +248,9 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
 
   const firstLine = doc.lineAt(ref.from);
   const lastLine = doc.lineAt(Math.min(ref.to, doc.length));
-  // 光标落在代码块任意一行上就整块回到源码态，和标题、引用的处理一致；
-  // 移开后把 ``` 围栏收起来，只留下背景块本身作为边界提示。
-  const editing = onLines(collector, ref.from, ref.to);
+  // 光标（head）落在代码块任意一行上就整块回到源码态；
+  // 选区跨过代码块时只看光标所在行，不把整块变回源码。
+  const editing = cursorLine(collector, ref.from, ref.to);
 
   // 语言标记（```java 的 java）通过 data 属性交给 CSS 伪元素画在左上角。
   // 用属性而不是 widget：widget 会插进文档流占掉一行高度，把首行内容顶下去。
