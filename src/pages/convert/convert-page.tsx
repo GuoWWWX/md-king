@@ -84,15 +84,15 @@ function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave
             <span key={`${crumb.path}-${index}`} className="flex min-w-0 items-center gap-1">
               {index > 0 ? <ChevronRight className="size-3 shrink-0 text-slate-300 dark:text-zinc-600" /> : null}
               {canLocate ? (
-                <TooltipButton
-                  type="button"
-                  tooltip={`在文件树中定位：${crumb.label}`}
-                  tooltipSide="bottom"
-                  className={cn("min-w-0 truncate rounded-[4px] px-0.5 py-0.5 text-left transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}
-                  onClick={() => onLocatePath(crumb.path)}
-                >
-                  {crumb.label}
-                </TooltipButton>
+                <TooltipAnchor content={`在文件树中定位：${crumb.label}`} tooltipSide="bottom">
+                  <button
+                    type="button"
+                    className={cn("min-w-0 truncate rounded-[4px] px-0.5 py-0.5 text-left transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}
+                    onClick={() => onLocatePath(crumb.path)}
+                  >
+                    {crumb.label}
+                  </button>
+                </TooltipAnchor>
               ) : (
                 <span className={cn("truncate", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}>{crumb.label}</span>
               )}
@@ -803,9 +803,9 @@ export function ConvertPage() {
             <span className="min-w-0 truncate">{convertResult?.output ?? outputPath}</span>
           </TooltipAnchor>
           {canRevealOutput ? (
-            <Button variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} title="在资源管理器中显示" aria-label="在资源管理器中显示生成的 DOCX">
+            <TooltipButton variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} tooltip="在资源管理器中显示" aria-label="在资源管理器中显示生成的 DOCX">
               <FolderOpen className="size-3.5" />
-            </Button>
+            </TooltipButton>
           ) : null}
         </div>
 
@@ -825,15 +825,16 @@ export function ConvertPage() {
               ))}
             </SelectContent>
           </Select>
-          <TooltipButton
-            type="button"
-            className="mk-convert-control flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-left text-xs font-bold text-blue-800 shadow-none transition hover:bg-slate-50 dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
-            onClick={() => void handleSelectOutputDir()}
-            tooltip={outputDirLabel}
-          >
-            <FolderOpen className="size-4 shrink-0" />
-            <span className="min-w-0 truncate">{outputDirLabel}</span>
-          </TooltipButton>
+          <TooltipAnchor content={outputDirLabel}>
+            <button
+              type="button"
+              className="mk-convert-control flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-left text-xs font-bold text-blue-800 shadow-none transition hover:bg-slate-50 dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100 dark:hover:bg-zinc-700/60"
+              onClick={() => void handleSelectOutputDir()}
+            >
+              <FolderOpen className="size-4 shrink-0" />
+              <span className="min-w-0 truncate">{outputDirLabel}</span>
+            </button>
+          </TooltipAnchor>
           <TooltipAnchor content={outputPath}>
             <div className="mk-convert-control flex h-10 min-w-0 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-blue-700 shadow-none dark:border-zinc-700/70 dark:bg-zinc-800/72 dark:text-zinc-100">
               <FileText className="size-4 shrink-0" />
@@ -984,9 +985,9 @@ export function ConvertPage() {
                       <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{path}</p>
                     </TooltipAnchor>
                   </div>
-                  <Button variant="ghost" size="icon-xs" className="shrink-0 text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-300" onClick={() => removeBatchImportPath(path)} aria-label={`移除 ${name}`} title="移除">
+                  <TooltipButton variant="ghost" size="icon-xs" className="shrink-0 text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-300" onClick={() => removeBatchImportPath(path)} aria-label={`移除 ${name}`} tooltip="移除">
                     <Trash2 className="size-3.5" />
-                  </Button>
+                  </TooltipButton>
                 </div>
               );
             })}
@@ -1162,23 +1163,23 @@ function ConvertPreviewPanel({
         <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
           {onOpenAdvancedStyle ? (
             <>
-              <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onOpenAdvancedStyle} title="高级样式" aria-label="高级样式">
+              <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={onOpenAdvancedStyle} tooltip="高级样式" aria-label="高级样式">
                 <Settings2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              </Button>
+              </TooltipButton>
               <span className="h-4 w-px bg-slate-200 dark:bg-zinc-700" />
             </>
           ) : null}
-          <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} title="缩小预览" aria-label="缩小预览">
+          <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} tooltip="缩小预览" aria-label="缩小预览">
             <ZoomOut className="size-3.5 text-slate-500 dark:text-zinc-400" />
-          </Button>
+          </TooltipButton>
           <span className="w-10 text-center text-xs font-bold text-slate-500 dark:text-zinc-400">{zoom}%</span>
-          <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} title="放大预览" aria-label="放大预览">
+          <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} tooltip="放大预览" aria-label="放大预览">
             <ZoomIn className="size-3.5 text-slate-500 dark:text-zinc-400" />
-          </Button>
+          </TooltipButton>
           {!expanded ? (
-            <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onExpand} title="放大查看" aria-label="放大查看">
+            <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={onExpand} tooltip="放大查看" aria-label="放大查看">
               <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-            </Button>
+            </TooltipButton>
           ) : null}
         </div>
       </div>
@@ -1311,17 +1312,17 @@ function WordPreviewSidebar({
                           {isCollapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                         </button>
                       ) : <span className="size-5 shrink-0" />}
-                      <TooltipButton
-                        type="button"
-                        className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] py-1.5 pr-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
-                        onClick={() => onHeadingJump(heading.id)}
-                        tooltip={heading.text}
-                        tooltipSide="right"
-                      >
-                        {heading.number ? <span className="shrink-0 text-[10px] font-black text-slate-400 dark:text-zinc-500">{heading.number}</span> : null}
-                        <span className="min-w-0 flex-1 truncate">{heading.text}</span>
-                        <span className="shrink-0 tabular-nums text-[10px] font-bold text-slate-400 dark:text-zinc-500">{heading.page}</span>
-                      </TooltipButton>
+                      <TooltipAnchor content={heading.text} tooltipSide="right">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] py-1.5 pr-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
+                          onClick={() => onHeadingJump(heading.id)}
+                        >
+                          {heading.number ? <span className="shrink-0 text-[10px] font-black text-slate-400 dark:text-zinc-500">{heading.number}</span> : null}
+                          <span className="min-w-0 flex-1 truncate">{heading.text}</span>
+                          <span className="shrink-0 tabular-nums text-[10px] font-bold text-slate-400 dark:text-zinc-500">{heading.page}</span>
+                        </button>
+                      </TooltipAnchor>
                     </div>
                   );
                 })}

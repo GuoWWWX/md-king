@@ -1,6 +1,5 @@
 import { ChevronRight, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { TooltipButton } from "@/components/ui/tooltip";
 import { buildMarkdownOutlineTree, type MarkdownOutlineItem, type MarkdownOutlineNode } from "@/lib/document-outline";
 import { cn } from "@/lib/utils";
 
@@ -126,21 +125,20 @@ function OutlineNodeList({
               ) : (
                 <span aria-hidden className="size-4 shrink-0" />
               )}
-              <TooltipButton
+              <button
                 type="button"
                 onClick={() => onSelect(node.line)}
-                tooltip={`H${node.level} · 第 ${node.line} 行：${node.text}`}
-                tooltipSide="left"
                 style={{ fontSize: '12px', fontFamily: 'sans-serif', fontWeight: 500 }}
                 className={cn(
-                  "min-w-0 flex-1 truncate text-left leading-6 transition",
+                  "flex min-w-0 flex-1 items-center gap-1 truncate text-left leading-6 transition",
                   selected
                     ? "font-medium text-slate-950 dark:text-zinc-50"
                     : "text-slate-600 group-hover:text-slate-950 dark:text-zinc-300 dark:group-hover:text-zinc-50",
                 )}
               >
-                {node.text}
-              </TooltipButton>
+                <span className="min-w-0 flex-1 truncate">{node.text}</span>
+                <span className="ml-1 shrink-0 text-[10px] font-semibold text-slate-400 dark:text-zinc-500">H{node.level}</span>
+              </button>
             </div>
 
             {hasChildren && !collapsed ? (

@@ -1521,9 +1521,9 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, markdown, ma
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
         <p className="text-sm font-semibold text-slate-400 dark:text-zinc-500">实时预览（{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
         <div className="flex shrink-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
-          <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} title="缩小预览" aria-label="缩小预览"><ZoomOut className="size-4 text-slate-500 dark:text-zinc-400" /></Button>
+          <TooltipButton variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} tooltip="缩小预览" aria-label="缩小预览"><ZoomOut className="size-4 text-slate-500 dark:text-zinc-400" /></TooltipButton>
           <span className="w-10 text-center text-xs font-bold text-slate-500 dark:text-zinc-400">{zoom}%</span>
-          <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} title="放大预览" aria-label="放大预览"><ZoomIn className="size-4 text-slate-500 dark:text-zinc-400" /></Button>
+          <TooltipButton variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} tooltip="放大预览" aria-label="放大预览"><ZoomIn className="size-4 text-slate-500 dark:text-zinc-400" /></TooltipButton>
         </div>
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>

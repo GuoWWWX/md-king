@@ -1,7 +1,7 @@
 import { Columns2, Copy, Minus, PanelLeft, PanelRight, Square, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
-import { TooltipButton } from "@/components/ui/tooltip";
+import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function getAppWindow(): TauriWindow | undefined {
@@ -144,26 +144,26 @@ function TitlebarButton({ label, danger = false, disabled = false, onClick, chil
   const title = disabled ? `${label}仅在桌面端可用` : label;
 
   return (
-    <TooltipButton
-      type="button"
-      aria-label={label}
-      tooltip={title}
-      tooltipSide="bottom"
-      disabled={disabled}
-      className={cn(
-        "mk-titlebar-button relative z-10 flex h-9 w-8 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",
-        danger && !disabled && "mk-titlebar-button-danger hover:bg-red-500 hover:text-white",
-      )}
-      onPointerDown={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (disabled) return;
-        onClick();
-      }}
-    >
-      {children}
-    </TooltipButton>
+    <TooltipAnchor content={title} tooltipSide="bottom">
+      <button
+        type="button"
+        aria-label={label}
+        disabled={disabled}
+        className={cn(
+          "mk-titlebar-button relative z-10 flex h-9 w-8 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",
+          danger && !disabled && "mk-titlebar-button-danger hover:bg-red-500 hover:text-white",
+        )}
+        onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (disabled) return;
+          onClick();
+        }}
+      >
+        {children}
+      </button>
+    </TooltipAnchor>
   );
 }

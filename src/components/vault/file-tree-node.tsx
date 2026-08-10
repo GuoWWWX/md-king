@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type DragEvent as ReactDragEvent, type Mou
 import { ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, MoreHorizontal, Pencil, Trash2, Copy, Clipboard, FolderOpen as ExternalLink } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
+import { TooltipAnchor } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useVaultStore } from "@/stores/vault-store";
@@ -132,6 +133,7 @@ export function FileTreeNode({ entry, depth, expanded, renaming = false, onToggl
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
+        <TooltipAnchor content={entry.path} tooltipSide="right">
         <div
           id={vaultTreeNodeId(entry.path)}
           role="treeitem"
@@ -197,7 +199,6 @@ export function FileTreeNode({ entry, depth, expanded, renaming = false, onToggl
             }
           }}
           tabIndex={0}
-          title={entry.path}
         >
           {dropPlacement === "inside" ? <span aria-hidden className="pointer-events-none absolute inset-0 z-10 rounded-[6px] bg-blue-500/10 ring-1 ring-inset ring-blue-500 dark:bg-blue-400/10 dark:ring-blue-400" /> : null}
           {dropPlacement === "before" ? <span aria-hidden className="pointer-events-none absolute inset-x-1 -top-px z-10 h-0.5 rounded-full bg-blue-500 dark:bg-blue-400" /> : null}
@@ -275,6 +276,7 @@ export function FileTreeNode({ entry, depth, expanded, renaming = false, onToggl
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        </TooltipAnchor>
       </ContextMenu.Trigger>
 
       <ContextMenu.Portal>

@@ -53,12 +53,7 @@ function TooltipAnchor({ content, children, tooltipSide = "top", tooltipAlign = 
   )
 }
 
-function TooltipButton({ tooltip, tooltipSide, tooltipAlign, tooltipSideOffset, ...props }: React.ComponentProps<"button"> & { tooltip?: React.ReactNode } & TooltipPlacementProps) {
-  return (
-    <TooltipAnchor content={tooltip} tooltipSide={tooltipSide} tooltipAlign={tooltipAlign} tooltipSideOffset={tooltipSideOffset}>
-      <button {...props} />
-    </TooltipAnchor>
-  )
-}
+export { Tooltip, TooltipAnchor, TooltipContent, TooltipProvider, TooltipTrigger, type TooltipPlacementProps }
 
-export { Tooltip, TooltipAnchor, TooltipButton, TooltipContent, TooltipProvider, TooltipTrigger, type TooltipPlacementProps }
+// TooltipButton 在 button.tsx 里定义（基于 Button 组件，支持 variant/size），从此处重导出。
+export { TooltipButton } from "@/components/ui/button"

@@ -6,7 +6,7 @@ import { AppSurface } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TooltipAnchor } from "@/components/ui/tooltip";
+import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
 import { clearHistoryRemote, saveHistory } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
@@ -285,19 +285,19 @@ export function HistoryPage() {
               </SelectContent>
             </Select>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage(1)} disabled={currentHistoryPage === 1} title="第一页" aria-label="第一页">
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage(1)} disabled={currentHistoryPage === 1} tooltip="第一页" aria-label="第一页">
                 <ChevronsLeft className="size-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.max(1, page - 1))} disabled={currentHistoryPage === 1} title="上一页" aria-label="上一页">
+              </TooltipButton>
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.max(1, page - 1))} disabled={currentHistoryPage === 1} tooltip="上一页" aria-label="上一页">
                 <ChevronLeft className="size-3.5" />
-              </Button>
+              </TooltipButton>
               <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">第 {currentHistoryPage} / {historyPageCount} 页</span>
-              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))} disabled={currentHistoryPage === historyPageCount} title="下一页" aria-label="下一页">
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))} disabled={currentHistoryPage === historyPageCount} tooltip="下一页" aria-label="下一页">
                 <ChevronRight className="size-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => setHistoryPage(historyPageCount)} disabled={currentHistoryPage === historyPageCount} title="最后一页" aria-label="最后一页">
+              </TooltipButton>
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage(historyPageCount)} disabled={currentHistoryPage === historyPageCount} tooltip="最后一页" aria-label="最后一页">
                 <ChevronsRight className="size-3.5" />
-              </Button>
+              </TooltipButton>
             </div>
           </div>
         </div>
