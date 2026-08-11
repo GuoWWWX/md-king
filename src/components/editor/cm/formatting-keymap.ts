@@ -1,6 +1,13 @@
 import { indentLess, indentMore } from "@codemirror/commands";
-import { indentUnit } from "@codemirror/language";
+import { indentUnit, syntaxTree } from "@codemirror/language";
+import type { EditorState } from "@codemirror/state";
 import type { EditorView, KeyBinding } from "@codemirror/view";
+import {
+  codeBlockIndentPtFromInfo,
+  normalizeCodeBlockIndentPt,
+  selectionCoversCodeFence,
+  updateCodeFenceIndentInfo,
+} from "./code-block-indent";
 
 /// 用 before/after 包裹选区。选区为空时插入占位文本并选中它，
 /// 用户可以直接覆盖着打字——比把光标停在标记中间更省一次操作。
@@ -42,8 +49,8 @@ function wrapSelection(view: EditorView, before: string, after = before, placeho
  * 处理反引号输入的自动配对与围栏代码块补全。
  *
  * - 输入第 1 个 ` → 补成 `` 并把光标置于两个反引号之间
- * - 光标已在两个反引号之间再输入第 2 个 ` → 变成 ``` 并把光标移到三个之后
- * - 光标已在三个反引号之后再输入第 3 个 ` → 补全围栏代码块并把光标移到语言行尾
+ * - 光标已在两个反引号之间再输入第 2 个 ` → 越过自动补出的闭合符
+ * - 行首已有两个反引号再输入第 3 个 ` → 精确补全标准围栏，光标停在语言位置
  */
 function handleBacktick(view: EditorView): boolean {
   if (view.state.readOnly) return false;
@@ -52,23 +59,23 @@ function handleBacktick(view: EditorView): boolean {
 
   const doc = view.state.doc;
   const line = doc.lineAt(from);
-  const before = doc.sliceString(Math.max(line.from, from - 3), from);
+  const before = doc.sliceString(Math.max(line.from, from - 2), from);
+  const after = doc.sliceString(from, Math.min(line.to, from + 1));
 
-  // 已经是 ``` 在行首：补全代码围栏（插入语言行 + 结尾围栏，光标停在语言后面）
-  if (before === "```" && from - 3 === line.from) {
-    const insert = "\n\n```";
+  // 第三个反引号：把行首的 `` 一次替换成完整围栏，避免自动闭合符残留成四个反引号。
+  if (before === "``" && from - 2 === line.from && from === line.to) {
+    const insert = "```\n\n```";
     view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from },
+      changes: { from: line.from, to: line.to, insert },
+      selection: { anchor: line.from + 3 },
       scrollIntoView: true,
     });
     return true;
   }
 
-  // 已经是 `` 在光标前：变成 ``` 光标移到三个后面
-  if (before.endsWith("``")) {
+  // 第二个反引号：复用第一次自动补出的闭合符，只把光标移到它后面。
+  if (from > line.from && before.endsWith("`") && after === "`") {
     view.dispatch({
-      changes: { from, to, insert: "`" },
       selection: { anchor: from + 1 },
       scrollIntoView: true,
     });
@@ -95,14 +102,113 @@ export const markdownIndentUnit = indentUnit.of("    ");
 /// 语言自身的自动缩进叠加——Enter 后 Java 已经缩进了四格，再补四格就成了八格。
 function insertIndent(view: EditorView): boolean {
   if (view.state.readOnly) return false;
+  if (adjustSelectedCodeBlockIndent(view, 24)) return true;
   return indentMore(view);
+}
+
+function removeIndent(view: EditorView): boolean {
+  if (view.state.readOnly) return false;
+  if (adjustSelectedCodeBlockIndent(view, -24)) return true;
+  return indentLess(view);
+}
+
+function fencedCodeAt(state: EditorState, position: number): { from: number; to: number } | null {
+  let result: { from: number; to: number } | null = null;
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "FencedCode" || position < ref.from || position > ref.to) return undefined;
+      result = { from: ref.from, to: ref.to };
+      return false;
+    },
+  });
+  return result;
+}
+
+function fencedCodeCoveredBySelection(state: EditorState): { from: number; to: number } | null {
+  const selection = state.selection.main;
+  if (selection.empty) return null;
+  let result: { from: number; to: number } | null = null;
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (result || ref.name !== "FencedCode") return undefined;
+      const openingLine = state.doc.lineAt(ref.from);
+      const closingLine = state.doc.lineAt(Math.min(ref.to, state.doc.length));
+      if (!selectionCoversCodeFence(selection, openingLine, closingLine)) return undefined;
+      result = { from: ref.from, to: ref.to };
+      return false;
+    },
+  });
+  return result;
+}
+
+function openingFenceInfo(
+  view: EditorView,
+  range = fencedCodeAt(view.state, view.state.selection.main.head),
+): { range: { from: number; to: number }; info: string; indentPt: number } | null {
+  if (!range) return null;
+  const line = view.state.doc.lineAt(range.from);
+  const match = line.text.match(/^(\s{0,3})(`{3,}|~{3,})(.*)$/);
+  if (!match) return null;
+  const info = match[3].trim();
+  return { range: { from: line.from, to: line.to }, info, indentPt: codeBlockIndentPtFromInfo(info) };
+}
+
+export function getCodeBlockIndentContext(view: EditorView) {
+  const fence = openingFenceInfo(view);
+  if (!fence) return null;
+  return {
+    indentPt: fence.indentPt,
+    canIndent: fence.indentPt < 144,
+    canOutdent: fence.indentPt > 0,
+  };
+}
+
+export function adjustCodeBlockIndent(view: EditorView, delta: number): boolean {
+  if (view.state.readOnly) return false;
+  return adjustFenceIndent(view, openingFenceInfo(view), delta);
+}
+
+function adjustSelectedCodeBlockIndent(view: EditorView, delta: number): boolean {
+  const range = fencedCodeCoveredBySelection(view.state);
+  if (!range) return false;
+  return adjustFenceIndent(view, openingFenceInfo(view, range), delta);
+}
+
+function adjustFenceIndent(
+  view: EditorView,
+  fence: { range: { from: number; to: number }; info: string; indentPt: number } | null,
+  delta: number,
+): boolean {
+  if (!fence) return false;
+  const next = normalizeCodeBlockIndentPt(fence.indentPt + delta);
+  if (next === fence.indentPt && delta !== 0) return true;
+  const line = view.state.doc.lineAt(fence.range.from);
+  const match = line.text.match(/^(\s{0,3})(`{3,}|~{3,})(.*)$/);
+  if (!match) return false;
+  const replacementInfo = updateCodeFenceIndentInfo(fence.info, next);
+  const replacement = `${match[1]}${match[2]}${replacementInfo}`;
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: replacement },
+    scrollIntoView: false,
+  });
+  return true;
+}
+
+function increaseCodeBlockIndent(view: EditorView) {
+  return adjustCodeBlockIndent(view, 24);
+}
+
+function decreaseCodeBlockIndent(view: EditorView) {
+  return adjustCodeBlockIndent(view, -24);
 }
 
 /// 实时渲染下用户直接敲 Markdown 语法就行，不需要工具栏。但这几个
 /// 快捷键是跨编辑器的肌肉记忆，留着几乎没有成本。
 export const markdownFormattingKeymap: KeyBinding[] = [
   { key: "Tab", run: insertIndent, preventDefault: true },
-  { key: "Shift-Tab", run: indentLess, preventDefault: true },
+  { key: "Shift-Tab", run: removeIndent, preventDefault: true },
+  { key: "Mod-]", run: increaseCodeBlockIndent, preventDefault: true },
+  { key: "Mod-[", run: decreaseCodeBlockIndent, preventDefault: true },
   { key: "Mod-b", run: (view) => wrapSelection(view, "**", "**", "加粗文本"), preventDefault: true },
   { key: "Mod-i", run: (view) => wrapSelection(view, "*", "*", "斜体文本"), preventDefault: true },
   { key: "Mod-e", run: (view) => wrapSelection(view, "`", "`", "代码"), preventDefault: true },

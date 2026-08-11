@@ -14,7 +14,8 @@
     "tauri:check:msvc": "scripts\\cargo-msvc.bat check --manifest-path src-tauri/Cargo.toml",
     "test:msvc": "scripts\\cargo-msvc.bat test --manifest-path src-tauri/Cargo.toml",
     "cli:check": "cargo check --manifest-path src-tauri/Cargo.toml --bin md-king-cli",
-    "test": "pnpm typecheck && pnpm tauri:check && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:unit": "node --test src/**/*.test.ts",
+    "test": "pnpm typecheck && pnpm test:unit && pnpm tauri:check && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

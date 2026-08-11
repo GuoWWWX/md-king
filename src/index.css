@@ -1308,7 +1308,8 @@ select {
     height: 1.5px;
     background: rgba(148, 163, 184, 0.6);
     border-radius: 1px;
-    margin-top: 10px;
+    pointer-events: none;
+    transform: translateY(-50%);
   }
 
   .mk-cm-list-line {
@@ -1370,9 +1371,44 @@ select {
     box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
   }
 
+  .mk-cm-code-indent-1 { margin-left: 32px; }
+  .mk-cm-code-indent-2 { margin-left: 64px; }
+  .mk-cm-code-indent-3 { margin-left: 96px; }
+  .mk-cm-code-indent-4 { margin-left: 128px; }
+  .mk-cm-code-indent-5 { margin-left: 160px; }
+  .mk-cm-code-indent-6 { margin-left: 192px; }
+
+  /* 兼容热更新前仍在使用旧编辑态 class 的窗口，避免点击代码块后卡片背景消失。 */
+  .mk-cm-code-raw {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    background: #f8fafc;
+    box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-code-raw:not(.mk-cm-code-raw + .mk-cm-code-raw) {
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    box-shadow:
+      inset 1px 0 0 rgba(226, 232, 240, 0.95),
+      inset -1px 0 0 rgba(226, 232, 240, 0.95),
+      inset 0 1px 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-code-raw:not(:has(+ .mk-cm-code-raw)) {
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    box-shadow:
+      inset 1px 0 0 rgba(226, 232, 240, 0.95),
+      inset -1px 0 0 rgba(226, 232, 240, 0.95),
+      inset 0 -1px 0 rgba(226, 232, 240, 0.95);
+  }
+
   .mk-cm-code-first {
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
     box-shadow:
       inset 1px 0 0 rgba(226, 232, 240, 0.95),
       inset -1px 0 0 rgba(226, 232, 240, 0.95),
@@ -1380,8 +1416,8 @@ select {
   }
 
   .mk-cm-code-last {
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
     box-shadow:
       inset 1px 0 0 rgba(226, 232, 240, 0.95),
       inset -1px 0 0 rgba(226, 232, 240, 0.95),
@@ -1429,19 +1465,12 @@ select {
     white-space: pre-wrap;
   }
 
-  /* 编辑态：只保留等宽字体，背景和边框全撤。用户点进来就是要改源码，
-     此时留着装饰框会让编辑态和收起态难以分辨。 */
-  .mk-cm-code-raw {
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-    font-size: 0.88em;
-  }
-
   /* 渲染态的 ``` 围栏行：内容已被 replace 掉，这里只保留一小段高度当作
      代码块的上下留白，并画出圆角边框。压到 0 会让背景块贴着正文，很挤。 */
   .mk-cm-code-fence {
-    font-size: 0;
-    line-height: 0;
-    height: 18px;
+    font-size: 0.88em;
+    line-height: 1.75;
+    height: auto;
     padding-left: 12px !important;
     padding-right: 12px !important;
     /* 和 Word 预览侧的代码块同色（slate-50 纯色）。此前用 slate-100 加透明度，
@@ -1451,8 +1480,8 @@ select {
   }
 
   .mk-cm-code-fence-first {
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
     box-shadow:
       inset 1px 0 0 rgba(226, 232, 240, 0.95),
       inset -1px 0 0 rgba(226, 232, 240, 0.95),
@@ -1460,8 +1489,8 @@ select {
   }
 
   .mk-cm-code-fence-last {
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
     box-shadow:
       inset 1px 0 0 rgba(226, 232, 240, 0.95),
       inset -1px 0 0 rgba(226, 232, 240, 0.95),
@@ -1528,9 +1557,66 @@ select {
 
   /* GFM 表格渲染态 widget */
   .mk-cm-table-wrapper {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     margin: 4px 0;
     overflow-x: auto;
-    cursor: text;
+    overflow-y: hidden;
+    box-sizing: border-box;
+    overscroll-behavior-inline: contain;
+    cursor: default;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #ffffff;
+  }
+
+  .mk-table-toolbar {
+    position: sticky;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 4px 6px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+
+  .mk-table-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding-left: 6px;
+    border-left: 1px solid #e2e8f0;
+  }
+
+  .mk-table-toolbar-group[hidden] {
+    display: none;
+  }
+
+  .mk-table-tool-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+  }
+
+  .mk-table-tool-button:hover:not(:disabled) {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .mk-table-tool-button:disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
   }
 
   .mk-cm-table {
@@ -1542,11 +1628,99 @@ select {
 
   .mk-cm-table th,
   .mk-cm-table td {
-    padding: 5px 12px;
+    min-width: 112px;
+    padding: 0;
     border: 1px solid #e2e8f0;
     text-align: left;
     color: #1e293b;
     white-space: nowrap;
+  }
+
+  .mk-cm-table-input {
+    display: block;
+    width: 100%;
+    min-width: 110px;
+    height: 32px;
+    padding: 5px 10px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1.5;
+    letter-spacing: 0;
+  }
+
+  .mk-cm-table-input[hidden] {
+    display: none;
+  }
+
+  .mk-cm-table-cell {
+    min-width: 110px;
+    min-height: 32px;
+  }
+
+  .mk-cm-table-cell-content {
+    min-height: 32px;
+    padding: 6px 10px;
+    overflow: hidden;
+    outline: 0;
+    text-overflow: ellipsis;
+    cursor: cell;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .mk-cm-table-cell-content[hidden] {
+    display: none;
+  }
+
+  .mk-cm-table-cell-content:focus-visible {
+    box-shadow: inset 0 0 0 2px #93c5fd;
+  }
+
+  .mk-cm-table-cell-content code {
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: #e2e8f0;
+    color: #0f172a;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+    font-weight: 400;
+  }
+
+  .mk-cm-table-cell-content strong {
+    font-weight: 700;
+  }
+
+  .mk-cm-table-cell-content em {
+    font-style: italic;
+    font-synthesis: style;
+  }
+
+  .mk-cm-table-cell-content s {
+    text-decoration: line-through;
+  }
+
+  .mk-cm-table-cell-content img {
+    display: inline-block;
+    width: auto;
+    max-width: 96px;
+    height: 1.5em;
+    margin: -0.2em 2px 0;
+    vertical-align: middle;
+    object-fit: contain;
+  }
+
+  .mk-cm-table-cell-content a {
+    color: #2563eb;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .mk-cm-table-input:focus {
+    background: #ffffff;
+    box-shadow: inset 0 0 0 2px #3b82f6;
   }
 
   .mk-cm-table th {
@@ -1561,6 +1735,62 @@ select {
 
   .mk-cm-table tbody tr:hover {
     background: #eff6ff;
+  }
+
+  .mk-cm-table .mk-table-selected {
+    background: #dbeafe !important;
+  }
+
+  .mk-table-context-menu {
+    position: fixed;
+    z-index: 1000;
+    width: 196px;
+    padding: 5px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #1e293b;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  }
+
+  .mk-table-context-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 30px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font-size: 13px;
+    letter-spacing: 0;
+    text-align: left;
+    cursor: default;
+  }
+
+  .mk-table-context-item svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+  }
+
+  .mk-table-context-item:hover:not(:disabled),
+  .mk-table-context-item:focus-visible {
+    outline: 0;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  .mk-table-context-item:disabled {
+    color: #cbd5e1;
+  }
+
+  .mk-table-context-separator {
+    height: 1px;
+    margin: 4px -5px;
+    background: #e2e8f0;
   }
 
   .mk-drop-zone {
@@ -2019,11 +2249,26 @@ select {
     background: #3b82f6;
   }
 
-  .dark .mk-cm-code-line {
+  .dark .mk-cm-code-line,
+  .dark .mk-cm-code-raw {
     background: rgba(24, 24, 27, 0.72) !important;
     box-shadow:
       inset 1px 0 0 rgba(212, 212, 216, 0.18),
       inset -1px 0 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-raw:not(.mk-cm-code-raw + .mk-cm-code-raw) {
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18),
+      inset 0 1px 0 rgba(212, 212, 216, 0.18) !important;
+  }
+
+  .dark .mk-cm-code-raw:not(:has(+ .mk-cm-code-raw)) {
+    box-shadow:
+      inset 1px 0 0 rgba(212, 212, 216, 0.18),
+      inset -1px 0 0 rgba(212, 212, 216, 0.18),
+      inset 0 -1px 0 rgba(212, 212, 216, 0.18) !important;
   }
 
   .dark .mk-cm-code-first {
@@ -2097,6 +2342,72 @@ select {
   .dark .mk-cm-table th {
     background: rgba(39, 39, 42, 0.8);
     color: #f4f4f5;
+  }
+
+  .dark .mk-cm-table-wrapper {
+    border-color: rgba(212, 212, 216, 0.22);
+    background: #18181b;
+  }
+
+  .dark .mk-table-toolbar {
+    border-color: rgba(212, 212, 216, 0.22);
+    background: #27272a;
+  }
+
+  .dark .mk-table-toolbar-group {
+    border-color: rgba(212, 212, 216, 0.22);
+  }
+
+  .dark .mk-table-tool-button {
+    color: #a1a1aa;
+  }
+
+  .dark .mk-table-tool-button:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+
+  .dark .mk-table-tool-button:disabled {
+    color: #52525b;
+  }
+
+  .dark .mk-cm-table-input:focus {
+    background: #18181b;
+    box-shadow: inset 0 0 0 2px #60a5fa;
+  }
+
+  .dark .mk-cm-table-cell-content code {
+    background: #3f3f46;
+    color: #f4f4f5;
+  }
+
+  .dark .mk-cm-table-cell-content a {
+    color: #93c5fd;
+  }
+
+  .dark .mk-table-context-menu {
+    border-color: #3f3f46;
+    background: #18181b;
+    color: #f4f4f5;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+  }
+
+  .dark .mk-table-context-item:hover:not(:disabled),
+  .dark .mk-table-context-item:focus-visible {
+    background: rgba(59, 130, 246, 0.2);
+    color: #bfdbfe;
+  }
+
+  .dark .mk-table-context-item:disabled {
+    color: #52525b;
+  }
+
+  .dark .mk-table-context-separator {
+    background: #3f3f46;
+  }
+
+  .dark .mk-cm-table .mk-table-selected {
+    background: rgba(59, 130, 246, 0.2) !important;
   }
 
   .dark .mk-cm-table tbody tr:nth-child(even) {

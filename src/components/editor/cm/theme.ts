@@ -34,6 +34,8 @@ const sharedTheme = EditorView.theme({
     overflow: "auto",
   },
   ".cm-content": {
+    width: "100%",
+    minWidth: "0",
     padding: "20px 24px 40vh 24px",
     caretColor: "var(--primary)",
   },

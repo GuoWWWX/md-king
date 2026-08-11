@@ -5,6 +5,7 @@ import katexPlugin from "@vscode/markdown-it-katex";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { AppSurface } from "@/components/ui/app-surface";
+import { codeBlockIndentPtFromInfo } from "@/components/editor/cm/code-block-indent";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
 import { resolvePreviewImageSource } from "@/lib/tauri";
@@ -51,7 +52,7 @@ type PreviewBlock =
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
   | { type: "paragraph"; segments: PreviewTextSegment[] }
   | { type: "quote"; segments: PreviewTextSegment[] }
-  | { type: "code"; text: string; language?: string }
+  | { type: "code"; text: string; language?: string; indentPt: number }
   | { type: "math"; text: string }
   | { type: "hr" }
   | { type: "list"; items: PreviewListItem[] }
@@ -903,12 +904,13 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
 
     if (token.type === "fence" || token.type === "code_block") {
       const language = token.type === "fence" ? normalizeCodeLanguage(token.info) : undefined;
+      const indentPt = token.type === "fence" ? codeBlockIndentPtFromInfo(token.info) : 0;
       // ```math / ```latex 等围栏在导出时会被 Rust 端转成 $$...$$，预览必须同样按公式渲染。
       if (language && mathFenceLanguages.has(language)) {
         blocks.push({ type: "math", text: token.content.trim() });
         continue;
       }
-      blocks.push({ type: "code", text: token.content.trimEnd(), language });
+      blocks.push({ type: "code", text: token.content.trimEnd(), language, indentPt });
       continue;
     }
 
@@ -995,7 +997,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
     }
     // 有语言标签时渲染顶部多 22px（语言标签行）+ 原来的 18px 底部padding，共需多加 22px。
     const languageExtra = block.language ? 22 : 0;
-    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
+    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24 - ptToPx(block.indentPt), drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
   }
 
   if (block.type === "math") {
@@ -1160,7 +1162,7 @@ function createFallbackBlocks(imageCaption: string, tableCaption: string): Previ
       { segments: textSegments("第二项用于检查编号递增。"), level: 0, ordered: true, index: 2 },
     ] },
     { type: "quote", segments: textSegments("引用块用于观察缩进、边框和背景。") },
-    { type: "code", language: "javascript", text: "const docx = convertMarkdown(input);\nsaveAs(docx, \"report.docx\");" },
+    { type: "code", language: "javascript", text: "const docx = convertMarkdown(input);\nsaveAs(docx, \"report.docx\");", indentPt: 0 },
     { type: "image", caption: imageCaption },
     { type: "hr" },
     { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]].map((row) => row.map((cell) => ({ segments: textSegments(cell) }))) },
@@ -1353,6 +1355,7 @@ function renderMarkdownBlocks({
               padding: `${Math.max(0, drafts.code.codePaddingY) + 22}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
               marginTop: drafts.code.beforeSpacing,
               marginBottom: drafts.code.afterSpacing,
+              marginLeft: block.indentPt ? `${block.indentPt}pt` : undefined,
               maxHeight: mermaidMaxHeight,
               overflow: "hidden",
             }}
@@ -1374,6 +1377,7 @@ function renderMarkdownBlocks({
             border: codeBlockBorder(drafts.code),
             borderRadius: 0,
             padding: `${Math.max(0, drafts.code.codePaddingY) + (languageLabel ? 22 : 0)}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
+            marginLeft: block.indentPt ? `${block.indentPt}pt` : undefined,
           }}
         >
           {languageLabel ? <CodeLanguageLabel label={languageLabel} backgroundColor={backgroundColor} /> : null}

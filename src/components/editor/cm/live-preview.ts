@@ -3,8 +3,14 @@ import { isMermaidLanguage } from "@/lib/mermaid";
 import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
+import {
+  codeBlockIndentClass,
+  codeBlockIndentPtFromInfo,
+  codeFenceLanguageFromInfo,
+} from "./code-block-indent";
 import { selectionTouches, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
-import { BulletWidget, CopyCodeWidget, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { parseMarkdownTable } from "./markdown-table";
+import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -210,8 +216,9 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
  */
 function handleHorizontalRule(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const line = collector.state.doc.lineAt(ref.from);
+  const editing = cursorLine(collector, ref.from, ref.to);
+  if (editing) return;
   addLine(collector, line.from, "mk-cm-hr");
-  if (cursorLine(collector, ref.from, ref.to)) return;
   // 整行源码（`---`）替换成零宽内容，高度由 CSS 的 ::before 横线撑起来。
   hide(collector, line.from, line.to);
 }
@@ -267,7 +274,10 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   // 语言标记（```java 的 java）通过 data 属性交给 CSS 伪元素画在左上角。
   // 用属性而不是 widget：widget 会插进文档流占掉一行高度，把首行内容顶下去。
   const infoNode = ref.node.getChild("CodeInfo");
-  const language = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+  const info = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+  const language = codeFenceLanguageFromInfo(info);
+  const indentClass = codeBlockIndentClass(codeBlockIndentPtFromInfo(info));
+  const indented = indentClass ? ` ${indentClass}` : "";
 
   // mermaid 块在渲染态整块换成图。跨行 replace 只能由 StateField 提供
   // （CM 要在算视口前知道块高度），所以这里只打个标记，实际替换在
@@ -281,32 +291,29 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
 
   for (let lineNumber = start.number; lineNumber <= end.number; lineNumber += 1) {
     const line = doc.line(lineNumber);
-    const isFence = lineNumber === firstLine.number || lineNumber === lastLine.number;
+    const isFirst = lineNumber === firstLine.number;
+    const isLast = lineNumber === lastLine.number;
+    const isFence = isFirst || isLast;
 
     if (isFence && !editing) {
       // 整行 replace 掉围栏。跨行装饰必须由 StateField 提供，所以这里只能
       // 逐行处理：把这一行的字符全部隐藏，行本身仍然存在（高度靠 CSS 压到 0）。
       hide(collector, line.from, line.to);
-      addLine(collector, line.from, lineNumber === firstLine.number ? "mk-cm-code-fence mk-cm-code-fence-first" : "mk-cm-code-fence mk-cm-code-fence-last");
+      addLine(collector, line.from, isFirst
+        ? `mk-cm-code-fence mk-cm-code-fence-first${indented}`
+        : `mk-cm-code-fence mk-cm-code-fence-last${indented}`);
       continue;
     }
 
-    if (editing) {
-      // 编辑态就是裸源码：连背景和边框一起撤掉，只留等宽字体。
-      // 留着框会让「正在编辑的那几行」和收起态长得几乎一样，反而看不出状态差别。
-      addLine(collector, line.from, "mk-cm-code-raw");
-      continue;
-    }
-
-    const edge = lineNumber === firstLine.number
-      ? " mk-cm-code-first"
-      : lineNumber === lastLine.number
-        ? " mk-cm-code-last"
-        : "";
-    addLine(collector, line.from, `mk-cm-code-line${edge}`);
+    // 编辑态和渲染态用同一套 mk-cm-code-line 背景/边框/内边距，卡片始终在，
+    // 光标进出代码块时不会跳。编辑态下围栏行不再隐藏文字，直接显示 ``` 源码，
+    // 首尾行仍然套 first/last 拿圆角。
+    const edge = isFirst ? " mk-cm-code-first" : isLast ? " mk-cm-code-last" : "";
+    addLine(collector, line.from, `mk-cm-code-line${edge}${indented}`);
   }
 
-  // 只有渲染态才挂语言标签和复制按钮：编辑态首行显示的就是 ```java 本身。
+  // 只有渲染态才挂语言标签和复制按钮：编辑态首行显示的就是 ```java 本身，
+  // 标签叠上去会跟源码文字重叠。
   if (!editing && firstLine.from >= rangeFrom && firstLine.from <= rangeTo) {
     if (language) {
       collector.decorations.push(
@@ -465,7 +472,8 @@ function buildMermaidBlocks(state: EditorState, dark: boolean): DecorationSet {
       if (ref.name !== "FencedCode") return undefined;
 
       const infoNode = ref.node.getChild("CodeInfo");
-      const language = infoNode ? state.doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+      const info = infoNode ? state.doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+      const language = codeFenceLanguageFromInfo(info);
       if (!isMermaidLanguage(language)) return false;
 
       // 光标落在块内任意一行就让它保持源码态，交给内联层按普通代码块渲染。
@@ -519,34 +527,7 @@ export function mermaidBlockExtension(dark: boolean): Extension {
   return field;
 }
 
-/** 把一行 Markdown 表格源码解析成单元格数组，带每格的源码起始位置。 */
-function parseTableRow(line: string, lineFrom: number): { text: string; sourceFrom: number }[] {
-  const cells: { text: string; sourceFrom: number }[] = [];
-  const raw = line;
-  let pos = 0;
-
-  // 跳过行首 |
-  if (raw[pos] === "|") pos++;
-
-  while (pos < raw.length) {
-    const cellStart = pos;
-    let end = raw.indexOf("|", pos);
-    if (end < 0) end = raw.length;
-    const text = raw.slice(cellStart, end).trim();
-    // lineFrom 是行在文档中的起始偏移，加上格内起始位置得到文档绝对位置
-    cells.push({ text, sourceFrom: lineFrom + cellStart });
-    pos = end + 1;
-  }
-
-  return cells;
-}
-
-/** 判断是否是表格分隔行（`---` / `:---:` 等）。 */
-function isTableSeparator(line: string): boolean {
-  return /^\s*\|?[\s:|\\-]+\|.*$/.test(line);
-}
-
-function buildTableBlocks(state: EditorState): DecorationSet {
+function buildTableBlocks(state: EditorState, sourceTableFrom: number | null): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
   syntaxTree(state).iterate({
@@ -557,35 +538,18 @@ function buildTableBlocks(state: EditorState): DecorationSet {
       const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
       const last = state.doc.lineAt(lastPos);
 
-      // 光标在表格范围内 → 退回源码态，让用户直接编辑 Markdown。
-      const editing = state.selection.ranges.some(
-        (range) => range.from <= last.to && range.to >= first.from,
-      );
-      if (editing) return false;
-
-      // 收集所有原始行（含分隔行），供插入行/列操作使用。
-      const rawLines: string[] = [];
-      for (let ln = first.number; ln <= last.number; ln++) {
-        rawLines.push(state.doc.line(ln).text);
-      }
-
-      // 解析所有行，跳过分隔行，带上每格的源码位置。
-      const rows: { cells: { text: string; sourceFrom: number }[]; sourceFrom: number }[] = [];
-      for (let ln = first.number; ln <= last.number; ln++) {
-        const line = state.doc.line(ln);
-        if (!isTableSeparator(line.text)) {
-          rows.push({ cells: parseTableRow(line.text, line.from), sourceFrom: line.from });
-        }
-      }
-      if (rows.length === 0) return false;
+      // 只有 Widget 内的专用按钮能进入源码态；普通 selection 变化不再拆掉整张表。
+      if (sourceTableFrom !== null && sourceTableFrom >= first.from && sourceTableFrom <= last.to) return false;
 
       const source = state.doc.sliceString(first.from, last.to);
+      const table = parseMarkdownTable(source);
+      if (!table) return false;
 
       builder.add(
         first.from,
         last.to,
         Decoration.replace({
-          widget: new TableWidget(rows, source, first.from, last.to, rawLines),
+          widget: new TableWidget(table, source, first.from, last.to),
           block: true,
         }),
       );
@@ -596,11 +560,40 @@ function buildTableBlocks(state: EditorState): DecorationSet {
   return builder.finish();
 }
 
+interface TableBlockState {
+  decorations: DecorationSet;
+  sourceTableFrom: number | null;
+}
+
+function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number): boolean {
+  let inside = false;
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "Table") return undefined;
+      if (sourceTableFrom < ref.from || sourceTableFrom >= ref.to) return false;
+      const head = state.selection.main.head;
+      inside = head >= ref.from && head <= ref.to;
+      return false;
+    },
+  });
+  return inside;
+}
+
 /** GFM 表格的块级装饰，和 Mermaid 一样用 StateField 而不是 ViewPlugin。 */
-export const tableBlockExtension: Extension = StateField.define<DecorationSet>({
-  create: (state) => buildTableBlocks(state),
-  // selection 变化也要重建：block:true widget 替换了多行，CM 的坐标映射（posAtCoords）
-  // 依赖最新的装饰信息，装饰过期会导致点击位置偏移到错误的行。
-  update: (value, tr) => (tr.docChanged || tr.selection ? buildTableBlocks(tr.state) : value),
-  provide: (self) => EditorView.decorations.from(self),
+export const tableBlockExtension: Extension = StateField.define<TableBlockState>({
+  create: (state) => ({ decorations: buildTableBlocks(state, null), sourceTableFrom: null }),
+  update: (value, tr) => {
+    let sourceTableFrom = value.sourceTableFrom;
+    if (sourceTableFrom !== null && tr.docChanged) sourceTableFrom = tr.changes.mapPos(sourceTableFrom);
+    for (const effect of tr.effects) {
+      if (effect.is(editTableSourceEffect)) sourceTableFrom = effect.value;
+    }
+    if (sourceTableFrom !== null && tr.selection && !selectionInsideSourceTable(tr.state, sourceTableFrom)) {
+      sourceTableFrom = null;
+    }
+
+    if (!tr.docChanged && sourceTableFrom === value.sourceTableFrom) return value;
+    return { decorations: buildTableBlocks(tr.state, sourceTableFrom), sourceTableFrom };
+  },
+  provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
 });

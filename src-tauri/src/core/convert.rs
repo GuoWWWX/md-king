@@ -22,6 +22,7 @@ use crate::core::template_style::get_template_style_config;
 use crate::system::open_file::open_path;
 
 const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
+const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 
 #[derive(Deserialize)]
@@ -2195,6 +2196,10 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
                 continue;
             }
 
+            if fence.indent_pt > 0 {
+                output.push(format!("{CODE_INDENT_MARKER_PREFIX}{}", fence.indent_pt));
+                output.push(String::new());
+            }
             if let Some(language) = fence.language.as_deref() {
                 output.push(format!("{CODE_LANGUAGE_MARKER_PREFIX}{language}"));
             }
@@ -2222,6 +2227,7 @@ struct MarkdownFenceStart {
     marker: char,
     length: usize,
     language: Option<String>,
+    indent_pt: u32,
     is_math: bool,
 }
 
@@ -2244,6 +2250,7 @@ fn parse_markdown_fence_start(line: &str) -> Option<MarkdownFenceStart> {
         return None;
     }
     let language = parse_fence_language(info);
+    let indent_pt = parse_fence_code_indent_pt(info);
     let is_math = language
         .as_deref()
         .map(is_math_fence_language)
@@ -2253,8 +2260,25 @@ fn parse_markdown_fence_start(line: &str) -> Option<MarkdownFenceStart> {
         marker,
         length,
         language,
+        indent_pt,
         is_math,
     })
+}
+
+fn parse_fence_code_indent_pt(info: &str) -> u32 {
+    Regex::new(r#"(?:^|[\s{])data-md-king-indent-pt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s}]+))"#)
+        .expect("valid code indent attribute regex")
+        .captures(info)
+        .and_then(|captures| {
+            captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .or_else(|| captures.get(3))
+        })
+        .and_then(|value| value.as_str().parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| value.round().clamp(0.0, 144.0) as u32)
+        .unwrap_or(0)
 }
 
 fn parse_fence_language(info: &str) -> Option<String> {
@@ -3801,6 +3825,14 @@ fn extract_code_language_marker(paragraph_xml: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn extract_code_indent_marker(paragraph_xml: &str) -> Option<u32> {
+    let text = paragraph_plain_text(paragraph_xml);
+    text.trim()
+        .strip_prefix(CODE_INDENT_MARKER_PREFIX)
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .map(|value| value.min(144))
+}
+
 fn paragraph_plain_text(paragraph_xml: &str) -> String {
     Regex::new(r#"(?s)<w:t(?:\s+[^>]*)?>(.*?)</w:t>"#)
         .expect("valid paragraph text regex")
@@ -3893,9 +3925,13 @@ fn task_list_marker_text(marker: TaskListMarker) -> &'static str {
     }
 }
 
-fn code_language_label_paragraph(language: &str, style: Option<&CodeBlockStyleConfig>) -> String {
+fn code_language_label_paragraph(
+    language: &str,
+    style: Option<&CodeBlockStyleConfig>,
+    indent_pt: u32,
+) -> String {
     let label = escape_xml_text(&code_language_display_name(language));
-    let properties = code_language_label_paragraph_properties_xml(style);
+    let properties = code_language_label_paragraph_properties_xml(style, indent_pt);
     let run_properties = code_language_label_run_properties_xml(style);
 
     format!(
@@ -3927,7 +3963,10 @@ fn code_language_display_name(language: &str) -> String {
     }
 }
 
-fn code_language_label_paragraph_properties_xml(style: Option<&CodeBlockStyleConfig>) -> String {
+fn code_language_label_paragraph_properties_xml(
+    style: Option<&CodeBlockStyleConfig>,
+    indent_pt: u32,
+) -> String {
     let background = style
         .map(|value| value.background_color.as_str())
         .unwrap_or("F8FAFC");
@@ -3936,6 +3975,7 @@ fn code_language_label_paragraph_properties_xml(style: Option<&CodeBlockStyleCon
         .unwrap_or("E2E8F0");
     let horizontal_padding =
         points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
+    let left_indent = horizontal_padding.saturating_add(indent_pt.saturating_mul(20));
     let border_space = (style.map(|value| value.padding_y).unwrap_or(10.0) / 2.0)
         .round()
         .clamp(0.0, 24.0) as u32;
@@ -3943,7 +3983,7 @@ fn code_language_label_paragraph_properties_xml(style: Option<&CodeBlockStyleCon
 
     let shading = paragraph_shading_xml(background);
     format!(
-        r#"<w:spacing w:before="120" w:after="0" w:line="220" w:lineRule="auto" /><w:jc w:val="right" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr><w:top {border} /><w:left {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="120" w:after="0" w:line="220" w:lineRule="auto" /><w:jc w:val="right" /><w:ind w:left="{left_indent}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr><w:top {border} /><w:left {border} /><w:right {border} /></w:pBdr>"#
     )
 }
 
@@ -3977,12 +4017,14 @@ fn normalize_code_and_quote_blocks(
     let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
     let mut in_quote_list = false;
     let mut pending_code_language_label = false;
+    let mut pending_code_indent_pt = 0;
     paragraph
         .replace_all(xml, |captures: &Captures| {
             normalize_code_or_quote_paragraph(
                 &captures[0],
                 &mut in_quote_list,
                 &mut pending_code_language_label,
+                &mut pending_code_indent_pt,
                 markdown_features,
                 block_style,
             )
@@ -3994,14 +4036,25 @@ fn normalize_code_or_quote_paragraph(
     paragraph_xml: &str,
     in_quote_list: &mut bool,
     pending_code_language_label: &mut bool,
+    pending_code_indent_pt: &mut u32,
     markdown_features: &MarkdownFeatureConfig,
     block_style: Option<&BlockStyleConfig>,
 ) -> String {
+    if let Some(indent_pt) = extract_code_indent_marker(paragraph_xml) {
+        *in_quote_list = false;
+        *pending_code_indent_pt = indent_pt;
+        return String::new();
+    }
+
     if let Some(language) = extract_code_language_marker(paragraph_xml) {
         *in_quote_list = false;
         *pending_code_language_label = markdown_features.code_block;
         return if markdown_features.code_block {
-            code_language_label_paragraph(&language, block_style.map(|style| &style.code))
+            code_language_label_paragraph(
+                &language,
+                block_style.map(|style| &style.code),
+                *pending_code_indent_pt,
+            )
         } else {
             String::new()
         };
@@ -4012,25 +4065,31 @@ fn normalize_code_or_quote_paragraph(
             *in_quote_list = false;
             let connects_to_label = *pending_code_language_label;
             *pending_code_language_label = false;
+            let indent_pt = *pending_code_indent_pt;
+            *pending_code_indent_pt = 0;
             normalize_source_code_paragraph(
                 paragraph_xml,
                 block_style.map(|style| &style.code),
                 connects_to_label,
+                indent_pt,
             )
         }
         Some("SourceCode") => {
             *in_quote_list = false;
             *pending_code_language_label = false;
+            *pending_code_indent_pt = 0;
             flatten_special_block_paragraph(paragraph_xml, false)
         }
         Some("BlockText") if markdown_features.quote_block => {
             *in_quote_list = true;
             *pending_code_language_label = false;
+            *pending_code_indent_pt = 0;
             normalize_quote_paragraph(paragraph_xml, block_style.map(|style| &style.quote))
         }
         Some("BlockText") => {
             *in_quote_list = false;
             *pending_code_language_label = false;
+            *pending_code_indent_pt = 0;
             flatten_special_block_paragraph(paragraph_xml, true)
         }
         _ if markdown_features.quote_block
@@ -4038,11 +4097,13 @@ fn normalize_code_or_quote_paragraph(
             && has_list_numbering(paragraph_xml) =>
         {
             *pending_code_language_label = false;
+            *pending_code_indent_pt = 0;
             normalize_quote_list_paragraph(paragraph_xml, block_style.map(|style| &style.quote))
         }
         _ => {
             *in_quote_list = false;
             *pending_code_language_label = false;
+            *pending_code_indent_pt = 0;
             paragraph_xml.to_string()
         }
     }
@@ -4098,8 +4159,9 @@ fn normalize_source_code_paragraph(
     paragraph_xml: &str,
     style: Option<&CodeBlockStyleConfig>,
     connects_to_label: bool,
+    indent_pt: u32,
 ) -> String {
-    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml, style, connects_to_label);
+    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml, style, connects_to_label, indent_pt);
     normalize_code_runs(&paragraph_xml, style)
 }
 
@@ -4107,10 +4169,11 @@ fn ensure_code_paragraph_properties(
     paragraph_xml: &str,
     style: Option<&CodeBlockStyleConfig>,
     omit_top_border: bool,
+    indent_pt: u32,
 ) -> String {
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
-    let properties = code_paragraph_properties_xml(style, !omit_top_border);
+    let properties = code_paragraph_properties_xml(style, !omit_top_border, indent_pt);
     if paragraph_properties.is_match(paragraph_xml) {
         return paragraph_properties
             .replace(paragraph_xml, |captures: &Captures| {
@@ -4263,6 +4326,7 @@ fn normalize_quote_run_xml(run_xml: &str, style: Option<&QuoteBlockStyleConfig>)
 fn code_paragraph_properties_xml(
     style: Option<&CodeBlockStyleConfig>,
     include_top_border: bool,
+    indent_pt: u32,
 ) -> String {
     let background = style
         .map(|value| value.background_color.as_str())
@@ -4281,6 +4345,7 @@ fn code_paragraph_properties_xml(
     let after = points_to_twentieths(style.map(|value| value.after_spacing).unwrap_or(6.0));
     let horizontal_padding =
         points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
+    let left_indent = horizontal_padding.saturating_add(indent_pt.saturating_mul(20));
     let border_space = (style.map(|value| value.padding_y).unwrap_or(10.0) / 2.0)
         .round()
         .clamp(0.0, 24.0) as u32;
@@ -4293,7 +4358,7 @@ fn code_paragraph_properties_xml(
 
     let shading = paragraph_shading_xml(background);
     format!(
-        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{horizontal_padding}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr>{top_border}<w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{left_indent}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr>{top_border}<w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
     )
 }
 
@@ -6657,6 +6722,33 @@ mod tests {
         assert!(output.contains("$$\n\\frac{a}{b}\n$$"));
         assert!(output.contains("$$\nx + y\n$$"));
         assert!(output.contains("MD_KING_CODE_LANG:rust\n```rust\nlet value = 1;\n```"));
+    }
+
+    #[test]
+    fn adds_code_indent_marker_without_changing_fenced_code() {
+        let input = "```ts {#demo data-md-king-indent-pt=24}\nconst value = 1;\n```\n\n```{data-md-king-indent-pt=48}\nplain\n```\n";
+        let output = preprocess_markdown_for_word(input);
+
+        assert!(output.contains("MD_KING_CODE_INDENT_PT:24\n\nMD_KING_CODE_LANG:ts\n```ts {#demo data-md-king-indent-pt=24}"));
+        assert!(output.contains("MD_KING_CODE_INDENT_PT:48\n\n```{data-md-king-indent-pt=48}"));
+    }
+
+    #[test]
+    fn applies_code_indent_to_language_label_and_source_code() {
+        let input = r#"<w:document><w:body><w:p><w:r><w:t>MD_KING_CODE_INDENT_PT:24</w:t></w:r></w:p><w:p><w:r><w:t>MD_KING_CODE_LANG:ts</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:t>const value = 1;</w:t></w:r></w:p></w:body></w:document>"#;
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(!output.contains("MD_KING_CODE_INDENT_PT"));
+        assert!(output.contains("TypeScript"));
+        assert_eq!(output.matches(r#"<w:ind w:left="840" w:right="360" w:firstLine="0" />"#).count(), 2);
     }
 
     #[test]

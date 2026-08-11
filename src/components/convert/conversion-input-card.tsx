@@ -1,11 +1,12 @@
 import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
-import { ClipboardPaste, FileText, UploadCloud, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save } from "lucide-react";
+import { ClipboardPaste, FileText, UploadCloud, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease } from "lucide-react";
 import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { LiveMarkdownEditor, type LiveMarkdownEditorHandle } from "@/components/editor/live-markdown-editor";
+import { adjustCodeBlockIndent, getCodeBlockIndentContext } from "@/components/editor/cm/formatting-keymap";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/lib/document-outline";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
@@ -58,6 +59,7 @@ export function ConversionInputCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<LiveMarkdownEditorHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [codeIndentContext, setCodeIndentContext] = useState<ReturnType<typeof getCodeBlockIndentContext>>(null);
 
   // 字符数统计去掉空白，行数排除空行，给用户有意义的计数。
   const docStats = useMemo(() => {
@@ -190,8 +192,20 @@ export function ConversionInputCard({
     if (view) redo(view);
   }
 
+  function updateCodeIndentContext(open: boolean) {
+    const view = getEditorView();
+    setCodeIndentContext(open && view ? getCodeBlockIndentContext(view) : null);
+  }
+
+  function changeCodeBlockIndent(delta: number) {
+    const view = getEditorView();
+    if (!view) return;
+    adjustCodeBlockIndent(view, delta);
+    view.focus();
+  }
+
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root onOpenChange={updateCodeIndentContext}>
       <ContextMenu.Trigger asChild>
         <section data-mk-context-menu className="mk-card relative flex h-full min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[5px] max-[1100px]:h-auto max-[760px]:min-h-[300px]">
       {documentInfo}
@@ -268,6 +282,13 @@ export function ConversionInputCard({
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}><Copy /><span className="flex-1">复制</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+C</span></ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}><Clipboard /><span className="flex-1">粘贴</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+V</span></ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}><CheckSquare /><span className="flex-1">全选</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+A</span></ContextMenu.Item>
+          {codeIndentContext ? (
+            <>
+              <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+              <ContextMenu.Item className={contextMenuItemClass} onSelect={() => changeCodeBlockIndent(-24)} disabled={!codeIndentContext.canOutdent}><IndentDecrease /><span className="flex-1">减少代码块缩进</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+[</span></ContextMenu.Item>
+              <ContextMenu.Item className={contextMenuItemClass} onSelect={() => changeCodeBlockIndent(24)} disabled={!codeIndentContext.canIndent}><IndentIncrease /><span className="flex-1">增加代码块缩进</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+]</span></ContextMenu.Item>
+            </>
+          ) : null}
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onRequestSave?.()} disabled={!hasDocument || !onRequestSave}><Save /><span className="flex-1">保存</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+S</span></ContextMenu.Item>
         </ContextMenu.Content>

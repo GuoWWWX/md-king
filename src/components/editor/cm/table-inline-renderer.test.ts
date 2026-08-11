@@ -1,0 +1,44 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseTableInlineMarkdown } from "./table-inline-renderer.ts";
+
+test("解析表格单元格的粗体、斜体、删除线、行内代码和链接", () => {
+  assert.deepEqual(parseTableInlineMarkdown("**粗体** *斜体* ~~删除~~ `code` [链接](https://example.com)"), [
+    { type: "element", tag: "strong", children: [{ type: "text", value: "粗体" }] },
+    { type: "text", value: " " },
+    { type: "element", tag: "em", children: [{ type: "text", value: "斜体" }] },
+    { type: "text", value: " " },
+    { type: "element", tag: "s", children: [{ type: "text", value: "删除" }] },
+    { type: "text", value: " " },
+    { type: "code", value: "code" },
+    { type: "text", value: " " },
+    { type: "element", tag: "a", href: "https://example.com", children: [{ type: "text", value: "链接" }] },
+  ]);
+});
+
+test("HTML 与危险链接不会成为可执行节点", () => {
+  const nodes = parseTableInlineMarkdown("<img src=x onerror=alert(1)> [危险](javascript:alert(1))");
+  assert.equal(JSON.stringify(nodes).includes("img"), true);
+  assert.equal(JSON.stringify(nodes).includes('"tag":"a"'), false);
+  assert.equal(nodes.some((node) => node.type === "image"), false);
+});
+
+test("支持粗斜体嵌套、自动链接和安全图片", () => {
+  const nodes = parseTableInlineMarkdown('***重点*** <https://example.com> ![图标](https://example.com/icon.png "说明")');
+  assert.deepEqual(nodes, [
+    {
+      type: "element",
+      tag: "em",
+      children: [{ type: "element", tag: "strong", children: [{ type: "text", value: "重点" }] }],
+    },
+    { type: "text", value: " " },
+    {
+      type: "element",
+      tag: "a",
+      href: "https://example.com",
+      children: [{ type: "text", value: "https://example.com" }],
+    },
+    { type: "text", value: " " },
+    { type: "image", src: "https://example.com/icon.png", alt: "图标", title: "说明" },
+  ]);
+});

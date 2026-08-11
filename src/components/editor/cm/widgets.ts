@@ -1,5 +1,39 @@
+import { StateEffect } from "@codemirror/state";
+import { redo, undo } from "@codemirror/commands";
 import { EditorView, WidgetType } from "@codemirror/view";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  ArrowDownToLine,
+  ArrowLeft,
+  ArrowLeftToLine,
+  ArrowRight,
+  ArrowRightToLine,
+  ArrowUpToLine,
+  ClipboardPaste,
+  Code2,
+  Columns3,
+  Copy,
+  Rows3,
+  Scissors,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
+import {
+  applyTableOperation,
+  clearTableSelection,
+  pasteTableTsv,
+  serializeMarkdownTable,
+  tableOperationFocus,
+  tableSelectionBounds,
+  tableSelectionToTsv,
+  type MarkdownTable,
+  type TableOperation,
+  type TableSelection,
+} from "./markdown-table";
+import { TableCellCompositionGuard } from "./table-cell-edit";
+import { renderTableInlineMarkdown } from "./table-inline-renderer";
 
 const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
@@ -192,141 +226,563 @@ export class MermaidWidget extends WidgetType {
   }
 }
 
-/**
- * GFM 表格的渲染态 widget。
- *
- * 每行带源码位置信息，点击某行时精确把光标定位到该行源码处。
- * update 只在 docChanged 时重建，光标移入不切换源码态，
- * 用户可以直接在渲染态下点击定位、输入修改。
- */
+export const editTableSourceEffect = StateEffect.define<number>();
+
+function iconMarkup(icon: LucideIcon): string {
+  return renderToStaticMarkup(createElement(icon, { size: 14, strokeWidth: 2 }));
+}
+
+/** GFM 表格的可编辑渲染态 widget。草稿只在提交时一次性写回 Markdown。 */
 export class TableWidget extends WidgetType {
+  private readonly cleanups = new WeakMap<HTMLElement, () => void>();
   constructor(
-    private readonly rows: { cells: { text: string; sourceFrom: number }[]; sourceFrom: number }[],
+    private readonly model: MarkdownTable,
     private readonly source: string,
     private readonly tableFrom: number,
     private readonly tableTo: number,
-    private readonly rawLines: string[],
   ) {
     super();
   }
 
   eq(other: TableWidget): boolean {
-    return other.source === this.source;
+    return other.source === this.source
+      && other.tableFrom === this.tableFrom
+      && other.tableTo === this.tableTo;
   }
 
   toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "mk-cm-table-wrapper";
+    wrapper.dataset.tableFrom = String(this.tableFrom);
+    wrapper.tabIndex = 0;
+    wrapper.addEventListener("pointerdown", (event) => event.stopPropagation());
+
+    let draft: MarkdownTable = {
+      rows: this.model.rows.map((row) => [...row]),
+      alignments: [...this.model.alignments],
+    };
+    let dirty = false;
+    const composition = new TableCellCompositionGuard();
+    let active: { row: number; column: number } | null = null;
+    let selection: TableSelection | null = null;
+
+    const focusCell = (row: number, column: number) => {
+      requestAnimationFrame(() => {
+        const current = view.dom.querySelector<HTMLInputElement>(
+          `.mk-cm-table-wrapper[data-table-from="${this.tableFrom}"] .mk-cm-table-input[data-table-row="${row}"][data-table-column="${column}"]`,
+        );
+        if (!current) return;
+        current.hidden = false;
+        current.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.setAttribute("hidden", "");
+        current.focus();
+        current.select();
+      });
+    };
+
+    const commit = (focus?: { row: number; column: number }) => {
+      const previous = active;
+      if (!dirty) {
+        if (focus) focusCell(focus.row, focus.column);
+        else if (previous) {
+          const input = wrapper.querySelector<HTMLInputElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
+          if (input) input.hidden = true;
+          input?.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.removeAttribute("hidden");
+        }
+        return;
+      }
+      const insert = serializeMarkdownTable(draft);
+      dirty = false;
+      if (insert !== this.source) view.dispatch({ changes: { from: this.tableFrom, to: this.tableTo, insert } });
+      if (focus) focusCell(focus.row, focus.column);
+    };
+
+    const cancel = () => {
+      draft = { rows: this.model.rows.map((row) => [...row]), alignments: [...this.model.alignments] };
+      dirty = false;
+      wrapper.querySelectorAll<HTMLInputElement>(".mk-cm-table-input").forEach((input) => {
+        const row = Number(input.dataset.tableRow);
+        const column = Number(input.dataset.tableColumn);
+        input.value = draft.rows[row]?.[column] ?? "";
+        input.hidden = true;
+        input.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.removeAttribute("hidden");
+      });
+      active = null;
+    };
+
+    const refreshToolbar = () => {
+      const column = selection?.kind === "column" ? selection.index : -1;
+      const row = selection?.kind === "row" ? selection.index : -1;
+      columnTools.hidden = column < 0;
+      rowTools.hidden = row < 0;
+      moveColumnLeftButton.disabled = column <= 0;
+      moveColumnRightButton.disabled = column < 0 || column >= draft.alignments.length - 1;
+      deleteColumnButton.disabled = column < 0 || draft.alignments.length <= 1;
+      insertRowAboveButton.disabled = row < 0;
+      deleteRowButton.disabled = row < 0 || draft.rows.length <= 1;
+    };
+
+    const updateSelection = (next: TableSelection) => {
+      selection = next;
+      wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
+      const bounds = tableSelectionBounds(draft, selection);
+      wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
+        const row = Number(element.dataset.tableRow);
+        const column = Number(element.dataset.tableColumn);
+        if (row >= bounds.top && row <= bounds.bottom && column >= bounds.left && column <= bounds.right) {
+          element.classList.add("mk-table-selected");
+        }
+      });
+      refreshToolbar();
+    };
+
+    let cellDrag: {
+      pointerId: number;
+      anchor: { row: number; column: number };
+      focus: { row: number; column: number };
+      dragged: boolean;
+    } | null = null;
+    const cellAtPoint = (x: number, y: number) => {
+      const target = document.elementFromPoint(x, y)
+        ?.closest<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]");
+      if (!target || !wrapper.contains(target)) return null;
+      const row = Number(target.dataset.tableRow);
+      const column = Number(target.dataset.tableColumn);
+      return Number.isInteger(row) && Number.isInteger(column) ? { row, column } : null;
+    };
+    const updateCellDrag = (event: PointerEvent) => {
+      if (!cellDrag || event.pointerId !== cellDrag.pointerId) return;
+      const next = cellAtPoint(event.clientX, event.clientY);
+      if (!next || (next.row === cellDrag.focus.row && next.column === cellDrag.focus.column)) return;
+      cellDrag.focus = next;
+      cellDrag.dragged = cellDrag.dragged
+        || next.row !== cellDrag.anchor.row
+        || next.column !== cellDrag.anchor.column;
+      updateSelection({ kind: "range", anchor: cellDrag.anchor, focus: next });
+    };
+    const finishCellDrag = (event: PointerEvent, cancelled = false) => {
+      if (!cellDrag || event.pointerId !== cellDrag.pointerId) return;
+      if (!cancelled) updateCellDrag(event);
+      const completed = cellDrag;
+      cellDrag = null;
+      if (completed.dragged) wrapper.focus({ preventScroll: true });
+      else if (!cancelled) focusCell(completed.anchor.row, completed.anchor.column);
+    };
+    const cancelCellDrag = (event: PointerEvent) => finishCellDrag(event, true);
+    wrapper.addEventListener("pointermove", updateCellDrag);
+
+    const dispatchOperation = (operation: TableOperation, focus: { row: number; column: number }) => {
+      const next = applyTableOperation(draft, operation);
+      const insert = serializeMarkdownTable(next);
+      view.dispatch({ changes: { from: this.tableFrom, to: this.tableTo, insert } });
+      const nextFocus = tableOperationFocus(draft, operation, focus);
+      focusCell(nextFocus.row, nextFocus.column);
+    };
+
+    const makeButton = (label: string, icon: LucideIcon, onClick: () => void, disabled = false) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mk-table-tool-button";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.disabled = disabled;
+      button.innerHTML = iconMarkup(icon);
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      });
+      return button;
+    };
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "mk-table-toolbar";
+    toolbar.setAttribute("role", "toolbar");
+    toolbar.setAttribute("aria-label", "表格操作");
+
+    const sourceButton = makeButton("编辑 Markdown 源码", Code2, () => {
+      const insert = serializeMarkdownTable(draft);
+      view.dispatch({
+        changes: dirty && insert !== this.source
+          ? { from: this.tableFrom, to: this.tableTo, insert }
+          : undefined,
+        selection: { anchor: this.tableFrom },
+        effects: editTableSourceEffect.of(this.tableFrom),
+        scrollIntoView: true,
+      });
+      view.focus();
+    });
+    toolbar.append(sourceButton);
+
+    const columnTools = document.createElement("div");
+    columnTools.className = "mk-table-toolbar-group";
+    columnTools.dataset.tools = "column";
+    const columnIndex = () => selection?.kind === "column" ? selection.index : -1;
+    const insertColumnLeftButton = makeButton("在左侧插入列", ArrowLeftToLine, () => dispatchOperation(
+        { type: "insert-column", index: columnIndex(), side: "left" },
+        { row: 0, column: columnIndex() },
+      ));
+    const insertColumnRightButton = makeButton("在右侧插入列", ArrowRightToLine, () => dispatchOperation(
+        { type: "insert-column", index: columnIndex(), side: "right" },
+        { row: 0, column: columnIndex() + 1 },
+      ));
+    const moveColumnLeftButton = makeButton("向左移动列", ArrowLeft, () => dispatchOperation(
+        { type: "move-column", index: columnIndex(), direction: "left" },
+        { row: 0, column: columnIndex() - 1 },
+      ));
+    const moveColumnRightButton = makeButton("向右移动列", ArrowRight, () => dispatchOperation(
+        { type: "move-column", index: columnIndex(), direction: "right" },
+        { row: 0, column: columnIndex() + 1 },
+      ));
+    const deleteColumnButton = makeButton("删除列", Trash2, () => dispatchOperation(
+        { type: "delete-column", index: columnIndex() },
+        { row: 0, column: Math.min(columnIndex(), draft.alignments.length - 2) },
+      ));
+    columnTools.append(
+      insertColumnLeftButton,
+      insertColumnRightButton,
+      moveColumnLeftButton,
+      moveColumnRightButton,
+      deleteColumnButton,
+    );
+
+    const rowTools = document.createElement("div");
+    rowTools.className = "mk-table-toolbar-group";
+    rowTools.dataset.tools = "row";
+    const rowIndex = () => selection?.kind === "row" ? selection.index : -1;
+    const insertRowAboveButton = makeButton("在上方插入行", ArrowUpToLine, () => dispatchOperation(
+        { type: "insert-row", index: rowIndex(), side: "above" },
+        { row: rowIndex(), column: 0 },
+      ));
+    const insertRowBelowButton = makeButton("在下方插入行", ArrowDownToLine, () => dispatchOperation(
+        { type: "insert-row", index: rowIndex(), side: "below" },
+        { row: rowIndex() + 1, column: 0 },
+      ));
+    const deleteRowButton = makeButton("删除行", Trash2, () => dispatchOperation(
+        { type: "delete-row", index: rowIndex() },
+        { row: Math.max(0, Math.min(rowIndex(), draft.rows.length - 2)), column: 0 },
+      ));
+    rowTools.append(
+      insertRowAboveButton,
+      insertRowBelowButton,
+      deleteRowButton,
+    );
+    toolbar.append(columnTools, rowTools);
+    refreshToolbar();
+    wrapper.append(toolbar);
 
     const table = document.createElement("table");
     table.className = "mk-cm-table";
 
-    /** 重新拼装所有行（含原始分隔行），在指定列前/后插入空列，或在指定行前/后插入空行。 */
-    const rebuildSource = (action: { type: "insert-col"; colIndex: number; after: boolean } | { type: "insert-row"; rowIndex: number; after: boolean }) => {
-      const lines = [...this.rawLines];
-      if (action.type === "insert-col") {
-        const { colIndex, after } = action;
-        return lines.map((line) => {
-          const cells = line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|");
-          const insertAt = after ? colIndex + 1 : colIndex;
-          // 分隔行插入 ---- 格，其他行插入空格
-          const isSepar = /^[\s:|\\-]+$/.test(cells[0] ?? "");
-          cells.splice(insertAt, 0, isSepar ? " ---- " : "  ");
-          return `| ${cells.join(" | ")} |`;
-        }).join("\n");
-      } else {
-        // insert-row
-        const headerLine = lines[0] ?? "";
-        const colCount = headerLine.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").length;
-        const newRow = `| ${Array(colCount).fill("  ").join(" | ")} |`;
-        // rawLines 中 index 0=header, 1=separator, 2+= body rows
-        // action.rowIndex 是在 this.rows（已过滤分隔行）中的行号
-        // 转换到 rawLines 中的位置：header(0) + separator(1) + body offset
-        // rowIndex=0 是 header，body 行从 rowIndex=1 开始对应 rawLines[2+]
-        const rawInsertAt = action.rowIndex === 0
-          ? (action.after ? 2 : 1)   // after header: before separator→不允许，after header→ 插在separator前
-          : 2 + (action.rowIndex - 1) + (action.after ? 1 : 0);
-        lines.splice(rawInsertAt, 0, newRow);
-        return lines.join("\n");
-      }
+    let contextMenu: HTMLElement | null = null;
+    const closeContextMenu = () => {
+      contextMenu?.remove();
+      contextMenu = null;
     };
 
-    const showContextMenu = (e: MouseEvent, colIndex: number, rowIndex: number) => {
-      e.preventDefault();
-      // 移除旧菜单
-      document.querySelectorAll(".mk-table-ctx-menu").forEach((el) => el.remove());
+    const selected = () => selection ?? {
+      kind: "cell" as const,
+      anchor: active ?? { row: 0, column: 0 },
+      focus: active ?? { row: 0, column: 0 },
+    };
+    const selectionOrigin = () => {
+      const bounds = tableSelectionBounds(draft, selected());
+      return { row: bounds.top, column: bounds.left };
+    };
+    const replaceTable = (next: MarkdownTable, nextSelection?: TableSelection) => {
+      draft = next;
+      dirty = false;
+      if (nextSelection) selection = nextSelection;
+      view.dispatch({
+        changes: { from: this.tableFrom, to: this.tableTo, insert: serializeMarkdownTable(next) },
+      });
+      const origin = nextSelection ? tableSelectionBounds(next, nextSelection) : null;
+      if (origin) focusCell(origin.top, origin.left);
+    };
+    const copySelection = async () => {
+      await navigator.clipboard.writeText(tableSelectionToTsv(draft, selected()));
+    };
+    const cutSelection = async () => {
+      await copySelection();
+      replaceTable(clearTableSelection(draft, selected()), selected());
+    };
+    const pasteSelection = async () => {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      const result = pasteTableTsv(draft, selectionOrigin(), text);
+      replaceTable(result.table, result.selection);
+    };
 
-      const menu = document.createElement("div");
-      menu.className = "mk-table-ctx-menu";
-      menu.style.cssText = `position:fixed;z-index:9999;background:var(--popover,#fff);border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,0.12);min-width:160px;font-size:13px;`;
-
-      const items: { label: string; action: Parameters<typeof rebuildSource>[0] }[] = [
-        { label: "在左侧插入列", action: { type: "insert-col", colIndex, after: false } },
-        { label: "在右侧插入列", action: { type: "insert-col", colIndex, after: true } },
-        { label: "在上方插入行", action: { type: "insert-row", rowIndex, after: false } },
-        { label: "在下方插入行", action: { type: "insert-row", rowIndex, after: true } },
-      ];
-
-      for (const item of items) {
-        const el = document.createElement("div");
-        el.textContent = item.label;
-        el.style.cssText = "padding:6px 10px;border-radius:5px;cursor:pointer;color:var(--foreground,#0f172a);";
-        el.addEventListener("mouseenter", () => { el.style.background = "var(--accent,#f1f5f9)"; });
-        el.addEventListener("mouseleave", () => { el.style.background = ""; });
-        el.addEventListener("mousedown", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          menu.remove();
-          const newSource = rebuildSource(item.action);
-          view.dispatch({
-            changes: { from: this.tableFrom, to: this.tableTo, insert: newSource },
-            selection: { anchor: this.tableFrom },
-          });
-          view.focus();
-        });
-        menu.appendChild(el);
+    const openContextMenu = (row: number, column: number, x: number, y: number) => {
+      closeContextMenu();
+      const currentBounds = selection ? tableSelectionBounds(draft, selection) : null;
+      if (!currentBounds
+        || row < currentBounds.top || row > currentBounds.bottom
+        || column < currentBounds.left || column > currentBounds.right) {
+        updateSelection({ kind: "cell", anchor: { row, column }, focus: { row, column } });
       }
 
-      document.body.appendChild(menu);
-      const rect = { left: e.clientX, top: e.clientY };
-      menu.style.left = `${Math.min(rect.left, window.innerWidth - 180)}px`;
-      menu.style.top = `${Math.min(rect.top, window.innerHeight - 200)}px`;
+      const menu = document.createElement("div");
+      menu.className = "mk-table-context-menu";
+      menu.setAttribute("role", "menu");
+      const separator = () => {
+        const element = document.createElement("div");
+        element.className = "mk-table-context-separator";
+        element.setAttribute("role", "separator");
+        menu.append(element);
+      };
+      const item = (label: string, icon: LucideIcon, action: () => void | Promise<void>, disabled = false) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mk-table-context-item";
+        button.setAttribute("role", "menuitem");
+        button.disabled = disabled;
+        button.innerHTML = `${iconMarkup(icon)}<span>${label}</span>`;
+        button.addEventListener("click", () => {
+          closeContextMenu();
+          void action();
+        });
+        menu.append(button);
+      };
 
-      const close = () => { menu.remove(); document.removeEventListener("mousedown", close); };
-      setTimeout(() => document.addEventListener("mousedown", close), 0);
+      item("剪切", Scissors, cutSelection);
+      item("复制", Copy, copySelection);
+      item("粘贴", ClipboardPaste, pasteSelection);
+      separator();
+      item("选中当前行", Rows3, () => updateSelection({ kind: "row", index: row }));
+      item("选中当前列", Columns3, () => updateSelection({ kind: "column", index: column }));
+      separator();
+      item("在上方插入行", ArrowUpToLine, () => dispatchOperation(
+        { type: "insert-row", index: row, side: "above" },
+        { row, column },
+      ));
+      item("在下方插入行", ArrowDownToLine, () => dispatchOperation(
+        { type: "insert-row", index: row, side: "below" },
+        { row: row + 1, column },
+      ));
+      item("在左侧插入列", ArrowLeftToLine, () => dispatchOperation(
+        { type: "insert-column", index: column, side: "left" },
+        { row, column },
+      ));
+      item("在右侧插入列", ArrowRightToLine, () => dispatchOperation(
+        { type: "insert-column", index: column, side: "right" },
+        { row, column: column + 1 },
+      ));
+      separator();
+      item("向左移动列", ArrowLeft, () => dispatchOperation(
+        { type: "move-column", index: column, direction: "left" },
+        { row, column: column - 1 },
+      ), column <= 0);
+      item("向右移动列", ArrowRight, () => dispatchOperation(
+        { type: "move-column", index: column, direction: "right" },
+        { row, column: column + 1 },
+      ), column >= draft.alignments.length - 1);
+      item("删除当前行", Trash2, () => dispatchOperation(
+        { type: "delete-row", index: row },
+        { row: Math.min(row, draft.rows.length - 2), column },
+      ), draft.rows.length <= 1);
+      item("删除当前列", Trash2, () => dispatchOperation(
+        { type: "delete-column", index: column },
+        { row, column: Math.min(column, draft.alignments.length - 2) },
+      ), draft.alignments.length <= 1);
+
+      document.body.append(menu);
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
+      menu.style.left = `${Math.max(6, Math.min(x, window.innerWidth - width - 6))}px`;
+      menu.style.top = `${Math.max(6, Math.min(y, window.innerHeight - height - 6))}px`;
+      contextMenu = menu;
+      menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    };
+
+    const hasNativeInputSelection = (event: ClipboardEvent) => {
+      const input = event.target instanceof HTMLInputElement ? event.target : null;
+      return Boolean(input && input.selectionStart !== input.selectionEnd);
+    };
+    wrapper.addEventListener("copy", (event) => {
+      if (hasNativeInputSelection(event)) return;
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", tableSelectionToTsv(draft, selected()));
+    });
+    wrapper.addEventListener("cut", (event) => {
+      if (hasNativeInputSelection(event)) return;
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", tableSelectionToTsv(draft, selected()));
+      replaceTable(clearTableSelection(draft, selected()), selected());
+    });
+    wrapper.addEventListener("paste", (event) => {
+      if (event.target instanceof HTMLInputElement) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      event.preventDefault();
+      const result = pasteTableTsv(draft, selectionOrigin(), text);
+      replaceTable(result.table, result.selection);
+    });
+    wrapper.addEventListener("keydown", (event) => {
+      if (event.target instanceof HTMLInputElement) return;
+      if ((event.key === "Delete" || event.key === "Backspace") && selection) {
+        event.preventDefault();
+        replaceTable(clearTableSelection(draft, selection), selection);
+      } else if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    });
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (contextMenu && !contextMenu.contains(event.target as Node)) closeContextMenu();
+    };
+    const closeOnScroll = () => closeContextMenu();
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("pointerup", finishCellDrag, true);
+    document.addEventListener("pointercancel", cancelCellDrag, true);
+    window.addEventListener("scroll", closeOnScroll, true);
+    this.cleanups.set(wrapper, () => {
+      closeContextMenu();
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("pointerup", finishCellDrag, true);
+      document.removeEventListener("pointercancel", cancelCellDrag, true);
+      window.removeEventListener("scroll", closeOnScroll, true);
+    });
+
+    const buildInput = (row: number, column: number) => {
+      const cell = document.createElement("div");
+      cell.className = "mk-cm-table-cell";
+      const rendered = renderTableInlineMarkdown(draft.rows[row]?.[column] ?? "");
+      rendered.dataset.tableRow = String(row);
+      rendered.dataset.tableColumn = String(column);
+      rendered.tabIndex = 0;
+      rendered.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "mk-cm-table-input";
+      input.hidden = true;
+      input.value = draft.rows[row]?.[column] ?? "";
+      input.dataset.tableRow = String(row);
+      input.dataset.tableColumn = String(column);
+      input.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
+      input.addEventListener("focus", () => {
+        active = { row, column };
+        updateSelection({ kind: "cell", anchor: { row, column }, focus: { row, column } });
+      });
+      input.addEventListener("pointerdown", (event) => {
+        if (active && (active.row !== row || active.column !== column) && dirty) {
+          event.preventDefault();
+          event.stopPropagation();
+          commit({ row, column });
+        }
+      });
+      input.addEventListener("input", () => {
+        if (!composition.acceptsInput) {
+          input.value = draft.rows[row]?.[column] ?? "";
+          return;
+        }
+        draft.rows[row][column] = input.value;
+        dirty = true;
+      });
+      input.addEventListener("compositionstart", () => composition.start());
+      input.addEventListener("compositionend", () => {
+        if (composition.end() === "cancelled") {
+          input.value = draft.rows[row]?.[column] ?? "";
+          return;
+        }
+        draft.rows[row][column] = input.value;
+        dirty = true;
+        if (document.activeElement !== input) commit();
+      });
+      input.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        const modifier = event.ctrlKey || event.metaKey;
+        if (!dirty && modifier && event.key.toLowerCase() === "z") {
+          event.preventDefault();
+          (event.shiftKey ? redo : undo)(view);
+          focusCell(row, column);
+        } else if (!dirty && modifier && event.key.toLowerCase() === "y") {
+          event.preventDefault();
+          redo(view);
+          focusCell(row, column);
+        } else if (event.key === "Enter" && !composition.composing && !event.isComposing) {
+          event.preventDefault();
+          input.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          composition.cancel();
+          cancel();
+          input.blur();
+        }
+      });
+      input.addEventListener("blur", () => {
+        if (!composition.composing) commit();
+        if (active?.row === row && active.column === column) active = null;
+      });
+
+      rendered.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (active && (active.row !== row || active.column !== column) && dirty) {
+          commit({ row, column });
+          return;
+        }
+        const current = selection;
+        if (event.shiftKey && current && (current.kind === "cell" || current.kind === "range")) {
+          updateSelection({ kind: "range", anchor: current.anchor, focus: { row, column } });
+          rendered.focus();
+          return;
+        }
+
+        const anchor = { row, column };
+        cellDrag = { pointerId: event.pointerId, anchor, focus: anchor, dragged: false };
+        updateSelection({ kind: "cell", anchor, focus: anchor });
+      });
+      rendered.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === "F2") {
+          event.preventDefault();
+          focusCell(row, column);
+        } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+          event.preventDefault();
+          const rect = rendered.getBoundingClientRect();
+          openContextMenu(row, column, rect.left + 8, rect.top + 8);
+        }
+      });
+      rendered.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenu(row, column, event.clientX, event.clientY);
+      });
+      input.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenu(row, column, event.clientX, event.clientY);
+      });
+      cell.append(rendered, input);
+      return cell;
     };
 
     const buildRow = (rowIndex: number, isHeader: boolean): HTMLTableRowElement => {
       const tr = document.createElement("tr");
-      const row = this.rows[rowIndex];
-      row.cells.forEach((cell, colIndex) => {
+      draft.rows[rowIndex].forEach((_, colIndex) => {
         const el = document.createElement(isHeader ? "th" : "td");
-        el.textContent = cell.text;
-        // 左键点击：把光标定位到该格的源码位置（触发 selection → StateField 重建 → 切源码态）
-        el.addEventListener("mousedown", (e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          view.dispatch({ selection: { anchor: cell.sourceFrom } });
-          view.focus();
-        });
-        // 右键：上下文菜单
-        el.addEventListener("contextmenu", (e) => {
-          showContextMenu(e, colIndex, rowIndex);
-        });
+        el.dataset.tableRow = String(rowIndex);
+        el.dataset.tableColumn = String(colIndex);
+        el.append(buildInput(rowIndex, colIndex));
         tr.appendChild(el);
       });
       return tr;
     };
 
-    if (this.rows.length > 0) {
+    if (draft.rows.length > 0) {
       const thead = document.createElement("thead");
       thead.appendChild(buildRow(0, true));
       table.appendChild(thead);
     }
 
-    if (this.rows.length > 1) {
+    if (draft.rows.length > 1) {
       const tbody = document.createElement("tbody");
-      for (let i = 1; i < this.rows.length; i++) {
+      for (let i = 1; i < draft.rows.length; i++) {
         tbody.appendChild(buildRow(i, false));
       }
       table.appendChild(tbody);
@@ -336,7 +792,12 @@ export class TableWidget extends WidgetType {
     return wrapper;
   }
 
+  destroy(dom: HTMLElement): void {
+    this.cleanups.get(dom)?.();
+    this.cleanups.delete(dom);
+  }
+
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
 }
