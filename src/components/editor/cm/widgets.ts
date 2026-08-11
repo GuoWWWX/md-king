@@ -14,6 +14,8 @@ import {
   Code2,
   Columns3,
   Copy,
+  GripHorizontal,
+  GripVertical,
   Rows3,
   Scissors,
   Trash2,
@@ -24,6 +26,8 @@ import {
   applyTableOperation,
   clearTableSelection,
   pasteTableTsv,
+  reorderTableColumn,
+  reorderTableRow,
   serializeMarkdownTable,
   tableOperationFocus,
   tableSelectionBounds,
@@ -476,6 +480,80 @@ export class TableWidget extends WidgetType {
 
     const table = document.createElement("table");
     table.className = "mk-cm-table";
+    const tableScroll = document.createElement("div");
+    tableScroll.className = "mk-cm-table-scroll";
+    const columnDragLayer = document.createElement("div");
+    columnDragLayer.className = "mk-table-column-drag-layer";
+    const rowDragLayer = document.createElement("div");
+    rowDragLayer.className = "mk-table-row-drag-layer";
+    const columnElements = new Map<number, HTMLTableCellElement>();
+    const rowElements = new Map<number, HTMLTableRowElement>();
+    const columnDragHandles = new Map<number, HTMLButtonElement>();
+    const rowDragHandles = new Map<number, HTMLButtonElement>();
+    const columnHandleHideTimers = new Map<number, number>();
+    const rowHandleHideTimers = new Map<number, number>();
+
+    const setColumnDragHandleVisible = (column: number, visible: boolean) => {
+      const handle = columnDragHandles.get(column);
+      if (!handle || handle.hidden) return;
+      const pending = columnHandleHideTimers.get(column);
+      if (pending !== undefined) window.clearTimeout(pending);
+      if (visible) {
+        handle.classList.add("is-visible");
+        return;
+      }
+      columnHandleHideTimers.set(column, window.setTimeout(() => {
+        if (!handle.matches(":hover")) handle.classList.remove("is-visible");
+      }, 120));
+    };
+
+    const setRowDragHandleVisible = (row: number, visible: boolean) => {
+      const handle = rowDragHandles.get(row);
+      if (!handle || handle.hidden) return;
+      const pending = rowHandleHideTimers.get(row);
+      if (pending !== undefined) window.clearTimeout(pending);
+      if (visible) {
+        handle.classList.add("is-visible");
+        return;
+      }
+      rowHandleHideTimers.set(row, window.setTimeout(() => {
+        if (!handle.matches(":hover")) handle.classList.remove("is-visible");
+      }, 120));
+    };
+
+    const positionColumnDragHandles = () => {
+      const wrapperBounds = wrapper.getBoundingClientRect();
+      const scrollBounds = tableScroll.getBoundingClientRect();
+      columnDragHandles.forEach((handle, column) => {
+        const columnElement = columnElements.get(column);
+        if (!columnElement) return;
+        const columnBounds = columnElement.getBoundingClientRect();
+        const isVisible = columnBounds.right > scrollBounds.left && columnBounds.left < scrollBounds.right;
+        handle.hidden = !isVisible;
+        if (!isVisible) handle.classList.remove("is-visible");
+        handle.style.left = `${Math.round(columnBounds.left - wrapperBounds.left + columnBounds.width / 2)}px`;
+        handle.style.top = `${Math.round(scrollBounds.top - wrapperBounds.top - 10)}px`;
+      });
+    };
+
+    const positionRowDragHandles = () => {
+      const wrapperBounds = wrapper.getBoundingClientRect();
+      const scrollBounds = tableScroll.getBoundingClientRect();
+      rowDragHandles.forEach((handle, row) => {
+        const rowElement = rowElements.get(row);
+        if (!rowElement) return;
+        const rowBounds = rowElement.getBoundingClientRect();
+        const isVisible = rowBounds.right > scrollBounds.left && rowBounds.left < scrollBounds.right;
+        handle.hidden = !isVisible;
+        if (!isVisible) handle.classList.remove("is-visible");
+        handle.style.top = `${Math.round(rowBounds.top - wrapperBounds.top + rowBounds.height / 2)}px`;
+      });
+    };
+    const positionDragHandles = () => {
+      positionColumnDragHandles();
+      positionRowDragHandles();
+    };
+    const dragHandleResizeObserver = new ResizeObserver(positionDragHandles);
 
     let contextMenu: HTMLElement | null = null;
     const closeContextMenu = () => {
@@ -501,6 +579,180 @@ export class TableWidget extends WidgetType {
       });
       const origin = nextSelection ? tableSelectionBounds(next, nextSelection) : null;
       if (origin) focusCell(origin.top, origin.left);
+    };
+
+    let reorderDrag: {
+      pointerId: number;
+      kind: "column" | "row";
+      source: number;
+      placement: number | null;
+      ghost: HTMLElement;
+      offsetX: number;
+      offsetY: number;
+    } | null = null;
+    let dropIndicator: HTMLElement | null = null;
+    const dragSourceElements = (kind: "column" | "row", index: number) => kind === "column"
+      ? Array.from(table.querySelectorAll<HTMLElement>(`th[data-table-column="${index}"], td[data-table-column="${index}"]`))
+      : Array.from(table.querySelectorAll<HTMLElement>(`tr:has([data-table-row="${index}"])`));
+    const setDragSource = (kind: "column" | "row", index: number, active: boolean) => {
+      dragSourceElements(kind, index).forEach((element) => element.classList.toggle("mk-table-drag-source", active));
+    };
+    const createDragGhost = (kind: "column" | "row", index: number, event: PointerEvent) => {
+      const sourceElements = kind === "column"
+        ? Array.from(table.querySelectorAll<HTMLTableCellElement>(`thead th[data-table-column="${index}"]`)).slice(0, 1)
+        : Array.from(table.querySelectorAll<HTMLTableCellElement>(`tr:has([data-table-row="${index}"]) > th, tr:has([data-table-row="${index}"]) > td`));
+      const firstRect = sourceElements[0]?.getBoundingClientRect();
+      if (!firstRect) return null;
+
+      const ghost = document.createElement("div");
+      ghost.className = `mk-table-drag-ghost mk-table-drag-ghost--${kind}`;
+      ghost.style.width = kind === "column"
+        ? `${firstRect.width}px`
+        : `${sourceElements.reduce((total, element) => total + element.getBoundingClientRect().width, 0)}px`;
+      sourceElements.forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        const cell = document.createElement("div");
+        cell.className = "mk-table-drag-ghost-cell";
+        cell.style.width = kind === "row" ? `${rect.width}px` : "100%";
+        cell.style.height = `${rect.height}px`;
+        const content = element.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.cloneNode(true);
+        if (content instanceof HTMLElement) {
+          content.removeAttribute("tabindex");
+          cell.append(content);
+        } else {
+          cell.textContent = element.textContent;
+        }
+        ghost.append(cell);
+      });
+      document.body.append(ghost);
+      return {
+        ghost,
+        offsetX: event.clientX - firstRect.left,
+        offsetY: event.clientY - firstRect.top,
+      };
+    };
+    const positionDragGhost = (event: PointerEvent) => {
+      if (!reorderDrag) return;
+      reorderDrag.ghost.style.transform = `translate3d(${Math.round(event.clientX - reorderDrag.offsetX)}px, ${Math.round(event.clientY - reorderDrag.offsetY)}px, 0)`;
+    };
+    const clearDragPreview = () => {
+      if (reorderDrag) {
+        setDragSource(reorderDrag.kind, reorderDrag.source, false);
+        reorderDrag.ghost.remove();
+      }
+    };
+    const clearDropIndicator = () => {
+      dropIndicator?.remove();
+      dropIndicator = null;
+    };
+    const columnPlacementAt = (x: number, y: number) => {
+      const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th[data-table-column]"));
+      const bounds = table.getBoundingClientRect();
+      if (headers.length === 0 || y < bounds.top || y > bounds.bottom) return null;
+      for (let index = 0; index < headers.length; index++) {
+        const rect = headers[index].getBoundingClientRect();
+        if (x < rect.left + rect.width / 2) return index;
+      }
+      return headers.length;
+    };
+    const rowPlacementAt = (x: number, y: number) => {
+      const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>("thead tr, tbody tr"));
+      const bounds = table.getBoundingClientRect();
+      if (rows.length === 0 || x < bounds.left || x > bounds.right) return null;
+      for (let index = 0; index < rows.length; index++) {
+        const rect = rows[index].getBoundingClientRect();
+        if (y < rect.top + rect.height / 2) return index;
+      }
+      return rows.length;
+    };
+    const showDropIndicator = (kind: "column" | "row", placement: number) => {
+      clearDropIndicator();
+      const indicator = document.createElement("div");
+      indicator.className = `mk-table-drop-indicator mk-table-drop-indicator--${kind}`;
+      const tableBounds = table.getBoundingClientRect();
+      if (kind === "column") {
+        const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th[data-table-column]"));
+        const target = headers[Math.min(placement, headers.length - 1)];
+        if (!target) return;
+        const targetBounds = target.getBoundingClientRect();
+        indicator.style.left = `${Math.round(placement >= headers.length ? targetBounds.right : targetBounds.left) - 1}px`;
+        indicator.style.top = `${Math.round(tableBounds.top)}px`;
+        indicator.style.height = `${Math.round(tableBounds.height)}px`;
+        document.body.append(indicator);
+        dropIndicator = indicator;
+        return;
+      }
+      const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>("thead tr, tbody tr"));
+      const target = rows[Math.min(placement, rows.length - 1)];
+      if (!target) return;
+      const targetBounds = target.getBoundingClientRect();
+      indicator.style.left = `${Math.round(tableBounds.left)}px`;
+      indicator.style.top = `${Math.round(placement >= rows.length ? targetBounds.bottom : targetBounds.top) - 1}px`;
+      indicator.style.width = `${Math.round(tableBounds.width)}px`;
+      document.body.append(indicator);
+      dropIndicator = indicator;
+    };
+    const updateReorderDrag = (event: PointerEvent) => {
+      if (!reorderDrag || event.pointerId !== reorderDrag.pointerId) return;
+      positionDragGhost(event);
+      const placement = reorderDrag.kind === "column"
+        ? columnPlacementAt(event.clientX, event.clientY)
+        : rowPlacementAt(event.clientX, event.clientY);
+      if (placement === null) {
+        if (reorderDrag.placement !== null) clearDropIndicator();
+        reorderDrag.placement = null;
+        return;
+      }
+      if (placement === reorderDrag.placement) return;
+      reorderDrag.placement = placement;
+      showDropIndicator(reorderDrag.kind, placement);
+    };
+    const finishReorderDrag = (event: PointerEvent, cancelled = false) => {
+      if (!reorderDrag || event.pointerId !== reorderDrag.pointerId) return;
+      updateReorderDrag(event);
+      const completed = reorderDrag;
+      clearDragPreview();
+      reorderDrag = null;
+      clearDropIndicator();
+      if (cancelled || completed.placement === null) return;
+
+      // 落点是插入位置，移除源行列后需要折算成最终索引。
+      const target = completed.placement - (completed.placement > completed.source ? 1 : 0);
+      if (target === completed.source) return;
+      if (completed.kind === "column") {
+        replaceTable(
+          reorderTableColumn(draft, completed.source, target),
+          { kind: "column", index: target },
+        );
+      } else {
+        replaceTable(
+          reorderTableRow(draft, completed.source, target),
+          { kind: "row", index: target },
+        );
+      }
+    };
+    const cancelReorderDrag = (event: PointerEvent) => finishReorderDrag(event, true);
+    const beginReorderDrag = (kind: "column" | "row", index: number, event: PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dirty) {
+        commit();
+        return;
+      }
+      const preview = createDragGhost(kind, index, event);
+      if (!preview) return;
+      reorderDrag = {
+        pointerId: event.pointerId,
+        kind,
+        source: index,
+        placement: index,
+        ...preview,
+      };
+      setDragSource(kind, index, true);
+      updateSelection(kind === "column" ? { kind, index } : { kind, index });
+      positionDragGhost(event);
+      showDropIndicator(kind, index);
+      wrapper.focus({ preventScroll: true });
     };
     const copySelection = async () => {
       await navigator.clipboard.writeText(tableSelectionToTsv(draft, selected()));
@@ -635,16 +887,41 @@ export class TableWidget extends WidgetType {
       if (contextMenu && !contextMenu.contains(event.target as Node)) closeContextMenu();
     };
     const closeOnScroll = () => closeContextMenu();
+    const revealColumnDragHandle = (event: PointerEvent) => {
+      if (!(event.target instanceof Element)) return;
+      const columnCell = event.target.closest<HTMLTableCellElement>("th[data-table-column]");
+      if (!columnCell || !table.contains(columnCell)) return;
+      setColumnDragHandleVisible(Number(columnCell.dataset.tableColumn), true);
+    };
     document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("pointermove", updateReorderDrag, true);
     document.addEventListener("pointerup", finishCellDrag, true);
     document.addEventListener("pointercancel", cancelCellDrag, true);
+    document.addEventListener("pointerup", finishReorderDrag, true);
+    document.addEventListener("pointercancel", cancelReorderDrag, true);
     window.addEventListener("scroll", closeOnScroll, true);
+    wrapper.addEventListener("pointerover", revealColumnDragHandle);
     this.cleanups.set(wrapper, () => {
       closeContextMenu();
+      clearDragPreview();
+      dragHandleResizeObserver.disconnect();
+      columnDragHandles.forEach((_, column) => {
+        const pending = columnHandleHideTimers.get(column);
+        if (pending !== undefined) window.clearTimeout(pending);
+      });
+      rowDragHandles.forEach((_, row) => {
+        const pending = rowHandleHideTimers.get(row);
+        if (pending !== undefined) window.clearTimeout(pending);
+      });
       document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("pointermove", updateReorderDrag, true);
       document.removeEventListener("pointerup", finishCellDrag, true);
       document.removeEventListener("pointercancel", cancelCellDrag, true);
+      document.removeEventListener("pointerup", finishReorderDrag, true);
+      document.removeEventListener("pointercancel", cancelReorderDrag, true);
       window.removeEventListener("scroll", closeOnScroll, true);
+      wrapper.removeEventListener("pointerover", revealColumnDragHandle);
+      tableScroll.removeEventListener("scroll", positionDragHandles);
     });
 
     const buildInput = (row: number, column: number) => {
@@ -762,6 +1039,24 @@ export class TableWidget extends WidgetType {
       return cell;
     };
 
+    const buildDragHandle = (kind: "column" | "row", index: number) => {
+      const handle = document.createElement("button");
+      handle.type = "button";
+      handle.className = `mk-table-${kind}-drag-handle`;
+      handle.title = kind === "column" ? "拖动列" : "拖动行";
+      handle.setAttribute("aria-label", kind === "column" ? `拖动第 ${index + 1} 列` : `拖动第 ${index + 1} 行`);
+      handle.innerHTML = iconMarkup(kind === "column" ? GripHorizontal : GripVertical);
+      handle.addEventListener("pointerdown", (event) => beginReorderDrag(kind, index, event));
+      if (kind === "column") {
+        handle.addEventListener("pointerenter", () => setColumnDragHandleVisible(index, true));
+        handle.addEventListener("pointerleave", () => setColumnDragHandleVisible(index, false));
+      } else {
+        handle.addEventListener("pointerenter", () => setRowDragHandleVisible(index, true));
+        handle.addEventListener("pointerleave", () => setRowDragHandleVisible(index, false));
+      }
+      return handle;
+    };
+
     const buildRow = (rowIndex: number, isHeader: boolean): HTMLTableRowElement => {
       const tr = document.createElement("tr");
       draft.rows[rowIndex].forEach((_, colIndex) => {
@@ -769,8 +1064,24 @@ export class TableWidget extends WidgetType {
         el.dataset.tableRow = String(rowIndex);
         el.dataset.tableColumn = String(colIndex);
         el.append(buildInput(rowIndex, colIndex));
+        if (isHeader) {
+          const columnHandle = buildDragHandle("column", colIndex);
+          columnElements.set(colIndex, el);
+          columnDragHandles.set(colIndex, columnHandle);
+          columnDragLayer.append(columnHandle);
+          el.addEventListener("pointerenter", () => setColumnDragHandleVisible(colIndex, true));
+          el.addEventListener("pointerleave", () => setColumnDragHandleVisible(colIndex, false));
+        }
+        if (colIndex === 0) {
+          const rowHandle = buildDragHandle("row", rowIndex);
+          rowDragHandles.set(rowIndex, rowHandle);
+          rowDragLayer.append(rowHandle);
+          el.addEventListener("pointerenter", () => setRowDragHandleVisible(rowIndex, true));
+          el.addEventListener("pointerleave", () => setRowDragHandleVisible(rowIndex, false));
+        }
         tr.appendChild(el);
       });
+      rowElements.set(rowIndex, tr);
       return tr;
     };
 
@@ -788,7 +1099,11 @@ export class TableWidget extends WidgetType {
       table.appendChild(tbody);
     }
 
-    wrapper.appendChild(table);
+    tableScroll.appendChild(table);
+    wrapper.append(tableScroll, columnDragLayer, rowDragLayer);
+    tableScroll.addEventListener("scroll", positionDragHandles);
+    dragHandleResizeObserver.observe(wrapper);
+    requestAnimationFrame(positionDragHandles);
     return wrapper;
   }
 

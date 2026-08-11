@@ -11,6 +11,8 @@ import {
   parseMarkdownTableRow,
   parseTableTsv,
   pasteTableTsv,
+  reorderTableColumn,
+  reorderTableRow,
   serializeMarkdownTable,
   tableSelectionBounds,
   tableSelectionToTsv,
@@ -88,6 +90,18 @@ test("列插入、删除和移动同时作用于表头、数据及对齐", () =>
   assert.deepEqual(applyTableOperation(oneColumn, { type: "delete-column", index: 0 }), oneColumn);
 });
 
+test("拖拽重排列会完整移动单元格和对齐方式", () => {
+  const table: MarkdownTable = {
+    rows: [["A", "B", "C"], ["1", "2", "3"]],
+    alignments: ["left", "center", "right"],
+  };
+  assert.deepEqual(reorderTableColumn(table, 0, 2), {
+    rows: [["B", "C", "A"], ["2", "3", "1"]],
+    alignments: ["center", "right", "left"],
+  });
+  assert.deepEqual(reorderTableColumn(table, 1, 1), table);
+});
+
 test("行操作允许表头晋升并始终保留至少一行", () => {
   const table: MarkdownTable = { rows: [["H"], ["1"]], alignments: ["none"] };
   assert.deepEqual(applyTableOperation(table, { type: "insert-row", index: 0, side: "above" }).rows, [[""], ["H"], ["1"]]);
@@ -107,6 +121,16 @@ test("行操作允许表头晋升并始终保留至少一行", () => {
     tableOperationFocus(threeRows, { type: "delete-row", index: 2 }, { row: 2, column: 0 }),
     { row: 1, column: 0 },
   );
+});
+
+test("拖拽重排行允许表头和数据行互换", () => {
+  const table: MarkdownTable = {
+    rows: [["H"], ["A"], ["B"]],
+    alignments: ["none"],
+  };
+  assert.deepEqual(reorderTableRow(table, 0, 2).rows, [["A"], ["B"], ["H"]]);
+  assert.deepEqual(reorderTableRow(table, 2, 0).rows, [["B"], ["H"], ["A"]]);
+  assert.deepEqual(reorderTableRow(table, 1, 1), table);
 });
 
 test("单格、整行、整列和矩形选区按 TSV 复制并可清空", () => {

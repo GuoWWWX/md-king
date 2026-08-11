@@ -1557,18 +1557,26 @@ select {
 
   /* GFM 表格渲染态 widget */
   .mk-cm-table-wrapper {
+    position: relative;
     width: 100%;
     max-width: 100%;
     min-width: 0;
     margin: 4px 0;
-    overflow-x: auto;
-    overflow-y: hidden;
     box-sizing: border-box;
-    overscroll-behavior-inline: contain;
     cursor: default;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     background: #ffffff;
+  }
+
+  .mk-cm-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    box-sizing: border-box;
+    overscroll-behavior-inline: contain;
   }
 
   .mk-table-toolbar {
@@ -1628,12 +1636,140 @@ select {
 
   .mk-cm-table th,
   .mk-cm-table td {
+    position: relative;
     min-width: 112px;
     padding: 0;
     border: 1px solid #e2e8f0;
     text-align: left;
     color: #1e293b;
     white-space: nowrap;
+  }
+
+  .mk-table-column-drag-handle,
+  .mk-table-row-drag-handle {
+    position: absolute;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: #64748b;
+    opacity: 0;
+    transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  }
+
+  .mk-table-column-drag-handle {
+    top: 0;
+    left: 0;
+    width: 18px;
+    height: 14px;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+  }
+
+  .mk-table-row-drag-handle {
+    top: 0;
+    left: -2px;
+    width: 14px;
+    height: 20px;
+    transform: translate(-100%, -50%);
+    cursor: grab;
+  }
+
+  .mk-table-column-drag-layer,
+  .mk-table-row-drag-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .mk-table-column-drag-layer .mk-table-column-drag-handle,
+  .mk-table-row-drag-layer .mk-table-row-drag-handle {
+    pointer-events: auto;
+  }
+
+  .mk-table-column-drag-handle.is-visible,
+  .mk-table-row-drag-handle.is-visible,
+  .mk-table-column-drag-handle:focus-visible,
+  .mk-table-row-drag-handle:focus-visible {
+    outline: 0;
+    opacity: 1;
+  }
+
+  .mk-table-column-drag-handle:hover,
+  .mk-table-row-drag-handle:hover,
+  .mk-table-column-drag-handle:active,
+  .mk-table-row-drag-handle:active {
+    background: #dbeafe;
+    color: #1d4ed8;
+    cursor: grabbing;
+  }
+
+  .mk-cm-table .mk-table-drag-source {
+    background: #dbeafe !important;
+    opacity: 0.42;
+  }
+
+  .mk-table-drag-ghost {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1200;
+    display: flex;
+    overflow: hidden;
+    max-height: calc(100vh - 16px);
+    border: 1px solid #93c5fd;
+    border-radius: 4px;
+    background: #eff6ff;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+    color: #1e293b;
+    opacity: 0.88;
+    pointer-events: none;
+  }
+
+  .mk-table-drag-ghost--column {
+    flex-direction: column;
+  }
+
+  .mk-table-drag-ghost-cell {
+    box-sizing: border-box;
+    overflow: hidden;
+    border-bottom: 1px solid #bfdbfe;
+    background: #eff6ff;
+  }
+
+  .mk-table-drag-ghost--row .mk-table-drag-ghost-cell {
+    flex: none;
+    border-right: 1px solid #bfdbfe;
+    border-bottom: 0;
+  }
+
+  .mk-table-drag-ghost .mk-cm-table-cell-content {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+
+  .mk-table-drop-indicator {
+    position: fixed;
+    z-index: 1199;
+    border-radius: 2px;
+    background: #2563eb;
+    box-shadow: 0 0 0 1px rgba(191, 219, 254, 0.9);
+    pointer-events: none;
+  }
+
+  .mk-table-drop-indicator--column {
+    width: 3px;
+  }
+
+  .mk-table-drop-indicator--row {
+    height: 3px;
   }
 
   .mk-cm-table-input {
@@ -2341,6 +2477,30 @@ select {
 
   .dark .mk-cm-table th {
     background: rgba(39, 39, 42, 0.8);
+    color: #f4f4f5;
+  }
+
+  .dark .mk-table-column-drag-handle,
+  .dark .mk-table-row-drag-handle {
+    color: #a1a1aa;
+  }
+
+  .dark .mk-table-column-drag-handle:hover,
+  .dark .mk-table-row-drag-handle:hover,
+  .dark .mk-table-column-drag-handle:active,
+  .dark .mk-table-row-drag-handle:active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+
+  .dark .mk-cm-table .mk-table-drag-source {
+    background: rgba(59, 130, 246, 0.22) !important;
+  }
+
+  .dark .mk-table-drag-ghost,
+  .dark .mk-table-drag-ghost-cell {
+    border-color: rgba(147, 197, 253, 0.45);
+    background: #27272a;
     color: #f4f4f5;
   }
 

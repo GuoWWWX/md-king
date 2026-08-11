@@ -186,6 +186,39 @@ export function applyTableOperation(table: MarkdownTable, operation: TableOperat
   return { rows, alignments };
 }
 
+/** 将一列移动到指定的最终位置，同时保持各行和对齐方式同步。 */
+export function reorderTableColumn(table: MarkdownTable, from: number, to: number): MarkdownTable {
+  const rows = table.rows.map((row) => [...row]);
+  const columnCount = Math.max(1, table.alignments.length, ...rows.map((row) => row.length));
+  if (from < 0 || from >= columnCount || to < 0 || to >= columnCount || from === to) {
+    return { rows, alignments: [...table.alignments] };
+  }
+
+  const alignments = Array.from(
+    { length: columnCount },
+    (_, index): TableAlignment => table.alignments[index] ?? "none",
+  );
+  rows.forEach((row) => {
+    while (row.length < columnCount) row.push("");
+    const [cell] = row.splice(from, 1);
+    row.splice(to, 0, cell);
+  });
+  const [alignment] = alignments.splice(from, 1);
+  alignments.splice(to, 0, alignment);
+  return { rows, alignments };
+}
+
+/** 将一行移动到指定的最终位置；表头也可以被拖到普通数据行位置。 */
+export function reorderTableRow(table: MarkdownTable, from: number, to: number): MarkdownTable {
+  const rows = table.rows.map((row) => [...row]);
+  if (from < 0 || from >= rows.length || to < 0 || to >= rows.length || from === to) {
+    return { rows, alignments: [...table.alignments] };
+  }
+  const [row] = rows.splice(from, 1);
+  rows.splice(to, 0, row);
+  return { rows, alignments: [...table.alignments] };
+}
+
 function tableSize(table: MarkdownTable): { rows: number; columns: number } {
   return {
     rows: Math.max(1, table.rows.length),
