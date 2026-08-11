@@ -10,14 +10,26 @@ import {
   ArrowRight,
   ArrowRightToLine,
   ArrowUpToLine,
+  Bug,
+  CircleCheck,
+  CircleHelp,
+  CircleX,
+  ClipboardList,
   ClipboardPaste,
   Code2,
   Columns3,
   Copy,
+  FileText,
+  Globe2,
   GripHorizontal,
   GripVertical,
+  Info,
+  Lightbulb,
+  ListTree,
+  MessageSquareQuote,
   Rows3,
   Scissors,
+  TriangleAlert,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
@@ -236,6 +248,75 @@ function iconMarkup(icon: LucideIcon): string {
   return renderToStaticMarkup(createElement(icon, { size: 14, strokeWidth: 2 }));
 }
 
+export class MarkdownLinkIconWidget extends WidgetType {
+  constructor(
+    private readonly kind: "external" | "document",
+    private readonly target: string,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownLinkIconWidget): boolean {
+    return other.kind === this.kind && other.target === this.target;
+  }
+
+  toDOM(): HTMLElement {
+    const icon = document.createElement("span");
+    icon.className = `mk-cm-link-icon mk-cm-link-icon--${this.kind}`;
+    icon.dataset.mkLinkTarget = this.target;
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = iconMarkup(this.kind === "external" ? Globe2 : FileText);
+    return icon;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+function calloutIcon(type: string, tone: string): LucideIcon {
+  if (type === "abstract" || type === "summary" || type === "tldr") return ClipboardList;
+  if (type === "bug") return Bug;
+  if (type === "example") return ListTree;
+  if (tone === "green") return type === "success" || type === "check" ? CircleCheck : Lightbulb;
+  if (tone === "amber") return type === "question" || type === "help" ? CircleHelp : TriangleAlert;
+  if (tone === "red") return CircleX;
+  if (tone === "slate") return MessageSquareQuote;
+  return Info;
+}
+
+export class MarkdownCalloutIconWidget extends WidgetType {
+  constructor(
+    private readonly type: string,
+    private readonly tone: string,
+    private readonly fallbackTitle: string | undefined,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownCalloutIconWidget): boolean {
+    return other.type === this.type && other.tone === this.tone && other.fallbackTitle === this.fallbackTitle;
+  }
+
+  toDOM(): HTMLElement {
+    const host = document.createElement("span");
+    host.className = "mk-cm-callout-heading-prefix";
+    host.setAttribute("aria-hidden", "true");
+    host.innerHTML = iconMarkup(calloutIcon(this.type, this.tone));
+    if (this.fallbackTitle) {
+      const title = document.createElement("span");
+      title.className = "mk-cm-callout-fallback-title";
+      title.textContent = this.fallbackTitle;
+      host.append(title);
+    }
+    return host;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 /** GFM 表格的可编辑渲染态 widget。草稿只在提交时一次性写回 Markdown。 */
 export class TableWidget extends WidgetType {
   private readonly cleanups = new WeakMap<HTMLElement, () => void>();
@@ -277,7 +358,7 @@ export class TableWidget extends WidgetType {
         );
         if (!current) return;
         current.hidden = false;
-        current.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.setAttribute("hidden", "");
+        current.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.add("is-editing");
         current.focus();
         current.select();
       });
@@ -290,7 +371,7 @@ export class TableWidget extends WidgetType {
         else if (previous) {
           const input = wrapper.querySelector<HTMLInputElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
           if (input) input.hidden = true;
-          input?.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.removeAttribute("hidden");
+          input?.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.remove("is-editing");
         }
         return;
       }
@@ -308,7 +389,7 @@ export class TableWidget extends WidgetType {
         const column = Number(input.dataset.tableColumn);
         input.value = draft.rows[row]?.[column] ?? "";
         input.hidden = true;
-        input.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.removeAttribute("hidden");
+        input.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.remove("is-editing");
       });
       active = null;
     };

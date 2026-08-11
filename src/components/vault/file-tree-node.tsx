@@ -132,8 +132,8 @@ export function FileTreeNode({ entry, depth, expanded, renaming = false, onToggl
 
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>
-        <TooltipAnchor content={entry.path} tooltipSide="right">
+      <TooltipAnchor content={entry.path} tooltipSide="right">
+        <ContextMenu.Trigger asChild>
         <div
           id={vaultTreeNodeId(entry.path)}
           role="treeitem"
@@ -276,8 +276,8 @@ export function FileTreeNode({ entry, depth, expanded, renaming = false, onToggl
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        </TooltipAnchor>
-      </ContextMenu.Trigger>
+        </ContextMenu.Trigger>
+      </TooltipAnchor>
 
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 min-w-40 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">

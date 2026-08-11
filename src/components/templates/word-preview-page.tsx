@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import MarkdownIt from "markdown-it";
 import katexPlugin from "@vscode/markdown-it-katex";
@@ -12,6 +12,7 @@ import { resolvePreviewImageSource } from "@/lib/tauri";
 import { nextMarkdownHeadingAnchor } from "@/lib/document-links";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
+import { estimateMermaidBlockHeight, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -465,7 +466,7 @@ function CodeLanguageLabel({ label, backgroundColor }: { label: string; backgrou
  * 和编辑器共用 lib/mermaid 的渲染与缓存，所以左右两栏拿到的是同一张图。
  * 渲染是异步的，先给一个占位再补上——直接返回空会让分页测高拿到 0 高度。
  */
-function MermaidBlock({ source, dark, style, className }: { source: string; dark: boolean; style?: CSSProperties; className?: string }) {
+function MermaidBlock({ source, dark, style, className, onSize }: { source: string; dark: boolean; style?: CSSProperties; className?: string; onSize?: (source: string, dark: boolean, size: PreviewMermaidSize) => void }) {
   const [svg, setSvg] = useState(() => getCachedMermaidSvg(source, dark)?.svg);
   const [error, setError] = useState<string>();
 
@@ -474,6 +475,7 @@ function MermaidBlock({ source, dark, style, className }: { source: string; dark
     if (cached) {
       setSvg(cached.svg);
       setError(undefined);
+      onSize?.(source, dark, cached);
       return undefined;
     }
 
@@ -481,7 +483,10 @@ function MermaidBlock({ source, dark, style, className }: { source: string; dark
     setError(undefined);
     void renderMermaid(source, dark)
       .then((result) => {
-        if (!cancelled) setSvg(result.svg);
+        if (!cancelled) {
+          setSvg(result.svg);
+          onSize?.(source, dark, result);
+        }
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -491,7 +496,7 @@ function MermaidBlock({ source, dark, style, className }: { source: string; dark
     return () => {
       cancelled = true;
     };
-  }, [dark, source]);
+  }, [dark, onSize, source]);
 
   if (error) {
     return (
@@ -973,7 +978,11 @@ function estimateCharsPerLine(contentWidth: number, draft: StyleDraft, ratio = 1
   return Math.max(8, Math.floor(contentWidth / Math.max(1, ptToPx(draft.fontSize) * ratio)));
 }
 
-function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number) {
+function mermaidSizeKey(source: string, dark: boolean) {
+  return `${dark ? "d" : "l"}:${source.trim()}`;
+}
+
+function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     return ptToPx(draft.beforeSpacing + draft.afterSpacing) + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * resolveLineHeightPx(draft);
@@ -993,7 +1002,16 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   if (block.type === "code") {
     if (isMermaidLanguage(block.language)) {
-      return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 480;
+      const backgroundColor = drafts.code.backgroundColor === "transparent" ? undefined : drafts.code.backgroundColor;
+      const dark = Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
+      const size = mermaidSizes?.[mermaidSizeKey(block.text, dark)] ?? getCachedMermaidSvg(block.text, dark);
+      return estimateMermaidBlockHeight({
+        size,
+        contentWidth: contentWidth - ptToPx(block.indentPt),
+        horizontalPadding: Math.max(0, drafts.code.codePaddingX) * 2,
+        verticalPadding: Math.max(0, drafts.code.codePaddingY) * 2 + 22,
+        marginHeight: ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing),
+      });
     }
     // 有语言标签时渲染顶部多 22px（语言标签行）+ 原来的 18px 底部padding，共需多加 22px。
     const languageExtra = block.language ? 22 : 0;
@@ -1057,9 +1075,9 @@ function splitTextByLength(text: string, maxChars: number) {
   return chunks;
 }
 
-function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number) {
+function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
   return blocks.flatMap((block) => {
-    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth) <= pageContentHeight) return [block];
+    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes) <= pageContentHeight) return [block];
 
     if (block.type === "paragraph") {
       return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal) * 24).map((text) => ({ ...block, segments: textSegments(text) }));
@@ -1122,13 +1140,13 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
   });
 }
 
-function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number) {
+function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
   const pages: PreviewBlock[][] = [];
   let currentPage: PreviewBlock[] = [];
   let usedHeight = 0;
 
   blocks.forEach((block) => {
-    const blockHeight = estimateBlockHeight(block, drafts, tableDraft, contentWidth);
+    const blockHeight = estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes);
     const shouldStartNewPage = currentPage.length > 0 && usedHeight + blockHeight > pageContentHeight;
 
     if (shouldStartNewPage) {
@@ -1246,6 +1264,7 @@ function renderMarkdownBlocks({
   inlineCodeEnabled,
   markdownSourcePath,
   onOpenLink,
+  onMermaidSize,
   renderAsThumbnail = false,
 }: {
   blocks: PreviewBlock[];
@@ -1255,6 +1274,7 @@ function renderMarkdownBlocks({
   inlineCodeEnabled: boolean;
   markdownSourcePath?: string;
   onOpenLink: (target: string) => void;
+  onMermaidSize?: (source: string, dark: boolean, size: PreviewMermaidSize) => void;
   renderAsThumbnail?: boolean;
   tableStyle: {
     imageStyle: CSSProperties;
@@ -1361,7 +1381,7 @@ function renderMarkdownBlocks({
             }}
           >
             <CodeLanguageLabel label="mermaid" backgroundColor={backgroundColor} />
-            <MermaidBlock source={block.text} dark={Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45)} />
+            <MermaidBlock source={block.text} dark={Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45)} onSize={onMermaidSize} />
           </div>,
         );
         return;
@@ -1529,6 +1549,15 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const dragStateRef = useRef({ dragging: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
   const [viewportWidth, setViewportWidth] = useState(0);
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
+  const [mermaidSizes, setMermaidSizes] = useState<Record<string, PreviewMermaidSize>>({});
+  const handleMermaidSize = useCallback((source: string, dark: boolean, size: PreviewMermaidSize) => {
+    const key = mermaidSizeKey(source, dark);
+    setMermaidSizes((current) => {
+      const previous = current[key];
+      if (previous?.width === size.width && previous.height === size.height) return current;
+      return { ...current, [key]: size };
+    });
+  }, []);
   const requestedScale = zoom / 100;
   const pageSettings = styleConfig?.pageSettings;
   const basePaperSize = PAPER_SIZE_PX[pageSettings?.paperSize ?? "A4"] ?? PAPER_SIZE_PX.A4;
@@ -1658,16 +1687,15 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const mappedBlocks = applyHeadingMappings(activeBlocks, styleConfig?.markdownRules?.headingMappings ?? defaultMarkdownRules.headingMappings);
   const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-caption": tableCaption, "inline-code": inlineCode, "horizontal-rule": horizontalRule, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
   const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
-  // 估算值和实际渲染之间不可避免有误差（字体渲染、padding 取整等），
-  // 留 40px 安全边距，避免紧边界时块轻微溢出导致下一页顶部出现大片空白。
-  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight - 40);
+  // 仅保留少量像素取整余量；过大的固定安全区会把本可容纳的块提前推到下一页。
+  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight - 8);
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(mappedBlocks, previewDrafts);
   const tocPages = shouldPaginate && showTocPage
     ? createPreviewTocPages(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth, pageContentHeight)
     : [];
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(numberedBlocks, pageContentHeight, previewDrafts, table, contentWidth) : numberedBlocks;
-  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth) : [previewBlocks];
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(numberedBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : numberedBlocks;
+  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : [previewBlocks];
   const previewOutline = documentPages.flatMap((pageBlocks, pageIndex) => pageBlocks.flatMap((block) => {
     if (block.type !== "heading" || block.isDocumentTitle || !block.anchorId) return [];
     return [{ id: block.anchorId, level: block.level, text: block.text, number: block.number, page: tocPages.length + pageIndex + 1 }];
@@ -1726,6 +1754,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             inlineCodeEnabled: styleConfig?.markdownFeatures.inlineCode ?? defaultMarkdownFeatures.inlineCode,
             markdownSourcePath,
             onOpenLink,
+            onMermaidSize: handleMermaidSize,
             renderAsThumbnail: thumbnail,
             tableStyle: markdownTableStyle,
           })}
@@ -1833,7 +1862,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             <TooltipButton
               key={pageIndex}
               type="button"
-              className="group relative h-fit w-fit max-w-full justify-self-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
+              className="group relative flex h-fit w-fit max-w-full flex-col items-center justify-start gap-0 justify-self-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/12"
               style={{ height: paperHeight * thumbnailScale + 32 }}
               onClick={() => onThumbnailPageSelect(pageIndex + 1)}
               tooltip={pageIndex < tocPages.length ? "跳到目录页" : `跳到第 ${pageIndex + 1} 页`}
@@ -1843,7 +1872,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
               <div className="overflow-hidden rounded-[6px] border border-slate-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
                 {renderPreviewPage(pageBlocks, pageIndex, true)}
               </div>
-              <span className="mt-1 block text-center text-[10px] font-black text-slate-500 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-200">{pageIndex + 1}</span>
+              <span className="mt-1 block w-full text-center text-[10px] leading-4 font-black text-slate-500 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-200">{pageIndex + 1}</span>
               {pageIndex < tocPages.length ? <span className="absolute right-2 top-2 rounded bg-white/90 px-1 py-0.5 text-[8px] font-bold text-slate-500 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-300">目录</span> : null}
             </TooltipButton>
           ))}

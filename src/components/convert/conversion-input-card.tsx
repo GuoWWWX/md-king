@@ -228,7 +228,7 @@ export function ConversionInputCard({
           onDocChanged={onChange}
           onRequestSave={onRequestSave}
           onOpenLink={onOpenLink}
-          openLinksOnClick={readingMode}
+          openLinksOnClick
           className="h-full"
         />
       ) : (

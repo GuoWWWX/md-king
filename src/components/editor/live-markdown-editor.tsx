@@ -1,12 +1,11 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup, markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { syntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
 import { closeSearchPanel, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { livePreviewPlugin, mermaidBlockExtension, tableBlockExtension } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
@@ -42,11 +41,26 @@ export type LiveMarkdownEditorHandle = {
 
 /** 标记「这次改动来自外部载入而非用户输入」，避免把程序化替换误报成脏数据。 */
 const externalUpdate = Annotation.define<boolean>();
+const linkInteractionVersion = "strict-hitbox-v2";
 
 function docChangeDebounceMs(length: number): number {
   if (length >= 300_000) return 700;
   if (length >= 80_000) return 400;
   return 200;
+}
+
+function clickedLinkTarget(event: MouseEvent): string | undefined {
+  if (!(event.target instanceof Element)) return undefined;
+  const element = event.target.closest<HTMLElement>("[data-mk-link-target]");
+  const target = element?.dataset.mkLinkTarget;
+  if (!element || !target) return undefined;
+
+  const rect = element.getBoundingClientRect();
+  const inside = event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom;
+  return inside ? target : undefined;
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
@@ -58,6 +72,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const themeCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
   const livePreviewCompartment = useRef(new Compartment()).current;
+  const linkInteractionCompartment = useRef(new Compartment()).current;
   // mermaid 的块级装饰带着深浅色：主题变了图要重画，
   // 否则深色模式下拿到的还是缓存里的浅色版本。
   const mermaidCompartment = useRef(new Compartment()).current;
@@ -81,6 +96,24 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // 初始内容同理只在创建时读一次，之后的 props 变化不该反向覆盖用户正在编辑的内容。
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
+
+  const createLinkInteractionExtension = useCallback(() => EditorView.domEventHandlers({
+    mousedown: (event) => {
+      if (!openLinksOnClickRef.current) return false;
+      const linkTarget = clickedLinkTarget(event);
+      if (!linkTarget) return false;
+      event.preventDefault();
+      return true;
+    },
+    click: (event) => {
+      if (!openLinksOnClickRef.current && !event.ctrlKey && !event.metaKey) return false;
+      const linkTarget = clickedLinkTarget(event);
+      if (!linkTarget) return false;
+      event.preventDefault();
+      onOpenLinkRef.current?.(linkTarget);
+      return true;
+    },
+  }), [linkInteractionVersion]);
 
   useImperativeHandle(
     ref,
@@ -115,25 +148,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 改用浏览器原生 ::selection，选区只包裹被选中的字符宽度，和文字边距一致。
       rectangularSelection(),
       EditorView.lineWrapping,
-      EditorView.domEventHandlers({
-        click: (event, view) => {
-          if (!openLinksOnClickRef.current && !event.ctrlKey && !event.metaKey) return false;
-          const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
-          if (position === null) return false;
-
-          let node = syntaxTree(view.state).resolveInner(position, -1);
-          while (node.parent && node.name !== "Link" && node.name !== "Autolink") node = node.parent;
-          if (node.name !== "Link" && node.name !== "Autolink") return false;
-          const url = node.getChild("URL");
-          if (!url) return false;
-
-          const target = view.state.doc.sliceString(url.from, url.to).trim();
-          if (!target) return false;
-          event.preventDefault();
-          onOpenLinkRef.current?.(target);
-          return true;
-        },
-      }),
+      linkInteractionCompartment.of(createLinkInteractionExtension()),
       // Prec 顺序即数组顺序：Mod-s 必须排在 defaultKeymap 之前，
       // 否则会被更靠前的绑定截胡（默认没绑 Mod-s，但保持这个顺序更稳）。
       // 面板挂到顶部，配合 theme 里的绝对定位浮在右上角，不挤压正文布局。
@@ -230,6 +245,11 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 事件处理器由 HMR 更新时，不重建编辑器和 undo 历史，只替换当前实例的命中规则。
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: linkInteractionCompartment.reconfigure(createLinkInteractionExtension()) });
+  }, [createLinkInteractionExtension, linkInteractionCompartment]);
 
   // 主题热替换：只换 compartment 内容，view 保持不变，所以光标和 undo 历史都在。
   useEffect(() => {

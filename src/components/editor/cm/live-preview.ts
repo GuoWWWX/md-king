@@ -1,7 +1,9 @@
 import { syntaxTree } from "@codemirror/language";
 import { isMermaidLanguage } from "@/lib/mermaid";
+import { isExternalDocumentLink } from "@/lib/document-links";
+import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
 import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import {
   codeBlockIndentClass,
@@ -10,7 +12,7 @@ import {
 } from "./code-block-indent";
 import { selectionTouches, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
-import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -38,7 +40,8 @@ function lineDecoration(className: string): Decoration {
   return deco;
 }
 
-function markDecoration(className: string): Decoration {
+function markDecoration(className: string, attributes?: Record<string, string>): Decoration {
+  if (attributes) return Decoration.mark({ ...(className ? { class: className } : {}), attributes });
   let deco = markDecorationCache.get(className);
   if (!deco) {
     deco = Decoration.mark({ class: className });
@@ -68,6 +71,14 @@ function touchesSameLine(collector: DecorationCollector, from: number, to: numbe
   return collector.focused && selectionTouchesOnSameLine(collector.state, from, to);
 }
 
+// 链接是可点击操作，不能像粗体等内联语法一样把相邻的光标边界也算作命中。
+// 否则点击链接前后的空白，会错误地把整条链接展开为源码。
+function cursorInside(collector: DecorationCollector, from: number, to: number): boolean {
+  return collector.focused && collector.state.selection.ranges.some(
+    (range) => range.from === range.to && range.head > from && range.head < to,
+  );
+}
+
 // 选区跨行时只在光标（head）所在行展开源码，其他行保持渲染态。
 function cursorLine(collector: DecorationCollector, from: number, to: number): boolean {
   return collector.focused && cursorOnLines(collector.state, from, to);
@@ -92,9 +103,14 @@ function hide(collector: DecorationCollector, from: number, to: number): void {
   collector.atomics.push(hiddenMark.range(from, to));
 }
 
-function addMark(collector: DecorationCollector, from: number, to: number, className: string): void {
+function addMark(collector: DecorationCollector, from: number, to: number, className: string, attributes?: Record<string, string>): void {
   if (from >= to || to > collector.state.doc.length) return;
-  collector.decorations.push(markDecoration(className).range(from, to));
+  collector.decorations.push(markDecoration(className, attributes).range(from, to));
+}
+
+function addWidget(collector: DecorationCollector, position: number, widget: WidgetType, side = -1): void {
+  if (position < 0 || position > collector.state.doc.length) return;
+  collector.decorations.push(Decoration.widget({ widget, side }).range(position));
 }
 
 function addLine(collector: DecorationCollector, linePos: number, className: string): void {
@@ -185,17 +201,24 @@ function handleInlineWrapper(
  * 一次覆盖 `](地址)`、`](地址 "标题")` 和引用式 `][ref]` 三种写法。
  */
 function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
+  const targetNode = ref.node.getChild("URL");
+  const target = targetNode ? collector.state.doc.sliceString(targetNode.from, targetNode.to).trim() : "";
+  // Lezer 会把 callout 的 `[!abstract]` 识别成无目标引用链接；它由引用块逻辑统一显隐。
+  if (!target && /^\[![a-z][\w-]*\](?:[+-])?$/i.test(collector.state.doc.sliceString(ref.from, ref.to))) return;
+  const kind = isExternalDocumentLink(target) ? "external" : "document";
+  const linkTarget = target ? { "data-mk-link-target": target } : undefined;
   const marks = childrenOfType(ref.node, "LinkMark");
   if (marks.length < 2) {
-    addMark(collector, ref.from, ref.to, "mk-cm-link");
+    addMark(collector, ref.from, ref.to, `mk-cm-link mk-cm-link--${kind}`, linkTarget);
     return;
   }
 
   const open = marks[0];
   const close = marks[1];
-  addMark(collector, open.to, close.from, "mk-cm-link");
+  addMark(collector, open.to, close.from, `mk-cm-link mk-cm-link--${kind}`, linkTarget);
 
-  if (touches(collector, ref.from, ref.to)) return;
+  if (cursorInside(collector, ref.from, ref.to)) return;
+  if (target) addWidget(collector, open.to, new MarkdownLinkIconWidget(kind, target), -1);
   hide(collector, open.from, open.to);
   hide(collector, close.from, ref.to);
 }
@@ -203,11 +226,29 @@ function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
 function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const state = collector.state;
   const line = state.doc.lineAt(ref.from);
-  addLine(collector, line.from, "mk-cm-quote-line");
+  let block = ref.node.parent;
+  while (block && block.name !== "Blockquote") block = block.parent;
+  const firstLine = state.doc.lineAt(block?.from ?? line.from);
+  const lastLine = state.doc.lineAt(Math.max(firstLine.from, Math.min(state.doc.length, (block?.to ?? line.to) - 1)));
+  const firstPrefix = firstLine.text.match(/^\s*>[ \t]?/);
+  const firstContentStart = firstLine.from + (firstPrefix?.[0].length ?? 0);
+  const callout = parseMarkdownCalloutHeader(state.doc.sliceString(firstContentStart, firstLine.to));
+  const isFirstLine = line.number === firstLine.number;
+  const isLastLine = line.number === lastLine.number;
+  const classes = callout
+    ? `mk-cm-quote-line mk-cm-callout-line mk-cm-callout-line--${callout.tone}${isFirstLine ? " mk-cm-callout-first" : ""}${isLastLine ? " mk-cm-callout-last" : ""}`
+    : "mk-cm-quote-line";
+  addLine(collector, line.from, classes);
 
   // QuoteMark 本身只占一个字符且必在单行内，用 cursorLine 判定（选区跨行时只看光标所在行）。
   if (cursorLine(collector, ref.from, ref.to)) return;
   hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
+  if (!callout || !isFirstLine) return;
+  const markerFrom = firstContentStart + callout.markerStart;
+  const markerTo = firstContentStart + callout.markerEnd;
+  addMark(collector, markerTo, firstLine.to, "mk-cm-callout-title");
+  addWidget(collector, markerTo, new MarkdownCalloutIconWidget(callout.type, callout.tone, callout.title ? undefined : callout.defaultTitle), -1);
+  hide(collector, markerFrom, markerTo);
 }
 
 /**

@@ -1260,21 +1260,23 @@ function WordPreviewSidebar({
 
   return (
     <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
-      <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-[8px] bg-slate-100 p-1 dark:bg-zinc-900">
+      <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-[8px] bg-slate-100 p-0.5 dark:bg-zinc-900">
         <button
           type="button"
-          className={cn("flex h-8 items-center justify-center gap-1.5 rounded-[6px] text-xs font-bold transition", activeView === "pages" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
+          className={cn("flex h-7 items-center justify-center gap-1 rounded-[6px] font-semibold transition", activeView === "pages" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
+          style={{ fontSize: "11px" }}
           onClick={() => onViewChange("pages")}
         >
-          <PanelsTopLeft className="size-3.5" />
+          <PanelsTopLeft className="size-3" />
           缩略图
         </button>
         <button
           type="button"
-          className={cn("flex h-8 items-center justify-center gap-1.5 rounded-[6px] text-xs font-bold transition", activeView === "outline" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
+          className={cn("flex h-7 items-center justify-center gap-1 rounded-[6px] font-semibold transition", activeView === "outline" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
+          style={{ fontSize: "11px" }}
           onClick={() => onViewChange("outline")}
         >
-          <FileText className="size-3.5" />
+          <FileText className="size-3" />
           目录
         </button>
       </div>
@@ -1295,32 +1297,32 @@ function WordPreviewSidebar({
           </div>
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
             {headings.length > 0 ? (
-              <div className="space-y-0.5">
+              <div>
                 {headings.map((heading, index) => {
                   if (!isHeadingVisible(index)) return null;
                   const canCollapse = collapsibleHeadingIds.has(heading.id);
                   const isCollapsed = collapsedHeadingIds.has(heading.id);
                   return (
-                    <div key={heading.id} className="flex min-w-0 items-center gap-0.5" style={{ paddingLeft: Math.min(5, heading.level - 1) * 10 }}>
+                    <div key={heading.id} className="flex h-6 min-w-0 items-center gap-0.5" style={{ paddingLeft: Math.min(5, heading.level - 1) * 8 }}>
                       {canCollapse ? (
                         <button
                           type="button"
-                          className="flex size-5 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                          className="flex size-4 shrink-0 items-center justify-center rounded-[3px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                           onClick={() => toggleHeading(heading.id)}
                           aria-label={`${isCollapsed ? "展开" : "折叠"}${heading.text}`}
                         >
-                          {isCollapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                          {isCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
                         </button>
-                      ) : <span className="size-5 shrink-0" />}
+                      ) : <span className="size-4 shrink-0" />}
                       <TooltipAnchor content={heading.text} tooltipSide="right">
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] py-1.5 pr-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
+                          className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-[5px] pr-1 text-left leading-6 text-slate-600 transition hover:bg-blue-50 hover:text-blue-700 dark:text-zinc-300 dark:hover:bg-blue-500/12 dark:hover:text-blue-200"
                           onClick={() => onHeadingJump(heading.id)}
                         >
-                          {heading.number ? <span className="shrink-0 text-[10px] font-black text-slate-400 dark:text-zinc-500">{heading.number}</span> : null}
-                          <span className="min-w-0 flex-1 truncate">{heading.text}</span>
-                          <span className="shrink-0 tabular-nums text-[10px] font-bold text-slate-400 dark:text-zinc-500">{heading.page}</span>
+                          {heading.number ? <span className="shrink-0 text-slate-400 dark:text-zinc-500" style={{ fontSize: "10px", fontWeight: 600 }}>{heading.number}</span> : null}
+                          <span className="min-w-0 flex-1 truncate" style={{ fontSize: "12px", fontFamily: "sans-serif", fontWeight: 500 }}>{heading.text}</span>
+                          <span className="shrink-0 tabular-nums text-slate-400 dark:text-zinc-500" style={{ fontSize: "10px", fontWeight: 600 }}>{heading.page}</span>
                         </button>
                       </TooltipAnchor>
                     </div>
