@@ -33,6 +33,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 import {
   applyTableOperation,
@@ -121,13 +122,35 @@ export class BulletWidget extends WidgetType {
     const span = document.createElement("span");
     span.className = "mk-cm-bullet";
     // 按嵌套层级换符号，和常见 Markdown 渲染器（含本项目 Word 预览）的层级约定一致。
-    span.textContent = this.depth % 3 === 0 ? "•" : this.depth % 3 === 1 ? "◦" : "▪";
+    span.textContent = `${this.depth % 3 === 0 ? "•" : this.depth % 3 === 1 ? "◦" : "▪"} `;
     // 屏幕阅读器不该念出这个纯装饰字符，源码里的 `-` 才是语义所在。
     span.setAttribute("aria-hidden", "true");
     return span;
   }
 
   /** 圆点是纯展示，不吞事件——让点击照常落到编辑器上定位光标。 */
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+export class OrderedListWidget extends WidgetType {
+  constructor(private readonly sourceMarker: string, private readonly value: number) {
+    super();
+  }
+
+  eq(other: OrderedListWidget): boolean {
+    return other.sourceMarker === this.sourceMarker && other.value === this.value;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.className = "mk-cm-ordered-marker";
+    span.textContent = `${orderedListMarker(this.sourceMarker, this.value)} `;
+    span.setAttribute("aria-hidden", "true");
+    return span;
+  }
+
   ignoreEvent(): boolean {
     return false;
   }

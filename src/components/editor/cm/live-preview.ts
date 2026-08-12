@@ -6,13 +6,15 @@ import { RangeSetBuilder, StateField, type EditorState, type Extension, type Ran
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import {
+  codeBlockIndentAttributeRange,
   codeBlockIndentClass,
   codeBlockIndentPtFromInfo,
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
+import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
 import { selectionTouches, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
-import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -223,6 +225,99 @@ function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   hide(collector, close.from, ref.to);
 }
 
+function insideFencedCode(state: EditorState, position: number): boolean {
+  for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(position, 1); node; node = node.parent) {
+    if (node.name === "FencedCode") return true;
+  }
+  return false;
+}
+
+function addRenderedSourceIndent(collector: DecorationCollector, lineFrom: number): void {
+  const line = collector.state.doc.lineAt(lineFrom);
+  if (insideFencedCode(collector.state, line.from)) return;
+  const indentLength = markdownSourceIndentLength(line.text);
+  if (indentLength === 0) return;
+  addLine(collector, line.from, markdownSourceIndentClass(line.text));
+  hide(collector, line.from, line.from + indentLength);
+}
+
+function lineHasParsedListMark(state: EditorState, from: number, to: number): boolean {
+  let found = false;
+  syntaxTree(state).iterate({
+    from,
+    to,
+    enter: (node) => {
+      if (node.name !== "ListMark") return undefined;
+      found = true;
+      return false;
+    },
+  });
+  return found;
+}
+
+function fallbackOrderedListValue(state: EditorState, lineNumber: number): number {
+  const current = parseMarkdownSourceListLine(state.doc.line(lineNumber).text);
+  if (!current?.ordered) return 1;
+
+  const lines = [state.doc.line(lineNumber).text];
+  for (let number = lineNumber - 1; number >= 1; number -= 1) {
+    const text = state.doc.line(number).text;
+    const previous = parseMarkdownSourceListLine(text);
+    if (!previous || previous.level < current.level) break;
+    lines.unshift(text);
+  }
+  return sourceOrderedListValue(lines, lines.length - 1);
+}
+
+function listMarkerRangeTo(state: EditorState, markerTo: number): number {
+  const line = state.doc.lineAt(markerTo);
+  return markerTo + trailingSpaceCount(state, markerTo, line.to - markerTo);
+}
+
+function addFallbackSourceList(collector: DecorationCollector, lineFrom: number): void {
+  const state = collector.state;
+  const line = state.doc.lineAt(lineFrom);
+  if (insideFencedCode(state, line.from)) return;
+  const sourceList = parseMarkdownSourceListLine(line.text);
+  if (!sourceList) return;
+  const markerFrom = line.from + sourceList.markerFrom;
+  const markerTo = line.from + sourceList.markerTo;
+  if (lineHasParsedListMark(state, markerFrom, markerTo)) return;
+
+  addLine(collector, line.from, sourceList.ordered ? "mk-cm-list-line mk-cm-list-ordered" : "mk-cm-list-line");
+  if (touchesSameLine(collector, markerFrom, markerTo)) return;
+  const widget = Decoration.replace({
+    widget: sourceList.ordered
+      ? new OrderedListWidget(
+          sourceList.marker,
+          fallbackOrderedListValue(state, line.number),
+        )
+      : new BulletWidget(sourceList.level),
+  });
+  const rangeTo = listMarkerRangeTo(state, markerTo);
+  collector.decorations.push(widget.range(markerFrom, rangeTo));
+  collector.atomics.push(widget.range(markerFrom, rangeTo));
+}
+
+function parsedOrderedListValue(state: EditorState, node: SyntaxNode, marker: string): number {
+  const listItem = node.parent;
+  const orderedList = listItem?.parent;
+  if (!listItem || orderedList?.name !== "OrderedList") return Number.parseInt(marker, 10) || 1;
+
+  let firstValue = 1;
+  let itemIndex = 0;
+  for (let child = orderedList.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "ListItem") continue;
+    const listMark = child.getChild("ListMark");
+    if (itemIndex === 0 && listMark) {
+      firstValue = Number.parseInt(state.doc.sliceString(listMark.from, listMark.to), 10) || 1;
+    }
+    if (child.from === listItem.from) return firstValue + itemIndex;
+    itemIndex += 1;
+  }
+  return Number.parseInt(marker, 10) || 1;
+}
+
 function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const state = collector.state;
   const line = state.doc.lineAt(ref.from);
@@ -284,15 +379,20 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
   }
 
   if (touchesSameLine(collector, ref.from, ref.to)) return;
-  // 有序列表的 `1.` 本身就是要读的内容，只有无序列表的 `-`/`*`/`+` 换成排版化圆点。
-  if (ordered) return;
-
   if (ref.from >= ref.to || ref.to > state.doc.length) return;
   if (state.doc.lineAt(ref.from).number !== state.doc.lineAt(ref.to).number) return;
 
-  const widget = Decoration.replace({ widget: new BulletWidget(bulletDepth(node)) });
-  collector.decorations.push(widget.range(ref.from, ref.to));
-  collector.atomics.push(widget.range(ref.from, ref.to));
+  const sourceLevel = parseMarkdownSourceListLine(line.text)?.level ?? 0;
+  const depth = Math.max(bulletDepth(node), sourceLevel);
+  const marker = state.doc.sliceString(ref.from, ref.to);
+  const widget = Decoration.replace({
+    widget: ordered
+      ? new OrderedListWidget(marker, parsedOrderedListValue(state, node, marker))
+      : new BulletWidget(depth),
+  });
+  const rangeTo = listMarkerRangeTo(state, ref.to);
+  collector.decorations.push(widget.range(ref.from, rangeTo));
+  collector.atomics.push(widget.range(ref.from, rangeTo));
 }
 
 /**
@@ -319,6 +419,10 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   const language = codeFenceLanguageFromInfo(info);
   const indentClass = codeBlockIndentClass(codeBlockIndentPtFromInfo(info));
   const indented = indentClass ? ` ${indentClass}` : "";
+  const indentAttribute = infoNode ? codeBlockIndentAttributeRange(doc.sliceString(infoNode.from, infoNode.to)) : null;
+  if (infoNode && indentAttribute) {
+    hide(collector, infoNode.from + indentAttribute.from, infoNode.from + indentAttribute.to);
+  }
 
   // mermaid 块在渲染态整块换成图。跨行 replace 只能由 StateField 提供
   // （CM 要在算视口前知道块高度），所以这里只打个标记，实际替换在
@@ -389,6 +493,13 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
   const tree = syntaxTree(state);
 
   for (const { from, to } of view.visibleRanges) {
+    const firstLine = state.doc.lineAt(from);
+    const lastLine = state.doc.lineAt(to);
+    for (let lineNumber = firstLine.number; lineNumber <= lastLine.number; lineNumber += 1) {
+      const lineFrom = state.doc.line(lineNumber).from;
+      addRenderedSourceIndent(collector, lineFrom);
+      addFallbackSourceList(collector, lineFrom);
+    }
     tree.iterate({
       from,
       to,

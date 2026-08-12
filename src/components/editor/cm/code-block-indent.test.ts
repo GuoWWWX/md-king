@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   codeBlockIndentPtFromInfo,
+  codeBlockIndentAttributeRange,
   codeFenceLanguageFromInfo,
   selectionCoversCodeFence,
   updateCodeFenceIndentInfo,
@@ -15,6 +16,12 @@ test("选区碰到首尾围栏行即可识别整个代码块", () => {
   assert.equal(selectionCoversCodeFence({ from: 16, to: 43 }, opening, closing), false);
   assert.equal(selectionCoversCodeFence({ from: 10, to: 39 }, opening, closing), false);
   assert.equal(selectionCoversCodeFence({ from: 20, to: 20 }, opening, closing), false);
+});
+
+test("定位代码块内部缩进属性以便编辑器隐藏", () => {
+  assert.deepEqual(codeBlockIndentAttributeRange('text {data-md-king-indent-pt="24"}'), { from: 4, to: 34 });
+  assert.deepEqual(codeBlockIndentAttributeRange('{#demo data-md-king-indent-pt=48}'), { from: 6, to: 32 });
+  assert.equal(codeBlockIndentAttributeRange("text"), null);
 });
 
 test("读取有语言和纯属性围栏的代码块缩进", () => {

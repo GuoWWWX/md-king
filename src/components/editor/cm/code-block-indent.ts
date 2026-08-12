@@ -2,6 +2,16 @@ export const CODE_BLOCK_INDENT_STEP_PT = 24;
 export const CODE_BLOCK_INDENT_MAX_PT = 144;
 const INDENT_ATTRIBUTE = "data-md-king-indent-pt";
 
+export function codeBlockIndentAttributeRange(info: string): { from: number; to: number } | null {
+  const onlyIndentAttribute = /^(.*?)(\s*)\{\s*data-md-king-indent-pt\s*=\s*(?:"[^"]*"|'[^']*'|[^\s}]+)\s*\}\s*$/i.exec(info);
+  if (onlyIndentAttribute) {
+    const from = onlyIndentAttribute[1].length;
+    return { from, to: info.length };
+  }
+  const match = /(?:\s*)data-md-king-indent-pt\s*=\s*(?:"[^"]*"|'[^']*'|[^\s}]+)/i.exec(info);
+  return match ? { from: match.index, to: match.index + match[0].length } : null;
+}
+
 export function selectionCoversCodeFence(
   selection: { from: number; to: number },
   openingLine: { from: number; to: number },

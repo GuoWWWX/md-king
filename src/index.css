@@ -1436,14 +1436,19 @@ select {
     transform: translateY(-50%);
   }
 
+  .mk-cm-source-indent-1 { --mk-cm-source-indent: 32px; padding-left: 32px !important; }
+  .mk-cm-source-indent-2 { --mk-cm-source-indent: 64px; padding-left: 64px !important; }
+  .mk-cm-source-indent-3 { --mk-cm-source-indent: 96px; padding-left: 96px !important; }
+  .mk-cm-source-indent-4 { --mk-cm-source-indent: 128px; padding-left: 128px !important; }
+  .mk-cm-source-indent-5 { --mk-cm-source-indent: 160px; padding-left: 160px !important; }
+  .mk-cm-source-indent-6 { --mk-cm-source-indent: 192px; padding-left: 192px !important; }
+
   .mk-cm-list-line {
-    padding-left: 6px !important;
+    padding-left: calc(6px + var(--mk-cm-source-indent, 0px)) !important;
   }
 
   .mk-cm-bullet {
     display: inline-block;
-    min-width: 1em;
-    text-align: center;
     color: #2563eb;
   }
 
@@ -1493,6 +1498,11 @@ select {
        叠在白底上比预览暗一档，左右并排时左边明显发灰。 */
     background: #f8fafc;
     box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.95), inset -1px 0 0 rgba(226, 232, 240, 0.95);
+  }
+
+  .mk-cm-ordered-marker {
+    display: inline-block;
+    color: #2563eb;
   }
 
   .mk-cm-code-indent-1 { margin-left: 32px; }
