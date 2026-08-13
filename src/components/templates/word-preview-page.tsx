@@ -5,6 +5,7 @@ import katexPlugin from "@vscode/markdown-it-katex";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { AppSurface } from "@/components/ui/app-surface";
+import { MarkdownCalloutIcon } from "@/components/markdown-callout-icon";
 import { codeBlockIndentPtFromInfo } from "@/components/editor/cm/code-block-indent";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
@@ -13,6 +14,7 @@ import { nextMarkdownHeadingAnchor } from "@/lib/document-links";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
 import { estimateMermaidBlockHeight, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
+import { parseMarkdownCalloutHeader, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -52,7 +54,7 @@ type PreviewBlock =
   | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
   | { type: "paragraph"; segments: PreviewTextSegment[] }
-  | { type: "quote"; segments: PreviewTextSegment[] }
+  | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number }
   | { type: "math"; text: string }
   | { type: "hr" }
@@ -602,6 +604,43 @@ function joinTextSegmentGroups(groups: PreviewTextSegment[][], separator: string
   return mergeTextSegments(groups.flatMap((group, index) => (index === 0 ? group : [{ text: separator }, ...group])));
 }
 
+function splitSegmentsAtFirstLine(segments: PreviewTextSegment[]) {
+  const header: PreviewTextSegment[] = [];
+  const body: PreviewTextSegment[] = [];
+  let foundBreak = false;
+  for (const segment of segments) {
+    if (foundBreak) {
+      body.push(segment);
+      continue;
+    }
+    const breakIndex = segment.text.indexOf("\n");
+    if (breakIndex < 0) {
+      header.push(segment);
+      continue;
+    }
+    if (breakIndex > 0) header.push({ ...segment, text: segment.text.slice(0, breakIndex) });
+    if (breakIndex + 1 < segment.text.length) body.push({ ...segment, text: segment.text.slice(breakIndex + 1) });
+    foundBreak = true;
+  }
+  return { header: mergeTextSegments(header), body: mergeTextSegments(body) };
+}
+
+function calloutQuote(parts: PreviewTextSegment[][]): Extract<PreviewBlock, { type: "quote" }> | undefined {
+  const joined = joinTextSegmentGroups(parts, "\n");
+  const lines = splitSegmentsAtFirstLine(joined);
+  const parsed = parseMarkdownCalloutHeader(plainText(lines.header));
+  if (!parsed) return undefined;
+  return {
+    type: "quote",
+    segments: lines.body,
+    callout: {
+      type: parsed.type,
+      tone: parsed.tone,
+      title: parsed.title || parsed.defaultTitle,
+    },
+  };
+}
+
 function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined {
   const style: CSSProperties = {};
   if (segment.bold) style.fontWeight = 700;
@@ -935,7 +974,7 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
         }
         index += 1;
       }
-      blocks.push({ type: "quote", segments: joinTextSegmentGroups(parts, "\n") });
+      blocks.push(calloutQuote(parts) ?? { type: "quote", segments: joinTextSegmentGroups(parts, "\n") });
       continue;
     }
 
@@ -1336,6 +1375,26 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "quote") {
+      if (block.callout) {
+        rendered.push(
+          <blockquote
+            key={index}
+            className={cn("mk-word-callout", `mk-word-callout--${block.callout.tone}`, selectedRing(selectedStyle, "quote"))}
+            style={{ ...textStyle(drafts.quote), textIndent: 0, padding: "9px 12px", border: 0 }}
+          >
+            <div className="mk-word-callout-title">
+              <MarkdownCalloutIcon type={block.callout.type} tone={block.callout.tone} className="size-[1.05em] shrink-0" />
+              <span>{block.callout.title}</span>
+            </div>
+            {block.segments.length > 0 ? (
+              <div className="mk-word-callout-body">
+                {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `q-${index}`, selectedStyle, onOpenLink)}
+              </div>
+            ) : null}
+          </blockquote>,
+        );
+        return;
+      }
       rendered.push(
         <blockquote
           key={index}

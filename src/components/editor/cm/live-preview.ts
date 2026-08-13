@@ -12,9 +12,9 @@ import {
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
-import { selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
+import { selectionTouchesOnSameLine, cursorOnLines, selectionOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
-import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -403,15 +403,15 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
 
   const firstLine = doc.lineAt(ref.from);
   const lastLine = doc.lineAt(Math.min(ref.to, doc.length));
-  // 光标（head）落在代码块任意一行上就整块回到源码态；
-  // 选区跨过代码块时只看光标所在行，不把整块变回源码。
-  const editing = cursorLine(collector, ref.from, ref.to);
-
   // 语言标记（```java 的 java）通过 data 属性交给 CSS 伪元素画在左上角。
   // 用属性而不是 widget：widget 会插进文档流占掉一行高度，把首行内容顶下去。
   const infoNode = ref.node.getChild("CodeInfo");
   const info = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : "";
   const language = codeFenceLanguageFromInfo(info);
+  // Mermaid 只有点专用按钮才会进入源码态。源码显示后，双击或拖选文字时必须继续
+  // 保留整块行装饰；否则非空选区会让 cursorLine 返回 false，出现源码仍在但卡片消失。
+  const editing = cursorLine(collector, ref.from, ref.to)
+    || (isMermaidLanguage(language) && collector.focused && selectionOnLines(state, ref.from, ref.to));
   const indentClass = codeBlockIndentClass(codeBlockIndentPtFromInfo(info));
   const indented = indentClass ? ` ${indentClass}` : "";
   const indentAttribute = infoNode ? codeBlockIndentAttributeRange(doc.sliceString(infoNode.from, infoNode.to)) : null;
@@ -611,7 +611,7 @@ export const livePreviewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
  * 代价是这里要遍历整篇文档而不是可见区。可以接受：mermaid 块通常一篇文档里
  * 只有几个，远少于内联标记的数量。
  */
-function buildMermaidBlocks(state: EditorState, dark: boolean): DecorationSet {
+function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: number | null): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
   syntaxTree(state).iterate({
@@ -623,11 +623,9 @@ function buildMermaidBlocks(state: EditorState, dark: boolean): DecorationSet {
       const language = codeFenceLanguageFromInfo(info);
       if (!isMermaidLanguage(language)) return false;
 
-      // 光标落在块内任意一行就让它保持源码态，交给内联层按普通代码块渲染。
       const first = state.doc.lineAt(ref.from);
       const last = state.doc.lineAt(Math.min(ref.to, state.doc.length));
-      const editing = state.selection.ranges.some((range) => range.from <= last.to && range.to >= first.from);
-      if (editing) return false;
+      if (sourceBlockFrom !== null && sourceBlockFrom >= first.from && sourceBlockFrom <= last.to) return false;
 
       const body = extractFenceBody(state, ref.from, ref.to);
       if (!body.trim()) return false;
@@ -635,7 +633,7 @@ function buildMermaidBlocks(state: EditorState, dark: boolean): DecorationSet {
       builder.add(
         first.from,
         last.to,
-        Decoration.replace({ widget: new MermaidWidget(body, dark), block: true }),
+        Decoration.replace({ widget: new MermaidWidget(body, dark, first.from), block: true }),
       );
       return false;
     },
@@ -666,10 +664,39 @@ function extractFenceCodeText(state: EditorState, from: number, to: number): str
 /// 深浅色作为 field 的一部分：主题切换时要重画图，否则深色模式下
 /// 拿到的还是上次缓存的浅色版本。
 export function mermaidBlockExtension(dark: boolean): Extension {
-  const field = StateField.define<DecorationSet>({
-    create: (state) => buildMermaidBlocks(state, dark),
-    update: (value, tr) => (tr.docChanged || tr.selection ? buildMermaidBlocks(tr.state, dark) : value),
-    provide: (self) => EditorView.decorations.from(self),
+  interface MermaidBlockState {
+    decorations: DecorationSet;
+    sourceBlockFrom: number | null;
+  }
+
+  const field = StateField.define<MermaidBlockState>({
+    create: (state) => ({ decorations: buildMermaidBlocks(state, dark, null), sourceBlockFrom: null }),
+    update: (value, tr) => {
+      let sourceBlockFrom = value.sourceBlockFrom;
+      if (sourceBlockFrom !== null && tr.docChanged) sourceBlockFrom = tr.changes.mapPos(sourceBlockFrom);
+      for (const effect of tr.effects) {
+        if (effect.is(editMermaidSourceEffect)) sourceBlockFrom = effect.value;
+      }
+      if (sourceBlockFrom !== null && tr.selection) {
+        const headLine = tr.state.doc.lineAt(tr.state.selection.main.head);
+        const sourceLine = tr.state.doc.lineAt(Math.min(sourceBlockFrom, tr.state.doc.length));
+        let inSourceBlock = false;
+        syntaxTree(tr.state).iterate({
+          from: sourceLine.from,
+          to: sourceLine.to,
+          enter: (ref) => {
+            if (ref.name !== "FencedCode" || sourceBlockFrom! < ref.from || sourceBlockFrom! >= ref.to) return undefined;
+            const last = tr.state.doc.lineAt(Math.min(ref.to, tr.state.doc.length));
+            inSourceBlock = headLine.number >= sourceLine.number && headLine.number <= last.number;
+            return false;
+          },
+        });
+        if (!inSourceBlock) sourceBlockFrom = null;
+      }
+      if (!tr.docChanged && sourceBlockFrom === value.sourceBlockFrom) return value;
+      return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom), sourceBlockFrom };
+    },
+    provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
   });
   return field;
 }

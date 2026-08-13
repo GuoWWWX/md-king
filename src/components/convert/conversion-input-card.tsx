@@ -207,7 +207,7 @@ export function ConversionInputCard({
   return (
     <ContextMenu.Root onOpenChange={updateCodeIndentContext}>
       <ContextMenu.Trigger asChild>
-        <section data-mk-context-menu className="mk-card relative flex h-full min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[5px] max-[1100px]:h-auto max-[760px]:min-h-[300px]">
+        <section data-mk-context-menu className="mk-card relative flex h-full min-h-[360px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-[5px] max-[760px]:min-h-[300px]">
       {documentInfo}
       {/* 拖放提示要盖在编辑器上：已有文档时引导区不渲染，
           没有这层的话桌面端拖文件进来毫无视觉反馈。 */}
@@ -234,7 +234,7 @@ export function ConversionInputCard({
       ) : (
         <div
           className={cn(
-            "mk-drop-zone m-3 flex min-h-[300px] flex-1 flex-col items-center justify-center rounded-[12px] p-5 text-center transition-all",
+            "mk-drop-zone m-3 flex min-h-[300px] min-w-0 max-w-full flex-1 flex-col items-center justify-center overflow-hidden rounded-[12px] p-5 text-center transition-all",
             (isDragging || externalDragging) && "border-blue-500 bg-blue-50",
           )}
           onDragLeave={handleDragLeave}

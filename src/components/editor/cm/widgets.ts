@@ -10,11 +10,6 @@ import {
   ArrowRight,
   ArrowRightToLine,
   ArrowUpToLine,
-  Bug,
-  CircleCheck,
-  CircleHelp,
-  CircleX,
-  ClipboardList,
   ClipboardPaste,
   Code2,
   Columns3,
@@ -23,16 +18,14 @@ import {
   Globe2,
   GripHorizontal,
   GripVertical,
-  Info,
-  Lightbulb,
-  ListTree,
-  MessageSquareQuote,
   Rows3,
   Scissors,
-  TriangleAlert,
   Trash2,
+  WrapText,
   type LucideIcon,
 } from "lucide-react";
+import { markdownCalloutIcon } from "@/components/markdown-callout-icon";
+import type { MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 import {
@@ -211,20 +204,43 @@ export class MermaidWidget extends WidgetType {
   constructor(
     private readonly source: string,
     private readonly dark: boolean,
+    private readonly blockFrom: number,
   ) {
     super();
   }
 
   eq(other: MermaidWidget): boolean {
-    return other.source === this.source && other.dark === this.dark;
+    return other.source === this.source && other.dark === this.dark && other.blockFrom === this.blockFrom;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     // 分两层：外层挂语言标签和边框，内层专门放 SVG。
     // 不分层的话 innerHTML 会把标签一起冲掉。
     const host = document.createElement("div");
     host.className = "mk-cm-mermaid";
     host.dataset.codeLanguage = "mermaid";
+    host.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    const sourceButton = document.createElement("button");
+    sourceButton.type = "button";
+    sourceButton.className = "mk-cm-mermaid-source";
+    sourceButton.title = "编辑 Mermaid 源码";
+    sourceButton.setAttribute("aria-label", "编辑 Mermaid 源码");
+    sourceButton.innerHTML = iconMarkup(Code2);
+    sourceButton.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      view.dispatch({
+        selection: { anchor: this.blockFrom },
+        effects: editMermaidSourceEffect.of(this.blockFrom),
+        scrollIntoView: true,
+      });
+      view.focus();
+    });
+    host.append(sourceButton);
 
     const canvas = document.createElement("div");
     canvas.className = "mk-cm-mermaid-canvas";
@@ -259,12 +275,13 @@ export class MermaidWidget extends WidgetType {
     return host;
   }
 
-  /** 不吞事件：点击照常落到编辑器上，光标进入后就还原成源码。 */
+  /** 图表本身是预览面，只有右上角按钮能进入源码。 */
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
 }
 
+export const editMermaidSourceEffect = StateEffect.define<number>();
 export const editTableSourceEffect = StateEffect.define<number>();
 
 function iconMarkup(icon: LucideIcon): string {
@@ -297,17 +314,6 @@ export class MarkdownLinkIconWidget extends WidgetType {
   }
 }
 
-function calloutIcon(type: string, tone: string): LucideIcon {
-  if (type === "abstract" || type === "summary" || type === "tldr") return ClipboardList;
-  if (type === "bug") return Bug;
-  if (type === "example") return ListTree;
-  if (tone === "green") return type === "success" || type === "check" ? CircleCheck : Lightbulb;
-  if (tone === "amber") return type === "question" || type === "help" ? CircleHelp : TriangleAlert;
-  if (tone === "red") return CircleX;
-  if (tone === "slate") return MessageSquareQuote;
-  return Info;
-}
-
 export class MarkdownCalloutIconWidget extends WidgetType {
   constructor(
     private readonly type: string,
@@ -325,7 +331,7 @@ export class MarkdownCalloutIconWidget extends WidgetType {
     const host = document.createElement("span");
     host.className = "mk-cm-callout-heading-prefix";
     host.setAttribute("aria-hidden", "true");
-    host.innerHTML = iconMarkup(calloutIcon(this.type, this.tone));
+    host.innerHTML = iconMarkup(markdownCalloutIcon(this.type, this.tone as MarkdownCalloutTone));
     if (this.fallbackTitle) {
       const title = document.createElement("span");
       title.className = "mk-cm-callout-fallback-title";
@@ -381,6 +387,7 @@ export class TableWidget extends WidgetType {
     };
     let active: { row: number; column: number } | null = null;
     let selection: TableSelection | null = null;
+    let wrapsContent = false;
 
     const focusCell = (row: number, column: number) => {
       scheduleFrame(() => {
@@ -438,7 +445,22 @@ export class TableWidget extends WidgetType {
     };
 
     const updateSelection = (next: TableSelection) => {
-      selection = next;
+      if (next.kind === "range") {
+        const bounds = tableSelectionBounds(draft, next);
+        const isWholeRow = bounds.top === bounds.bottom
+          && bounds.left === 0
+          && bounds.right === draft.alignments.length - 1;
+        const isWholeColumn = bounds.left === bounds.right
+          && bounds.top === 0
+          && bounds.bottom === draft.rows.length - 1;
+        selection = isWholeRow && !isWholeColumn
+          ? { kind: "row", index: bounds.top }
+          : isWholeColumn && !isWholeRow
+            ? { kind: "column", index: bounds.left }
+            : next;
+      } else {
+        selection = next;
+      }
       wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
       const bounds = tableSelectionBounds(draft, selection);
       wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
@@ -448,6 +470,12 @@ export class TableWidget extends WidgetType {
           element.classList.add("mk-table-selected");
         }
       });
+      refreshToolbar();
+    };
+
+    const clearSelection = () => {
+      selection = null;
+      wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
       refreshToolbar();
     };
 
@@ -586,7 +614,20 @@ export class TableWidget extends WidgetType {
       insertRowBelowButton,
       deleteRowButton,
     );
-    toolbar.append(columnTools, rowTools);
+    const toolbarEnd = document.createElement("div");
+    toolbarEnd.className = "mk-table-toolbar-end";
+    const wrapButton = makeButton("自动换行并按内容宽度显示", WrapText, () => {
+      wrapsContent = !wrapsContent;
+      wrapper.classList.toggle("is-wrap", wrapsContent);
+      wrapButton.classList.toggle("is-active", wrapsContent);
+      wrapButton.setAttribute("aria-pressed", String(wrapsContent));
+      wrapButton.title = wrapsContent ? "使用横向滚动并占满宽度" : "自动换行并按内容宽度显示";
+      wrapButton.setAttribute("aria-label", wrapButton.title);
+      scheduleFrame(positionDragHandles);
+    });
+    wrapButton.setAttribute("aria-pressed", "false");
+    toolbarEnd.append(wrapButton);
+    toolbar.append(columnTools, rowTools, toolbarEnd);
     refreshToolbar();
     wrapper.append(toolbar);
 
@@ -996,7 +1037,16 @@ export class TableWidget extends WidgetType {
     });
 
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (contextMenu && !contextMenu.contains(event.target as Node)) closeContextMenu();
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const insideContextMenu = Boolean(contextMenu?.contains(target));
+      if (contextMenu && !insideContextMenu) closeContextMenu();
+      if (!wrapper.contains(target) && !insideContextMenu) {
+        clearSelection();
+        if (document.activeElement instanceof HTMLInputElement && wrapper.contains(document.activeElement)) {
+          document.activeElement.blur();
+        }
+      }
     };
     const closeOnScroll = () => closeContextMenu();
     const revealColumnDragHandle = (event: PointerEvent) => {

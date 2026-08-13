@@ -1416,6 +1416,35 @@ select {
     font-weight: 700;
   }
 
+  .mk-word-callout {
+    --mk-callout-accent: #64748b;
+    margin: 0;
+    border-left: 4px solid var(--mk-callout-accent) !important;
+    border-radius: 0 4px 4px 0;
+    background: color-mix(in srgb, var(--mk-callout-accent) 8%, white) !important;
+    font-style: normal;
+  }
+
+  .mk-word-callout--cyan { --mk-callout-accent: #0891b2; }
+  .mk-word-callout--blue { --mk-callout-accent: #2563eb; }
+  .mk-word-callout--green { --mk-callout-accent: #16a34a; }
+  .mk-word-callout--amber { --mk-callout-accent: #d97706; }
+  .mk-word-callout--red { --mk-callout-accent: #dc2626; }
+  .mk-word-callout--purple { --mk-callout-accent: #7c3aed; }
+
+  .mk-word-callout-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--mk-callout-accent);
+    font-weight: 700;
+  }
+
+  .mk-word-callout-body {
+    margin-top: 4px;
+    white-space: pre-wrap;
+  }
+
   /* 分隔线：源码行被 hide 替换成零高，::before 画一条横线撑起视觉高度。 */
   .mk-cm-hr {
     position: relative;
@@ -1703,6 +1732,30 @@ select {
     background: #ffffff;
   }
 
+  .mk-cm-mermaid-source {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+  }
+
+  .mk-cm-mermaid-source:hover,
+  .mk-cm-mermaid-source:focus-visible {
+    background: rgba(226, 232, 240, 0.9);
+    color: #334155;
+    outline: none;
+  }
+
   .mk-cm-table-scroll {
     width: 100%;
     max-width: 100%;
@@ -1737,6 +1790,14 @@ select {
     display: none;
   }
 
+  .mk-table-toolbar-end {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    padding-left: 6px;
+    border-left: 1px solid #e2e8f0;
+  }
+
   .mk-table-tool-button {
     display: inline-flex;
     align-items: center;
@@ -1752,6 +1813,11 @@ select {
   }
 
   .mk-table-tool-button:hover:not(:disabled) {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .mk-table-tool-button.is-active {
     background: #dbeafe;
     color: #1d4ed8;
   }
@@ -1777,6 +1843,28 @@ select {
     text-align: left;
     color: #1e293b;
     white-space: nowrap;
+  }
+
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table-scroll {
+    overflow-x: hidden;
+  }
+
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table {
+    width: fit-content;
+    max-width: 100%;
+    table-layout: auto;
+  }
+
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table th,
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table td,
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table-cell {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table-cell-content {
+    overflow-wrap: anywhere;
+    text-overflow: clip;
   }
 
   .mk-table-column-drag-handle,
@@ -2664,6 +2752,16 @@ select {
     color: #f4f4f5;
   }
 
+  .dark .mk-cm-mermaid-source {
+    color: #a1a1aa;
+  }
+
+  .dark .mk-cm-mermaid-source:hover,
+  .dark .mk-cm-mermaid-source:focus-visible {
+    background: rgba(63, 63, 70, 0.9);
+    color: #f4f4f5;
+  }
+
   .dark .mk-table-column-drag-handle,
   .dark .mk-table-row-drag-handle {
     color: #a1a1aa;
@@ -2702,11 +2800,20 @@ select {
     border-color: rgba(212, 212, 216, 0.22);
   }
 
+  .dark .mk-table-toolbar-end {
+    border-color: rgba(212, 212, 216, 0.22);
+  }
+
   .dark .mk-table-tool-button {
     color: #a1a1aa;
   }
 
   .dark .mk-table-tool-button:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+
+  .dark .mk-table-tool-button.is-active {
     background: rgba(59, 130, 246, 0.2);
     color: #93c5fd;
   }
@@ -2836,6 +2943,15 @@ select {
   .dark .mk-word-preview-page blockquote {
     background-color: rgba(63, 63, 70, 0.5) !important;
     color: #f8fafc !important;
+  }
+
+  .dark .mk-word-preview-page .mk-word-callout {
+    background-color: color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
+  }
+
+  .dark .mk-word-preview-page .mk-word-callout-title,
+  .dark .mk-word-preview-page .mk-word-callout-title span {
+    color: color-mix(in srgb, var(--mk-callout-accent) 70%, white) !important;
   }
 
   .dark .mk-word-preview-page pre {

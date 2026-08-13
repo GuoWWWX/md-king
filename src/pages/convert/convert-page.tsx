@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { ContextMenu } from "radix-ui";
@@ -40,6 +40,9 @@ const previewZoomMin = 20;
 const previewZoomMax = 200;
 const previewZoomStep = 10;
 const previewMinWidth = 460;
+const editorMinWidth = 360;
+const inlinePreviewControlsMinWidth = 740;
+const inlinePreviewSidebarMinWidth = 720;
 const previewContextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
 function clampPreviewZoom(value: number) {
@@ -191,9 +194,6 @@ export function ConvertPage() {
   // 窄屏下三栏挤不开，直接不渲染预览——不是藏起来而是不跑那条解析+分页管线。
   const isNarrow = useMediaQuery("(max-width: 1100px)");
   const showPreviewPanel = previewVisible && !isNarrow;
-  // 窄屏挂不出右侧面板，导出栏必须回到页面底部，否则没有任何入口能转换。
-  // 用户主动收起时则一并隐藏——收起就是为了要一个干净的编辑界面。
-  const showBottomFooter = isNarrow;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   // 正文的唯一来源是活动标签。revision 只在外部灌入内容时递增，
   // 用户逐字输入不动它——每次内容变化都让编辑器全量替换会打断输入、丢光标。
@@ -205,6 +205,15 @@ export function ConvertPage() {
   const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
   const canSaveActiveDocument = Boolean(activeTab?.kind === "vault" && activeTab.path && vaultRoot && activeTab.path === activeFilePath && activeFileModifiedMs !== undefined);
   const [readingMode, setReadingMode] = useState(false);
+
+  function handleTogglePreview() {
+    if (isNarrow) {
+      previewExpandedFromNarrowRef.current = true;
+      setPreviewExpanded(true);
+      return;
+    }
+    setPreviewVisible(!previewVisible);
+  }
 
   async function handleOpenLink(target: string) {
     const value = target.trim();
@@ -305,6 +314,9 @@ export function ConvertPage() {
   const [previewWidth, setPreviewWidth] = useState(520);
   const [previewZoom, setPreviewZoom] = useState(40);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const previewExpandedFromNarrowRef = useRef(false);
+  const showInlinePreviewSidebar = showPreviewPanel && previewWidth >= inlinePreviewSidebarMinWidth;
+  const stackInlinePreviewFooter = previewWidth < inlinePreviewControlsMinWidth;
   const [expandedStyleEditorOpen, setExpandedStyleEditorOpen] = useState(false);
   const [previewPageCount, setPreviewPageCount] = useState(1);
   const [previewSidebarView, setPreviewSidebarView] = useState<PreviewSidebarView>("pages");
@@ -402,11 +414,15 @@ export function ConvertPage() {
   }, [autoOutputName, outputNameEdited]);
 
   useEffect(() => {
-    if (previewExpanded) setPreviewZoom((value) => Math.max(value, 92));
-  }, [previewExpanded]);
+    if (!isNarrow && previewExpanded && previewExpandedFromNarrowRef.current) {
+      previewExpandedFromNarrowRef.current = false;
+      setPreviewVisible(true);
+      setPreviewExpanded(false);
+    }
+  }, [isNarrow, previewExpanded, setPreviewVisible]);
 
   useEffect(() => {
-    if (!previewExpanded) return undefined;
+    if (!previewExpanded && !showInlinePreviewSidebar) return undefined;
     let frame = 0;
     const updatePageCount = () => {
       setPreviewPageCount(Math.max(1, document.querySelectorAll("[data-preview-page-index]").length));
@@ -418,7 +434,7 @@ export function ConvertPage() {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [previewExpanded, markdown, previewStyleConfig, previewZoom]);
+  }, [previewExpanded, markdown, previewStyleConfig, previewZoom, showInlinePreviewSidebar]);
 
   useEffect(() => {
     const version = ++previewStyleVersionRef.current;
@@ -697,6 +713,13 @@ export function ConvertPage() {
     const move = (moveEvent: PointerEvent) => {
       const nextWidth = baseWidth - (moveEvent.clientX - origin);
 
+      if (!collapsedDuringDrag && nextWidth >= rect.width - editorMinWidth) {
+        previewExpandedFromNarrowRef.current = false;
+        setPreviewExpanded(true);
+        stop();
+        return;
+      }
+
       if (!collapsedDuringDrag && nextWidth <= previewMinWidth - RESIZABLE_PANEL_COLLAPSE_THRESHOLD) {
         setPreviewWidth(previewMinWidth);
         collapsedDuringDrag = true;
@@ -715,7 +738,7 @@ export function ConvertPage() {
 
       if (collapsedDuringDrag) return;
 
-      const maxWidth = Math.max(previewMinWidth, rect.width - 6);
+      const maxWidth = Math.max(previewMinWidth, rect.width - editorMinWidth - 5);
       setPreviewWidth(Math.min(maxWidth, Math.max(previewMinWidth, Math.round(nextWidth))));
     };
     const stop = () => {
@@ -728,8 +751,7 @@ export function ConvertPage() {
     window.addEventListener("pointercancel", stop);
   }
 
-  function handleExpandedSidebarResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
-    const container = expandedPreviewRef.current;
+  function handlePreviewSidebarResizeStart(event: ReactPointerEvent<HTMLDivElement>, container: HTMLDivElement | null) {
     if (!container) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -888,22 +910,10 @@ export function ConvertPage() {
 
   if (previewExpanded) {
     return (
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-zinc-800">
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-black tracking-[-0.02em] text-slate-950 dark:text-zinc-50">Word 预览</h2>
-            <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-8 rounded-[10px]" onClick={() => setPreviewExpanded(false)}>
-              <ArrowLeft className="size-4" />
-              返回转换页
-            </Button>
-          </div>
-        </header>
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div
           ref={expandedPreviewRef}
-          className="grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)] gap-0 bg-slate-50/80 p-[5px] dark:bg-zinc-900/70 max-[900px]:!grid-cols-1"
+          className="grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)] gap-0 max-[900px]:!grid-cols-1"
           style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
         >
           <WordPreviewSidebar
@@ -916,7 +926,7 @@ export function ConvertPage() {
           />
           <div
             className="group flex cursor-col-resize items-center justify-center max-[900px]:hidden"
-            onPointerDown={handleExpandedSidebarResizeStart}
+            onPointerDown={(event) => handlePreviewSidebarResizeStart(event, expandedPreviewRef.current)}
             role="separator"
             aria-label="调整预览导航宽度"
             aria-orientation="vertical"
@@ -930,7 +940,7 @@ export function ConvertPage() {
             styleConfig={previewStyleConfig}
             zoom={previewZoom}
             setZoom={setPreviewZoom}
-            onExpand={() => undefined}
+            onToggleExpanded={() => { previewExpandedFromNarrowRef.current = false; setPreviewExpanded(false); }}
             onOpenAdvancedStyle={() => setExpandedStyleEditorOpen(true)}
             expanded
             showTocPage
@@ -942,7 +952,7 @@ export function ConvertPage() {
             previewClassName="h-full"
           />
         </div>
-        {renderConvertFooter("shrink-0 rounded-none border-x-0 border-b-0")}
+        {renderConvertFooter("mt-[5px] shrink-0")}
       </div>
     );
   }
@@ -1019,15 +1029,15 @@ export function ConvertPage() {
         </DialogContent>
       </Dialog>
 
-    <div className={cn("grid h-full min-h-0 flex-1 gap-[5px] overflow-hidden", showBottomFooter ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]")}>
+    <div className="grid h-full min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-[5px] overflow-hidden">
       <div
         ref={splitPaneRef}
-        className="grid min-h-0 min-w-0 gap-0 overflow-hidden max-[1100px]:flex max-[1100px]:min-h-0 max-[1100px]:flex-col max-[1100px]:overflow-y-auto max-[1100px]:overflow-x-hidden max-[1100px]:pb-3"
-        style={{ gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : showPreviewPanel ? `minmax(0,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` : "minmax(0,1fr) 5px" }}
+        className="grid min-h-0 min-w-0 gap-0 overflow-hidden"
+        style={{ gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : showPreviewPanel ? `minmax(${editorMinWidth}px,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` : "minmax(0,1fr) 5px" }}
       >
-        <div className="min-h-0 min-w-0 overflow-hidden max-[1100px]:min-h-[420px] max-[1100px]:shrink-0 max-[760px]:min-h-[320px]">
+        <div className="min-h-0 min-w-0 overflow-hidden">
           <ConversionInputCard
-            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={() => setPreviewVisible(!previewVisible)} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} />}
+            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} />}
             hasDocument={Boolean(activeTab)}
             markdown={markdown}
             documentKey={documentKey}
@@ -1057,18 +1067,48 @@ export function ConvertPage() {
               <span className="h-16 w-1 rounded-full bg-transparent" />
             </div>
 
-            <ConvertPreviewPanel
-              markdown={deferredPreviewMarkdown}
-              markdownSourcePath={markdownSourcePath}
-              outputName={outputName}
-              styleConfig={previewStyleConfig}
-              zoom={previewZoom}
-              setZoom={setPreviewZoom}
-              onExpand={() => setPreviewExpanded(true)}
-              footer={renderConvertFooter("shrink-0 rounded-none border-x-0 border-b-0 px-0 pb-0", true)}
-              onOpenLink={(target) => void handleOpenLink(target)}
-              className="min-h-0 min-w-0"
-            />
+            <div
+              className={cn("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-0 overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)]" : "grid-cols-1")}
+              style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
+            >
+              {showInlinePreviewSidebar ? (
+                <>
+                  <WordPreviewSidebar
+                    activeView={previewSidebarView}
+                    headings={previewOutline}
+                    pageCount={previewPageCount}
+                    onViewChange={openPreviewSidebarView}
+                    onHeadingJump={scrollToPreviewHeading}
+                    onThumbnailContainerChange={setPreviewThumbnailContainer}
+                  />
+                  <div
+                    className="group flex min-h-0 cursor-col-resize items-center justify-center"
+                    onPointerDown={(event) => handlePreviewSidebarResizeStart(event, event.currentTarget.parentElement as HTMLDivElement | null)}
+                    role="separator"
+                    aria-label="调整预览导航宽度"
+                    aria-orientation="vertical"
+                  >
+                    <span className="h-10 w-1 rounded-full bg-slate-300/75 transition group-hover:h-16 group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
+                  </div>
+                </>
+              ) : null}
+              <ConvertPreviewPanel
+                markdown={deferredPreviewMarkdown}
+                markdownSourcePath={markdownSourcePath}
+                outputName={outputName}
+                styleConfig={previewStyleConfig}
+                zoom={previewZoom}
+                setZoom={setPreviewZoom}
+                onToggleExpanded={() => { previewExpandedFromNarrowRef.current = false; setPreviewExpanded(true); }}
+                onOpenAdvancedStyle={() => setExpandedStyleEditorOpen(true)}
+                thumbnailContainer={showInlinePreviewSidebar ? previewThumbnailContainer : null}
+                onThumbnailPageSelect={showInlinePreviewSidebar ? scrollToPreviewPage : undefined}
+                onPreviewOutlineChange={showInlinePreviewSidebar ? setPreviewOutline : undefined}
+                onOpenLink={(target) => void handleOpenLink(target)}
+                className="min-h-0 min-w-0"
+              />
+              {renderConvertFooter("col-span-full shrink-0 rounded-none border-x-0 border-b-0", stackInlinePreviewFooter)}
+            </div>
           </>
         ) : !isNarrow ? (
           <div
@@ -1079,8 +1119,6 @@ export function ConvertPage() {
           />
         ) : null}
       </div>
-
-      {showBottomFooter ? renderConvertFooter() : null}
 
     </div>
     </>
@@ -1099,7 +1137,7 @@ function ConvertPreviewPanel({
   styleConfig,
   zoom,
   setZoom,
-  onExpand,
+  onToggleExpanded,
   footer,
   onOpenAdvancedStyle,
   expanded = false,
@@ -1117,7 +1155,7 @@ function ConvertPreviewPanel({
   styleConfig: TemplateStyleConfig;
   zoom: number;
   setZoom: (value: number | ((current: number) => number)) => void;
-  onExpand: () => void;
+  onToggleExpanded: () => void;
   /// 导出区：模板、输出目录、文件名、转换按钮。挂在面板底部而不是页面底部，
   /// 编辑区因此能拿到完整高度。
   footer?: ReactNode;
@@ -1176,11 +1214,11 @@ function ConvertPreviewPanel({
           <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} tooltip="放大预览" aria-label="放大预览">
             <ZoomIn className="size-3.5 text-slate-500 dark:text-zinc-400" />
           </TooltipButton>
-          {!expanded ? (
-            <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={onExpand} tooltip="放大查看" aria-label="放大查看">
-              <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-            </TooltipButton>
-          ) : null}
+          <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={onToggleExpanded} tooltip={expanded ? "缩小还原" : "放大查看"} aria-label={expanded ? "缩小还原" : "放大查看"}>
+            {expanded
+              ? <Minimize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
+              : <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />}
+          </TooltipButton>
         </div>
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
@@ -1210,7 +1248,7 @@ function ConvertPreviewPanel({
           <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => void copyPreviewMarkdown()} disabled={!markdown.trim()}>复制 Markdown</ContextMenu.Item>
           <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => setZoom(40)} disabled={zoom === 40}>重置预览缩放</ContextMenu.Item>
           {onOpenAdvancedStyle ? <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onOpenAdvancedStyle}>打开高级样式</ContextMenu.Item> : null}
-          {!expanded ? <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onExpand}>放大查看预览</ContextMenu.Item> : null}
+          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onToggleExpanded}>{expanded ? "缩小还原预览" : "放大查看预览"}</ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
@@ -1259,7 +1297,7 @@ function WordPreviewSidebar({
   }
 
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:max-h-[220px]">
+    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 max-[900px]:hidden">
       <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-[8px] bg-slate-100 p-0.5 dark:bg-zinc-900">
         <button
           type="button"
