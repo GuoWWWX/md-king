@@ -2549,7 +2549,8 @@ select {
     background: rgba(100, 116, 139, 0.5);
   }
 
-  .dark .mk-cm-bullet {
+  .dark .mk-cm-bullet,
+  .dark .mk-cm-ordered-marker {
     color: #93c5fd !important;
   }
 

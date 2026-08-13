@@ -12,7 +12,7 @@ import {
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
-import { selectionTouches, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
+import { selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
 import { BulletWidget, CopyCodeWidget, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
@@ -64,21 +64,16 @@ type DecorationCollector = {
   readonly atomics: Range<Decoration>[];
 };
 
-function touches(collector: DecorationCollector, from: number, to: number): boolean {
-  return collector.focused && selectionTouches(collector.state, from, to);
-}
-
 // 列表标记和复选框专用：pad 不跨行，避免光标停在上一行末尾误触发下一行源码展开。
 function touchesSameLine(collector: DecorationCollector, from: number, to: number): boolean {
   return collector.focused && selectionTouchesOnSameLine(collector.state, from, to);
 }
 
-// 链接是可点击操作，不能像粗体等内联语法一样把相邻的光标边界也算作命中。
-// 否则点击链接前后的空白，会错误地把整条链接展开为源码。
+// 链接允许光标停在源码起止边界时展开，但不向外扩字符。
+// CodeMirror 会把可见链接文字末端的光标吸附到整个 Link 节点的末端；若用严格不等式，
+// 用户看到光标紧贴链接，源码却仍被隐藏。限制在同一行可避免影响下一行。
 function cursorInside(collector: DecorationCollector, from: number, to: number): boolean {
-  return collector.focused && collector.state.selection.ranges.some(
-    (range) => range.from === range.to && range.head > from && range.head < to,
-  );
+  return collector.focused && selectionTouchesOnSameLine(collector.state, from, to, 0);
 }
 
 // 选区跨行时只在光标（head）所在行展开源码，其他行保持渲染态。
@@ -189,7 +184,7 @@ function handleInlineWrapper(
   className: string,
 ): void {
   addMark(collector, ref.from, ref.to, className);
-  if (touches(collector, ref.from, ref.to)) return;
+  if (touchesSameLine(collector, ref.from, ref.to)) return;
   for (const mark of childrenOfType(ref.node, markType)) {
     hide(collector, mark.from, mark.to);
   }
@@ -278,7 +273,7 @@ function addFallbackSourceList(collector: DecorationCollector, lineFrom: number)
   const state = collector.state;
   const line = state.doc.lineAt(lineFrom);
   if (insideFencedCode(state, line.from)) return;
-  const sourceList = parseMarkdownSourceListLine(line.text);
+  const sourceList = parseMarkdownSourceListLine(line.text, true);
   if (!sourceList) return;
   const markerFrom = line.from + sourceList.markerFrom;
   const markerTo = line.from + sourceList.markerTo;

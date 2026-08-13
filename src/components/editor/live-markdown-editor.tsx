@@ -1,6 +1,5 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
-import { syntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
 import { closeSearchPanel, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
@@ -10,6 +9,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 
 import { cn } from "@/lib/utils";
 import { livePreviewPlugin, mermaidBlockExtension, tableBlockExtension } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
+import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
 import { markdownEditorTheme } from "./cm/theme";
 
@@ -44,90 +44,11 @@ export type LiveMarkdownEditorHandle = {
 /** 标记「这次改动来自外部载入而非用户输入」，避免把程序化替换误报成脏数据。 */
 const externalUpdate = Annotation.define<boolean>();
 const linkInteractionVersion = "strict-hitbox-v4";
-const adjacentLinkSourceHitboxPx = 8;
 
 function docChangeDebounceMs(length: number): number {
   if (length >= 300_000) return 700;
   if (length >= 80_000) return 400;
   return 200;
-}
-
-function clickedLinkTarget(event: MouseEvent): string | undefined {
-  if (!(event.target instanceof Element)) return undefined;
-  const element = event.target.closest<HTMLElement>("[data-mk-link-target]");
-  const target = element?.dataset.mkLinkTarget;
-  if (!element || !target) return undefined;
-
-  const rect = element.getBoundingClientRect();
-  const inside = event.clientX >= rect.left
-    && event.clientX <= rect.right
-    && event.clientY >= rect.top
-    && event.clientY <= rect.bottom;
-  return inside ? target : undefined;
-}
-
-function linkAtPosition(view: EditorView, position: number) {
-  for (const bias of [-1, 1] as const) {
-    let node = syntaxTree(view.state).resolveInner(position, bias);
-    while (node.parent && node.name !== "Link" && node.name !== "Autolink") node = node.parent;
-    if (node.name !== "Link" && node.name !== "Autolink") continue;
-    const url = node.getChild("URL");
-    const target = url ? view.state.doc.sliceString(url.from, url.to).trim() : "";
-    if (target) return { from: node.from, to: node.to, target };
-  }
-  return undefined;
-}
-
-function linksOnLineWithTarget(view: EditorView, position: number, target: string) {
-  const line = view.state.doc.lineAt(position);
-  const matches: Array<NonNullable<ReturnType<typeof linkAtPosition>>> = [];
-  syntaxTree(view.state).iterate({
-    from: line.from,
-    to: line.to,
-    enter: (node) => {
-      if (node.name !== "Link" && node.name !== "Autolink") return undefined;
-      const url = node.node.getChild("URL");
-      const nodeTarget = url ? view.state.doc.sliceString(url.from, url.to).trim() : "";
-      if (nodeTarget !== target) return false;
-      matches.push({ from: node.from, to: node.to, target });
-      return false;
-    },
-  });
-  return matches;
-}
-
-function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent): boolean {
-  const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
-  if (position === null) return false;
-  const domLine = event.target instanceof Element ? event.target.closest(".cm-line") : null;
-  if (!domLine) return false;
-  const renderedElements = Array.from(domLine.querySelectorAll<HTMLElement>("[data-mk-link-target]"));
-  const nearbyElement = renderedElements.find((element) => {
-    const rect = element.getBoundingClientRect();
-    const beside = event.clientX >= rect.left - adjacentLinkSourceHitboxPx
-      && event.clientX <= rect.right + adjacentLinkSourceHitboxPx;
-    return beside && event.clientY >= rect.top && event.clientY <= rect.bottom;
-  });
-  const nearbyTarget = nearbyElement?.dataset.mkLinkTarget;
-  if (!nearbyTarget) return false;
-
-  const sameTargetElements = renderedElements.filter((element) => element.dataset.mkLinkTarget === nearbyTarget);
-  const renderedLinkIndex = Math.floor(sameTargetElements.indexOf(nearbyElement) / 2);
-  const link = linkAtPosition(view, position) ?? linksOnLineWithTarget(view, position, nearbyTarget)[renderedLinkIndex];
-  if (!link || link.target !== nearbyTarget) return false;
-  const renderedParts = sameTargetElements
-    .slice(renderedLinkIndex * 2, renderedLinkIndex * 2 + 2)
-    .map((element) => element.getBoundingClientRect());
-  if (renderedParts.length === 0) return false;
-
-  const left = Math.min(...renderedParts.map((rect) => rect.left));
-  const right = Math.max(...renderedParts.map((rect) => rect.right));
-  if (event.clientX > left && event.clientX < right) return false;
-  const sourcePosition = event.clientX < left ? link.from + 1 : link.to - 1;
-  event.preventDefault();
-  view.dispatch({ selection: { anchor: sourcePosition } });
-  view.focus();
-  return true;
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
@@ -164,24 +85,9 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
 
-  const createLinkInteractionExtension = useCallback(() => EditorView.domEventHandlers({
-    mousedown: (event, view) => {
-      if (!openLinksOnClickRef.current) return false;
-      const linkTarget = clickedLinkTarget(event);
-      if (linkTarget) {
-        event.preventDefault();
-        return true;
-      }
-      return placePointerInsideHiddenLinkSource(view, event);
-    },
-    click: (event) => {
-      if (!openLinksOnClickRef.current && !event.ctrlKey && !event.metaKey) return false;
-      const linkTarget = clickedLinkTarget(event);
-      if (!linkTarget) return false;
-      event.preventDefault();
-      onOpenLinkRef.current?.(linkTarget);
-      return true;
-    },
+  const createLinkInteractionExtension = useCallback(() => markdownLinkInteractionExtension({
+    openLinksOnClick: () => openLinksOnClickRef.current,
+    onOpenLink: (target) => onOpenLinkRef.current?.(target),
   }), [linkInteractionVersion]);
 
   useImperativeHandle(

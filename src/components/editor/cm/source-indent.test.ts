@@ -30,6 +30,16 @@ test("识别不依赖上下文的四空格有序与无序列表", () => {
     order: 12,
   });
   assert.equal(parseMarkdownSourceListLine("- 顶层列表"), null);
+  assert.equal(parseMarkdownSourceListLine("a. 顶层英文列表"), null);
+  assert.deepEqual(parseMarkdownSourceListLine("a. 顶层英文列表", true), {
+    indentLength: 0,
+    level: 0,
+    markerFrom: 0,
+    markerTo: 2,
+    marker: "a.",
+    ordered: true,
+    order: 0,
+  });
   assert.deepEqual(parseMarkdownSourceListLine("    b. 英文列表"), {
     indentLength: 4,
     level: 1,
@@ -40,6 +50,7 @@ test("识别不依赖上下文的四空格有序与无序列表", () => {
     order: 0,
   });
   assert.equal(parseMarkdownSourceListLine("    普通缩进正文"), null);
+  assert.equal(parseMarkdownSourceListLine("    Note. 普通句子"), null);
 });
 
 test("视觉缩进限制为六级但不修改原始文本", () => {

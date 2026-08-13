@@ -27,12 +27,12 @@ export function markdownSourceIndentClass(line: string): string {
   return level > 0 ? `mk-cm-source-indent-${level}` : "";
 }
 
-export function parseMarkdownSourceListLine(line: string): MarkdownSourceListLine | null {
+export function parseMarkdownSourceListLine(line: string, allowUnindented = false): MarkdownSourceListLine | null {
   const indentLength = markdownSourceIndentLength(line);
-  if (indentLength === 0) return null;
+  if (indentLength === 0 && !allowUnindented) return null;
   const rest = line.slice(indentLength);
   const unordered = /^[-+*](?=[ \t]+)/.exec(rest);
-  const ordered = /^(?:(?:\d{1,9})|(?:[A-Za-z]+))[.)](?=[ \t]+)/.exec(rest);
+  const ordered = /^(?:(?:\d{1,9})|(?:[A-Za-z]))[.)](?=[ \t]+)/.exec(rest);
   const marker = unordered ?? ordered;
   if (!marker) return null;
   return {

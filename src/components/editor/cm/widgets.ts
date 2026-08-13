@@ -371,11 +371,19 @@ export class TableWidget extends WidgetType {
     };
     let dirty = false;
     const composition = new TableCellCompositionGuard();
+    const animationFrameIds = new Set<number>();
+    const scheduleFrame = (callback: FrameRequestCallback) => {
+      const id = requestAnimationFrame((time) => {
+        animationFrameIds.delete(id);
+        callback(time);
+      });
+      animationFrameIds.add(id);
+    };
     let active: { row: number; column: number } | null = null;
     let selection: TableSelection | null = null;
 
     const focusCell = (row: number, column: number) => {
-      requestAnimationFrame(() => {
+      scheduleFrame(() => {
         const current = view.dom.querySelector<HTMLInputElement>(
           `.mk-cm-table-wrapper[data-table-from="${this.tableFrom}"] .mk-cm-table-input[data-table-row="${row}"][data-table-column="${column}"]`,
         );
@@ -1008,6 +1016,8 @@ export class TableWidget extends WidgetType {
     this.cleanups.set(wrapper, () => {
       closeContextMenu();
       clearDragPreview();
+      animationFrameIds.forEach((id) => cancelAnimationFrame(id));
+      animationFrameIds.clear();
       dragHandleResizeObserver.disconnect();
       columnDragHandles.forEach((_, column) => {
         const pending = columnHandleHideTimers.get(column);
@@ -1207,7 +1217,7 @@ export class TableWidget extends WidgetType {
     wrapper.append(tableScroll, columnDragLayer, rowDragLayer);
     tableScroll.addEventListener("scroll", positionDragHandles);
     dragHandleResizeObserver.observe(wrapper);
-    requestAnimationFrame(positionDragHandles);
+    scheduleFrame(positionDragHandles);
     return wrapper;
   }
 
