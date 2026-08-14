@@ -1,9 +1,11 @@
-import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Shrink, StretchHorizontal, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { AlignCenter, AlignJustify, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
-import { ConversionInputCard } from "@/components/convert/conversion-input-card";
+import { ConversionInputCard, type ConversionInputCardHandle } from "@/components/convert/conversion-input-card";
+import type { TableDisplayContext, TableWidthMode } from "@/components/editor/live-markdown-editor";
+import { TableWidthModeIcon } from "@/components/editor/table-width-mode-icon";
 import { RESIZABLE_PANEL_COLLAPSE_THRESHOLD } from "@/components/layout/resizable-divider";
 import { TemplateStyleManager } from "@/components/templates/template-style-manager";
 import { WordPreviewPage, type PreviewOutlineItem } from "@/components/templates/word-preview-page";
@@ -67,9 +69,11 @@ type DocumentInfoBarProps = {
   onToggleReadingMode: () => void;
   compactMode: boolean;
   onToggleCompactMode: () => void;
+  tableDisplayContext: TableDisplayContext;
+  onTableWidthModeChange: (mode: TableWidthMode) => void;
 };
 
-function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode, compactMode, onToggleCompactMode }: DocumentInfoBarProps) {
+function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode, compactMode, onToggleCompactMode, tableDisplayContext, onTableWidthModeChange }: DocumentInfoBarProps) {
   const pathParts = (tab?.path ?? "").split(/[\\/]/).filter(Boolean);
   const crumbs = pathParts.length > 0
     ? pathParts.map((part, index) => ({
@@ -80,6 +84,12 @@ function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave
       ? [{ label: stripMarkdownExtension(tab.title), path: "" }]
       : [];
   const canLocate = tab?.kind === "vault" && Boolean(tab.path);
+  const tableWidthScope = tableDisplayContext.tableFrom === null ? "全部表格" : "当前表格";
+  const currentTableWidthModeLabel = tableDisplayContext.widthMode === "window" ? "根据窗口调整布局" : "根据内容调整布局";
+  const nextTableWidthMode: TableWidthMode = tableDisplayContext.widthMode === "content" ? "window" : "content";
+  const nextTableWidthModeLabel = nextTableWidthMode === "window" ? "根据窗口调整布局" : "根据内容调整布局";
+  const tableWidthTooltip = `当前：${currentTableWidthModeLabel}；点击切换为${nextTableWidthModeLabel}（${tableWidthScope}）`;
+  const tableWidthButtonClass = "size-7 rounded-[4px] border-0 bg-transparent p-0 text-slate-500 shadow-none hover:bg-transparent hover:text-slate-900 active:bg-transparent dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100";
 
   return (
     <div className="flex h-8 shrink-0 min-w-0 items-center gap-1.5 border-b border-slate-200 pl-3 pr-1.5 text-xs dark:border-zinc-800">
@@ -109,26 +119,35 @@ function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave
         <span className="truncate text-slate-400 dark:text-zinc-500">选择或导入 Markdown 文档</span>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        {tab ? (
+          <div data-mk-table-width-controls className="mr-1 flex items-center gap-0.5 border-r border-slate-200 pr-1.5 dark:border-zinc-800">
+            <TooltipButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className={tableWidthButtonClass}
+              aria-label={tableWidthTooltip}
+              tooltip={tableWidthTooltip}
+              onClick={() => onTableWidthModeChange(nextTableWidthMode)}
+            >
+              <TableWidthModeIcon mode={tableDisplayContext.widthMode} className="size-4" />
+            </TooltipButton>
+          </div>
+        ) : null}
         <Button type="button" variant="ghost" size="icon-xs" className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-transparent hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100" title={readingMode ? "编辑模式" : "阅读模式"} aria-label={readingMode ? "编辑模式" : "阅读模式"} aria-pressed={readingMode} onClick={onToggleReadingMode}>
           {readingMode ? <PenLine className="size-3.5" /> : <BookOpen className="size-3.5" />}
         </Button>
-        <Button
+        <TooltipButton
           type="button"
           variant="ghost"
           size="icon-xs"
-          className={cn(
-            "size-7 rounded-[4px] border-0 p-0 shadow-none",
-            compactMode
-              ? "bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600 dark:hover:text-white"
-              : "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
-          )}
-          title={compactMode ? "切换到展开模式" : "切换到紧凑模式"}
-          aria-label={compactMode ? "切换到展开模式" : "切换到紧凑模式"}
-          aria-pressed={compactMode}
+          className="size-7 rounded-[4px] border-0 bg-transparent p-0 text-slate-500 shadow-none hover:bg-transparent hover:text-slate-900 active:bg-transparent dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
+          tooltip={compactMode ? "当前：紧凑排版；点击切换为展开排版" : "当前：展开排版；点击切换为紧凑排版"}
+          aria-label={compactMode ? "当前：紧凑排版；点击切换为展开排版" : "当前：展开排版；点击切换为紧凑排版"}
           onClick={onToggleCompactMode}
         >
-          {compactMode ? <StretchHorizontal className="size-3.5" /> : <Shrink className="size-3.5" />}
-        </Button>
+          {compactMode ? <AlignCenter className="size-3.5" /> : <AlignJustify className="size-3.5" />}
+        </TooltipButton>
         <Button
           type="button"
           variant="ghost"
@@ -232,6 +251,13 @@ export function ConvertPage() {
       return false;
     }
   });
+  const conversionInputRef = useRef<ConversionInputCardHandle>(null);
+  const [globalTableWidthMode, setGlobalTableWidthMode] = useState<TableWidthMode>("content");
+  const [tableDisplayContext, setTableDisplayContext] = useState<TableDisplayContext>({
+    tableFrom: null,
+    widthMode: "content",
+    scope: "global",
+  });
 
   function toggleCompactMode() {
     setCompactMode((current) => {
@@ -243,6 +269,13 @@ export function ConvertPage() {
       }
       return next;
     });
+  }
+
+  function handleTableWidthModeChange(mode: TableWidthMode) {
+    const tableFrom = tableDisplayContext.tableFrom;
+    if (tableFrom === null) setGlobalTableWidthMode(mode);
+    const nextContext = conversionInputRef.current?.setTableWidthMode(mode, tableFrom);
+    if (nextContext) setTableDisplayContext(nextContext);
   }
 
   function handleTogglePreview() {
@@ -1076,7 +1109,8 @@ export function ConvertPage() {
       >
         <div className="min-h-0 min-w-0 overflow-hidden">
           <ConversionInputCard
-            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} compactMode={compactMode} onToggleCompactMode={toggleCompactMode} />}
+            ref={conversionInputRef}
+            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} compactMode={compactMode} onToggleCompactMode={toggleCompactMode} tableDisplayContext={tableDisplayContext} onTableWidthModeChange={handleTableWidthModeChange} />}
             hasDocument={Boolean(activeTab)}
             markdown={markdown}
             documentKey={documentKey}
@@ -1093,6 +1127,8 @@ export function ConvertPage() {
             readingMode={readingMode}
             compactMode={compactMode}
             onOpenLink={(target) => void handleOpenLink(target)}
+            tableDefaultWidthMode={globalTableWidthMode}
+            onTableContextChange={setTableDisplayContext}
           />
         </div>
 

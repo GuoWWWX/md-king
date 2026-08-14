@@ -21,10 +21,10 @@ import {
   Rows3,
   Scissors,
   Trash2,
-  WrapText,
   type LucideIcon,
 } from "lucide-react";
 import { markdownCalloutIcon } from "@/components/markdown-callout-icon";
+import { TableWidthModeIcon } from "@/components/editor/table-width-mode-icon";
 import type { MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
@@ -37,12 +37,14 @@ import {
   serializeMarkdownTable,
   tableOperationFocus,
   tableSelectionBounds,
+  tableSelectionCoversWholeTable,
   tableSelectionToTsv,
   type MarkdownTable,
   type TableOperation,
   type TableSelection,
 } from "./markdown-table";
 import { TableCellCompositionGuard } from "./table-cell-edit";
+import { setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./table-display-settings";
 import { renderTableInlineMarkdown } from "./table-inline-renderer";
 
 const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
@@ -288,6 +290,10 @@ function iconMarkup(icon: LucideIcon): string {
   return renderToStaticMarkup(createElement(icon, { size: 14, strokeWidth: 2 }));
 }
 
+function tableWidthModeIconMarkup(mode: TableWidthMode): string {
+  return renderToStaticMarkup(createElement(TableWidthModeIcon, { mode, width: 16, height: 16 }));
+}
+
 export class MarkdownLinkIconWidget extends WidgetType {
   constructor(
     private readonly kind: "external" | "document",
@@ -354,6 +360,8 @@ export class TableWidget extends WidgetType {
     private readonly source: string,
     private readonly tableFrom: number,
     private readonly tableTo: number,
+    private readonly widthMode: TableWidthMode,
+    private readonly documentSelected: boolean,
   ) {
     super();
   }
@@ -361,15 +369,26 @@ export class TableWidget extends WidgetType {
   eq(other: TableWidget): boolean {
     return other.source === this.source
       && other.tableFrom === this.tableFrom
-      && other.tableTo === this.tableTo;
+      && other.tableTo === this.tableTo
+      && other.widthMode === this.widthMode
+      && other.documentSelected === this.documentSelected;
   }
 
   toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "mk-cm-table-wrapper";
+    wrapper.classList.toggle("is-document-selected", this.documentSelected);
     wrapper.dataset.tableFrom = String(this.tableFrom);
     wrapper.tabIndex = 0;
     wrapper.addEventListener("pointerdown", (event) => event.stopPropagation());
+    const announceTableContext = () => {
+      (view.dom.parentElement ?? view.dom).dispatchEvent(new CustomEvent(tableContextChangeEvent, {
+        bubbles: true,
+        detail: { tableFrom: this.tableFrom },
+      }));
+    };
+    wrapper.addEventListener("pointerdown", announceTableContext, true);
+    wrapper.addEventListener("focusin", announceTableContext);
 
     let draft: MarkdownTable = {
       rows: this.model.rows.map((row) => [...row]),
@@ -388,7 +407,7 @@ export class TableWidget extends WidgetType {
     let active: { row: number; column: number } | null = null;
     let selection: TableSelection | null = null;
     // 默认按表格内容收缩，避免只有少量列时无意义地铺满编辑区。
-    let wrapsContent = true;
+    let wrapsContent = this.widthMode === "content";
 
     const focusCell = (row: number, column: number) => {
       scheduleFrame(() => {
@@ -523,14 +542,14 @@ export class TableWidget extends WidgetType {
       focusCell(nextFocus.row, nextFocus.column);
     };
 
-    const makeButton = (label: string, icon: LucideIcon, onClick: () => void, disabled = false) => {
+    const makeButton = (label: string, icon: LucideIcon | string, onClick: () => void, disabled = false) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "mk-table-tool-button";
       button.dataset.tooltip = label;
       button.setAttribute("aria-label", label);
       button.disabled = disabled;
-      button.innerHTML = iconMarkup(icon);
+      button.innerHTML = typeof icon === "string" ? icon : iconMarkup(icon);
       button.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -548,7 +567,7 @@ export class TableWidget extends WidgetType {
     toolbar.setAttribute("role", "toolbar");
     toolbar.setAttribute("aria-label", "表格操作");
 
-    const sourceButton = makeButton("编辑 Markdown 源码", Code2, () => {
+    const showTableSource = () => {
       const insert = serializeMarkdownTable(draft);
       view.dispatch({
         changes: dirty && insert !== this.source
@@ -559,7 +578,8 @@ export class TableWidget extends WidgetType {
         scrollIntoView: true,
       });
       view.focus();
-    });
+    };
+    const sourceButton = makeButton("编辑 Markdown 源码", Code2, showTableSource);
     toolbar.append(sourceButton);
 
     const columnTools = document.createElement("div");
@@ -617,19 +637,27 @@ export class TableWidget extends WidgetType {
     );
     const toolbarEnd = document.createElement("div");
     toolbarEnd.className = "mk-table-toolbar-end";
-    const wrapButton = makeButton("根据窗口适配表格宽度", WrapText, () => {
-      wrapsContent = !wrapsContent;
+    const currentTableWidthMode = () => wrapsContent ? "content" : "window";
+    const nextTableWidthMode = () => currentTableWidthMode() === "content" ? "window" : "content";
+    const currentTableWidthModeLabel = () => currentTableWidthMode() === "window" ? "根据窗口调整布局" : "根据内容调整布局";
+    const nextTableWidthModeLabel = () => nextTableWidthMode() === "window" ? "根据窗口调整布局" : "根据内容调整布局";
+    const tableWidthModeTooltip = () => `当前：${currentTableWidthModeLabel()}；点击切换为${nextTableWidthModeLabel()}`;
+    const wrapButton = makeButton(tableWidthModeTooltip(), tableWidthModeIconMarkup(currentTableWidthMode()), () => {
+      const nextMode = nextTableWidthMode();
+      wrapsContent = nextMode === "content";
       wrapper.classList.toggle("is-wrap", wrapsContent);
-      wrapButton.classList.toggle("is-active", wrapsContent);
-      wrapButton.setAttribute("aria-pressed", String(wrapsContent));
-      const label = wrapsContent ? "根据窗口适配表格宽度" : "根据内容适配表格宽度";
+      const label = tableWidthModeTooltip();
       wrapButton.dataset.tooltip = label;
       wrapButton.setAttribute("aria-label", label);
+      wrapButton.innerHTML = tableWidthModeIconMarkup(currentTableWidthMode());
+      view.dispatch({
+        effects: setTableWidthModeEffect.of({ scope: "table", tableFrom: this.tableFrom, mode: nextMode }),
+      });
+      announceTableContext();
       scheduleFrame(positionDragHandles);
     });
-    wrapper.classList.add("is-wrap");
-    wrapButton.classList.add("is-active");
-    wrapButton.setAttribute("aria-pressed", "true");
+    wrapButton.classList.add("mk-table-width-mode-button");
+    wrapper.classList.toggle("is-wrap", wrapsContent);
     toolbarEnd.append(wrapButton);
     toolbar.append(columnTools, rowTools, toolbarEnd);
     refreshToolbar();
@@ -726,6 +754,18 @@ export class TableWidget extends WidgetType {
     const selectionOrigin = () => {
       const bounds = tableSelectionBounds(draft, selected());
       return { row: bounds.top, column: bounds.left };
+    };
+    const selectionIsWholeTable = () => tableSelectionCoversWholeTable(draft, selected());
+    const selectionClipboardText = () => selectionIsWholeTable()
+      ? serializeMarkdownTable(draft)
+      : tableSelectionToTsv(draft, selected());
+    const removeWholeTable = () => {
+      view.dispatch({
+        changes: { from: this.tableFrom, to: this.tableTo, insert: "" },
+        selection: { anchor: this.tableFrom },
+        scrollIntoView: true,
+      });
+      view.focus();
     };
     const replaceTable = (next: MarkdownTable, nextSelection?: TableSelection) => {
       draft = next;
@@ -912,10 +952,14 @@ export class TableWidget extends WidgetType {
       wrapper.focus({ preventScroll: true });
     };
     const copySelection = async () => {
-      await navigator.clipboard.writeText(tableSelectionToTsv(draft, selected()));
+      await navigator.clipboard.writeText(selectionClipboardText());
     };
     const cutSelection = async () => {
       await copySelection();
+      if (selectionIsWholeTable()) {
+        removeWholeTable();
+        return;
+      }
       replaceTable(clearTableSelection(draft, selected()), selected());
     };
     const pasteSelection = async () => {
@@ -1014,12 +1058,16 @@ export class TableWidget extends WidgetType {
     wrapper.addEventListener("copy", (event) => {
       if (hasNativeInputSelection(event)) return;
       event.preventDefault();
-      event.clipboardData?.setData("text/plain", tableSelectionToTsv(draft, selected()));
+      event.clipboardData?.setData("text/plain", selectionClipboardText());
     });
     wrapper.addEventListener("cut", (event) => {
       if (hasNativeInputSelection(event)) return;
       event.preventDefault();
-      event.clipboardData?.setData("text/plain", tableSelectionToTsv(draft, selected()));
+      event.clipboardData?.setData("text/plain", selectionClipboardText());
+      if (selectionIsWholeTable()) {
+        removeWholeTable();
+        return;
+      }
       replaceTable(clearTableSelection(draft, selected()), selected());
     });
     wrapper.addEventListener("paste", (event) => {
@@ -1044,12 +1092,13 @@ export class TableWidget extends WidgetType {
       const target = event.target;
       if (!(target instanceof Node)) return;
       const insideContextMenu = Boolean(contextMenu?.contains(target));
+      const insideTableWidthControls = target instanceof Element
+        && Boolean(target.closest("[data-mk-table-width-controls]"));
       if (contextMenu && !insideContextMenu) closeContextMenu();
-      if (!wrapper.contains(target) && !insideContextMenu) {
+      if (!wrapper.contains(target) && !insideContextMenu && !insideTableWidthControls) {
         clearSelection();
-        if (document.activeElement instanceof HTMLInputElement && wrapper.contains(document.activeElement)) {
-          document.activeElement.blur();
-        }
+        // 此时仍处在 pointerdown 捕获阶段。提前 blur/commit 会重建表格 DOM，
+        // 让 CodeMirror 随后的坐标换算落到下一行；交给浏览器的正常焦点切换提交即可。
       }
     };
     const closeOnScroll = () => closeContextMenu();
@@ -1088,6 +1137,8 @@ export class TableWidget extends WidgetType {
       document.removeEventListener("pointerup", finishReorderDrag, true);
       document.removeEventListener("pointercancel", cancelReorderDrag, true);
       window.removeEventListener("scroll", closeOnScroll, true);
+      wrapper.removeEventListener("pointerdown", announceTableContext, true);
+      wrapper.removeEventListener("focusin", announceTableContext);
       wrapper.removeEventListener("pointerover", revealColumnDragHandle);
       tableScroll.removeEventListener("scroll", positionDragHandles);
     });

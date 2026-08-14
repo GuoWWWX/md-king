@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitRowsWithRepeatedHeader } from "./word-preview-pagination.ts";
+import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows } from "./word-preview-pagination.ts";
 
 test("Mermaid 分页使用 SVG 实际高度而不是固定最大高度", () => {
   const height = estimateMermaidBlockHeight({
@@ -71,6 +71,24 @@ test("分页按 CSS 规则合并相邻块的垂直外边距", () => {
   assert.deepEqual(pages.map((page) => page.map((block) => block.id)), [["code", "heading"]]);
 });
 
+test("标题放不下后续最小内容时会与下一块一起移到下一页", () => {
+  const pages = paginateByEstimatedHeight({
+    blocks: [
+      { id: "paragraph", height: 70 },
+      { id: "heading", height: 20 },
+      { id: "following", height: 40 },
+    ],
+    pageHeight: 100,
+    estimateHeight: (block) => block.height,
+    minimumFollowingHeight: (block) => block.id === "heading" ? 20 : 0,
+  });
+
+  assert.deepEqual(pages.map((page) => page.map((block) => block.id)), [
+    ["paragraph"],
+    ["heading", "following"],
+  ]);
+});
+
 test("页脚位于底部边距内，不重复占用正文分页高度", () => {
   assert.equal(calculatePreviewContentHeight({
     paperHeight: 1123,
@@ -79,18 +97,47 @@ test("页脚位于底部边距内，不重复占用正文分页高度", () => {
   }), 929);
 });
 
+test("页眉位于上边距内，不额外缩短正文分页高度", () => {
+  assert.equal(calculatePreviewContentHeight({
+    paperHeight: 1123,
+    marginTop: 96,
+    marginBottom: 96,
+  }), 929);
+});
+
 test("表格按可用高度拆分数据行并在续页重复表头", () => {
-  const split = splitRowsWithRepeatedHeader({
-    rows: ["header", "row-1", "row-2", "row-3", "row-4"],
+  const split = splitTableRows({
+    header: "header",
+    rows: ["row-1", "row-2", "row-3", "row-4"],
     availableHeight: 105,
     fixedHeight: 15,
+    repeatHeader: true,
+    estimateHeaderHeight: () => 30,
     estimateRowHeight: () => 30,
   });
 
   assert.deepEqual(split, {
-    head: ["header", "row-1", "row-2"],
-    tail: ["header", "row-3", "row-4"],
-    bodyRowsInHead: 2,
+    head: { header: "header", rows: ["row-1", "row-2"] },
+    tail: { header: "header", rows: ["row-3", "row-4"] },
+    rowsInHead: 2,
+  });
+});
+
+test("模板关闭跨页重复表头时续页只保留数据行", () => {
+  const split = splitTableRows({
+    header: "header",
+    rows: ["row-1", "row-2", "row-3", "row-4"],
+    availableHeight: 105,
+    fixedHeight: 15,
+    repeatHeader: false,
+    estimateHeaderHeight: () => 30,
+    estimateRowHeight: () => 30,
+  });
+
+  assert.deepEqual(split, {
+    head: { header: "header", rows: ["row-1", "row-2"] },
+    tail: { header: undefined, rows: ["row-3", "row-4"] },
+    rowsInHead: 2,
   });
 });
 

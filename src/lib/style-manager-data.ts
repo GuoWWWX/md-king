@@ -192,6 +192,7 @@ export const defaultStyleDraft: StyleDraft = {
   cellWrap: true,
   minRowHeight: 28,
   rowStripe: true,
+  repeatHeaderOnEachPage: true,
   borderStyle: "solid",
   borderColor: "#CBD5E1",
   borderWidth: 1,

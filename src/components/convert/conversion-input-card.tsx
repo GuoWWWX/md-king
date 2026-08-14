@@ -1,11 +1,11 @@
 import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { ClipboardPaste, FileText, UploadCloud, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease } from "lucide-react";
-import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { forwardRef, type ChangeEvent, type DragEvent, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { LiveMarkdownEditor, type LiveMarkdownEditorHandle } from "@/components/editor/live-markdown-editor";
+import { LiveMarkdownEditor, type LiveMarkdownEditorHandle, type TableDisplayContext, type TableWidthMode } from "@/components/editor/live-markdown-editor";
 import { adjustCodeBlockIndent, getCodeBlockIndentContext } from "@/components/editor/cm/formatting-keymap";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/lib/document-outline";
@@ -37,9 +37,15 @@ type ConversionInputCardProps = {
   readingMode?: boolean;
   compactMode?: boolean;
   onOpenLink?: (target: string) => void;
+  tableDefaultWidthMode?: TableWidthMode;
+  onTableContextChange?: (context: TableDisplayContext) => void;
 };
 
-export function ConversionInputCard({
+export type ConversionInputCardHandle = {
+  setTableWidthMode: (mode: TableWidthMode, tableFrom: number | null) => TableDisplayContext | null;
+};
+
+export const ConversionInputCard = forwardRef<ConversionInputCardHandle, ConversionInputCardProps>(function ConversionInputCard({
   markdown,
   documentKey,
   documentTabId,
@@ -57,11 +63,17 @@ export function ConversionInputCard({
   readingMode = false,
   compactMode = false,
   onOpenLink,
-}: ConversionInputCardProps) {
+  tableDefaultWidthMode = "content",
+  onTableContextChange,
+}: ConversionInputCardProps, ref) {
   const inputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<LiveMarkdownEditorHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [codeIndentContext, setCodeIndentContext] = useState<ReturnType<typeof getCodeBlockIndentContext>>(null);
+
+  useImperativeHandle(ref, () => ({
+    setTableWidthMode: (mode, tableFrom) => editorRef.current?.setTableWidthMode(mode, tableFrom) ?? null,
+  }), []);
 
   // 字符数统计去掉空白，行数排除空行，给用户有意义的计数。
   const docStats = useMemo(() => {
@@ -231,6 +243,8 @@ export function ConversionInputCard({
           onRequestSave={onRequestSave}
           onOpenLink={onOpenLink}
           openLinksOnClick
+          tableDefaultWidthMode={tableDefaultWidthMode}
+          onTableContextChange={onTableContextChange}
           className={cn("h-full", compactMode && "mk-editor-compact")}
         />
       ) : (
@@ -297,4 +311,4 @@ export function ConversionInputCard({
       </ContextMenu.Portal>
     </ContextMenu.Root>
   );
-}
+});

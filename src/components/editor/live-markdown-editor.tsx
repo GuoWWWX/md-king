@@ -7,11 +7,16 @@ import { Annotation, Compartment, EditorState, type Extension } from "@codemirro
 import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { livePreviewPlugin, mermaidBlockExtension, tableBlockExtension } from "./cm/live-preview";
+import { getTableDisplayContext, livePreviewPlugin, mermaidBlockExtension, tableBlockExtension, type TableDisplayContext } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
+import { resetTableDisplaySettingsEffect, setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./cm/table-display-settings";
+import { tableBlockPasteExtension } from "./cm/table-block-paste";
 import { markdownEditorTheme } from "./cm/theme";
+
+export type { TableDisplayContext } from "./cm/live-preview";
+export type { TableWidthMode } from "./cm/table-display-settings";
 
 export type LiveMarkdownEditorProps = {
   /** 受控换文件的判据：只有它变了才做全量替换，内容变化不触发（否则每次自己的输入都会把光标打回去）。 */
@@ -29,6 +34,9 @@ export type LiveMarkdownEditorProps = {
   onRequestSave?: () => void;
   onOpenLink?: (target: string) => void;
   openLinksOnClick?: boolean;
+  /** 未选中表格时使用的编辑器表格宽度默认值。 */
+  tableDefaultWidthMode?: TableWidthMode;
+  onTableContextChange?: (context: TableDisplayContext) => void;
   className?: string;
 };
 
@@ -39,6 +47,8 @@ export type LiveMarkdownEditorHandle = {
   getValue: () => string;
   /** 供工具栏之类的外部逻辑直接 dispatch，拿不到时说明 view 还没挂载。 */
   getView: () => EditorView | null;
+  /** 未选中表格时更新全部表格；传入表格位置时只改当前表格。 */
+  setTableWidthMode: (mode: TableWidthMode, tableFrom: number | null) => TableDisplayContext | null;
 };
 
 /** 标记「这次改动来自外部载入而非用户输入」，避免把程序化替换误报成脏数据。 */
@@ -52,7 +62,7 @@ function docChangeDebounceMs(length: number): number {
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
-  { documentKey, initialContent, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onOpenLink, openLinksOnClick = false, className },
+  { documentKey, initialContent, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -72,11 +82,17 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const onRequestSaveRef = useRef(onRequestSave);
   const onOpenLinkRef = useRef(onOpenLink);
   const openLinksOnClickRef = useRef(openLinksOnClick);
+  const onTableContextChangeRef = useRef(onTableContextChange);
+  const tableDefaultWidthModeRef = useRef(tableDefaultWidthMode);
+  const appliedTableDefaultWidthModeRef = useRef(tableDefaultWidthMode);
+  const activeTableFromRef = useRef<number | null>(null);
   onDocChangedRef.current = onDocChanged;
   onDirtyRef.current = onDirty;
   onRequestSaveRef.current = onRequestSave;
   onOpenLinkRef.current = onOpenLink;
   openLinksOnClickRef.current = openLinksOnClick;
+  onTableContextChangeRef.current = onTableContextChange;
+  tableDefaultWidthModeRef.current = tableDefaultWidthMode;
 
   const debounceRef = useRef<number | null>(null);
   // 首个 documentKey 已经由 initialContent 建进 state，不能在 mount 后再替换一次。
@@ -90,6 +106,14 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     onOpenLink: (target) => onOpenLinkRef.current?.(target),
   }), [linkInteractionVersion]);
 
+  const reportTableContext = (tableFrom: number | null) => {
+    const view = viewRef.current;
+    if (!view) return null;
+    const context = getTableDisplayContext(view.state, tableFrom);
+    onTableContextChangeRef.current?.(context);
+    return context;
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -97,6 +121,19 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       focus: () => viewRef.current?.focus(),
       getValue: () => viewRef.current?.state.doc.toString() ?? "",
       getView: () => viewRef.current,
+      setTableWidthMode: (mode, tableFrom) => {
+        const view = viewRef.current;
+        if (!view) return null;
+        if (tableFrom === null) appliedTableDefaultWidthModeRef.current = mode;
+        view.dispatch({
+          effects: setTableWidthModeEffect.of(
+            tableFrom === null
+              ? { scope: "global", mode }
+              : { scope: "table", tableFrom, mode },
+          ),
+        });
+        return reportTableContext(tableFrom);
+      },
     }),
     [],
   );
@@ -191,12 +228,22 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       livePreviewCompartment.of(livePreviewPlugin),
       mermaidCompartment.of(mermaidBlockExtension(isDark)),
       tableBlockExtension,
+      tableBlockPasteExtension,
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
       EditorView.contentAttributes.of({ "aria-label": "Markdown 输入内容" }),
       themeCompartment.of(markdownEditorTheme(isDark)),
       readOnlyCompartment.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
       EditorView.updateListener.of((update) => {
+        if (update.docChanged && activeTableFromRef.current !== null) {
+          const previousTableFrom = activeTableFromRef.current;
+          let tableFrom = previousTableFrom;
+          update.transactions.forEach((transaction) => {
+            if (transaction.docChanged) tableFrom = transaction.changes.mapPos(tableFrom);
+          });
+          activeTableFromRef.current = tableFrom;
+          if (tableFrom !== previousTableFrom) reportTableContext(tableFrom);
+        }
         if (!update.docChanged) return;
         const isExternal = update.transactions.some((tr) => tr.annotation(externalUpdate));
         const text = update.state.doc.toString();
@@ -212,9 +259,31 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       parent: host,
     });
     viewRef.current = view;
+    if (tableDefaultWidthModeRef.current !== "content") {
+      view.dispatch({
+        effects: setTableWidthModeEffect.of({ scope: "global", mode: tableDefaultWidthModeRef.current }),
+      });
+    }
+
+    const handleTableContextChange = (event: Event) => {
+      const tableFrom = (event as CustomEvent<{ tableFrom?: unknown }>).detail?.tableFrom;
+      if (typeof tableFrom !== "number" || !Number.isInteger(tableFrom)) return;
+      activeTableFromRef.current = tableFrom;
+      reportTableContext(tableFrom);
+    };
+    const clearTableContextOnOutsidePointer = (event: PointerEvent) => {
+      if (activeTableFromRef.current === null || !(event.target instanceof Element)) return;
+      if (event.target.closest(".mk-cm-table-wrapper, [data-mk-table-width-controls]")) return;
+      activeTableFromRef.current = null;
+      reportTableContext(null);
+    };
+    host.addEventListener(tableContextChangeEvent, handleTableContextChange);
+    document.addEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
 
     return () => {
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+      host.removeEventListener(tableContextChangeEvent, handleTableContextChange);
+      document.removeEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
       view.destroy();
       viewRef.current = null;
     };
@@ -248,6 +317,15 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     });
   }, [readOnly, readOnlyCompartment]);
 
+  useEffect(() => {
+    if (appliedTableDefaultWidthModeRef.current === tableDefaultWidthMode) return;
+    appliedTableDefaultWidthModeRef.current = tableDefaultWidthMode;
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setTableWidthModeEffect.of({ scope: "global", mode: tableDefaultWidthMode }) });
+    reportTableContext(activeTableFromRef.current);
+  }, [tableDefaultWidthMode]);
+
   // 换文件：只认 documentKey 变化。用 initialContent 变化做判据的话，
   // 用户每敲一个字父组件回传新内容都会触发一次全量替换，光标直接跳到文首。
   useEffect(() => {
@@ -257,17 +335,24 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     lastDocumentKeyRef.current = documentKey;
 
     const next = initialContentRef.current;
-    if (view.state.doc.toString() === next) return;
+    activeTableFromRef.current = null;
+    if (view.state.doc.toString() === next) {
+      view.dispatch({ effects: resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current) });
+      reportTableContext(null);
+      return;
+    }
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: next },
       selection: { anchor: 0 },
+      effects: resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
       annotations: externalUpdate.of(true),
       // 换文件后旧文档的 undo 历史没有意义，撤回过去只会撤出上一个文件的内容。
       // 这里不清历史是刻意的：CM 的 history 会把整段替换当成一步，Ctrl+Z 能整体回退，
       // 由上层的自动保存/冲突流程决定是否需要更强的隔离。
       scrollIntoView: true,
     });
+    reportTableContext(null);
   }, [documentKey]);
 
   return <div ref={hostRef} className={cn("mk-cm-host min-h-0 flex-1 overflow-hidden", className)} />;

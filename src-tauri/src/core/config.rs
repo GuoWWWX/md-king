@@ -350,7 +350,8 @@ mod tests {
             r"C:\secret.md",
             "/etc/passwd",
         ] {
-            let config = config_with(|config| config.last_opened_file = Some(candidate.to_string()));
+            let config =
+                config_with(|config| config.last_opened_file = Some(candidate.to_string()));
             assert!(config.last_opened_file.is_none(), "{candidate}");
         }
 

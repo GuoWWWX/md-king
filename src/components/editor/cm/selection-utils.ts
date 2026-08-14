@@ -1,5 +1,17 @@
 import type { EditorState } from "@codemirror/state";
 
+/** 语法树区间是 [from, to)。当 to 恰好落在下一行开头时，不能把下一行误计入。 */
+function coveredLineBounds(state: EditorState, from: number, to: number): { from: number; to: number } {
+  const doc = state.doc;
+  const safeFrom = Math.max(0, Math.min(from, doc.length));
+  const safeTo = Math.max(0, Math.min(to, doc.length));
+  const lastPosition = safeTo > safeFrom ? safeTo - 1 : safeFrom;
+  return {
+    from: doc.lineAt(safeFrom).from,
+    to: doc.lineAt(lastPosition).to,
+  };
+}
+
 /**
  * 判定「光标是否落在某个内联节点上」——决定该节点的 Markdown 标记显示源码还是隐藏。
  *
@@ -29,15 +41,10 @@ export function selectionTouches(state: EditorState, from: number, to: number, p
  * 编辑时会出现「同一段落半边源码半边渲染」的割裂感。Obsidian 是整块还原，这里对齐它。
  */
 export function selectionOnLines(state: EditorState, from: number, to: number): boolean {
-  const doc = state.doc;
-  // 越界保护：语法树可能滞后于文档（parse 是增量异步的），拿到过期区间会让 lineAt 抛错。
-  const safeFrom = Math.max(0, Math.min(from, doc.length));
-  const safeTo = Math.max(0, Math.min(to, doc.length));
-  const startLine = doc.lineAt(safeFrom).from;
-  const endLine = doc.lineAt(safeTo).to;
+  const bounds = coveredLineBounds(state, from, to);
 
   for (const range of state.selection.ranges) {
-    if (range.from <= endLine && range.to >= startLine) return true;
+    if (range.from <= bounds.to && range.to >= bounds.from) return true;
   }
   return false;
 }
@@ -57,6 +64,15 @@ export function selectionTouchesOnSameLine(state: EditorState, from: number, to:
   return false;
 }
 
+/** 非空选区必须完整覆盖目标区间，供表格这类原子块显示整块选中状态。 */
+export function selectionCoversRange(state: EditorState, from: number, to: number): boolean {
+  const start = Math.max(0, Math.min(from, state.doc.length));
+  const end = Math.max(start, Math.min(to, state.doc.length));
+  if (start === end) return false;
+
+  return state.selection.ranges.some((range) => !range.empty && range.from <= start && range.to >= end);
+}
+
 /** 光标是否落在指定行号（1-based）上，供逐行装饰的代码块 / 引用使用。 */
 export function selectionOnLineNumber(state: EditorState, lineNumber: number): boolean {
   const doc = state.doc;
@@ -74,15 +90,11 @@ export function selectionOnLineNumber(state: EditorState, lineNumber: number): b
  * 选中文字时不展开任何源码，只有空光标时才展开对应行的源码。
  */
 export function cursorOnLines(state: EditorState, from: number, to: number): boolean {
-  const doc = state.doc;
-  const safeFrom = Math.max(0, Math.min(from, doc.length));
-  const safeTo = Math.max(0, Math.min(to, doc.length));
-  const startLine = doc.lineAt(safeFrom).from;
-  const endLine = doc.lineAt(safeTo).to;
+  const bounds = coveredLineBounds(state, from, to);
 
   for (const range of state.selection.ranges) {
     if (range.from !== range.to) continue; // 有选区时不展开
-    if (range.head >= startLine && range.head <= endLine) return true;
+    if (range.head >= bounds.from && range.head <= bounds.to) return true;
   }
   return false;
 }

@@ -188,9 +188,9 @@ fn validate_relative_path(relative: &str) -> Result<PathBuf, String> {
         match component {
             Component::CurDir => continue,
             Component::Normal(part) => {
-                let name = part.to_str().ok_or_else(|| {
-                    vault_err(CODE_INVALID_NAME, "路径中包含无法识别的字符。")
-                })?;
+                let name = part
+                    .to_str()
+                    .ok_or_else(|| vault_err(CODE_INVALID_NAME, "路径中包含无法识别的字符。"))?;
                 validate_component(name)?;
                 depth += 1;
                 // 必须逐段 push：`\\?\` 前缀的路径不会把 `/` 当分隔符，
@@ -240,10 +240,7 @@ fn validate_component(name: &str) -> Result<(), String> {
     // 对不上——后续的乐观锁比对和树选中态都会跟着错位。点之前的主干同理。
     let stem = name.split('.').next().unwrap_or(name);
     if name.ends_with(' ') || name.ends_with('.') || stem.ends_with(' ') {
-        return Err(vault_err(
-            CODE_INVALID_NAME,
-            "名称不能以空格或点结尾。",
-        ));
+        return Err(vault_err(CODE_INVALID_NAME, "名称不能以空格或点结尾。"));
     }
 
     if WINDOWS_RESERVED_NAMES
@@ -410,10 +407,7 @@ fn dir_has_visible_children(path: &Path) -> bool {
             continue;
         }
         if meta.is_dir() {
-            if SKIP_DIRS
-                .iter()
-                .any(|skip| name.eq_ignore_ascii_case(skip))
-            {
+            if SKIP_DIRS.iter().any(|skip| name.eq_ignore_ascii_case(skip)) {
                 continue;
             }
             return true;
@@ -534,10 +528,7 @@ fn walk_vault(
             };
 
             if meta.is_dir() {
-                if SKIP_DIRS
-                    .iter()
-                    .any(|skip| name.eq_ignore_ascii_case(skip))
-                {
+                if SKIP_DIRS.iter().any(|skip| name.eq_ignore_ascii_case(skip)) {
                     skipped_dirs += 1;
                     continue;
                 }
@@ -620,7 +611,11 @@ fn fill_has_children(root: &Path, entries: &mut [VaultEntry], recursive: bool, t
             entry.has_children = known[index];
         }
         for index in probes {
-            let path = root.join(entries[index].path.replace('/', std::path::MAIN_SEPARATOR_STR));
+            let path = root.join(
+                entries[index]
+                    .path
+                    .replace('/', std::path::MAIN_SEPARATOR_STR),
+            );
             entries[index].has_children = dir_has_visible_children(&path);
         }
         return;
@@ -641,7 +636,10 @@ pub fn read_file(root: &Path, relative: &str) -> Result<VaultFileContent, String
 
     let meta = fs::metadata(&absolute).map_err(|error| io_error_message("读取文件", &error))?;
     if meta.is_dir() {
-        return Err(vault_err(CODE_NOT_FOUND, "该路径是目录，无法作为文件打开。"));
+        return Err(vault_err(
+            CODE_NOT_FOUND,
+            "该路径是目录，无法作为文件打开。",
+        ));
     }
     if meta.len() > MAX_VAULT_FILE_BYTES {
         return Err(vault_err(
@@ -651,12 +649,8 @@ pub fn read_file(root: &Path, relative: &str) -> Result<VaultFileContent, String
     }
 
     let bytes = fs::read(&absolute).map_err(|error| io_error_message("读取文件", &error))?;
-    let text = String::from_utf8(bytes).map_err(|_| {
-        vault_err(
-            CODE_NOT_UTF8,
-            "该文件不是 UTF-8 编码，暂不支持编辑。",
-        )
-    })?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| vault_err(CODE_NOT_UTF8, "该文件不是 UTF-8 编码，暂不支持编辑。"))?;
 
     // BOM 不剥掉会变成编辑器第一行行首的不可见字符：用户看不见它，
     // 却会让「以 # 开头」的标题判定失败，也会被一起转换进 Word。
@@ -780,7 +774,11 @@ pub fn create_entry(
     };
 
     let relative = match parent_dir.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(parent) => format!("{}/{}", parent.replace('\\', "/").trim_end_matches('/'), name),
+        Some(parent) => format!(
+            "{}/{}",
+            parent.replace('\\', "/").trim_end_matches('/'),
+            name
+        ),
         None => name.clone(),
     };
 
@@ -872,13 +870,21 @@ pub fn move_entry(root: &Path, relative: &str, target_dir: &str) -> Result<Vault
         Some(dir) => resolve_in_vault(root, &to_relative_string(dir))?,
         None => root.to_path_buf(),
     };
-    let destination_meta = fs::metadata(&destination_dir).map_err(|error| io_error_message("移动", &error))?;
+    let destination_meta =
+        fs::metadata(&destination_dir).map_err(|error| io_error_message("移动", &error))?;
 
     if !destination_meta.is_dir() {
         return Err(vault_err(CODE_NOT_FOUND, "目标不是文件夹。"));
     }
-    if source_meta.is_dir() && target_dir_relative.as_ref().is_some_and(|dir| dir.starts_with(&source_relative)) {
-        return Err(vault_err(CODE_INVALID_NAME, "不能将文件夹移动到自身或其子目录中。"));
+    if source_meta.is_dir()
+        && target_dir_relative
+            .as_ref()
+            .is_some_and(|dir| dir.starts_with(&source_relative))
+    {
+        return Err(vault_err(
+            CODE_INVALID_NAME,
+            "不能将文件夹移动到自身或其子目录中。",
+        ));
     }
 
     let source_name = source_relative
@@ -912,10 +918,7 @@ pub fn delete_entry(root: &Path, relative: &str, recursive: bool) -> Result<(), 
 
     if meta.is_dir() {
         if !recursive && dir_has_visible_children(&absolute) {
-            return Err(vault_err(
-                CODE_EXISTS,
-                "该目录不为空，请确认后再删除。",
-            ));
+            return Err(vault_err(CODE_EXISTS, "该目录不为空，请确认后再删除。"));
         }
         if recursive {
             fs::remove_dir_all(&absolute).map_err(|error| io_error_message("删除目录", &error))?;
@@ -962,8 +965,7 @@ pub fn copy_entry(
 ) -> Result<VaultEntry, String> {
     let source_normalized = validate_relative_path(source_relative)?;
     let source = resolve_in_vault(root, source_relative)?;
-    let source_meta = fs::metadata(&source)
-        .map_err(|error| io_error_message("复制", &error))?;
+    let source_meta = fs::metadata(&source).map_err(|error| io_error_message("复制", &error))?;
 
     let destination_dir = if target_dir.trim().is_empty() {
         root.to_path_buf()
@@ -972,8 +974,8 @@ pub fn copy_entry(
         resolve_in_vault(root, &to_relative_string(&target_dir_normalized))?
     };
 
-    let destination_meta = fs::metadata(&destination_dir)
-        .map_err(|error| io_error_message("复制", &error))?;
+    let destination_meta =
+        fs::metadata(&destination_dir).map_err(|error| io_error_message("复制", &error))?;
     if !destination_meta.is_dir() {
         return Err(vault_err(CODE_NOT_FOUND, "目标不是文件夹。"));
     }
@@ -987,7 +989,10 @@ pub fn copy_entry(
             .unwrap_or("");
         let source_rel = to_relative_string(&source_normalized);
         if !dest_rel.is_empty() && dest_rel.starts_with(&format!("{}/", source_rel)) {
-            return Err(vault_err(CODE_INVALID_NAME, "不能将文件夹复制到自身子目录中。"));
+            return Err(vault_err(
+                CODE_INVALID_NAME,
+                "不能将文件夹复制到自身子目录中。",
+            ));
         }
     }
 
@@ -1008,8 +1013,7 @@ pub fn copy_entry(
     if source_meta.is_dir() {
         copy_dir_recursive(&source, &final_path)?;
     } else {
-        fs::copy(&source, &final_path)
-            .map_err(|error| io_error_message("复制文件", &error))?;
+        fs::copy(&source, &final_path).map_err(|error| io_error_message("复制文件", &error))?;
     }
 
     // 计算相对路径
@@ -1054,18 +1058,17 @@ fn find_available_name(dir: &Path, base_name: &str) -> Result<(String, PathBuf),
 
 /// 递归复制目录
 fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<(), String> {
-    fs::create_dir_all(dest)
-        .map_err(|error| io_error_message("创建目录", &error))?;
+    fs::create_dir_all(dest).map_err(|error| io_error_message("创建目录", &error))?;
 
-    let entries = fs::read_dir(source)
-        .map_err(|error| io_error_message("读取目录", &error))?;
+    let entries = fs::read_dir(source).map_err(|error| io_error_message("读取目录", &error))?;
 
     for entry in entries.flatten() {
         let entry_path = entry.path();
         let file_name = entry.file_name();
         let dest_path = dest.join(&file_name);
 
-        let meta = entry.metadata()
+        let meta = entry
+            .metadata()
             .map_err(|error| io_error_message("读取文件信息", &error))?;
 
         if meta.is_dir() {
@@ -1236,7 +1239,14 @@ mod tests {
     fn rejects_windows_reserved_device_names() {
         let scratch = Scratch::new("reserved");
 
-        for candidate in ["CON.md", "nul.markdown", "COM1.txt", "lpt9.md", "aux", "CON/a.md"] {
+        for candidate in [
+            "CON.md",
+            "nul.markdown",
+            "COM1.txt",
+            "lpt9.md",
+            "aux",
+            "CON/a.md",
+        ] {
             let error = resolve_in_vault(scratch.vault(), candidate)
                 .expect_err(&format!("{candidate} should be rejected"));
             assert_eq!(error_code(&error), CODE_INVALID_NAME, "{candidate}");
@@ -1363,7 +1373,10 @@ mod tests {
         scratch.file("root.md", b"x");
 
         let listing = list_entries(scratch.vault(), None, false).expect("walk should succeed");
-        assert_eq!(paths(&listing), vec!["docs".to_string(), "root.md".to_string()]);
+        assert_eq!(
+            paths(&listing),
+            vec!["docs".to_string(), "root.md".to_string()]
+        );
         assert!(listing.entries[0].has_children);
 
         let nested =
@@ -1475,7 +1488,8 @@ mod tests {
             .expect("file should grow");
         drop(file);
 
-        let error = read_file(scratch.vault(), "big.md").expect_err("large file should be rejected");
+        let error =
+            read_file(scratch.vault(), "big.md").expect_err("large file should be rejected");
         assert_eq!(error_code(&error), CODE_TOO_LARGE);
     }
 

@@ -56,7 +56,6 @@ type PreviewContentHeightOptions = {
   paperHeight: number;
   marginTop: number;
   marginBottom: number;
-  headerHeight?: number;
   safetyInset?: number;
 };
 
@@ -64,42 +63,46 @@ export function calculatePreviewContentHeight({
   paperHeight,
   marginTop,
   marginBottom,
-  headerHeight = 0,
   safetyInset = 2,
 }: PreviewContentHeightOptions) {
-  return Math.max(320, paperHeight - marginTop - marginBottom - headerHeight - safetyInset);
+  return Math.max(320, paperHeight - marginTop - marginBottom - safetyInset);
 }
 
-type SplitRowsWithRepeatedHeaderOptions<T> = {
+type SplitTableRowsOptions<T> = {
+  header?: T;
   rows: T[];
   availableHeight: number;
   fixedHeight: number;
+  repeatHeader: boolean;
+  estimateHeaderHeight: (header: T) => number;
   estimateRowHeight: (row: T, rowIndex: number) => number;
 };
 
-export function splitRowsWithRepeatedHeader<T>({
+export function splitTableRows<T>({
+  header,
   rows,
   availableHeight,
   fixedHeight,
+  repeatHeader,
+  estimateHeaderHeight,
   estimateRowHeight,
-}: SplitRowsWithRepeatedHeaderOptions<T>) {
-  const [header, ...bodyRows] = rows;
-  if (!header || bodyRows.length < 2) return undefined;
+}: SplitTableRowsOptions<T>) {
+  if (rows.length < 2) return undefined;
 
-  let usedHeight = fixedHeight + estimateRowHeight(header, 0);
-  let bodyRowsInHead = 0;
-  for (let index = 0; index < bodyRows.length; index += 1) {
-    const nextHeight = estimateRowHeight(bodyRows[index], index + 1);
+  let usedHeight = fixedHeight + (header ? estimateHeaderHeight(header) : 0);
+  let rowsInHead = 0;
+  for (let index = 0; index < rows.length; index += 1) {
+    const nextHeight = estimateRowHeight(rows[index], index);
     if (usedHeight + nextHeight > availableHeight) break;
     usedHeight += nextHeight;
-    bodyRowsInHead += 1;
+    rowsInHead += 1;
   }
 
-  if (bodyRowsInHead === 0 || bodyRowsInHead >= bodyRows.length) return undefined;
+  if (rowsInHead === 0 || rowsInHead >= rows.length) return undefined;
   return {
-    head: [header, ...bodyRows.slice(0, bodyRowsInHead)],
-    tail: [header, ...bodyRows.slice(bodyRowsInHead)],
-    bodyRowsInHead,
+    head: { header, rows: rows.slice(0, rowsInHead) },
+    tail: { header: repeatHeader ? header : undefined, rows: rows.slice(rowsInHead) },
+    rowsInHead,
   };
 }
 
@@ -109,6 +112,7 @@ type PaginateByEstimatedHeightOptions<T> = {
   estimateHeight: (block: T) => number;
   estimateVerticalMargins?: (block: T) => { before: number; after: number };
   splitToFit?: (block: T, availableHeight: number) => PreviewBlockSplit<T> | undefined;
+  minimumFollowingHeight?: (block: T, following: T) => number;
 };
 
 export function paginateByEstimatedHeight<T>({
@@ -117,6 +121,7 @@ export function paginateByEstimatedHeight<T>({
   estimateHeight,
   estimateVerticalMargins,
   splitToFit,
+  minimumFollowingHeight,
 }: PaginateByEstimatedHeightOptions<T>) {
   const pages: T[][] = [];
   const pending = [...blocks];
@@ -133,6 +138,16 @@ export function paginateByEstimatedHeight<T>({
     const availableHeight = pageHeight - usedHeight;
 
     if (effectiveBlockHeight <= availableHeight) {
+      const following = pending[0];
+      const requiredFollowingHeight = following ? minimumFollowingHeight?.(block, following) ?? 0 : 0;
+      if (currentPage.length > 0 && effectiveBlockHeight + requiredFollowingHeight > availableHeight) {
+        pages.push(currentPage);
+        currentPage = [];
+        usedHeight = 0;
+        previousAfterMargin = 0;
+        pending.unshift(block);
+        continue;
+      }
       currentPage.push(block);
       usedHeight += effectiveBlockHeight;
       previousAfterMargin = margins.after;

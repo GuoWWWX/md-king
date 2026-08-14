@@ -13,7 +13,7 @@ import { resolvePreviewImageSource } from "@/lib/tauri";
 import { nextMarkdownHeadingAnchor } from "@/lib/document-links";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitRowsWithRepeatedHeader, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
+import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { parseMarkdownCalloutHeader, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
@@ -60,7 +60,7 @@ type PreviewBlock =
   | { type: "hr" }
   | { type: "list"; items: PreviewListItem[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "image"; src?: string; alt?: string; caption?: string }
-  | { type: "table"; caption?: string; rows: PreviewTableCell[][]; bodyRowOffset?: number; columnWidthPercentages?: number[] };
+  | { type: "table"; caption?: string; header?: PreviewTableCell[]; rows: PreviewTableCell[][]; bodyRowOffset?: number; columnWidthPercentages?: number[] };
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type PreviewTextSegment = { text: string; code?: boolean; math?: boolean; bold?: boolean; italic?: boolean; strike?: boolean; link?: string };
@@ -1009,7 +1009,10 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
         }
         index += 1;
       }
-      if (rows.length > 0) blocks.push({ type: "table", rows });
+      if (rows.length > 0) {
+        const [header, ...bodyRows] = rows;
+        blocks.push({ type: "table", header, rows: bodyRows });
+      }
     }
   }
 
@@ -1087,13 +1090,14 @@ function mermaidSizeKey(source: string, dark: boolean) {
 }
 
 function estimateTableColumnWidths(block: Extract<PreviewBlock, { type: "table" }>, tableDraft: StyleDraft, contentWidth: number) {
-  const columnCount = Math.max(1, ...block.rows.map((row) => row.length));
+  const allRows = block.header ? [block.header, ...block.rows] : block.rows;
+  const columnCount = Math.max(1, ...allRows.map((row) => row.length));
   const tableWidth = contentWidth * (tableDraft.fitToPageWidth ? 1 : Math.min(100, Math.max(1, tableDraft.tableWidthPercent)) / 100);
   const columnWidthWeights = block.columnWidthPercentages ?? (tableDraft.columnWidthMode === "custom"
     ? tableColumnWidthPercentages([tableDraft.firstColumnWidth, tableDraft.secondColumnWidth, tableDraft.thirdColumnWidth], columnCount)
     : undefined);
   return estimateTableColumnContentWidths({
-    rows: block.rows.map((row) => row.map((cell) => plainText(cell.segments))),
+    rows: allRows.map((row) => row.map((cell) => plainText(cell.segments))),
     tableWidth,
     horizontalPadding: tableDraft.cellPaddingX,
     layout: tableDraft.tableLayout,
@@ -1112,8 +1116,7 @@ function resolveTableBlockColumnWidths(block: PreviewBlock, tableDraft: StyleDra
   };
 }
 
-function estimateTableRowHeight(row: PreviewTableCell[], rowIndex: number, tableDraft: StyleDraft, drafts: Record<string, StyleDraft>, columnContentWidths: number[]) {
-  const isHeader = rowIndex === 0;
+function estimateTableRowHeight(row: PreviewTableCell[], isHeader: boolean, tableDraft: StyleDraft, drafts: Record<string, StyleDraft>, columnContentWidths: number[]) {
   const rowDraft = drafts[isHeader ? "table-header" : "table-body"] ?? tableDraft;
   const fontSize = isHeader ? rowDraft.headerFontSize : rowDraft.bodyFontSize;
   const lineHeight = resolveLineHeightValue(isHeader ? rowDraft.headerLineHeight : rowDraft.bodyLineHeight);
@@ -1237,7 +1240,8 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
   return estimateTableCaptionHeight(block, drafts)
-    + block.rows.reduce((height, row, rowIndex) => height + estimateTableRowHeight(row, rowIndex, tableDraft, drafts, columnContentWidths), 0);
+    + (block.header ? estimateTableRowHeight(block.header, true, tableDraft, drafts, columnContentWidths) : 0)
+    + block.rows.reduce((height, row) => height + estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths), 0);
 }
 
 function splitTextByLength(text: string, maxChars: number) {
@@ -1307,6 +1311,26 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
 function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
   const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes);
 
+  const minimumFollowingHeight = (block: PreviewBlock, following: PreviewBlock) => {
+    if (block.type !== "heading") return 0;
+    if (following.type === "paragraph") {
+      return Math.min(estimateHeight(following), ptToPx(drafts.normal.beforeSpacing) + resolveLineHeightPx(drafts.normal) * 2);
+    }
+    if (following.type === "list") {
+      const firstItem = following.items[0];
+      if (!firstItem) return 0;
+      const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, firstItem), firstItem);
+      return Math.min(estimateHeight(following), ptToPx(draft.beforeSpacing) + resolveLineHeightPx(draft) * 2);
+    }
+    if (following.type === "table") {
+      const columnContentWidths = estimateTableColumnWidths(following, tableDraft, contentWidth);
+      const headerHeight = following.header ? estimateTableRowHeight(following.header, true, tableDraft, drafts, columnContentWidths) : 0;
+      const firstRowHeight = following.rows[0] ? estimateTableRowHeight(following.rows[0], false, tableDraft, drafts, columnContentWidths) : 0;
+      return estimateTableCaptionHeight(following, drafts) + headerHeight + firstRowHeight;
+    }
+    return Math.min(estimateHeight(following), resolveLineHeightPx(drafts.normal) * 2);
+  };
+
   const splitToFit = (block: PreviewBlock, availableHeight: number): PreviewBlockSplit<PreviewBlock> | undefined => {
     if (block.type === "list" && block.items.length > 1) {
       let splitIndex = 0;
@@ -1332,8 +1356,11 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
       const beforeSpacing = block.continuedFromPrevious ? 0 : ptToPx(drafts.normal.beforeSpacing);
       const availableLines = Math.floor((availableHeight - beforeSpacing) / lineHeight);
       const text = plainText(block.segments);
-      const maxChars = availableLines * estimateCharsPerLine(contentWidth, drafts.normal);
-      if (availableLines > 0 && maxChars < text.length) {
+      const charsPerLine = estimateCharsPerLine(contentWidth, drafts.normal);
+      const totalLines = estimateTextLines(text, charsPerLine);
+      const maxChars = availableLines * charsPerLine;
+      // Word 默认启用孤行控制：段落跨页时，页底和下一页页首至少各保留两行。
+      if (availableLines >= 2 && totalLines - availableLines >= 2 && maxChars < text.length) {
         const [headSegments, tailSegments] = splitTextSegmentsAt(block.segments, textSplitOffsetByUnits(text, maxChars));
         if (headSegments.length > 0 && tailSegments.length > 0) {
           return {
@@ -1346,21 +1373,25 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
 
     if (block.type === "table") {
       const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
-      const split = splitRowsWithRepeatedHeader({
+      const split = splitTableRows({
+        header: block.header,
         rows: block.rows,
         availableHeight,
         fixedHeight: estimateTableCaptionHeight(block, drafts),
-        estimateRowHeight: (row, rowIndex) => estimateTableRowHeight(row, rowIndex, tableDraft, drafts, columnContentWidths),
+        repeatHeader: tableDraft.repeatHeaderOnEachPage,
+        estimateHeaderHeight: (header) => estimateTableRowHeight(header, true, tableDraft, drafts, columnContentWidths),
+        estimateRowHeight: (row) => estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths),
       });
       if (split) {
         const bodyRowOffset = block.bodyRowOffset ?? 0;
         return {
-          head: { ...block, rows: split.head },
+          head: { ...block, header: split.head.header, rows: split.head.rows },
           tail: {
             ...block,
             caption: undefined,
-            rows: split.tail,
-            bodyRowOffset: bodyRowOffset + split.bodyRowsInHead,
+            header: split.tail.header,
+            rows: split.tail.rows,
+            bodyRowOffset: bodyRowOffset + split.rowsInHead,
           },
         };
       }
@@ -1375,6 +1406,7 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
     estimateHeight,
     estimateVerticalMargins: (block) => estimateBlockVerticalMargins(block, drafts),
     splitToFit,
+    minimumFollowingHeight,
   });
 }
 
@@ -1398,7 +1430,7 @@ function createFallbackBlocks(imageCaption: string, tableCaption: string): Previ
     { type: "code", language: "javascript", text: "const docx = convertMarkdown(input);\nsaveAs(docx, \"report.docx\");", indentPt: 0 },
     { type: "image", caption: imageCaption },
     { type: "hr" },
-    { type: "table", caption: tableCaption, rows: [["字段", "样式", "备注"], ["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]].map((row) => row.map((cell) => ({ segments: textSegments(cell) }))) },
+    { type: "table", caption: tableCaption, header: ["字段", "样式", "备注"].map((cell) => ({ segments: textSegments(cell) })), rows: [["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]].map((row) => row.map((cell) => ({ segments: textSegments(cell) }))) },
   ];
 }
 
@@ -1749,7 +1781,7 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "table") {
-      const [header, ...rows] = block.rows;
+      const { header, rows } = block;
       const columnWidths = block.columnWidthPercentages
         ? percentageColumnWidths(block.columnWidthPercentages)
         : tableStyle.columnWidthMode === "custom"
@@ -1942,7 +1974,6 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     paperHeight,
     marginTop: pageMargins.top,
     marginBottom: pageMargins.bottom,
-    headerHeight: headerEnabled && headerText ? 30 : 0,
   });
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(mappedBlocks, previewDrafts);
@@ -2001,7 +2032,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         style={thumbnail ? thumbnailPageScaleStyle : pageScaleStyle}
       >
         <div className="mk-word-preview-page overflow-hidden rounded-sm bg-white text-slate-900 shadow-none ring-1 ring-slate-200" style={thumbnail ? thumbnailPageStyle : pageStyle}>
-          {headerEnabled && headerText ? <div className="mb-5 border-b border-slate-200 pb-2 text-[9px] text-slate-400">{headerText}</div> : null}
+          {headerEnabled && headerText ? <div className="absolute left-0 right-0 text-center text-[9pt] text-slate-500" style={{ top: 48, paddingInline: pageMargins.left }}>{headerText}</div> : null}
           {renderMarkdownBlocks({
             blocks: pageBlocks,
             selectedStyle,
@@ -2014,7 +2045,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             renderAsThumbnail: thumbnail,
             tableStyle: markdownTableStyle,
           })}
-          {footerEnabled && footerContent ? <div className="absolute bottom-5 left-0 right-0 px-8 text-center text-[9px] text-black">{footerContent}</div> : null}
+          {footerEnabled && footerContent ? <div className="absolute left-0 right-0 px-8 text-center text-[9pt] text-black" style={{ bottom: 48 }}>{footerContent}</div> : null}
         </div>
       </div>
     );

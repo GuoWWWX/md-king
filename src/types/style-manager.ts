@@ -138,6 +138,7 @@ export type StyleDraft = {
   cellWrap: boolean;
   minRowHeight: number;
   rowStripe: boolean;
+  repeatHeaderOnEachPage: boolean;
   borderStyle: BorderStyleMode;
   borderColor: string;
   borderWidth: number;

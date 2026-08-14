@@ -1,7 +1,8 @@
 use crate::core::config::{load_config, save_config, MAX_RECENT_VAULTS};
 use crate::core::vault::{
-    canonical_root, create_entry, delete_entry, display_path, list_entries, read_file,
-    move_entry, rename_entry, write_file, copy_entry, VaultEntry, VaultFileContent, VaultListing, VaultWriteResult,
+    canonical_root, copy_entry, create_entry, delete_entry, display_path, list_entries, move_entry,
+    read_file, rename_entry, write_file, VaultEntry, VaultFileContent, VaultListing,
+    VaultWriteResult,
 };
 
 /// 每个命令都自己重新规范化一次 root，而不是信任前端传回来的字符串。

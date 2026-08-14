@@ -12,8 +12,18 @@ import {
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
-import { selectionTouchesOnSameLine, cursorOnLines, selectionOnLines } from "./selection-utils";
+import { selectionCoversRange, selectionTouchesOnSameLine, cursorOnLines, selectionOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
+import {
+  applyTableWidthMode,
+  createTableDisplaySettings,
+  mapTableDisplaySettings,
+  resetTableDisplaySettingsEffect,
+  setTableWidthModeEffect,
+  tableWidthModeFor,
+  type TableDisplaySettings,
+  type TableWidthMode,
+} from "./table-display-settings";
 import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
@@ -701,7 +711,12 @@ export function mermaidBlockExtension(dark: boolean): Extension {
   return field;
 }
 
-function buildTableBlocks(state: EditorState, sourceTableFrom: number | null): DecorationSet {
+function buildTableBlocks(
+  state: EditorState,
+  sourceTableFrom: number | null,
+  displaySettings: TableDisplaySettings,
+  documentSelectedTableFroms: ReadonlySet<number>,
+): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
   syntaxTree(state).iterate({
@@ -723,7 +738,14 @@ function buildTableBlocks(state: EditorState, sourceTableFrom: number | null): D
         first.from,
         last.to,
         Decoration.replace({
-          widget: new TableWidget(table, source, first.from, last.to),
+          widget: new TableWidget(
+            table,
+            source,
+            first.from,
+            last.to,
+            tableWidthModeFor(displaySettings, first.from),
+            documentSelectedTableFroms.has(first.from),
+          ),
           block: true,
         }),
       );
@@ -734,9 +756,38 @@ function buildTableBlocks(state: EditorState, sourceTableFrom: number | null): D
   return builder.finish();
 }
 
+function documentSelectedTableFroms(state: EditorState): ReadonlySet<number> {
+  const selected = new Set<number>();
+  if (state.selection.ranges.every((range) => range.empty)) return selected;
+
+  for (const range of state.selection.ranges) {
+    if (range.empty) continue;
+    syntaxTree(state).iterate({
+      from: range.from,
+      to: range.to,
+      enter: (ref) => {
+        if (ref.name !== "Table") return undefined;
+        const first = state.doc.lineAt(ref.from);
+        const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
+        const last = state.doc.lineAt(lastPos);
+        if (selectionCoversRange(state, first.from, last.to)) selected.add(first.from);
+        return false;
+      },
+    });
+  }
+
+  return selected;
+}
+
+function sameTablePositions(left: ReadonlySet<number>, right: ReadonlySet<number>): boolean {
+  return left.size === right.size && [...left].every((position) => right.has(position));
+}
+
 interface TableBlockState {
   decorations: DecorationSet;
   sourceTableFrom: number | null;
+  displaySettings: TableDisplaySettings;
+  documentSelectedTableFroms: ReadonlySet<number>;
 }
 
 function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number): boolean {
@@ -745,8 +796,12 @@ function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number)
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
       if (sourceTableFrom < ref.from || sourceTableFrom >= ref.to) return false;
-      const head = state.selection.main.head;
-      inside = head >= ref.from && head <= ref.to;
+      const selection = state.selection.main;
+      // 表格源码整体被选中时必须继续保留源码态；但折叠光标恰好落在
+      // 表格末尾已经属于下一处插入点，不能让粘贴后的表格永久停在源码态。
+      inside = selection.empty
+        ? selection.head >= ref.from && selection.head < ref.to
+        : selection.from < ref.to && selection.to > ref.from;
       return false;
     },
   });
@@ -754,20 +809,61 @@ function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number)
 }
 
 /** GFM 表格的块级装饰，和 Mermaid 一样用 StateField 而不是 ViewPlugin。 */
-export const tableBlockExtension: Extension = StateField.define<TableBlockState>({
-  create: (state) => ({ decorations: buildTableBlocks(state, null), sourceTableFrom: null }),
+export const tableBlockExtension = StateField.define<TableBlockState>({
+  create: (state) => {
+    const displaySettings = createTableDisplaySettings();
+    const selectedTableFroms = documentSelectedTableFroms(state);
+    return {
+      decorations: buildTableBlocks(state, null, displaySettings, selectedTableFroms),
+      sourceTableFrom: null,
+      displaySettings,
+      documentSelectedTableFroms: selectedTableFroms,
+    };
+  },
   update: (value, tr) => {
     let sourceTableFrom = value.sourceTableFrom;
+    let displaySettings = tr.docChanged
+      ? mapTableDisplaySettings(value.displaySettings, (position) => tr.changes.mapPos(position))
+      : value.displaySettings;
     if (sourceTableFrom !== null && tr.docChanged) sourceTableFrom = tr.changes.mapPos(sourceTableFrom);
     for (const effect of tr.effects) {
       if (effect.is(editTableSourceEffect)) sourceTableFrom = effect.value;
+      if (effect.is(resetTableDisplaySettingsEffect)) displaySettings = createTableDisplaySettings(effect.value);
+      if (effect.is(setTableWidthModeEffect)) displaySettings = applyTableWidthMode(displaySettings, effect.value);
     }
+    const selectedTableFroms = tr.docChanged || tr.selection
+      ? documentSelectedTableFroms(tr.state)
+      : value.documentSelectedTableFroms;
+    const selectionChanged = !sameTablePositions(value.documentSelectedTableFroms, selectedTableFroms);
     if (sourceTableFrom !== null && tr.selection && !selectionInsideSourceTable(tr.state, sourceTableFrom)) {
       sourceTableFrom = null;
     }
 
-    if (!tr.docChanged && sourceTableFrom === value.sourceTableFrom) return value;
-    return { decorations: buildTableBlocks(tr.state, sourceTableFrom), sourceTableFrom };
+    if (!tr.docChanged && sourceTableFrom === value.sourceTableFrom && displaySettings === value.displaySettings && !selectionChanged) return value;
+    return {
+      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableFroms),
+      sourceTableFrom,
+      displaySettings,
+      documentSelectedTableFroms: selectedTableFroms,
+    };
   },
   provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
 });
+
+export type TableDisplayContext = {
+  tableFrom: number | null;
+  widthMode: TableWidthMode;
+  scope: "global" | "table";
+};
+
+export function getTableDisplayContext(state: EditorState, tableFrom: number | null): TableDisplayContext {
+  const { displaySettings } = state.field(tableBlockExtension);
+  const hasTableOverride = tableFrom !== null && displaySettings.widthModeOverrides.has(tableFrom);
+  return {
+    tableFrom,
+    widthMode: tableFrom === null
+      ? displaySettings.defaultWidthMode
+      : tableWidthModeFor(displaySettings, tableFrom),
+    scope: hasTableOverride ? "table" : "global",
+  };
+}

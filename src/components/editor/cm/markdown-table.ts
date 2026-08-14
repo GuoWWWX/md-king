@@ -254,6 +254,16 @@ export function tableSelectionBounds(table: MarkdownTable, selection: TableSelec
   };
 }
 
+/** 选区覆盖每一行、每一列时，按整张 Markdown 表格处理，而不是按 TSV 处理。 */
+export function tableSelectionCoversWholeTable(table: MarkdownTable, selection: TableSelection): boolean {
+  const size = tableSize(table);
+  const bounds = tableSelectionBounds(table, selection);
+  return bounds.top === 0
+    && bounds.bottom === size.rows - 1
+    && bounds.left === 0
+    && bounds.right === size.columns - 1;
+}
+
 export function tableSelectionToTsv(table: MarkdownTable, selection: TableSelection): string {
   const bounds = tableSelectionBounds(table, selection);
   const lines: string[] = [];

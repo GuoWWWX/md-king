@@ -15,6 +15,7 @@ import {
   reorderTableRow,
   serializeMarkdownTable,
   tableSelectionBounds,
+  tableSelectionCoversWholeTable,
   tableSelectionToTsv,
   tableOperationFocus,
   type MarkdownTable,
@@ -144,6 +145,20 @@ test("单格、整行、整列和矩形选区按 TSV 复制并可清空", () => 
   assert.equal(tableSelectionToTsv(table, { kind: "row", index: 1 }), "A\tB\tC");
   assert.equal(tableSelectionToTsv(table, { kind: "column", index: 0 }), "H1\r\nA\r\nD");
   assert.deepEqual(clearTableSelection(table, range).rows, [["H1", "H2", "H3"], ["A", "", ""], ["D", "", ""]]);
+});
+
+test("拖选覆盖所有单元格时识别为整张表格", () => {
+  const table: MarkdownTable = {
+    rows: [["H1", "H2"], ["A", "B"], ["C", "D"]],
+    alignments: ["none", "none"],
+  };
+  assert.equal(tableSelectionCoversWholeTable(table, {
+    kind: "range",
+    anchor: { row: 0, column: 0 },
+    focus: { row: 2, column: 1 },
+  }), true);
+  assert.equal(tableSelectionCoversWholeTable(table, { kind: "row", index: 1 }), false);
+  assert.equal(tableSelectionCoversWholeTable(table, { kind: "column", index: 0 }), false);
 });
 
 test("粘贴 TSV 从当前单元格展开并自动扩行扩列", () => {

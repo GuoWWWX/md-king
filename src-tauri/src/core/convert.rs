@@ -118,6 +118,7 @@ struct TableStyleConfig {
     min_row_height: f64,
     row_stripe: bool,
     cell_wrap: bool,
+    repeat_header_on_each_page: bool,
     header: TableCellStyleConfig,
     body: TableCellStyleConfig,
 }
@@ -1035,7 +1036,17 @@ fn pandoc_document_options(request: &ConvertRequest) -> PandocDocumentOptions {
         .ok()
         .flatten()
         .map(|config| pandoc_document_options_from_value(&config))
-        .unwrap_or_default()
+        .unwrap_or_else(|| {
+            if is_built_in_template_id(template_id) {
+                PandocDocumentOptions {
+                    toc: true,
+                    toc_depth: Some(3),
+                    resource_path: None,
+                }
+            } else {
+                PandocDocumentOptions::default()
+            }
+        })
 }
 
 fn page_settings_config(request: &ConvertRequest) -> Option<PageSettingsConfig> {
@@ -1048,6 +1059,28 @@ fn page_settings_config(request: &ConvertRequest) -> Option<PageSettingsConfig> 
         .ok()
         .flatten()
         .and_then(|config| page_settings_config_from_value(&config))
+        .or_else(|| is_built_in_template_id(template_id).then(default_page_settings_config))
+}
+
+fn default_page_settings_config() -> PageSettingsConfig {
+    PageSettingsConfig {
+        paper_size: "A4".to_string(),
+        orientation: "portrait".to_string(),
+        margin_top: 2.54,
+        margin_right: 3.18,
+        margin_bottom: 2.54,
+        margin_left: 3.18,
+        header_enabled: false,
+        header_text: "md-king · Word 样式预览".to_string(),
+        footer_enabled: true,
+        footer_text: String::new(),
+        footer_page_number_format: "page".to_string(),
+        footer_start_page: 1,
+        toc_enabled: true,
+        toc_depth: "1-3".to_string(),
+        toc_leader: "dot".to_string(),
+        toc_show_page_numbers: true,
+    }
 }
 
 fn table_style_config(request: &ConvertRequest) -> Option<TableStyleConfig> {
@@ -1114,7 +1147,7 @@ fn pandoc_document_options_from_value(config: &Value) -> PandocDocumentOptions {
     let toc = settings
         .get("tocEnabled")
         .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(true);
     let toc_depth = settings
         .get("tocDepth")
         .and_then(Value::as_str)
@@ -1268,7 +1301,7 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
     let outer_border_strong = table
         .get("outerBorderStrong")
         .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(true);
     let outer_border_width = |key: &str| {
         let width = read_table_number(key, border_width);
         if outer_border_strong && width > 0.0 {
@@ -1282,7 +1315,7 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
         width_twips,
         horizontal_align: read_style_string(table, "tableHorizontalAlign", "center"),
         column_width_percentages,
-        layout: read_style_string(table, "tableLayout", "fixed"),
+        layout: read_style_string(table, "tableLayout", "auto"),
         border_style: read_style_string(table, "borderStyle", "solid"),
         border_color: read_style_color(table, "borderColor", "CBD5E1"),
         border_width,
@@ -1304,9 +1337,13 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
         row_stripe: table
             .get("rowStripe")
             .and_then(Value::as_bool)
-            .unwrap_or(false),
+            .unwrap_or(true),
         cell_wrap: table
             .get("cellWrap")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+        repeat_header_on_each_page: table
+            .get("repeatHeaderOnEachPage")
             .and_then(Value::as_bool)
             .unwrap_or(true),
         header: table_cell_style_config(header, table, true),
@@ -1387,7 +1424,7 @@ fn table_cell_style_config(style: &Value, table: &Value, is_header: bool) -> Tab
     TableCellStyleConfig {
         chinese_font: read_style_string(style, "chineseFont", "微软雅黑"),
         latin_font: read_style_string(style, "latinFont", "Times New Roman"),
-        font_size: read_style_number(style, font_size_key, 10.5),
+        font_size: read_style_number(style, font_size_key, if is_header { 11.0 } else { 10.0 }),
         bold: if is_header {
             style
                 .get("headerBold")
@@ -1398,19 +1435,23 @@ fn table_cell_style_config(style: &Value, table: &Value, is_header: bool) -> Tab
             false
         },
         color: read_style_color(style, "color", "111827"),
-        background_color: read_style_fill(style, background_key, "FFFFFF"),
-        horizontal_align: read_style_string(
+        background_color: read_style_fill(
             style,
-            align_key,
-            if is_header { "center" } else { "left" },
+            background_key,
+            if is_header { "EEF2FF" } else { "FFFFFF" },
         ),
+        horizontal_align: read_style_string(style, align_key, "center"),
         vertical_align: read_style_string(style, vertical_align_key, "middle"),
         line_height: read_line_height_key(
             style,
             line_height_key,
             if is_header { 1.4 } else { 1.5 },
         ),
-        border_color: read_style_color(style, border_color_key, "CBD5E1"),
+        border_color: read_style_color(
+            style,
+            border_color_key,
+            if is_header { "A5B4FC" } else { "CBD5E1" },
+        ),
         border_width: read_style_number(style, border_width_key, 1.0),
     }
 }
@@ -2059,11 +2100,12 @@ fn make_temp_path(prefix: &str, extension: &str) -> PathBuf {
 /// Pandoc 遇到 SVG 会直接跳过那张图。转换前需要把这些 PNG 落到磁盘上，
 /// 才能在 Markdown 里用普通的图片语法引用它们。
 pub fn write_temp_image(bytes: &[u8], extension: &str) -> Result<String, String> {
-    let safe_extension = if extension.chars().all(|ch| ch.is_ascii_alphanumeric()) && !extension.is_empty() {
-        extension
-    } else {
-        "png"
-    };
+    let safe_extension =
+        if extension.chars().all(|ch| ch.is_ascii_alphanumeric()) && !extension.is_empty() {
+            extension
+        } else {
+            "png"
+        };
 
     let path = make_temp_path("mermaid", safe_extension);
     if let Some(parent) = path.parent() {
@@ -3080,7 +3122,7 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
 
     let instr_text = Regex::new(r#"(?s)<w:instrText\b([^>]*)>\s*TOC\b.*?</w:instrText>"#)
         .expect("valid TOC instrText regex");
-    instr_text
+    let xml = instr_text
         .replace_all(&xml, |captures: &Captures| {
             format!(
                 r#"<w:instrText{}>{}</w:instrText>"#,
@@ -3088,7 +3130,29 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
                 escape_xml_text(&instruction)
             )
         })
-        .to_string()
+        .to_string();
+
+    ensure_page_break_after_toc(&xml)
+}
+
+fn ensure_page_break_after_toc(xml: &str) -> String {
+    let toc = Regex::new(
+        r#"(?s)(<w:sdt>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>.*?</w:sdt>)(\s*)(<w:p><w:r><w:br w:type="page" /></w:r></w:p>)?"#,
+    )
+    .expect("valid TOC content control regex");
+    if !toc.is_match(xml) {
+        return xml.to_string();
+    }
+    toc.replace(xml, |captures: &Captures| {
+        let content = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+        let whitespace = captures.get(2).map(|value| value.as_str()).unwrap_or("");
+        let page_break = captures
+            .get(3)
+            .map(|value| value.as_str())
+            .unwrap_or(r#"<w:p><w:r><w:br w:type="page" /></w:r></w:p>"#);
+        format!("{content}{whitespace}{page_break}")
+    })
+    .to_string()
 }
 
 fn toc_field_instruction(page_settings: &PageSettingsConfig) -> String {
@@ -3416,19 +3480,33 @@ fn normalize_template_style_xml(
     document_style: Option<&DocumentStyleConfig>,
     apply_default_template_style: bool,
 ) -> String {
-    if let Some(template_style_id) =
-        capture_style_id(style_xml).and_then(|style_id| template_style_id_for_word_style(&style_id))
+    let word_style_id = capture_style_id(style_xml);
+    if let Some(template_style_id) = word_style_id
+        .as_deref()
+        .and_then(template_style_id_for_word_style)
     {
         if let Some(style) = document_style.and_then(|config| config.styles.get(template_style_id))
         {
-            return normalize_text_style_xml(style_xml, style);
+            let normalized = normalize_text_style_xml(style_xml, style);
+            return if word_style_id
+                .as_deref()
+                .is_some_and(heading_uses_exact_line_height)
+            {
+                apply_exact_line_height_to_style_xml(&normalized)
+            } else {
+                normalized
+            };
         }
     }
 
     // 用户没保存过样式时，标题仍要对齐前端展示的默认值。
-    if let Some(style_id) = capture_style_id(style_xml) {
+    if let Some(style_id) = word_style_id.as_deref() {
         if let Some((align, half_points)) = default_heading_style_overrides(&style_id) {
-            return apply_default_heading_style(style_xml, align, half_points);
+            return apply_exact_line_height_to_style_xml(&apply_default_heading_style(
+                style_xml,
+                align,
+                half_points,
+            ));
         }
     }
 
@@ -3497,6 +3575,23 @@ fn default_heading_style_overrides(style_id: &str) -> Option<(&'static str, u32)
     }
 }
 
+fn heading_uses_exact_line_height(style_id: &str) -> bool {
+    matches!(
+        style_id,
+        "Heading1" | "Heading2" | "Heading3" | "Heading4" | "Heading5" | "Heading6"
+    )
+}
+
+fn apply_exact_line_height_to_style_xml(style_xml: &str) -> String {
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr\b[^>]*>.*?</w:pPr>"#).expect("valid style paragraph regex");
+    paragraph_properties
+        .replace(style_xml, |captures: &Captures| {
+            captures[0].replace(r#"w:lineRule="auto""#, r#"w:lineRule="exact""#)
+        })
+        .to_string()
+}
+
 /// 把标题样式的对齐与字号纠正到前端默认值。
 fn apply_default_heading_style(style_xml: &str, align: &str, half_points: u32) -> String {
     // 两种写法都要吃下：自闭合的 <w:pPr ... /> 和成对的 <w:pPr ...>...</w:pPr>。
@@ -3505,7 +3600,12 @@ fn apply_default_heading_style(style_xml: &str, align: &str, half_points: u32) -
         .expect("valid style paragraph regex");
     let aligned = if let Some(found) = paragraph_re.find(style_xml) {
         let replaced = align_paragraph_properties(found.as_str(), align);
-        format!("{}{}{}", &style_xml[..found.start()], replaced, &style_xml[found.end()..])
+        format!(
+            "{}{}{}",
+            &style_xml[..found.start()],
+            replaced,
+            &style_xml[found.end()..]
+        )
     } else {
         style_xml.replace(
             "</w:style>",
@@ -3516,9 +3616,15 @@ fn apply_default_heading_style(style_xml: &str, align: &str, half_points: u32) -
     // sz 和 szCs 要一起改：只改 sz 会让 Word 里的西文与中文字号不一致。
     let sz_re = Regex::new(r#"<w:sz w:val="\d+" />"#).expect("valid size regex");
     let sz_cs_re = Regex::new(r#"<w:szCs w:val="\d+" />"#).expect("valid complex size regex");
-    let with_size = sz_re.replace(&aligned, format!(r#"<w:sz w:val="{half_points}" />"#).as_str());
+    let with_size = sz_re.replace(
+        &aligned,
+        format!(r#"<w:sz w:val="{half_points}" />"#).as_str(),
+    );
     sz_cs_re
-        .replace(&with_size, format!(r#"<w:szCs w:val="{half_points}" />"#).as_str())
+        .replace(
+            &with_size,
+            format!(r#"<w:szCs w:val="{half_points}" />"#).as_str(),
+        )
         .to_string()
 }
 
@@ -3536,11 +3642,30 @@ fn normalize_body_style_xml(style_xml: &str, first_line_indent: bool) -> String 
 }
 
 fn normalize_text_style_xml(style_xml: &str, style: &TextStyleConfig) -> String {
-    let style_xml = ensure_style_paragraph_properties_xml(
-        style_xml,
-        &text_style_paragraph_properties_xml(style),
-    );
+    let preserved_flow = preserved_style_paragraph_flow_xml(style_xml);
+    let paragraph_properties = text_style_paragraph_properties_xml(style)
+        .replace("</w:pPr>", &format!("{preserved_flow}</w:pPr>"));
+    let style_xml = ensure_style_paragraph_properties_xml(style_xml, &paragraph_properties);
     ensure_style_run_properties(&style_xml, &text_style_run_properties_xml(style))
+}
+
+fn preserved_style_paragraph_flow_xml(style_xml: &str) -> String {
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid style paragraph regex");
+    let Some(properties) = paragraph_properties
+        .captures(style_xml)
+        .and_then(|captures| captures.get(1))
+    else {
+        return String::new();
+    };
+    let flow_properties =
+        Regex::new(r#"<w:(?:keepNext|keepLines|pageBreakBefore|widowControl|outlineLvl)\b[^>]*/>"#)
+            .expect("valid paragraph flow property regex");
+    flow_properties
+        .find_iter(properties.as_str())
+        .map(|value| value.as_str())
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn ensure_style_paragraph_properties(style_xml: &str, first_line_indent: bool) -> String {
@@ -4161,7 +4286,8 @@ fn normalize_source_code_paragraph(
     connects_to_label: bool,
     indent_pt: u32,
 ) -> String {
-    let paragraph_xml = ensure_code_paragraph_properties(paragraph_xml, style, connects_to_label, indent_pt);
+    let paragraph_xml =
+        ensure_code_paragraph_properties(paragraph_xml, style, connects_to_label, indent_pt);
     normalize_code_runs(&paragraph_xml, style)
 }
 
@@ -5084,44 +5210,45 @@ fn force_table_width_percent(xml: &str) -> String {
 fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleConfig {
     TableStyleConfig {
         width_twips: content_width_twips.unwrap_or(8640),
-        layout: "fixed".to_string(),
+        layout: "auto".to_string(),
         horizontal_align: "center".to_string(),
         column_width_percentages: None,
         border_style: "solid".to_string(),
         border_color: "CBD5E1".to_string(),
         border_width: 1.0,
-        border_top_width: 1.0,
-        border_right_width: 1.0,
-        border_bottom_width: 1.0,
-        border_left_width: 1.0,
+        border_top_width: 1.5,
+        border_right_width: 1.5,
+        border_bottom_width: 1.5,
+        border_left_width: 1.5,
         show_inner_vertical_border: true,
         show_inner_horizontal_border: true,
         cell_padding_x: 10.0,
         cell_padding_y: 8.0,
         min_row_height: 28.0,
-        row_stripe: false,
+        row_stripe: true,
         cell_wrap: true,
+        repeat_header_on_each_page: true,
         header: TableCellStyleConfig {
             chinese_font: "微软雅黑".to_string(),
             latin_font: "Times New Roman".to_string(),
-            font_size: 10.5,
+            font_size: 11.0,
             bold: true,
             color: "111827".to_string(),
-            background_color: "FFFFFF".to_string(),
+            background_color: "EEF2FF".to_string(),
             horizontal_align: "center".to_string(),
             vertical_align: "middle".to_string(),
             line_height: 1.4,
-            border_color: "CBD5E1".to_string(),
+            border_color: "A5B4FC".to_string(),
             border_width: 1.0,
         },
         body: TableCellStyleConfig {
             chinese_font: "微软雅黑".to_string(),
             latin_font: "Times New Roman".to_string(),
-            font_size: 10.5,
+            font_size: 10.0,
             bold: false,
             color: "111827".to_string(),
             background_color: "FFFFFF".to_string(),
-            horizontal_align: "left".to_string(),
+            horizontal_align: "center".to_string(),
             vertical_align: "middle".to_string(),
             line_height: 1.5,
             border_color: "CBD5E1".to_string(),
@@ -5141,12 +5268,18 @@ fn normalize_table_cells(xml: &str, style: &TableStyleConfig) -> String {
 
 fn normalize_table_xml(table_xml: &str, style: &TableStyleConfig) -> String {
     let column_count = count_table_columns(table_xml).max(1);
-    let table_xml = normalize_table_properties(table_xml, column_count, style);
+    let column_widths = table_column_widths_for_xml(table_xml, column_count, style);
+    let table_xml = normalize_table_properties(table_xml, &column_widths, style);
     let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
     let mut row_index = 0usize;
     row.replace_all(&table_xml, |captures: &Captures| {
-        let normalized =
-            normalize_table_row_xml(&captures[0], row_index, row_index == 0, column_count, style);
+        let normalized = normalize_table_row_xml(
+            &captures[0],
+            row_index,
+            row_index == 0,
+            &column_widths,
+            style,
+        );
         row_index += 1;
         normalized
     })
@@ -5164,14 +5297,14 @@ fn count_table_columns(table_xml: &str) -> usize {
 
 fn normalize_table_properties(
     table_xml: &str,
-    column_count: usize,
+    column_widths: &[u32],
     style: &TableStyleConfig,
 ) -> String {
     let table_properties =
         Regex::new(r#"(?s)<w:tblPr>(.*?)</w:tblPr>"#).expect("valid table property regex");
     let table_grid =
         Regex::new(r#"(?s)<w:tblGrid>.*?</w:tblGrid>"#).expect("valid table grid regex");
-    let grid = build_table_grid_xml(column_count, style);
+    let grid = build_table_grid_xml(column_widths);
     let layout = if style.layout.trim().eq_ignore_ascii_case("auto") {
         "autofit"
     } else {
@@ -5266,9 +5399,8 @@ fn border_xml_with_space(style: &str, width: f64, color: &str, space: u32) -> St
     format!(r#"w:val="{value}" w:sz="{size}" w:space="{space}" w:color="{color}""#)
 }
 
-fn build_table_grid_xml(column_count: usize, style: &TableStyleConfig) -> String {
-    let widths = table_column_widths(column_count, style);
-    let columns = widths
+fn build_table_grid_xml(column_widths: &[u32]) -> String {
+    let columns = column_widths
         .iter()
         .map(|width| format!(r#"<w:gridCol w:w="{width}" />"#))
         .collect::<Vec<_>>()
@@ -5296,14 +5428,79 @@ fn table_column_widths(column_count: usize, style: &TableStyleConfig) -> Vec<u32
     vec![width; count]
 }
 
+fn table_column_widths_for_xml(
+    table_xml: &str,
+    column_count: usize,
+    style: &TableStyleConfig,
+) -> Vec<u32> {
+    if style.column_width_percentages.is_some() || !style.layout.trim().eq_ignore_ascii_case("auto")
+    {
+        return table_column_widths(column_count, style);
+    }
+
+    let count = column_count.max(1);
+    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
+    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
+    let mut content_weights = vec![1.0_f64; count];
+
+    for row_match in row.find_iter(table_xml) {
+        for (column_index, cell_match) in cell.find_iter(row_match.as_str()).enumerate() {
+            if column_index >= count {
+                break;
+            }
+            content_weights[column_index] = content_weights[column_index]
+                .max(estimated_table_cell_text_units(cell_match.as_str()).max(1.0));
+        }
+    }
+
+    let minimum_content_width_twips = px_to_twips(24.0);
+    let horizontal_padding_twips = px_to_twips(style.cell_padding_x.max(0.0) * 2.0);
+    let minimum_column_width = minimum_content_width_twips + horizontal_padding_twips;
+    let minimum_table_width = minimum_column_width.saturating_mul(count as u32);
+    let table_width = style.width_twips.max(minimum_table_width);
+    let distributable_width = table_width.saturating_sub(minimum_table_width);
+    let total_weight = content_weights.iter().sum::<f64>().max(count as f64);
+
+    let mut widths = content_weights
+        .iter()
+        .map(|weight| {
+            minimum_column_width
+                + (f64::from(distributable_width) * weight / total_weight).floor() as u32
+        })
+        .collect::<Vec<_>>();
+    let used = widths
+        .iter()
+        .take(widths.len().saturating_sub(1))
+        .sum::<u32>();
+    if let Some(last) = widths.last_mut() {
+        *last = table_width.saturating_sub(used).max(minimum_column_width);
+    }
+    widths
+}
+
+fn estimated_table_cell_text_units(cell_xml: &str) -> f64 {
+    paragraph_plain_text(cell_xml)
+        .chars()
+        .map(|character| {
+            if character.is_whitespace() {
+                0.35
+            } else if character.is_ascii() {
+                0.58
+            } else {
+                1.0
+            }
+        })
+        .sum()
+}
+
 fn normalize_table_row_xml(
     row_xml: &str,
     row_index: usize,
     is_header: bool,
-    column_count: usize,
+    column_widths: &[u32],
     style: &TableStyleConfig,
 ) -> String {
-    let row_xml = normalize_table_row_properties(row_xml, style);
+    let row_xml = normalize_table_row_properties(row_xml, style, is_header);
     let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
     let mut cell_index = 0usize;
     cell.replace_all(&row_xml, |captures: &Captures| {
@@ -5311,7 +5508,7 @@ fn normalize_table_row_xml(
             &captures[0],
             row_index,
             is_header,
-            column_count,
+            column_widths,
             cell_index,
             style,
         );
@@ -5321,31 +5518,44 @@ fn normalize_table_row_xml(
     .to_string()
 }
 
-fn normalize_table_row_properties(row_xml: &str, style: &TableStyleConfig) -> String {
+fn normalize_table_row_properties(
+    row_xml: &str,
+    style: &TableStyleConfig,
+    is_header: bool,
+) -> String {
     let row_properties =
         Regex::new(r#"(?s)<w:trPr>(.*?)</w:trPr>"#).expect("valid table row property regex");
     let height = px_to_twips(style.min_row_height);
     let height_xml = format!(r#"<w:trHeight w:val="{height}" w:hRule="atLeast" />"#);
+    let header_xml = if is_header && style.repeat_header_on_each_page {
+        r#"<w:tblHeader w:val="on" />"#
+    } else {
+        ""
+    };
+    let pagination_xml = format!("{header_xml}<w:cantSplit />");
 
     if row_properties.is_match(row_xml) {
         return row_properties
             .replace(row_xml, |captures: &Captures| {
-                let removable =
-                    Regex::new(r#"<w:trHeight\b[^>]*/>"#).expect("valid row height cleanup regex");
+                let removable = Regex::new(r#"<w:(?:trHeight|tblHeader|cantSplit)\b[^>]*/>"#)
+                    .expect("valid row pagination cleanup regex");
                 let inner = removable.replace_all(&captures[1], "");
-                format!("<w:trPr>{inner}{height_xml}</w:trPr>")
+                format!("<w:trPr>{inner}{height_xml}{pagination_xml}</w:trPr>")
             })
             .to_string();
     }
 
-    row_xml.replace("<w:tr>", &format!("<w:tr><w:trPr>{height_xml}</w:trPr>"))
+    row_xml.replace(
+        "<w:tr>",
+        &format!("<w:tr><w:trPr>{height_xml}{pagination_xml}</w:trPr>"),
+    )
 }
 
 fn normalize_table_cell_xml(
     cell_xml: &str,
     row_index: usize,
     is_header: bool,
-    column_count: usize,
+    column_widths: &[u32],
     cell_index: usize,
     style: &TableStyleConfig,
 ) -> String {
@@ -5353,7 +5563,7 @@ fn normalize_table_cell_xml(
         cell_xml,
         row_index,
         is_header,
-        column_count,
+        column_widths,
         cell_index,
         style,
     );
@@ -5365,14 +5575,14 @@ fn normalize_table_cell_properties(
     cell_xml: &str,
     row_index: usize,
     is_header: bool,
-    column_count: usize,
+    column_widths: &[u32],
     cell_index: usize,
     style: &TableStyleConfig,
 ) -> String {
-    let cell_width = table_column_widths(column_count, style)
+    let cell_width = column_widths
         .get(cell_index)
         .copied()
-        .unwrap_or_else(|| style.width_twips / column_count.max(1) as u32);
+        .unwrap_or_else(|| style.width_twips / column_widths.len().max(1) as u32);
     let cell_style = table_cell_style(style, is_header);
     let fill = cell_fill(style, cell_style, is_header, row_index);
     let cell_properties = format!(
@@ -5520,7 +5730,7 @@ fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyl
 
 fn table_paragraph_properties_xml(inner: &str, alignment: &str, line: u32) -> String {
     format!(
-        r#"<w:pPr>{inner}<w:spacing w:line="{line}" w:lineRule="auto" /><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{alignment}" /></w:pPr>"#
+        r#"<w:pPr>{inner}<w:spacing w:line="{line}" w:lineRule="exact" /><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{alignment}" /></w:pPr>"#
     )
 }
 
@@ -5674,18 +5884,19 @@ mod tests {
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_report_heading_numbering_config, document_style_config_from_value,
-        normalize_template_style_xml,
         footer_page_number_xml, has_supported_text_extension, heading_numbering_config_from_value,
         image_style_config_from_value, mark_task_list_paragraphs,
         markdown_feature_config_from_value, normalize_default_report_styles_xml,
         normalize_document_captions, normalize_document_images, normalize_document_xml,
-        normalize_docx, normalize_template_styles_xml, page_content_width_twips,
-        page_settings_config_from_value, pandoc_document_options_from_value, paragraph_shading_xml,
+        normalize_docx, normalize_template_style_xml, normalize_template_styles_xml,
+        page_content_width_twips, page_settings_config_from_value,
+        pandoc_document_options_from_value, paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
-        read_style_fill, table_column_widths, table_style_config_from_value,
-        task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        HeadingTarget, MarkdownFeatureConfig,
+        read_style_fill, table_column_widths, table_column_widths_for_xml,
+        table_style_config_from_value, task_list_markers_from_numbering_xml, ConvertRequest,
+        HeadingNumberingConfig, HeadingTarget, MarkdownFeatureConfig,
     };
+    use regex::Regex;
     use serde_json::json;
     use std::fs;
     use std::io::{Cursor, Read, Write};
@@ -5750,22 +5961,128 @@ mod tests {
         );
 
         assert!(output.contains(r#"<w:tblW w:type="dxa" w:w="8640" />"#));
-        assert!(output.contains(r#"<w:tblLayout w:type="fixed" />"#));
+        assert!(output.contains(r#"<w:tblLayout w:type="autofit" />"#));
         assert!(output.contains("<w:tblBorders>"));
         assert!(!output.contains("<w:tblStyle"));
         assert!(!output.contains("<w:tblLook"));
         assert!(output.contains(r#"<w:gridCol w:w="8640" />"#));
         assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="8640" />"#));
         assert!(output.contains(r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#));
-        assert!(!output.contains(r#"w:fill="EEF2FF""#));
+        assert!(output.contains(r#"w:fill="EEF2FF""#));
         assert!(output.contains(r#"<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF" />"#));
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
         assert!(output.contains(r#"<w:vAlign w:val="center" />"#));
-        assert!(output.contains(r#"<w:b /><w:bCs /><w:sz w:val="21" /><w:szCs w:val="21" />"#));
+        assert!(output.contains(r#"<w:b /><w:bCs /><w:sz w:val="22" /><w:szCs w:val="22" />"#));
         assert!(output.contains(
-            r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="21" /><w:szCs w:val="21" />"#
+            r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="20" /><w:szCs w:val="20" />"#
         ));
-        assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 2);
+        assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 3);
+        assert!(output.contains(r#"<w:tblHeader w:val="on" />"#));
+        assert_eq!(output.matches("<w:cantSplit />").count(), 2);
+    }
+
+    #[test]
+    fn auto_table_widths_follow_content_and_are_reused_by_grid_and_cells() {
+        let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:tc><w:tcPr /><w:p><w:r><w:t>序号</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:r><w:t>类型</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:r><w:t>详细说明</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr /><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:r><w:t>文本</w:t></w:r></w:p></w:tc><w:tc><w:tcPr /><w:p><w:r><w:t>这一列包含明显更长的说明文字，用于验证自动列宽</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
+        let style = table_style_config_from_value(&json!({
+            "styles": {
+                "table": {
+                    "tableLayout": "auto",
+                    "columnWidthMode": "auto"
+                }
+            }
+        }))
+        .expect("table style should parse");
+
+        let widths = table_column_widths_for_xml(input, 3, &style);
+        assert_eq!(widths.len(), 3);
+        assert_eq!(widths.iter().sum::<u32>(), style.width_twips);
+        assert!(widths[2] > widths[0]);
+        assert!(widths[2] > widths[1]);
+
+        let output = normalize_document_xml(
+            input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            Some(&style),
+            None,
+            None,
+        );
+        let grid = widths
+            .iter()
+            .map(|width| format!(r#"<w:gridCol w:w="{width}" />"#))
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(output.contains(&format!("<w:tblGrid>{grid}</w:tblGrid>")));
+        let cell_width =
+            Regex::new(r#"<w:tcW w:type="dxa" w:w="(\d+)" />"#).expect("valid cell width regex");
+        let actual_cell_widths = cell_width
+            .captures_iter(&output)
+            .map(|captures| captures[1].parse::<u32>().expect("numeric cell width"))
+            .collect::<Vec<_>>();
+        assert_eq!(actual_cell_widths, [widths.clone(), widths].concat());
+    }
+
+    #[test]
+    fn fixed_and_custom_table_widths_ignore_content_weights() {
+        let input = r#"<w:tbl><w:tr><w:tc><w:p><w:r><w:t>短</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>这一列非常非常长</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>中</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+        let fixed = table_style_config_from_value(&json!({
+            "styles": {
+                "table": {
+                    "tableLayout": "fixed",
+                    "columnWidthMode": "auto"
+                }
+            }
+        }))
+        .expect("fixed table style should parse");
+        assert_eq!(
+            table_column_widths_for_xml(input, 3, &fixed),
+            table_column_widths(3, &fixed)
+        );
+
+        let custom = table_style_config_from_value(&json!({
+            "styles": {
+                "table": {
+                    "tableLayout": "auto",
+                    "columnWidthMode": "custom",
+                    "firstColumnWidth": 20,
+                    "secondColumnWidth": 30,
+                    "thirdColumnWidth": 50
+                }
+            }
+        }))
+        .expect("custom table style should parse");
+        assert_eq!(
+            table_column_widths_for_xml(input, 3, &custom),
+            table_column_widths(3, &custom)
+        );
+    }
+
+    #[test]
+    fn applies_saved_table_header_pagination_setting() {
+        let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:trPr><w:tblHeader w:val="on" /></w:trPr><w:tc><w:tcPr /><w:p><w:r><w:t>表头</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:cantSplit /></w:trPr><w:tc><w:tcPr /><w:p><w:r><w:t>数据</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
+        let table_style = table_style_config_from_value(&json!({
+            "styles": {
+                "table": {
+                    "repeatHeaderOnEachPage": false
+                }
+            }
+        }))
+        .expect("table style should parse");
+
+        let output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            Some(&table_style),
+            None,
+            None,
+        );
+
+        assert!(!output.contains("<w:tblHeader"));
+        assert_eq!(output.matches("<w:cantSplit />").count(), 2);
     }
 
     #[test]
@@ -5933,15 +6250,15 @@ mod tests {
         assert!(output.contains(r#"<w:trHeight w:val="540" w:hRule="atLeast" />"#));
         assert!(output.contains(r#"<w:tcMar><w:top w:w="90" w:type="dxa" /><w:left w:w="240" w:type="dxa" /><w:bottom w:w="90" w:type="dxa" /><w:right w:w="240" w:type="dxa" /></w:tcMar>"#));
         assert!(output.contains(r#"<w:noWrap />"#));
-        assert!(output.contains(r#"<w:spacing w:line="288" w:lineRule="auto" />"#));
-        assert!(output.contains(r#"<w:spacing w:line="360" w:lineRule="auto" />"#));
+        assert!(output.contains(r#"<w:spacing w:line="288" w:lineRule="exact" />"#));
+        assert!(output.contains(r#"<w:spacing w:line="360" w:lineRule="exact" />"#));
         assert!(output.contains(r#"<w:tblLayout w:type="fixed" /><w:jc w:val="right" />"#));
         assert!(output.contains(r#"w:val="dashed" w:sz="12" w:space="0" w:color="94A3B8""#));
         assert!(
-            output.contains(r#"<w:top w:val="dashed" w:sz="24" w:space="0" w:color="94A3B8" />"#)
+            output.contains(r#"<w:top w:val="dashed" w:sz="28" w:space="0" w:color="94A3B8" />"#)
         );
         assert!(
-            output.contains(r#"<w:left w:val="dashed" w:sz="32" w:space="0" w:color="94A3B8" />"#)
+            output.contains(r#"<w:left w:val="dashed" w:sz="36" w:space="0" w:color="94A3B8" />"#)
         );
         assert!(output.contains(r#"<w:vAlign w:val="top" />"#));
         assert!(output.contains(r#"<w:vAlign w:val="bottom" />"#));
@@ -6567,9 +6884,12 @@ mod tests {
         assert!(output.contains(r#"TOC \o &quot;1-4&quot; \h \z \u \p &quot; &quot;"#));
         assert!(output.contains(r#"<w:pgNumType w:start="4" />"#));
 
-        let pandoc_toc = r#"<w:document><w:body><w:sdt><w:sdtContent><w:p><w:r><w:instrText xml:space="preserve">TOC \o &quot;1-3&quot; \h \z \u</w:instrText></w:r></w:p></w:sdtContent></w:sdt><w:sectPr /></w:body></w:document>"#;
+        let pandoc_toc = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:instrText xml:space="preserve">TOC \o &quot;1-3&quot; \h \z \u</w:instrText></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>正文</w:t></w:r></w:p><w:sectPr /></w:body></w:document>"#;
         let output = apply_page_settings_to_document_xml(pandoc_toc, Some(&settings));
         assert!(output.contains(r#"<w:instrText xml:space="preserve">TOC \o &quot;1-4&quot; \h \z \u \p &quot; &quot;</w:instrText>"#));
+        assert_eq!(output.matches(r#"<w:br w:type="page" />"#).count(), 1);
+        let output = apply_page_settings_to_document_xml(&output, Some(&settings));
+        assert_eq!(output.matches(r#"<w:br w:type="page" />"#).count(), 1);
     }
 
     #[test]
@@ -6748,7 +7068,12 @@ mod tests {
 
         assert!(!output.contains("MD_KING_CODE_INDENT_PT"));
         assert!(output.contains("TypeScript"));
-        assert_eq!(output.matches(r#"<w:ind w:left="840" w:right="360" w:firstLine="0" />"#).count(), 2);
+        assert_eq!(
+            output
+                .matches(r#"<w:ind w:left="840" w:right="360" w:firstLine="0" />"#)
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -7348,18 +7673,66 @@ mod tests {
     /// 就已经预览左对齐、导出居中了。
     #[test]
     fn heading_styles_fall_back_to_frontend_defaults() {
-        let heading1 = r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1" /><w:pPr><w:keepNext /><w:outlineLvl w:val="0" /><w:jc w:val="center" /></w:pPr><w:rPr><w:sz w:val="40" /><w:szCs w:val="40" /></w:rPr></w:style>"#;
+        let heading1 = r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1" /><w:pPr><w:keepNext /><w:outlineLvl w:val="0" /><w:spacing w:line="324" w:lineRule="auto" /><w:jc w:val="center" /></w:pPr><w:rPr><w:sz w:val="40" /><w:szCs w:val="40" /></w:rPr></w:style>"#;
         let features = default_markdown_feature_config();
 
         let normalized = normalize_template_style_xml(heading1, &features, None, false);
 
-        assert!(normalized.contains(r#"<w:jc w:val="left" />"#), "对齐应纠正为左对齐");
-        assert!(!normalized.contains(r#"<w:jc w:val="center" />"#), "不应残留居中");
-        assert!(normalized.contains(r#"<w:sz w:val="44" />"#), "字号应纠正为 22pt");
-        assert!(normalized.contains(r#"<w:szCs w:val="44" />"#), "复杂文本字号要一起改");
+        assert!(
+            normalized.contains(r#"<w:jc w:val="left" />"#),
+            "对齐应纠正为左对齐"
+        );
+        assert!(
+            !normalized.contains(r#"<w:jc w:val="center" />"#),
+            "不应残留居中"
+        );
+        assert!(
+            normalized.contains(r#"<w:sz w:val="44" />"#),
+            "字号应纠正为 22pt"
+        );
+        assert!(
+            normalized.contains(r#"<w:szCs w:val="44" />"#),
+            "复杂文本字号要一起改"
+        );
         // 大纲级别不能被顺手抹掉，否则 Word 的导航窗格会失效。
-        assert!(normalized.contains(r#"<w:outlineLvl w:val="0" />"#), "应保留大纲级别");
+        assert!(
+            normalized.contains(r#"<w:outlineLvl w:val="0" />"#),
+            "应保留大纲级别"
+        );
         assert!(normalized.contains("<w:keepNext />"), "应保留段中不分页");
+        assert!(
+            normalized.contains(r#"<w:spacing w:line="324" w:lineRule="exact" />"#),
+            "标题行距应与浏览器的精确行框一致"
+        );
     }
 
+    #[test]
+    fn saved_heading_styles_preserve_word_pagination_and_outline_properties() {
+        let heading1 = r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1" /><w:pPr><w:keepNext /><w:keepLines /><w:widowControl /><w:outlineLvl w:val="0" /><w:jc w:val="center" /></w:pPr><w:rPr><w:sz w:val="40" /><w:szCs w:val="40" /></w:rPr></w:style>"#;
+        let document_style = document_style_config_from_value(&json!({
+            "styles": {
+                "heading-1": {
+                    "fontSize": 18,
+                    "beforeSpacing": 12,
+                    "afterSpacing": 6,
+                    "align": "left"
+                }
+            }
+        }))
+        .expect("document style should parse");
+
+        let normalized = normalize_template_style_xml(
+            heading1,
+            &default_markdown_feature_config(),
+            Some(&document_style),
+            false,
+        );
+
+        assert!(normalized.contains("<w:keepNext />"));
+        assert!(normalized.contains("<w:keepLines />"));
+        assert!(normalized.contains("<w:widowControl />"));
+        assert!(normalized.contains(r#"<w:outlineLvl w:val="0" />"#));
+        assert!(normalized.contains(r#"<w:jc w:val="left" />"#));
+        assert!(normalized.contains(r#"w:lineRule="exact""#));
+    }
 }
