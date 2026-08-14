@@ -13,7 +13,7 @@ import { resolvePreviewImageSource } from "@/lib/tauri";
 import { nextMarkdownHeadingAnchor } from "@/lib/document-links";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
-import { estimateMermaidBlockHeight, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
+import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitRowsWithRepeatedHeader, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { parseMarkdownCalloutHeader, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
@@ -53,14 +53,14 @@ export type PreviewOutlineItem = {
 type PreviewBlock =
   | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
-  | { type: "paragraph"; segments: PreviewTextSegment[] }
+  | { type: "paragraph"; segments: PreviewTextSegment[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number }
   | { type: "math"; text: string }
   | { type: "hr" }
-  | { type: "list"; items: PreviewListItem[] }
+  | { type: "list"; items: PreviewListItem[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "image"; src?: string; alt?: string; caption?: string }
-  | { type: "table"; caption?: string; rows: PreviewTableCell[][] };
+  | { type: "table"; caption?: string; rows: PreviewTableCell[][]; bodyRowOffset?: number; columnWidthPercentages?: number[] };
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type PreviewTextSegment = { text: string; code?: boolean; math?: boolean; bold?: boolean; italic?: boolean; strike?: boolean; link?: string };
@@ -242,14 +242,22 @@ function imageMargin(draft: StyleDraft): CSSProperties["margin"] {
   return "0";
 }
 
-function tableColumnWidths(percentages: [number, number, number], columnCount: number) {
-  if (columnCount <= 1) return ["100%"];
+function tableColumnWidthPercentages(percentages: [number, number, number], columnCount: number) {
+  if (columnCount <= 1) return [100];
   const raw = columnCount === 2
     ? percentages.slice(0, 2)
     : [percentages[0], percentages[1], ...Array.from({ length: columnCount - 2 }, () => percentages[2] / (columnCount - 2))];
   const total = raw.reduce((sum, value) => sum + Math.max(0, value), 0);
   if (total <= 0) return [];
-  return raw.map((value) => `${(Math.max(0, value) / total * 100).toFixed(3)}%`);
+  return raw.map((value) => Math.max(0, value) / total * 100);
+}
+
+function tableColumnWidths(percentages: [number, number, number], columnCount: number) {
+  return tableColumnWidthPercentages(percentages, columnCount).map((value) => `${value.toFixed(3)}%`);
+}
+
+function percentageColumnWidths(percentages: readonly number[]) {
+  return percentages.map((value) => `${value.toFixed(3)}%`);
 }
 
 function codeBlockBorder(draft: StyleDraft) {
@@ -1008,17 +1016,151 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
   return blocks;
 }
 
-function estimateTextLines(text: string, charsPerLine = 26) {
+function estimatedTextUnits(text: string) {
+  return Array.from(text).reduce((total, character) => {
+    if (/\s/.test(character)) return total + 0.35;
+    if (/^[\x00-\x7F]$/.test(character)) return total + 0.58;
+    return total + 1;
+  }, 0);
+}
+
+function estimateTextLines(text: string, charsPerLine = 26, proportionalText = true) {
   const explicitLines = text.split(/\r?\n/);
-  return explicitLines.reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+  return explicitLines.reduce((total, line) => {
+    const width = proportionalText ? estimatedTextUnits(line) : Array.from(line).length;
+    return total + Math.max(1, Math.ceil(width / charsPerLine));
+  }, 0);
 }
 
 function estimateCharsPerLine(contentWidth: number, draft: StyleDraft, ratio = 1) {
   return Math.max(8, Math.floor(contentWidth / Math.max(1, ptToPx(draft.fontSize) * ratio)));
 }
 
+function splitTextSegmentsAt(segments: PreviewTextSegment[], offset: number): [PreviewTextSegment[], PreviewTextSegment[]] {
+  const head: PreviewTextSegment[] = [];
+  const tail: PreviewTextSegment[] = [];
+  let remaining = offset;
+
+  segments.forEach((segment) => {
+    if (remaining <= 0) {
+      tail.push(segment);
+      return;
+    }
+    if (remaining >= segment.text.length) {
+      head.push(segment);
+      remaining -= segment.text.length;
+      return;
+    }
+    head.push({ ...segment, text: segment.text.slice(0, remaining) });
+    tail.push({ ...segment, text: segment.text.slice(remaining) });
+    remaining = 0;
+  });
+
+  return [head.filter((segment) => segment.text), tail.filter((segment) => segment.text)];
+}
+
+function textSplitOffset(text: string, maxChars: number) {
+  if (text.length <= maxChars) return text.length;
+  const candidates = ["\n", "。", "；", "！", "？", "，", " "]
+    .map((separator) => text.lastIndexOf(separator, maxChars))
+    .filter((index) => index >= Math.floor(maxChars * 0.55));
+  const splitAt = candidates.length > 0 ? Math.max(...candidates) + 1 : maxChars;
+  return Math.min(text.length - 1, Math.max(1, splitAt));
+}
+
+function textSplitOffsetByUnits(text: string, maxUnits: number) {
+  let units = 0;
+  let offset = 0;
+
+  for (const character of text) {
+    const characterUnits = estimatedTextUnits(character);
+    if (offset > 0 && units + characterUnits > maxUnits) break;
+    units += characterUnits;
+    offset += character.length;
+  }
+
+  return textSplitOffset(text, offset);
+}
+
 function mermaidSizeKey(source: string, dark: boolean) {
   return `${dark ? "d" : "l"}:${source.trim()}`;
+}
+
+function estimateTableColumnWidths(block: Extract<PreviewBlock, { type: "table" }>, tableDraft: StyleDraft, contentWidth: number) {
+  const columnCount = Math.max(1, ...block.rows.map((row) => row.length));
+  const tableWidth = contentWidth * (tableDraft.fitToPageWidth ? 1 : Math.min(100, Math.max(1, tableDraft.tableWidthPercent)) / 100);
+  const columnWidthWeights = block.columnWidthPercentages ?? (tableDraft.columnWidthMode === "custom"
+    ? tableColumnWidthPercentages([tableDraft.firstColumnWidth, tableDraft.secondColumnWidth, tableDraft.thirdColumnWidth], columnCount)
+    : undefined);
+  return estimateTableColumnContentWidths({
+    rows: block.rows.map((row) => row.map((cell) => plainText(cell.segments))),
+    tableWidth,
+    horizontalPadding: tableDraft.cellPaddingX,
+    layout: tableDraft.tableLayout,
+    columnWidthWeights,
+  });
+}
+
+function resolveTableBlockColumnWidths(block: PreviewBlock, tableDraft: StyleDraft, contentWidth: number): PreviewBlock {
+  if (block.type !== "table" || block.columnWidthPercentages) return block;
+  const contentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
+  const outerWidths = contentWidths.map((width) => width + Math.max(0, tableDraft.cellPaddingX) * 2);
+  const totalWidth = outerWidths.reduce((sum, width) => sum + width, 0);
+  return {
+    ...block,
+    columnWidthPercentages: outerWidths.map((width) => width / totalWidth * 100),
+  };
+}
+
+function estimateTableRowHeight(row: PreviewTableCell[], rowIndex: number, tableDraft: StyleDraft, drafts: Record<string, StyleDraft>, columnContentWidths: number[]) {
+  const isHeader = rowIndex === 0;
+  const rowDraft = drafts[isHeader ? "table-header" : "table-body"] ?? tableDraft;
+  const fontSize = isHeader ? rowDraft.headerFontSize : rowDraft.bodyFontSize;
+  const lineHeight = resolveLineHeightValue(isHeader ? rowDraft.headerLineHeight : rowDraft.bodyLineHeight);
+  const contentLines = Math.max(1, ...row.map((cell, columnIndex) => {
+    if (!tableDraft.cellWrap) return estimateTextLines(plainText(cell.segments), Number.POSITIVE_INFINITY);
+    const charsPerLine = Math.max(4, Math.floor((columnContentWidths[columnIndex] ?? 24) / Math.max(1, ptToPx(fontSize))));
+    return estimateTextLines(plainText(cell.segments), charsPerLine);
+  }));
+  return Math.max(tableDraft.minRowHeight, contentLines * ptToPx(fontSize) * lineHeight + tableDraft.cellPaddingY * 2);
+}
+
+function estimateTableCaptionHeight(block: Extract<PreviewBlock, { type: "table" }>, drafts: Record<string, StyleDraft>) {
+  const tableCaptionDraft = drafts["table-caption"];
+  return block.caption && tableCaptionDraft
+    ? resolveLineHeightPx(tableCaptionDraft) + ptToPx(tableCaptionDraft.beforeSpacing + tableCaptionDraft.afterSpacing)
+    : 0;
+}
+
+function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string, StyleDraft>) {
+  if (block.type === "heading") {
+    const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
+    return { before: ptToPx(draft.beforeSpacing), after: ptToPx(draft.afterSpacing) };
+  }
+  if (block.type === "paragraph") {
+    return {
+      before: block.continuedFromPrevious ? 0 : ptToPx(drafts.normal.beforeSpacing),
+      after: block.continuesNext ? 0 : ptToPx(drafts.normal.afterSpacing),
+    };
+  }
+  if (block.type === "quote") return { before: ptToPx(drafts.quote.beforeSpacing), after: ptToPx(drafts.quote.afterSpacing) };
+  if (block.type === "code") return { before: ptToPx(drafts.code.beforeSpacing), after: ptToPx(drafts.code.afterSpacing) };
+  if (block.type === "math") return { before: ptToPx(drafts.normal.beforeSpacing), after: ptToPx(drafts.normal.afterSpacing) };
+  if (block.type === "hr") {
+    const draft = drafts["horizontal-rule"];
+    return { before: ptToPx(draft.beforeSpacing), after: ptToPx(draft.afterSpacing) };
+  }
+  if (block.type === "list") {
+    const firstItem = block.items[0];
+    const lastItem = block.items[block.items.length - 1];
+    const firstDraft = firstItem ? resolveListLevelDraft(resolveListBaseDraft(drafts, firstItem), firstItem) : undefined;
+    const lastDraft = lastItem ? resolveListLevelDraft(resolveListBaseDraft(drafts, lastItem), lastItem) : undefined;
+    return {
+      before: block.continuedFromPrevious ? 0 : ptToPx(firstDraft?.beforeSpacing ?? 0),
+      after: block.continuesNext ? 0 : ptToPx(lastDraft?.afterSpacing ?? 0),
+    };
+  }
+  return { before: 0, after: 0 };
 }
 
 function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
@@ -1032,7 +1174,9 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "paragraph") {
-    return ptToPx(drafts.normal.beforeSpacing + drafts.normal.afterSpacing) + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal)) * resolveLineHeightPx(drafts.normal);
+    const beforeSpacing = block.continuedFromPrevious ? 0 : drafts.normal.beforeSpacing;
+    const afterSpacing = block.continuesNext ? 0 : drafts.normal.afterSpacing;
+    return ptToPx(beforeSpacing + afterSpacing) + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal)) * resolveLineHeightPx(drafts.normal);
   }
 
   if (block.type === "quote") {
@@ -1054,7 +1198,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
     }
     // 有语言标签时渲染顶部多 22px（语言标签行）+ 原来的 18px 底部padding，共需多加 22px。
     const languageExtra = block.language ? 22 : 0;
-    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24 - ptToPx(block.indentPt), drafts.code, 0.62)) * resolveLineHeightPx(drafts.code);
+    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24 - ptToPx(block.indentPt), drafts.code, 0.62), false) * resolveLineHeightPx(drafts.code);
   }
 
   if (block.type === "math") {
@@ -1079,8 +1223,11 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
     const lastItem = block.items[block.items.length - 1];
     const firstDraft = firstItem ? resolveListLevelDraft(resolveListBaseDraft(drafts, firstItem), firstItem) : undefined;
     const lastDraft = lastItem ? resolveListLevelDraft(resolveListBaseDraft(drafts, lastItem), lastItem) : undefined;
-    const spacingHeight = ptToPx((firstDraft?.beforeSpacing ?? 0) + (lastDraft?.afterSpacing ?? 0));
-    return contentHeight + spacingHeight + Math.max(0, block.items.length - 1) * 6;
+    const spacingHeight = ptToPx(
+      (block.continuedFromPrevious ? 0 : (firstDraft?.beforeSpacing ?? 0))
+      + (block.continuesNext ? 0 : (lastDraft?.afterSpacing ?? 0)),
+    );
+    return contentHeight + spacingHeight;
   }
 
   if (block.type === "image") {
@@ -1088,15 +1235,9 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
     return 132 + (block.caption && captionDraft ? resolveLineHeightPx(captionDraft) + ptToPx(captionDraft.beforeSpacing + captionDraft.afterSpacing) : 0);
   }
 
-  const tableCaptionDraft = drafts["table-caption"];
-  const tableCaptionHeight = block.caption && tableCaptionDraft
-    ? resolveLineHeightPx(tableCaptionDraft) + ptToPx(tableCaptionDraft.beforeSpacing + tableCaptionDraft.afterSpacing)
-    : 0;
-  const tableRowHeight = Math.max(
-    tableDraft.minRowHeight,
-    ptToPx(tableDraft.bodyFontSize) * resolveLineHeightValue(tableDraft.bodyLineHeight) + tableDraft.cellPaddingY * 2,
-  );
-  return 10 + tableCaptionHeight + Math.max(1, block.rows.length) * tableRowHeight;
+  const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
+  return estimateTableCaptionHeight(block, drafts)
+    + block.rows.reduce((height, row, rowIndex) => height + estimateTableRowHeight(row, rowIndex, tableDraft, drafts, columnContentWidths), 0);
 }
 
 function splitTextByLength(text: string, maxChars: number) {
@@ -1159,47 +1300,82 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
       return pages;
     }
 
-    if (block.type === "table") {
-      const [header, ...bodyRows] = block.rows;
-      const maxBodyRows = Math.max(2, Math.floor((pageContentHeight - 70) / 38));
-      const chunks: PreviewBlock[] = [];
-
-      for (let index = 0; index < bodyRows.length; index += maxBodyRows) {
-        chunks.push({
-          ...block,
-          caption: index === 0 ? block.caption : undefined,
-          rows: header ? [header, ...bodyRows.slice(index, index + maxBodyRows)] : bodyRows.slice(index, index + maxBodyRows),
-        });
-      }
-
-      return chunks.length > 0 ? chunks : [block];
-    }
-
     return [block];
   });
 }
 
 function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
-  const pages: PreviewBlock[][] = [];
-  let currentPage: PreviewBlock[] = [];
-  let usedHeight = 0;
+  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes);
 
-  blocks.forEach((block) => {
-    const blockHeight = estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes);
-    const shouldStartNewPage = currentPage.length > 0 && usedHeight + blockHeight > pageContentHeight;
-
-    if (shouldStartNewPage) {
-      pages.push(currentPage);
-      currentPage = [];
-      usedHeight = 0;
+  const splitToFit = (block: PreviewBlock, availableHeight: number): PreviewBlockSplit<PreviewBlock> | undefined => {
+    if (block.type === "list" && block.items.length > 1) {
+      let splitIndex = 0;
+      for (let index = 1; index < block.items.length; index += 1) {
+        const candidate: PreviewBlock = {
+          ...block,
+          items: block.items.slice(0, index),
+          continuesNext: true,
+        };
+        if (estimateHeight(candidate) > availableHeight) break;
+        splitIndex = index;
+      }
+      if (splitIndex > 0) {
+        return {
+          head: { ...block, items: block.items.slice(0, splitIndex), continuesNext: true },
+          tail: { ...block, items: block.items.slice(splitIndex), continuedFromPrevious: true },
+        };
+      }
     }
 
-    currentPage.push(block);
-    usedHeight += blockHeight;
-  });
+    if (block.type === "paragraph") {
+      const lineHeight = resolveLineHeightPx(drafts.normal);
+      const beforeSpacing = block.continuedFromPrevious ? 0 : ptToPx(drafts.normal.beforeSpacing);
+      const availableLines = Math.floor((availableHeight - beforeSpacing) / lineHeight);
+      const text = plainText(block.segments);
+      const maxChars = availableLines * estimateCharsPerLine(contentWidth, drafts.normal);
+      if (availableLines > 0 && maxChars < text.length) {
+        const [headSegments, tailSegments] = splitTextSegmentsAt(block.segments, textSplitOffsetByUnits(text, maxChars));
+        if (headSegments.length > 0 && tailSegments.length > 0) {
+          return {
+            head: { ...block, segments: headSegments, continuesNext: true },
+            tail: { ...block, segments: tailSegments, continuedFromPrevious: true },
+          };
+        }
+      }
+    }
 
-  if (currentPage.length > 0) pages.push(currentPage);
-  return pages.length > 0 ? pages : [[]];
+    if (block.type === "table") {
+      const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
+      const split = splitRowsWithRepeatedHeader({
+        rows: block.rows,
+        availableHeight,
+        fixedHeight: estimateTableCaptionHeight(block, drafts),
+        estimateRowHeight: (row, rowIndex) => estimateTableRowHeight(row, rowIndex, tableDraft, drafts, columnContentWidths),
+      });
+      if (split) {
+        const bodyRowOffset = block.bodyRowOffset ?? 0;
+        return {
+          head: { ...block, rows: split.head },
+          tail: {
+            ...block,
+            caption: undefined,
+            rows: split.tail,
+            bodyRowOffset: bodyRowOffset + split.bodyRowsInHead,
+          },
+        };
+      }
+    }
+
+    return undefined;
+  };
+
+  return paginateByEstimatedHeight({
+    blocks,
+    pageHeight: pageContentHeight,
+    estimateHeight,
+    estimateVerticalMargins: (block) => estimateBlockVerticalMargins(block, drafts),
+    splitToFit,
+  });
 }
 
 function createFallbackBlocks(imageCaption: string, tableCaption: string): PreviewBlock[] {
@@ -1370,7 +1546,20 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "paragraph") {
-      rendered.push(<p key={index} className={cn(selectedRing(selectedStyle, "normal"), "break-words")} style={textStyle(drafts.normal)}>{renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle, onOpenLink)}</p>);
+      rendered.push(
+        <p
+          key={index}
+          className={cn(selectedRing(selectedStyle, "normal"), "break-words")}
+          style={{
+            ...textStyle(drafts.normal),
+            marginTop: block.continuedFromPrevious ? 0 : `${drafts.normal.beforeSpacing}pt`,
+            marginBottom: block.continuesNext ? 0 : `${drafts.normal.afterSpacing}pt`,
+            textIndent: block.continuedFromPrevious ? 0 : `${drafts.normal.firstLineIndent}em`,
+          }}
+        >
+          {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle, onOpenLink)}
+        </p>,
+      );
       return;
     }
 
@@ -1514,8 +1703,9 @@ function renderMarkdownBlocks({
             const itemStyle = {
               ...textStyle(listDraft),
               marginLeft: `${resolveListIndent(listDraft, item)}em`,
-              marginTop: itemIndex === 0 ? `${listDraft.beforeSpacing}pt` : 0,
-              marginBottom: itemIndex === block.items.length - 1 ? `${listDraft.afterSpacing}pt` : 0,
+              marginTop: itemIndex === 0 && !block.continuedFromPrevious ? `${listDraft.beforeSpacing}pt` : 0,
+              marginBottom: itemIndex === block.items.length - 1 && !block.continuesNext ? `${listDraft.afterSpacing}pt` : 0,
+              textAlign: "left" as const,
               textIndent: 0,
             };
 
@@ -1560,14 +1750,16 @@ function renderMarkdownBlocks({
 
     if (block.type === "table") {
       const [header, ...rows] = block.rows;
-      const columnWidths = tableStyle.columnWidthMode === "custom"
-        ? tableColumnWidths(tableStyle.columnWidthPercentages, Math.max(header?.length ?? 0, ...rows.map((row) => row.length), 1))
-        : [];
+      const columnWidths = block.columnWidthPercentages
+        ? percentageColumnWidths(block.columnWidthPercentages)
+        : tableStyle.columnWidthMode === "custom"
+          ? tableColumnWidths(tableStyle.columnWidthPercentages, Math.max(header?.length ?? 0, ...rows.map((row) => row.length), 1))
+          : [];
       const caption = block.caption ? <div className="text-[10px] font-semibold text-slate-700" style={tableStyle.captionStyle}>{block.caption}</div> : null;
       rendered.push(
         <div key={index}>
           {tableStyle.captionPosition === "above" ? caption : null}
-        <table className={cn("my-3 border-collapse text-[10px]", selectedRing(selectedStyle, "table"))} style={{ width: tableStyle.tableWidth, margin: tableStyle.tableMargin, tableLayout: tableStyle.tableLayout, ...tableStyle.borderStyle }}>
+        <table className={cn("border-collapse text-[10px]", selectedRing(selectedStyle, "table"))} style={{ width: tableStyle.tableWidth, margin: tableStyle.tableMargin, tableLayout: tableStyle.tableLayout, ...tableStyle.borderStyle }}>
           {columnWidths.length > 0 ? <colgroup>{columnWidths.map((width, widthIndex) => <col key={widthIndex} style={{ width }} />)}</colgroup> : null}
           {header ? (
             <thead>
@@ -1583,7 +1775,7 @@ function renderMarkdownBlocks({
                     className="break-words"
                     style={{
                       ...tableStyle.bodyCellStyle,
-                      backgroundColor: tableStyle.rowStripe && rowIndex % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
+                      backgroundColor: tableStyle.rowStripe && ((block.bodyRowOffset ?? 0) + rowIndex) % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
                     }}
                   >
                     {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle, onOpenLink)}
@@ -1744,16 +1936,21 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
       ? { ...block, caption: captionText(caption, block.alt) }
       : block);
   const mappedBlocks = applyHeadingMappings(activeBlocks, styleConfig?.markdownRules?.headingMappings ?? defaultMarkdownRules.headingMappings);
-  const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-caption": tableCaption, "inline-code": inlineCode, "horizontal-rule": horizontalRule, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
-  const pageChromeHeight = (headerEnabled && headerText ? 30 : 0) + (footerEnabled ? 26 : 0);
-  // 仅保留少量像素取整余量；过大的固定安全区会把本可容纳的块提前推到下一页。
-  const pageContentHeight = Math.max(320, paperHeight - pageMargins.top - pageMargins.bottom - pageChromeHeight - 8);
+  const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-header": tableHeader, "table-body": tableBody, "table-caption": tableCaption, "inline-code": inlineCode, "horizontal-rule": horizontalRule, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
+  // 页脚绝对定位在底部边距内，不占正文流；这里只扣除真正位于正文流中的页眉。
+  const pageContentHeight = calculatePreviewContentHeight({
+    paperHeight,
+    marginTop: pageMargins.top,
+    marginBottom: pageMargins.bottom,
+    headerHeight: headerEnabled && headerText ? 30 : 0,
+  });
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(mappedBlocks, previewDrafts);
+  const blocksWithTableColumnWidths = numberedBlocks.map((block) => resolveTableBlockColumnWidths(block, table, contentWidth));
   const tocPages = shouldPaginate && showTocPage
     ? createPreviewTocPages(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth, pageContentHeight)
     : [];
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(numberedBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : numberedBlocks;
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(blocksWithTableColumnWidths, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : blocksWithTableColumnWidths;
   const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : [previewBlocks];
   const previewOutline = documentPages.flatMap((pageBlocks, pageIndex) => pageBlocks.flatMap((block) => {
     if (block.type !== "heading" || block.isDocumentTitle || !block.anchorId) return [];

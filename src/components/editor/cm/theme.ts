@@ -22,7 +22,7 @@ const sharedTheme = EditorView.theme({
     // 编辑器背景交给外层 .mk-editor-surface，这里透明避免叠出两层底色。
     backgroundColor: "transparent",
     color: "var(--foreground)",
-    fontSize: "14px",
+    fontSize: "15px",
   },
   "&.cm-focused": {
     // CM 默认的蓝色 outline 和本项目的 focus-visible ring 风格冲突，统一去掉。

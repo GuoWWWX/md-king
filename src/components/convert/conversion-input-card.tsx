@@ -35,6 +35,7 @@ type ConversionInputCardProps = {
   externalDragging?: boolean;
   onRequestSave?: () => void;
   readingMode?: boolean;
+  compactMode?: boolean;
   onOpenLink?: (target: string) => void;
 };
 
@@ -54,6 +55,7 @@ export function ConversionInputCard({
   externalDragging = false,
   onRequestSave,
   readingMode = false,
+  compactMode = false,
   onOpenLink,
 }: ConversionInputCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -229,7 +231,7 @@ export function ConversionInputCard({
           onRequestSave={onRequestSave}
           onOpenLink={onOpenLink}
           openLinksOnClick
-          className="h-full"
+          className={cn("h-full", compactMode && "mk-editor-compact")}
         />
       ) : (
         <div

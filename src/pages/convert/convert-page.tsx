@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings2, Shrink, StretchHorizontal, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { ContextMenu } from "radix-ui";
@@ -43,6 +43,7 @@ const previewMinWidth = 460;
 const editorMinWidth = 360;
 const inlinePreviewControlsMinWidth = 740;
 const inlinePreviewSidebarMinWidth = 720;
+const editorCompactModeStorageKey = "md-king.editor.compact-mode";
 const previewContextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
 
 function clampPreviewZoom(value: number) {
@@ -64,9 +65,11 @@ type DocumentInfoBarProps = {
   onLocatePath: (path: string) => void;
   readingMode: boolean;
   onToggleReadingMode: () => void;
+  compactMode: boolean;
+  onToggleCompactMode: () => void;
 };
 
-function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode }: DocumentInfoBarProps) {
+function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave, onCopyPath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode, compactMode, onToggleCompactMode }: DocumentInfoBarProps) {
   const pathParts = (tab?.path ?? "").split(/[\\/]/).filter(Boolean);
   const crumbs = pathParts.length > 0
     ? pathParts.map((part, index) => ({
@@ -108,6 +111,23 @@ function DocumentInfoBar({ tab, previewVisible, onTogglePreview, canSave, onSave
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <Button type="button" variant="ghost" size="icon-xs" className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-transparent hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100" title={readingMode ? "编辑模式" : "阅读模式"} aria-label={readingMode ? "编辑模式" : "阅读模式"} aria-pressed={readingMode} onClick={onToggleReadingMode}>
           {readingMode ? <PenLine className="size-3.5" /> : <BookOpen className="size-3.5" />}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className={cn(
+            "size-7 rounded-[4px] border-0 p-0 shadow-none",
+            compactMode
+              ? "bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600 dark:hover:text-white"
+              : "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+          )}
+          title={compactMode ? "切换到展开模式" : "切换到紧凑模式"}
+          aria-label={compactMode ? "切换到展开模式" : "切换到紧凑模式"}
+          aria-pressed={compactMode}
+          onClick={onToggleCompactMode}
+        >
+          {compactMode ? <StretchHorizontal className="size-3.5" /> : <Shrink className="size-3.5" />}
         </Button>
         <Button
           type="button"
@@ -205,6 +225,25 @@ export function ConvertPage() {
   const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
   const canSaveActiveDocument = Boolean(activeTab?.kind === "vault" && activeTab.path && vaultRoot && activeTab.path === activeFilePath && activeFileModifiedMs !== undefined);
   const [readingMode, setReadingMode] = useState(false);
+  const [compactMode, setCompactMode] = useState(() => {
+    try {
+      return window.localStorage.getItem(editorCompactModeStorageKey) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleCompactMode() {
+    setCompactMode((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(editorCompactModeStorageKey, String(next));
+      } catch {
+        // 本地偏好不可写时仍允许本次会话正常切换。
+      }
+      return next;
+    });
+  }
 
   function handleTogglePreview() {
     if (isNarrow) {
@@ -1037,7 +1076,7 @@ export function ConvertPage() {
       >
         <div className="min-h-0 min-w-0 overflow-hidden">
           <ConversionInputCard
-            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} />}
+            documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyPath={() => void copyActiveDocumentPath()} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} compactMode={compactMode} onToggleCompactMode={toggleCompactMode} />}
             hasDocument={Boolean(activeTab)}
             markdown={markdown}
             documentKey={documentKey}
@@ -1052,6 +1091,7 @@ export function ConvertPage() {
             disabled={isConverting}
             externalDragging={isWindowDragging}
             readingMode={readingMode}
+            compactMode={compactMode}
             onOpenLink={(target) => void handleOpenLink(target)}
           />
         </div>

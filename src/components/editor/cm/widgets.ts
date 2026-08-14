@@ -68,7 +68,7 @@ export class CopyCodeWidget extends WidgetType {
     btn.type = "button";
     btn.className = "mk-cm-copy-code";
     btn.setAttribute("aria-label", "复制代码");
-    btn.title = "复制代码";
+    btn.dataset.tooltip = "复制代码";
     btn.innerHTML = COPY_ICON;
 
     btn.addEventListener("click", (e) => {
@@ -227,7 +227,7 @@ export class MermaidWidget extends WidgetType {
     const sourceButton = document.createElement("button");
     sourceButton.type = "button";
     sourceButton.className = "mk-cm-mermaid-source";
-    sourceButton.title = "编辑 Mermaid 源码";
+    sourceButton.dataset.tooltip = "编辑 Mermaid 源码";
     sourceButton.setAttribute("aria-label", "编辑 Mermaid 源码");
     sourceButton.innerHTML = iconMarkup(Code2);
     sourceButton.addEventListener("pointerdown", (event) => {
@@ -387,7 +387,8 @@ export class TableWidget extends WidgetType {
     };
     let active: { row: number; column: number } | null = null;
     let selection: TableSelection | null = null;
-    let wrapsContent = false;
+    // 默认按表格内容收缩，避免只有少量列时无意义地铺满编辑区。
+    let wrapsContent = true;
 
     const focusCell = (row: number, column: number) => {
       scheduleFrame(() => {
@@ -526,7 +527,7 @@ export class TableWidget extends WidgetType {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "mk-table-tool-button";
-      button.title = label;
+      button.dataset.tooltip = label;
       button.setAttribute("aria-label", label);
       button.disabled = disabled;
       button.innerHTML = iconMarkup(icon);
@@ -616,16 +617,19 @@ export class TableWidget extends WidgetType {
     );
     const toolbarEnd = document.createElement("div");
     toolbarEnd.className = "mk-table-toolbar-end";
-    const wrapButton = makeButton("自动换行并按内容宽度显示", WrapText, () => {
+    const wrapButton = makeButton("根据窗口适配表格宽度", WrapText, () => {
       wrapsContent = !wrapsContent;
       wrapper.classList.toggle("is-wrap", wrapsContent);
       wrapButton.classList.toggle("is-active", wrapsContent);
       wrapButton.setAttribute("aria-pressed", String(wrapsContent));
-      wrapButton.title = wrapsContent ? "使用横向滚动并占满宽度" : "自动换行并按内容宽度显示";
-      wrapButton.setAttribute("aria-label", wrapButton.title);
+      const label = wrapsContent ? "根据窗口适配表格宽度" : "根据内容适配表格宽度";
+      wrapButton.dataset.tooltip = label;
+      wrapButton.setAttribute("aria-label", label);
       scheduleFrame(positionDragHandles);
     });
-    wrapButton.setAttribute("aria-pressed", "false");
+    wrapper.classList.add("is-wrap");
+    wrapButton.classList.add("is-active");
+    wrapButton.setAttribute("aria-pressed", "true");
     toolbarEnd.append(wrapButton);
     toolbar.append(columnTools, rowTools, toolbarEnd);
     refreshToolbar();
@@ -1207,7 +1211,7 @@ export class TableWidget extends WidgetType {
       const handle = document.createElement("button");
       handle.type = "button";
       handle.className = `mk-table-${kind}-drag-handle`;
-      handle.title = kind === "column" ? "拖动列" : "拖动行";
+      handle.dataset.tooltip = kind === "column" ? "拖动列" : "拖动行";
       handle.setAttribute("aria-label", kind === "column" ? `拖动第 ${index + 1} 列` : `拖动第 ${index + 1} 行`);
       handle.innerHTML = iconMarkup(kind === "column" ? GripHorizontal : GripVertical);
       handle.addEventListener("pointerdown", (event) => beginReorderDrag(kind, index, event));

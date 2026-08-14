@@ -1219,6 +1219,14 @@ select {
     flex: 1;
   }
 
+  .mk-editor-compact .cm-content {
+    max-width: 960px;
+  }
+
+  .mk-editor-compact .cm-scroller {
+    justify-content: center;
+  }
+
   .mk-cm-heading {
     font-weight: 700;
     line-height: 1.4;
@@ -1847,6 +1855,10 @@ select {
 
   .mk-cm-table-wrapper.is-wrap .mk-cm-table-scroll {
     overflow-x: hidden;
+  }
+
+  .mk-cm-table-wrapper.is-wrap {
+    width: fit-content;
   }
 
   .mk-cm-table-wrapper.is-wrap .mk-cm-table {
