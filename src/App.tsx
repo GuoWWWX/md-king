@@ -14,7 +14,7 @@ import { ConvertPage } from "@/pages/convert/convert-page";
 import { HistoryPage } from "@/pages/history/history-page";
 import { SettingsPage } from "@/pages/settings/settings-page";
 import { TemplatesPage } from "@/pages/templates/templates-page";
-import { checkPandoc, getAppConfig, getAppStatus, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
+import { getAppConfig, getAppStatus, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
 import { useAppStore } from "@/stores/app-store";
 
 const navigation = [
@@ -29,8 +29,10 @@ type QuickPasteStatusEvent = {
   message: string;
 };
 
+const BOOT_SCREEN_MAX_WAIT_MS = 350;
+
 function App() {
-  const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, setPandocStatus, queueImportPaths } = useAppStore();
+  const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, queueImportPaths } = useAppStore();
   const [bootReady, setBootReady] = useState(false);
 
   useEffect(() => {
@@ -56,17 +58,32 @@ function App() {
   }, []);
 
   useEffect(() => {
-    Promise.allSettled([getAppStatus(), getAppConfig(), listTemplates(), listHistory(), checkPandoc()]).then((results) => {
-      const [statusResult, configResult, templatesResult, historyResult, pandocResult] = results;
+    // 首屏前不发起任何 Tauri IPC：某些 Windows/WebView2 环境首次 IPC 可能被系统拦截，
+    // 此时至少要先把可操作的工作台显示出来，而不是无限停留在启动页。
+    const bootTimer = window.setTimeout(() => setBootReady(true), BOOT_SCREEN_MAX_WAIT_MS);
+    return () => window.clearTimeout(bootTimer);
+  }, []);
 
-      if (statusResult.status === "fulfilled") setAppStatus(statusResult.value);
-      if (configResult.status === "fulfilled") setAppConfig(configResult.value);
-      if (templatesResult.status === "fulfilled") setTemplates(templatesResult.value);
-      if (historyResult.status === "fulfilled") setHistory(historyResult.value);
-      if (pandocResult.status === "fulfilled") setPandocStatus(pandocResult.value);
-      setBootReady(true);
-    });
-  }, [setAppConfig, setAppStatus, setHistory, setPandocStatus, setTemplates]);
+  useEffect(() => {
+    if (!bootReady) return;
+
+    let cancelled = false;
+    const updateWhenResolved = <T,>(request: Promise<T>, update: (value: T) => void) => {
+      void request.then((value) => {
+        if (!cancelled) update(value);
+      }).catch(() => undefined);
+    };
+
+    // 首屏展示后再独立读取数据，单个请求异常或缓慢都不会阻塞其他状态更新。
+    updateWhenResolved(getAppStatus(), setAppStatus);
+    updateWhenResolved(getAppConfig(), setAppConfig);
+    updateWhenResolved(listTemplates(), setTemplates);
+    updateWhenResolved(listHistory(), setHistory);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bootReady, setAppConfig, setAppStatus, setHistory, setTemplates]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -165,7 +182,7 @@ function App() {
 
   return (
     <>
-      <SystemFloatingWindowManager />
+      {appConfig ? <SystemFloatingWindowManager /> : null}
       <AppShell navigation={navigation} pageMeta={appPageMeta[activePage] ?? appPageMeta.convert}>
         <ConvertPage workspaceContent={workspaceContent} />
       </AppShell>

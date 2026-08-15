@@ -126,6 +126,15 @@
         color: #64748b;
       }
 
+      .app-boot-error {
+        margin-top: 10px;
+        max-width: 320px;
+        font-size: 11px;
+        line-height: 1.45;
+        color: #b91c1c;
+        word-break: break-word;
+      }
+
       html[data-boot-theme="dark"] .app-boot-screen {
         color: #f8fafc;
       }
@@ -148,7 +157,30 @@
       html[data-boot-theme="dark"] .app-boot-caption {
         color: #a1a1aa;
       }
+
+      html[data-boot-theme="dark"] .app-boot-error {
+        color: #fca5a5;
+      }
     </style>
+    <script>
+      (function () {
+        function showBootError(error) {
+          var node = document.getElementById("app-boot-error");
+          if (!node) return;
+          var message = error && (error.message || String(error));
+          var stack = error && error.stack ? "\n" + error.stack : "";
+          node.hidden = false;
+          node.textContent = "启动失败：" + (message || "前端模块未能加载") + stack;
+        }
+
+        window.addEventListener("error", function (event) {
+          showBootError(event.error || event.message);
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          showBootError(event.reason);
+        });
+      })();
+    </script>
   </head>
 
   <body>
@@ -162,6 +194,7 @@
             <div class="app-boot-title">MD King</div>
             <div class="app-boot-subtitle">正在准备转换工作台</div>
             <div class="app-boot-caption">本地优先的 Markdown 转 Word/WPS 工具</div>
+            <div id="app-boot-error" class="app-boot-error" hidden></div>
           </div>
         </div>
       </div>
