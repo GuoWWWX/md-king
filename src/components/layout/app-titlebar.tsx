@@ -87,7 +87,10 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
   }
 
   return (
-    <div className="mk-titlebar flex h-9 shrink-0 select-none items-center border-b border-white/70 bg-white/72 text-slate-700 backdrop-blur-xl">
+    <div
+      className="mk-titlebar flex h-9 shrink-0 select-none items-center border-b border-white/70 bg-white/72 text-slate-700 backdrop-blur-xl"
+      data-tauri-drag-region
+    >
       <div className="flex h-full w-[176px] items-center gap-2 px-3" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
         {onToggleFileTree ? (
           <TitlebarButton

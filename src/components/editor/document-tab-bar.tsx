@@ -1,6 +1,8 @@
 import { ChevronRight, FileText, FileType2, ImageIcon, X, Copy, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ContextMenu } from "radix-ui";
+import { isTauriEnvironment } from "@/lib/tauri";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +119,15 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
     if (target.closest("[data-mk-tab-context-menu-content]")) return;
     const tab = target.closest<HTMLElement>("[data-tab-id]");
     const pageTab = target.closest<HTMLElement>("[data-page-tab-id]");
+    // Portal 中的事件沿 React 组件树传播，不会经过标题栏组件的捕获处理。
+    // 因此空白区域必须在这里直接启动 Tauri 原生窗口拖动。
+    if (!tab && !pageTab) {
+      if (isTauriEnvironment()) {
+        event.preventDefault();
+        void getCurrentWindow().startDragging().catch(() => undefined);
+      }
+      return;
+    }
     // 顶部标签位于无边框桌面窗口的标题栏内。少数 Tauri 拖动场景会吞掉
     // pointerup 后的 click，因此页面标签与文档标签都在按下时完成切换。
     // 关闭按钮仍只关闭，不能因为按下关闭按钮把工作区切走。
@@ -124,7 +135,7 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
       if (!target.closest("button")) onSelectPage?.(pageTab.dataset.pageTabId);
       return;
     }
-    // 关闭按钮只处理关闭，不启动标签拖动；标签和空白区都由同一套 Pointer 逻辑处理。
+    // 关闭按钮只处理关闭，不启动标签拖动。
     if (target.closest("button")) return;
     // 按下即激活与 VS Code 的标签行为一致，也确保随后开始拖拽时目标文档已经切换。
     if (tab?.dataset.tabId) {
@@ -206,7 +217,8 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
     <div className={cn("mk-document-tab-bar flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
       <div
         ref={listRef}
-        className="scrollbar-none flex min-w-0 flex-1 select-none cursor-grab items-center gap-1 overflow-x-auto overflow-y-hidden active:cursor-grabbing"
+        data-tauri-drag-region
+        className="scrollbar-none flex min-w-0 flex-1 cursor-default select-none items-center gap-1 overflow-x-auto overflow-y-hidden"
         role="tablist"
         aria-label="打开的标签"
         onPointerDown={handleTabListPointerDown}
@@ -216,7 +228,7 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
         onClickCapture={suppressClickAfterTabDrag}
       >
         {tabs.length === 0 && pageTabs.length === 0 ? (
-          <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或新建一个</span>
+          <span data-tauri-drag-region className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或新建一个</span>
         ) : (
           <>
             {tabs.map((tab) => (
