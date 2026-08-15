@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "floating-converter"],
+  "windows": ["main", "floating-converter", "project-*"],
   "permissions": [
     "core:default",
     "opener:default",

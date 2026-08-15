@@ -1,6 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
 import { isMermaidLanguage } from "@/lib/mermaid";
-import { isExternalDocumentLink } from "@/lib/document-links";
+import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink } from "@/lib/document-links";
 import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
 import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
@@ -24,7 +24,7 @@ import {
   type TableDisplaySettings,
   type TableWidthMode,
 } from "./table-display-settings";
-import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -200,6 +200,16 @@ function handleInlineWrapper(
   }
 }
 
+function isInsideObsidianWikilink(state: EditorState, from: number, to: number): boolean {
+  const line = state.doc.lineAt(from);
+  if (to > line.to) return false;
+  return findObsidianWikilinks(line.text).some((wikilink) => {
+    const wikilinkFrom = line.from + wikilink.from;
+    const wikilinkTo = line.from + wikilink.to;
+    return from >= wikilinkFrom && to <= wikilinkTo;
+  });
+}
+
 /**
  * 行内链接：`[文本](地址)` 渲染成只剩「文本」。
  *
@@ -208,12 +218,18 @@ function handleInlineWrapper(
  * 一次覆盖 `](地址)`、`](地址 "标题")` 和引用式 `][ref]` 三种写法。
  */
 function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
+  // Lezer 会把 `[[目标|显示名]]` 内层的方括号当成普通链接。双链已由行级
+  // 渲染接管，不能再叠加一层普通链接标记，否则点击会拿到错误的目标字符串。
+  if (isInsideObsidianWikilink(collector.state, ref.from, ref.to)) return;
   const targetNode = ref.node.getChild("URL");
   const target = targetNode ? collector.state.doc.sliceString(targetNode.from, targetNode.to).trim() : "";
   // Lezer 会把 callout 的 `[!abstract]` 识别成无目标引用链接；它由引用块逻辑统一显隐。
   if (!target && /^\[![a-z][\w-]*\](?:[+-])?$/i.test(collector.state.doc.sliceString(ref.from, ref.to))) return;
   const kind = isExternalDocumentLink(target) ? "external" : "document";
-  const linkTarget = target ? { "data-mk-link-target": target } : undefined;
+  // 光标已经进入源码时，链接必须退回为可编辑文本；保留 data 属性会让点击
+  // `[`、`]` 或链接文字继续触发跳转，无法修改 Markdown。
+  const editingSource = cursorInside(collector, ref.from, ref.to);
+  const linkTarget = target && !editingSource ? { "data-mk-link-target": target } : undefined;
   const marks = childrenOfType(ref.node, "LinkMark");
   if (marks.length < 2) {
     addMark(collector, ref.from, ref.to, `mk-cm-link mk-cm-link--${kind}`, linkTarget);
@@ -224,10 +240,53 @@ function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const close = marks[1];
   addMark(collector, open.to, close.from, `mk-cm-link mk-cm-link--${kind}`, linkTarget);
 
-  if (cursorInside(collector, ref.from, ref.to)) return;
+  if (editingSource) return;
   if (target) addWidget(collector, open.to, new MarkdownLinkIconWidget(kind, target), -1);
   hide(collector, open.from, open.to);
   hide(collector, close.from, ref.to);
+}
+
+function insideProtectedInlineSource(state: EditorState, position: number): boolean {
+  for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(position, 1); node; node = node.parent) {
+    if (node.name === "Link" || node.name === "Autolink" || node.name === "InlineCode" || node.name === "FencedCode" || node.name === "CodeBlock") return true;
+  }
+  return false;
+}
+
+function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: number): void {
+  const line = collector.state.doc.lineAt(lineFrom);
+  const wikilinks = findObsidianWikilinks(line.text);
+
+  for (const link of wikilinks) {
+    const from = line.from + link.from;
+    const to = line.from + link.to;
+    if (insideProtectedInlineSource(collector.state, from)) continue;
+
+    const displayFrom = line.from + link.displayFrom;
+    const displayTo = line.from + link.displayTo;
+    const kind = isExternalDocumentLink(link.target) ? "external" : "document";
+    // 双链源码展开后不再附带跳转目标，保证 `[[...]]` 的括号和文字都能直接编辑。
+    if (cursorInside(collector, from, to)) continue;
+    const attributes = {
+      "data-mk-link-target": link.target,
+      "data-mk-wikilink-from": String(from),
+    };
+    addMark(collector, displayFrom, displayTo, `mk-cm-link mk-cm-link--${kind} mk-cm-link--wikilink`, attributes);
+    addWidget(collector, displayFrom, new MarkdownLinkIconWidget(kind, link.target, from), -1);
+    hide(collector, from, displayFrom);
+    hide(collector, displayTo, to);
+  }
+
+  for (const link of findBareExternalLinks(line.text)) {
+    if (wikilinks.some((wikilink) => link.from < wikilink.to && link.to > wikilink.from)) continue;
+    const from = line.from + link.from;
+    const to = line.from + link.to;
+    if (insideProtectedInlineSource(collector.state, from)) continue;
+    if (cursorInside(collector, from, to)) continue;
+    const attributes = { "data-mk-link-target": link.target };
+    addMark(collector, from, to, "mk-cm-link mk-cm-link--external", attributes);
+    addWidget(collector, from, new MarkdownLinkIconWidget("external", link.target), -1);
+  }
 }
 
 function insideFencedCode(state: EditorState, position: number): boolean {
@@ -504,6 +563,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
       const lineFrom = state.doc.line(lineNumber).from;
       addRenderedSourceIndent(collector, lineFrom);
       addFallbackSourceList(collector, lineFrom);
+      addObsidianAndBareLinks(collector, lineFrom);
     }
     tree.iterate({
       from,
@@ -711,11 +771,66 @@ export function mermaidBlockExtension(dark: boolean): Extension {
   return field;
 }
 
+function imageSelectionIsEditing(state: EditorState, from: number, to: number): boolean {
+  const selection = state.selection.main;
+  if (selection.empty) return selection.head >= from && selection.head < to;
+  const selectsWholeImage = selection.from <= from && selection.to >= to;
+  return !selectsWholeImage && selection.from < to && selection.to > from;
+}
+
+function imageIsSelected(state: EditorState, from: number, to: number): boolean {
+  const selection = state.selection.main;
+  return !selection.empty && selection.from <= from && selection.to >= to;
+}
+
+function markdownImageAlt(source: string) {
+  const matched = source.match(/^!\[([\s\S]*)\]\([\s\S]*\)$/);
+  return matched?.[1] ?? "";
+}
+
+function buildImageBlocks(state: EditorState, markdownSourcePath?: string): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "Image") return undefined;
+
+      const line = state.doc.lineAt(ref.from);
+      const source = state.doc.sliceString(ref.from, ref.to);
+      if (state.doc.sliceString(line.from, line.to).trim() !== source.trim() || imageSelectionIsEditing(state, ref.from, ref.to)) return false;
+
+      const url = ref.node.getChild("URL");
+      const src = url ? state.doc.sliceString(url.from, url.to) : "";
+      if (!src) return false;
+
+      builder.add(
+        line.from,
+        line.to,
+        Decoration.replace({ widget: new MarkdownImageWidget(src, markdownImageAlt(source), markdownSourcePath, line.from, line.to, imageIsSelected(state, line.from, line.to)), block: true }),
+      );
+      return false;
+    },
+  });
+
+  return builder.finish();
+}
+
+/** 图片和 Mermaid 一样以块级 decoration 替换，确保在编辑区中独占一行并居中。 */
+export function markdownImageBlockExtension(markdownSourcePath?: string): Extension {
+  const field = StateField.define<DecorationSet>({
+    create: (state) => buildImageBlocks(state, markdownSourcePath),
+    update: (value, tr) => tr.docChanged || tr.selection ? buildImageBlocks(tr.state, markdownSourcePath) : value,
+    provide: (self) => EditorView.decorations.from(self),
+  });
+  return field;
+}
+
 function buildTableBlocks(
   state: EditorState,
   sourceTableFrom: number | null,
   displaySettings: TableDisplaySettings,
   documentSelectedTableFroms: ReadonlySet<number>,
+  selectedFromToolbarTableFrom: number | null,
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -745,6 +860,7 @@ function buildTableBlocks(
             last.to,
             tableWidthModeFor(displaySettings, first.from),
             documentSelectedTableFroms.has(first.from),
+            selectedFromToolbarTableFrom === first.from,
           ),
           block: true,
         }),
@@ -788,6 +904,7 @@ interface TableBlockState {
   sourceTableFrom: number | null;
   displaySettings: TableDisplaySettings;
   documentSelectedTableFroms: ReadonlySet<number>;
+  selectedFromToolbarTableFrom: number | null;
 }
 
 function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number): boolean {
@@ -814,10 +931,11 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
     const displaySettings = createTableDisplaySettings();
     const selectedTableFroms = documentSelectedTableFroms(state);
     return {
-      decorations: buildTableBlocks(state, null, displaySettings, selectedTableFroms),
+      decorations: buildTableBlocks(state, null, displaySettings, selectedTableFroms, null),
       sourceTableFrom: null,
       displaySettings,
       documentSelectedTableFroms: selectedTableFroms,
+      selectedFromToolbarTableFrom: null,
     };
   },
   update: (value, tr) => {
@@ -825,12 +943,20 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
     let displaySettings = tr.docChanged
       ? mapTableDisplaySettings(value.displaySettings, (position) => tr.changes.mapPos(position))
       : value.displaySettings;
+    let selectedFromToolbarTableFrom = value.selectedFromToolbarTableFrom;
     if (sourceTableFrom !== null && tr.docChanged) sourceTableFrom = tr.changes.mapPos(sourceTableFrom);
+    let selectedFromToolbar = false;
     for (const effect of tr.effects) {
       if (effect.is(editTableSourceEffect)) sourceTableFrom = effect.value;
+      if (effect.is(selectWholeTableEffect)) {
+        selectedFromToolbarTableFrom = effect.value;
+        selectedFromToolbar = true;
+      }
       if (effect.is(resetTableDisplaySettingsEffect)) displaySettings = createTableDisplaySettings(effect.value);
       if (effect.is(setTableWidthModeEffect)) displaySettings = applyTableWidthMode(displaySettings, effect.value);
     }
+    if (tr.docChanged && !selectedFromToolbar) selectedFromToolbarTableFrom = null;
+    if (tr.effects.some((effect) => effect.is(editTableSourceEffect))) selectedFromToolbarTableFrom = null;
     const selectedTableFroms = tr.docChanged || tr.selection
       ? documentSelectedTableFroms(tr.state)
       : value.documentSelectedTableFroms;
@@ -839,12 +965,17 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
       sourceTableFrom = null;
     }
 
-    if (!tr.docChanged && sourceTableFrom === value.sourceTableFrom && displaySettings === value.displaySettings && !selectionChanged) return value;
+    if (!tr.docChanged
+      && sourceTableFrom === value.sourceTableFrom
+      && displaySettings === value.displaySettings
+      && !selectionChanged
+      && selectedFromToolbarTableFrom === value.selectedFromToolbarTableFrom) return value;
     return {
-      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableFroms),
+      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableFroms, selectedFromToolbarTableFrom),
       sourceTableFrom,
       displaySettings,
       documentSelectedTableFroms: selectedTableFroms,
+      selectedFromToolbarTableFrom,
     };
   },
   provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),

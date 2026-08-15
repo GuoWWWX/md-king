@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { resolveBrowserPreviewImage } from "@/lib/browser-preview-images";
 import { open } from "@tauri-apps/plugin-dialog";
 import { limitHistory } from "@/lib/conversion-history";
 import type { AppConfig, AppStatus, ConvertRequest, ConvertResult, HistoryItem, ImportTemplateRequest, PandocStatus, Template, TemplateStyleConfig } from "@/types";
@@ -10,6 +11,8 @@ type TauriWindow = Window & {
 
 const PREVIEW_WARNING = "浏览器预览未调用 Rust/Tauri/Pandoc";
 const PANDOC_BROWSER_MESSAGE = "浏览器预览无法验证内置 Pandoc，请在 Tauri 桌面端验证";
+// 浏览器预览无法读取本机用户目录；使用绝对路径形式，避免把相对目录误认为实际导出位置。
+const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
@@ -23,7 +26,7 @@ const browserAppConfig: AppConfig = {
   pandocPath: undefined,
   useBundledPandoc: true,
   defaultTemplateId: "default-report",
-  defaultOutputDir: "Documents/MD King",
+  defaultOutputDir: browserPreviewOutputDir,
   openAfterConvert: false,
   enableContextMenu: false,
   enableFloatingBall: false,
@@ -200,7 +203,7 @@ export function resolvePreviewImageSource(path: string, sourcePath?: string) {
     return Promise.resolve(path);
   }
   if (!isTauriEnvironment()) {
-    return Promise.resolve<string | undefined>(undefined);
+    return Promise.resolve(resolveBrowserPreviewImage(path, sourcePath));
   }
 
   return invoke<string>("load_preview_image", { path, sourcePath });

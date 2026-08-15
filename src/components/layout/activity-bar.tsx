@@ -1,6 +1,5 @@
-import { FileText, History, Info, LayoutTemplate, Monitor, Moon, Settings, ShieldCheck, Sun, type LucideIcon } from "lucide-react";
+import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ThemeMode } from "@/types";
 
@@ -12,7 +11,6 @@ export type ActivityBarItem = {
 
 /// 默认导航从原 App.tsx 搬来；允许外部覆盖，方便接线方决定页面集合。
 export const defaultActivityNavigation: ActivityBarItem[] = [
-  { id: "convert", label: "转换", icon: FileText },
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
   { id: "history", label: "转换历史", icon: History },
   { id: "settings", label: "设置", icon: Settings },
@@ -42,6 +40,7 @@ export function ActivityBar({
 }: ActivityBarProps) {
   const activeTheme = themeModes.find((item) => item.mode === themeMode) ?? themeModes[0];
   const ThemeIcon = activeTheme.icon;
+  const primaryNavigation = navigation.filter((item) => item.id !== "settings");
 
   return (
     <aside
@@ -50,7 +49,7 @@ export function ActivityBar({
       className="mk-activity-bar mk-sidebar-panel flex h-full w-12 shrink-0 flex-col items-center overflow-hidden rounded-[8px] px-1 py-2"
     >
       <nav className="flex flex-col items-center gap-1.5" aria-label="页面导航">
-        {navigation.map((item) => {
+        {primaryNavigation.map((item) => {
           const Icon = item.icon;
           const isActive = activePage === item.id;
           return (
@@ -88,11 +87,20 @@ export function ActivityBar({
           <ThemeIcon className="size-4" />
         </Button>
 
-        <TooltipAnchor content="本地运行，数据不出本机" tooltipSide="right">
-          <div className="flex size-9 shrink-0 items-center justify-center" aria-label="本地运行">
-            <ShieldCheck className="size-4 text-blue-600 dark:text-blue-400" />
-          </div>
-        </TooltipAnchor>
+        <Button
+          variant="ghost"
+          className={cn(
+            "mk-nav-collapsed size-10 shrink-0 justify-center rounded-[8px] p-0 transition",
+            activePage === "settings" ? "mk-nav-active text-white" : "mk-nav-idle",
+          )}
+          title="设置"
+          tooltipSide="right"
+          aria-label="设置"
+          aria-current={activePage === "settings" ? "page" : undefined}
+          onClick={() => onNavigate("settings")}
+        >
+          <Settings className="size-4" />
+        </Button>
       </div>
     </aside>
   );

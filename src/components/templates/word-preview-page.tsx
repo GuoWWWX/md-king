@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Maximize2 } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import katexPlugin from "@vscode/markdown-it-katex";
 import katex from "katex";
@@ -8,9 +9,11 @@ import { AppSurface } from "@/components/ui/app-surface";
 import { MarkdownCalloutIcon } from "@/components/markdown-callout-icon";
 import { codeBlockIndentPtFromInfo } from "@/components/editor/cm/code-block-indent";
 import { TooltipButton } from "@/components/ui/tooltip";
+import { MediaPreviewDialog, svgDataUrl } from "@/components/media/image-viewer";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
 import { resolvePreviewImageSource } from "@/lib/tauri";
-import { nextMarkdownHeadingAnchor } from "@/lib/document-links";
+import { isExternalDocumentLink, nextMarkdownHeadingAnchor, normalizeBareExternalLink } from "@/lib/document-links";
+import { obsidianWikilinkPlugin } from "@/lib/obsidian-wikilinks";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
 import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
@@ -38,6 +41,7 @@ type WordPreviewPageProps = {
   onOpenLink?: (target: string) => void;
   showPageFooter?: boolean;
   interactiveViewport?: boolean;
+  paperTheme?: "light" | "dark";
   className?: string;
   viewportClassName?: string;
 };
@@ -70,7 +74,9 @@ type MarkdownInlineToken = {
   type: string;
   content?: string;
   info?: string;
+  markup?: string;
   attrs?: Array<[string, string]> | null;
+  meta?: { mkWikilinkTarget?: string } | null;
   children?: MarkdownInlineToken[] | null;
 };
 
@@ -145,6 +151,7 @@ function backslashMathPlugin(md: MarkdownIt) {
 }
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(obsidianWikilinkPlugin)
   .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
   .use(backslashMathPlugin);
 // 与 Rust 端 is_math_fence_language 保持一致，避免预览与导出对 ```math 的判定不同。
@@ -479,6 +486,7 @@ function CodeLanguageLabel({ label, backgroundColor }: { label: string; backgrou
 function MermaidBlock({ source, dark, style, className, onSize }: { source: string; dark: boolean; style?: CSSProperties; className?: string; onSize?: (source: string, dark: boolean, size: PreviewMermaidSize) => void }) {
   const [svg, setSvg] = useState(() => getCachedMermaidSvg(source, dark)?.svg);
   const [error, setError] = useState<string>();
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     const cached = getCachedMermaidSvg(source, dark);
@@ -525,11 +533,22 @@ function MermaidBlock({ source, dark, style, className, onSize }: { source: stri
   }
 
   return (
-    <div
-      className={cn("md-king-mermaid flex justify-center", className)}
-      style={style}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <>
+      <div className={cn("group relative", className)} style={style}>
+        <div className="md-king-mermaid flex justify-center" dangerouslySetInnerHTML={{ __html: svg }} />
+        <TooltipButton
+          variant="ghost"
+          size="icon-xs"
+          className="absolute right-1 top-1 z-10 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          tooltip="放大查看 Mermaid 图"
+          aria-label="放大查看 Mermaid 图"
+          onClick={() => setPreviewOpen(true)}
+        >
+          <Maximize2 className="size-3.5" />
+        </TooltipButton>
+      </div>
+      <MediaPreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} src={svgDataUrl(svg)} alt="Mermaid 图表" title="Mermaid 图表" />
+    </>
   );
 }
 
@@ -550,13 +569,13 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
 
   const segments: PreviewTextSegment[] = [];
   const marks = { bold: 0, italic: 0, strike: 0 };
-  const linkStack: string[] = [];
+  const linkStack: Array<{ target: string; auto: boolean; wikilinkTarget?: string }> = [];
 
   const currentMarks = (): Omit<PreviewTextSegment, "text"> => ({
     bold: marks.bold > 0 || undefined,
     italic: marks.italic > 0 || undefined,
     strike: marks.strike > 0 || undefined,
-    link: linkStack[linkStack.length - 1],
+    link: linkStack[linkStack.length - 1]?.target,
   });
 
   for (const child of children) {
@@ -567,8 +586,34 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
       case "em_close": marks.italic = Math.max(0, marks.italic - 1); break;
       case "s_open": marks.strike += 1; break;
       case "s_close": marks.strike = Math.max(0, marks.strike - 1); break;
-      case "link_open": linkStack.push(markdownTokenAttribute(child, "href") ?? ""); break;
+      case "link_open": linkStack.push({
+        target: markdownTokenAttribute(child, "href") ?? "",
+        auto: child.markup === "linkify",
+        wikilinkTarget: child.meta?.mkWikilinkTarget,
+      }); break;
       case "link_close": linkStack.pop(); break;
+      case "text": {
+        const text = child.content ?? "";
+        const activeLink = linkStack[linkStack.length - 1];
+        if (activeLink?.wikilinkTarget) {
+          // 双链的显示名只服务编辑体验。为了和 DOCX 导出保持一致，Word 预览
+          // 直接展示目标 URL 或文档路径，并保留原目标用于点击跳转。
+          segments.push({ ...currentMarks(), text: activeLink.wikilinkTarget, link: activeLink.target });
+          break;
+        }
+        if (activeLink?.auto && isExternalDocumentLink(activeLink.target) && /^https?:\/\//i.test(text)) {
+          const target = normalizeBareExternalLink(text);
+          const current = currentMarks();
+          segments.push({ ...current, text: target, link: target });
+          if (target.length < text.length) {
+            const { link: _link, ...withoutLink } = current;
+            segments.push({ ...withoutLink, text: text.slice(target.length) });
+          }
+          break;
+        }
+        segments.push({ ...currentMarks(), text });
+        break;
+      }
       case "code_inline": segments.push({ ...currentMarks(), text: child.content ?? "", code: true }); break;
       case "math_inline":
       case "math_inline_double": segments.push({ text: child.content ?? "", math: true }); break;
@@ -1456,6 +1501,7 @@ function PreviewImage({
 }) {
   const [resolvedSrc, setResolvedSrc] = useState<string>();
   const [failed, setFailed] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1492,7 +1538,24 @@ function PreviewImage({
   }
 
   if (resolvedSrc && !failed) {
-    return <img src={resolvedSrc} alt={alt ?? ""} className={cn("block h-auto w-full max-h-[520px] object-contain", className)} onError={() => setFailed(true)} />;
+    return (
+      <>
+        <div className={cn("group relative", className)}>
+          <img src={resolvedSrc} alt={alt ?? ""} className="block h-auto w-full max-h-[520px] object-contain" onError={() => setFailed(true)} />
+          <TooltipButton
+            variant="ghost"
+            size="icon-xs"
+            className="absolute right-2 top-2 z-10 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            tooltip="放大查看图片"
+            aria-label="放大查看图片"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <Maximize2 className="size-3.5" />
+          </TooltipButton>
+        </div>
+        <MediaPreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} src={resolvedSrc} alt={alt} title={alt || "图片预览"} />
+      </>
+    );
   }
 
   return (
@@ -1512,6 +1575,7 @@ function renderMarkdownBlocks({
   markdownSourcePath,
   onOpenLink,
   onMermaidSize,
+  previewDark = false,
   renderAsThumbnail = false,
 }: {
   blocks: PreviewBlock[];
@@ -1522,6 +1586,7 @@ function renderMarkdownBlocks({
   markdownSourcePath?: string;
   onOpenLink: (target: string) => void;
   onMermaidSize?: (source: string, dark: boolean, size: PreviewMermaidSize) => void;
+  previewDark?: boolean;
   renderAsThumbnail?: boolean;
   tableStyle: {
     imageStyle: CSSProperties;
@@ -1641,6 +1706,11 @@ function renderMarkdownBlocks({
       // mermaid 块渲染成图而不是代码。外框沿用代码块的背景与边框，
       // 这样它和编辑器里那个带 MERMAID 标签的框看起来是同一个东西。
       if (isMermaidLanguage(block.language)) {
+        // 模板通常给代码块配置浅色背景；深色纸张下这个内联颜色不会被页面
+        // 深色 CSS 覆盖，图表会留下突兀的白底。因此 Mermaid 外框与 SVG 主题
+        // 必须同时随预览纸张切换。
+        const mermaidBackgroundColor = previewDark ? "#202124" : backgroundColor;
+        const mermaidDark = previewDark || Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
         // maxHeight 和 estimateBlockHeight 里的 480 保持一致：
         // 渲染高度受约束后，分页器的估算才和实际占用空间对得上。
         const mermaidMaxHeight = 480;
@@ -1649,7 +1719,7 @@ function renderMarkdownBlocks({
             key={index}
             className={cn("relative overflow-hidden", selectedRing(selectedStyle, "source-code"))}
             style={{
-              backgroundColor,
+              backgroundColor: mermaidBackgroundColor,
               border: codeBlockBorder(drafts.code),
               borderRadius: 0,
               padding: `${Math.max(0, drafts.code.codePaddingY) + 22}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
@@ -1660,8 +1730,8 @@ function renderMarkdownBlocks({
               overflow: "hidden",
             }}
           >
-            <CodeLanguageLabel label="mermaid" backgroundColor={backgroundColor} />
-            <MermaidBlock source={block.text} dark={Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45)} onSize={onMermaidSize} />
+            <CodeLanguageLabel label="mermaid" backgroundColor={mermaidBackgroundColor} />
+            <MermaidBlock source={block.text} dark={mermaidDark} onSize={onMermaidSize} />
           </div>,
         );
         return;
@@ -1826,7 +1896,7 @@ function renderMarkdownBlocks({
   return rendered;
 }
 
-export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, markdownSourcePath, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showTocPage = false, thumbnailContainer, onThumbnailPageSelect, onPreviewOutlineChange, onOpenLink = () => {}, showPageFooter = true, interactiveViewport = false, className, viewportClassName }: WordPreviewPageProps) {
+export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdown, markdownSourcePath, showHeader = true, headerTitle = "实时预览", headerSubtitle, badgeText, pageWidth, pageMinHeight, paginate = false, showTocPage = false, thumbnailContainer, onThumbnailPageSelect, onPreviewOutlineChange, onOpenLink = () => {}, showPageFooter = true, interactiveViewport = false, paperTheme, className, viewportClassName }: WordPreviewPageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lastPreviewOutlineSignatureRef = useRef<string | undefined>(undefined);
   const dragStateRef = useRef({ dragging: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
@@ -2028,10 +2098,11 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
         className={cn(
           thumbnail ? "pointer-events-none" : interactiveViewport ? "shrink-0" : "mx-auto",
           !thumbnail && !interactiveViewport && pageIndex > 0 && "mt-0",
+          paperTheme === "dark" && "dark",
         )}
         style={thumbnail ? thumbnailPageScaleStyle : pageScaleStyle}
       >
-        <div className="mk-word-preview-page overflow-hidden rounded-sm bg-white text-slate-900 shadow-none ring-1 ring-slate-200" style={thumbnail ? thumbnailPageStyle : pageStyle}>
+        <div className={cn("mk-word-preview-page overflow-hidden rounded-sm bg-white text-slate-900 shadow-none ring-1 ring-slate-200", paperTheme && `mk-word-preview-page--paper-${paperTheme}`)} style={thumbnail ? thumbnailPageStyle : pageStyle}>
           {headerEnabled && headerText ? <div className="absolute left-0 right-0 text-center text-[9pt] text-slate-500" style={{ top: 48, paddingInline: pageMargins.left }}>{headerText}</div> : null}
           {renderMarkdownBlocks({
             blocks: pageBlocks,
@@ -2042,6 +2113,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             markdownSourcePath,
             onOpenLink,
             onMermaidSize: handleMermaidSize,
+            previewDark: paperTheme === "dark",
             renderAsThumbnail: thumbnail,
             tableStyle: markdownTableStyle,
           })}

@@ -42,3 +42,19 @@ test("支持粗斜体嵌套、自动链接和安全图片", () => {
     { type: "image", src: "https://example.com/icon.png", alt: "图标", title: "说明" },
   ]);
 });
+
+test("支持 Obsidian 文档引用和直接粘贴的外链", () => {
+  assert.deepEqual(parseTableInlineMarkdown("[[笔记/说明.md|技术说明]] https://example.com/docs"), [
+    { type: "element", tag: "a", href: "笔记/说明.md", children: [{ type: "text", value: "技术说明" }] },
+    { type: "text", value: " " },
+    { type: "element", tag: "a", href: "https://example.com/docs", children: [{ type: "text", value: "https://example.com/docs" }] },
+  ]);
+});
+
+test("直接粘贴的外链不会吞掉中文句末标点", () => {
+  assert.deepEqual(parseTableInlineMarkdown("见 https://example.com/docs。"), [
+    { type: "text", value: "见 " },
+    { type: "element", tag: "a", href: "https://example.com/docs", children: [{ type: "text", value: "https://example.com/docs" }] },
+    { type: "text", value: "。" },
+  ]);
+});

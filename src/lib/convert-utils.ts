@@ -25,7 +25,8 @@ export function buildDocxOutputNameFromPath(path: string) {
 export function buildOutputPath(outputDir: string | undefined, outputName: string) {
   const dir = outputDir?.trim();
   if (!dir) return undefined;
-  return `${dir.replace(/[\\/]+$/, "")}/${outputName}`;
+  const separator = dir.includes("\\") ? "\\" : "/";
+  return `${dir.replace(/[\\/]+$/, "")}${separator}${outputName}`;
 }
 
 export function actionableConversionWarnings(warnings: string[]) {

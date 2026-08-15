@@ -1,5 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
 import { EditorView, type DOMEventHandlers } from "@codemirror/view";
+import { findObsidianWikilinks } from "@/lib/document-links";
 
 const ADJACENT_LINK_SOURCE_HITBOX_PX = 8;
 const LINK_EDGE_SOURCE_HITBOX_PX = 2;
@@ -8,6 +9,10 @@ type MarkdownLinkRange = {
   from: number;
   to: number;
   target: string;
+};
+
+type WikilinkRange = MarkdownLinkRange & {
+  sourcePosition: number;
 };
 
 function clickedLinkTarget(event: MouseEvent): string | undefined {
@@ -33,6 +38,13 @@ function linkAtPosition(view: EditorView, position: number): MarkdownLinkRange |
     const target = url ? view.state.doc.sliceString(url.from, url.to).trim() : "";
     if (target) return { from: node.from, to: node.to, target };
   }
+  const line = view.state.doc.lineAt(position);
+  const wikilink = findObsidianWikilinks(line.text).find((match) => {
+    const from = line.from + match.from;
+    const to = line.from + match.to;
+    return position >= from && position <= to;
+  });
+  if (wikilink) return { from: line.from + wikilink.from, to: line.from + wikilink.to, target: wikilink.target };
   return undefined;
 }
 
@@ -51,12 +63,37 @@ function linksOnLineWithTarget(view: EditorView, position: number, target: strin
       return false;
     },
   });
+  for (const wikilink of findObsidianWikilinks(line.text)) {
+    if (wikilink.target !== target) continue;
+    matches.push({ from: line.from + wikilink.from, to: line.from + wikilink.to, target });
+  }
   return matches;
 }
 
+function wikilinkRange(view: EditorView, link: MarkdownLinkRange): WikilinkRange | undefined {
+  const line = view.state.doc.lineAt(link.from);
+  const match = findObsidianWikilinks(line.text).find((wikilink) => (
+    line.from + wikilink.from === link.from
+    && line.from + wikilink.to === link.to
+    && wikilink.target === link.target
+  ));
+  return match
+    ? { ...link, sourcePosition: line.from + match.displayFrom }
+    : undefined;
+}
+
+function wikilinkRangeAtSourcePosition(view: EditorView, from: number, target: string): WikilinkRange | undefined {
+  if (from < 0 || from >= view.state.doc.length) return undefined;
+  const line = view.state.doc.lineAt(from);
+  const match = findObsidianWikilinks(line.text).find((wikilink) => (
+    line.from + wikilink.from === from && wikilink.target === target
+  ));
+  return match
+    ? { from, to: line.from + match.to, target, sourcePosition: line.from + match.displayFrom }
+    : undefined;
+}
+
 function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent): boolean {
-  const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
-  if (position === null) return false;
   const domLine = event.target instanceof Element ? event.target.closest(".cm-line") : null;
   if (!domLine) return false;
   const renderedElements = Array.from(domLine.querySelectorAll<HTMLElement>("[data-mk-link-target]"));
@@ -70,6 +107,23 @@ function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent)
   if (!nearbyTarget) return false;
 
   const sameTargetElements = renderedElements.filter((element) => element.dataset.mkLinkTarget === nearbyTarget);
+  const markedWikilinkFrom = sameTargetElements
+    .map((element) => element.dataset.mkWikilinkFrom)
+    .find((value): value is string => value !== undefined);
+  if (markedWikilinkFrom !== undefined) {
+    const wikilink = wikilinkRangeAtSourcePosition(view, Number(markedWikilinkFrom), nearbyTarget);
+    if (wikilink) {
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: wikilink.sourcePosition } });
+      view.focus();
+      return true;
+    }
+  }
+
+  // 图标和文字之间的空隙没有可靠的文档坐标；双链已经用源码起点处理完。
+  // 普通 Markdown 链接仍需要坐标反查语法节点，因此放到这里再读取即可。
+  const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (position === null) return false;
   const renderedLinkIndex = Math.floor(sameTargetElements.indexOf(nearbyElement) / 2);
   const link = linkAtPosition(view, position) ?? linksOnLineWithTarget(view, position, nearbyTarget)[renderedLinkIndex];
   if (!link || link.target !== nearbyTarget) return false;
@@ -77,6 +131,16 @@ function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent)
     .slice(renderedLinkIndex * 2, renderedLinkIndex * 2 + 2)
     .map((element) => element.getBoundingClientRect());
   if (renderedParts.length === 0) return false;
+
+  // 双链属于 Markdown 的编辑对象。点击它的图标、显示名及两侧紧邻位置时，
+  // 先展开 `[[...]]` 源码并把光标放到显示文字处，不能按普通超链接跳转。
+  const wikilink = wikilinkRange(view, link);
+  if (wikilink) {
+    event.preventDefault();
+    view.dispatch({ selection: { anchor: wikilink.sourcePosition } });
+    view.focus();
+    return true;
+  }
 
   const left = Math.min(...renderedParts.map((rect) => rect.left));
   const right = Math.max(...renderedParts.map((rect) => rect.right));

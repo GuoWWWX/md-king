@@ -1,5 +1,7 @@
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
+import { normalizeBareExternalLink } from "../../../lib/document-links.ts";
+import { obsidianWikilinkPlugin } from "../../../lib/obsidian-wikilinks.ts";
 
 export type TableInlineNode =
   | { type: "text"; value: string }
@@ -8,7 +10,16 @@ export type TableInlineNode =
   | { type: "image"; src: string; alt: string; title?: string }
   | { type: "element"; tag: "strong" | "em" | "s" | "a"; href?: string; title?: string; children: TableInlineNode[] };
 
-const parser = new MarkdownIt({ html: false, linkify: true, typographer: false });
+const parser = new MarkdownIt({ html: false, linkify: true, typographer: false }).use(obsidianWikilinkPlugin);
+
+type PendingInlineElement = {
+  tag: "strong" | "em" | "s" | "a";
+  href?: string;
+  title?: string;
+  children: TableInlineNode[];
+  autoLink?: boolean;
+  trailingText?: string;
+};
 
 function appendText(target: TableInlineNode[], value: string) {
   if (!value) return;
@@ -20,11 +31,19 @@ function appendText(target: TableInlineNode[], value: string) {
 export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
   const children = parser.parseInline(source, {})[0]?.children ?? [];
   const root: TableInlineNode[] = [];
-  const stack: { tag: "strong" | "em" | "s" | "a"; href?: string; title?: string; children: TableInlineNode[] }[] = [];
+  const stack: PendingInlineElement[] = [];
   const target = () => stack[stack.length - 1]?.children ?? root;
 
   for (const token of children) {
     if (token.type === "text") {
+      const active = stack[stack.length - 1];
+      if (active?.tag === "a" && active.autoLink && active.href && /^https?:\/\//i.test(token.content)) {
+        const href = normalizeBareExternalLink(token.content);
+        active.href = href;
+        appendText(target(), href);
+        if (href.length < token.content.length) active.trailingText = token.content.slice(href.length);
+        continue;
+      }
       appendText(target(), token.content);
       continue;
     }
@@ -44,7 +63,11 @@ export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
     const closeTag = closingTag(token);
     if (closeTag && stack[stack.length - 1]?.tag === closeTag) {
       const element = stack.pop();
-      if (element) target().push({ type: "element", ...element });
+      if (element) {
+        const { autoLink: _autoLink, trailingText, ...node } = element;
+        target().push({ type: "element", ...node });
+        if (trailingText) appendText(target(), trailingText);
+      }
       continue;
     }
     if (token.type === "image") {
@@ -61,19 +84,23 @@ export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
 
   while (stack.length > 0) {
     const element = stack.pop();
-    if (element) target().push({ type: "element", ...element });
+    if (element) {
+      const { autoLink: _autoLink, trailingText, ...node } = element;
+      target().push({ type: "element", ...node });
+      if (trailingText) appendText(target(), trailingText);
+    }
   }
   return root;
 }
 
-function openingElement(token: Token): { tag: "strong" | "em" | "s" | "a"; href?: string; title?: string } | null {
+function openingElement(token: Token): { tag: "strong" | "em" | "s" | "a"; href?: string; title?: string; autoLink?: boolean } | null {
   if (token.type === "strong_open") return { tag: "strong" };
   if (token.type === "em_open") return { tag: "em" };
   if (token.type === "s_open") return { tag: "s" };
   if (token.type === "link_open") {
     const href = token.attrGet("href") ?? "";
     const title = token.attrGet("title") ?? undefined;
-    return parser.validateLink(href) ? { tag: "a", href, ...(title ? { title } : {}) } : null;
+    return parser.validateLink(href) ? { tag: "a", href, ...(title ? { title } : {}), ...(token.markup === "linkify" ? { autoLink: true } : {}) } : null;
   }
   return null;
 }
@@ -108,6 +135,7 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       if (node.tag === "a" && node.href) {
         element.setAttribute("href", node.href);
         element.setAttribute("rel", "noreferrer");
+        element.dataset.mkLinkTarget = node.href;
         if (node.title) element.setAttribute("title", node.title);
         element.addEventListener("click", (event) => event.preventDefault());
       }

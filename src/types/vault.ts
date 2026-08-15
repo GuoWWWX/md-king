@@ -38,6 +38,11 @@ export type VaultWriteResult = {
   size: number;
 };
 
+export type VaultImageImport = {
+  entry: VaultEntry;
+  imageDir: VaultEntry;
+};
+
 export type VaultWriteParams = {
   root: string;
   path: string;

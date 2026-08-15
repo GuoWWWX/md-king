@@ -10,8 +10,8 @@ import { parseVaultError } from "@/lib/user-facing-errors";
 /// 所以这里用一个订阅式回调把内容交出去，由页面自己决定怎么灌。
 ///
 /// absolutePath 是给预览里的图片解析用的：load_preview_image 要拿源文件的
-/// 父目录去解析 `![](assets/x.png)` 这类相对路径，vault 的相对路径不够用。
-type OpenFileHandler = (file: { path: string; absolutePath: string; content: string }) => void;
+/// 父目录去解析 `![](.md-king/img/x.png)` 这类相对路径，vault 的相对路径不够用。
+type OpenFileHandler = (file: { path: string; absolutePath: string; content: string; eol: "lf" | "crlf"; hasBom: boolean; modifiedMs: number }) => void;
 
 let contentSink: OpenFileHandler | undefined;
 
@@ -52,6 +52,9 @@ export function useOpenVaultFile() {
           path: file.path,
           absolutePath: joinVaultPath(vaultRoot, file.path),
           content: file.content,
+          eol: file.eol,
+          hasBom: file.hasBom,
+          modifiedMs: file.modifiedMs,
         });
       } catch (error) {
         if (requestVersion !== requestVersionRef.current) return;

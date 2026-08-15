@@ -1,3 +1,5 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -34,9 +36,13 @@ const SKIP_DIRS: &[&str] = &[
     "$RECYCLE.BIN",
 ];
 
-/// 只有白名单里的扩展名可读可写。这是「打开目录」这个能力的边界之一：
-/// 即使路径校验被绕过，也写不到 .exe / .dll / .docx 上去。
-const ALLOWED_EXT: &[&str] = &["md", "markdown", "txt"];
+/// 文本白名单只用于读取和写入编辑器，不能因为图片进入文件树就把二进制文件送进
+/// String 编辑链路。
+const EDITABLE_EXT: &[&str] = &["md", "markdown", "txt"];
+
+/// 资源白名单用于文件树、复制、移动、重命名和删除。这里与预览器支持的格式保持一致，
+/// 避免树上可见但点击后无法预览的资源。
+const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"];
 
 /// Windows 设备名。这些名字在任何目录下都会被解析成设备而不是文件，
 /// 带扩展名的形式（`CON.md`）同样有效，所以要比较第一个点之前的部分。
@@ -96,6 +102,14 @@ pub struct VaultWriteResult {
     pub path: String,
     pub modified_ms: u64,
     pub size: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultImageImport {
+    pub entry: VaultEntry,
+    /// 新建或复用的图片目录也返回给前端，文件树无需整棵重新扫描即可显示图片。
+    pub image_dir: VaultEntry,
 }
 
 /// 错误一律是 `CODE|中文提示`：前端要按 code 分流 UI（冲突弹窗、只读黄条、普通 toast），
@@ -292,17 +306,35 @@ fn extension_of(path: &Path) -> Option<String> {
         .map(|value| value.to_ascii_lowercase())
 }
 
-fn is_allowed_file(path: &Path) -> bool {
-    extension_of(path).is_some_and(|extension| ALLOWED_EXT.contains(&extension.as_str()))
+fn is_editable_file(path: &Path) -> bool {
+    extension_of(path).is_some_and(|extension| EDITABLE_EXT.contains(&extension.as_str()))
 }
 
-fn ensure_allowed_file(path: &Path) -> Result<(), String> {
-    if is_allowed_file(path) {
+fn is_image_file(path: &Path) -> bool {
+    extension_of(path).is_some_and(|extension| IMAGE_EXT.contains(&extension.as_str()))
+}
+
+fn is_visible_file(path: &Path) -> bool {
+    is_editable_file(path) || is_image_file(path)
+}
+
+fn ensure_editable_file(path: &Path) -> Result<(), String> {
+    if is_editable_file(path) {
         return Ok(());
     }
     Err(vault_err(
         CODE_INVALID_NAME,
-        "只能操作 .md、.markdown 和 .txt 文件。",
+        "只能编辑 .md、.markdown 和 .txt 文件。",
+    ))
+}
+
+fn ensure_visible_file(path: &Path) -> Result<(), String> {
+    if is_visible_file(path) {
+        return Ok(());
+    }
+    Err(vault_err(
+        CODE_INVALID_NAME,
+        "仅支持 Markdown、TXT 和常见图片文件。",
     ))
 }
 
@@ -403,7 +435,7 @@ fn dir_has_visible_children(path: &Path) -> bool {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with('.') {
+        if name.starts_with('.') && !name.eq_ignore_ascii_case(".md-king") {
             continue;
         }
         if meta.is_dir() {
@@ -412,7 +444,7 @@ fn dir_has_visible_children(path: &Path) -> bool {
             }
             return true;
         }
-        if is_allowed_file(Path::new(name)) {
+        if is_visible_file(Path::new(name)) {
             return true;
         }
     }
@@ -514,7 +546,7 @@ fn walk_vault(
             let Some(name) = name.to_str() else {
                 continue;
             };
-            if name.starts_with('.') {
+            if name.starts_with('.') && !name.eq_ignore_ascii_case(".md-king") {
                 if meta.is_dir() {
                     skipped_dirs += 1;
                 }
@@ -548,7 +580,7 @@ fn walk_vault(
                 continue;
             }
 
-            if !is_allowed_file(Path::new(name)) {
+            if !is_visible_file(Path::new(name)) {
                 continue;
             }
 
@@ -632,7 +664,7 @@ fn fill_has_children(root: &Path, entries: &mut [VaultEntry], recursive: bool, t
 
 pub fn read_file(root: &Path, relative: &str) -> Result<VaultFileContent, String> {
     let absolute = resolve_in_vault(root, relative)?;
-    ensure_allowed_file(&absolute)?;
+    ensure_editable_file(&absolute)?;
 
     let meta = fs::metadata(&absolute).map_err(|error| io_error_message("读取文件", &error))?;
     if meta.is_dir() {
@@ -687,7 +719,7 @@ pub fn write_file(
     allow_empty: bool,
 ) -> Result<VaultWriteResult, String> {
     let absolute = resolve_in_vault(root, relative)?;
-    ensure_allowed_file(&absolute)?;
+    ensure_editable_file(&absolute)?;
 
     let existing = fs::metadata(&absolute).ok();
     if let Some(meta) = existing.as_ref() {
@@ -784,7 +816,7 @@ pub fn create_entry(
 
     let absolute = resolve_in_vault(root, &relative)?;
     if !is_dir {
-        ensure_allowed_file(&absolute)?;
+        ensure_editable_file(&absolute)?;
     }
     if absolute.exists() {
         return Err(vault_err(CODE_EXISTS, "同名文件或目录已存在。"));
@@ -818,6 +850,9 @@ pub fn rename_entry(root: &Path, relative: &str, new_name: &str) -> Result<Vault
     let source_relative = validate_relative_path(relative)?;
     let source = resolve_in_vault(root, relative)?;
     let meta = fs::metadata(&source).map_err(|error| io_error_message("重命名", &error))?;
+    if !meta.is_dir() {
+        ensure_visible_file(&source)?;
+    }
 
     // 重命名时省略扩展名是常见操作，沿用原扩展名而不是让文件掉出白名单变成不可读。
     let new_name = if meta.is_dir() || extension_of(Path::new(new_name)).is_some() {
@@ -841,7 +876,7 @@ pub fn rename_entry(root: &Path, relative: &str, new_name: &str) -> Result<Vault
 
     let target = resolve_in_vault(root, &target_relative)?;
     if !meta.is_dir() {
-        ensure_allowed_file(&target)?;
+        ensure_visible_file(&target)?;
     }
 
     // 只改大小写时 target.exists() 必然为真（Windows 不区分大小写），
@@ -904,8 +939,8 @@ pub fn move_entry(root: &Path, relative: &str, target_dir: &str) -> Result<Vault
         return Err(vault_err(CODE_EXISTS, "目标文件夹中已有同名文件或目录。"));
     }
     if !source_meta.is_dir() {
-        ensure_allowed_file(&source)?;
-        ensure_allowed_file(&target)?;
+        ensure_visible_file(&source)?;
+        ensure_visible_file(&target)?;
     }
 
     fs::rename(&source, &target).map_err(|error| io_error_message("移动", &error))?;
@@ -928,7 +963,7 @@ pub fn delete_entry(root: &Path, relative: &str, recursive: bool) -> Result<(), 
         return Ok(());
     }
 
-    ensure_allowed_file(&absolute)?;
+    ensure_visible_file(&absolute)?;
     fs::remove_file(&absolute).map_err(|error| io_error_message("删除文件", &error))
 }
 
@@ -1005,8 +1040,8 @@ pub fn copy_entry(
     let (_final_name, final_path) = find_available_name(&destination_dir, source_name)?;
 
     if !source_meta.is_dir() {
-        ensure_allowed_file(&source)?;
-        ensure_allowed_file(&final_path)?;
+        ensure_visible_file(&source)?;
+        ensure_visible_file(&final_path)?;
     }
 
     // 执行复制
@@ -1025,6 +1060,189 @@ pub fn copy_entry(
         .ok_or_else(|| vault_err(CODE_OUT_OF_VAULT, "目标路径超出 vault 范围。"))?;
 
     entry_at(root, &target_relative)
+}
+
+/// 把仓库外部的可见资源复制到目标目录。外部路径必须已经存在，
+/// 且仍受 vault 的扩展名、大小和目标目录边界约束。
+pub fn copy_external_file(
+    root: &Path,
+    source_path: &Path,
+    target_dir: &str,
+) -> Result<VaultEntry, String> {
+    let source = source_path
+        .canonicalize()
+        .map_err(|error| io_error_message("读取待粘贴文件", &error))?;
+    let source_meta =
+        fs::metadata(&source).map_err(|error| io_error_message("读取待粘贴文件", &error))?;
+    if !source_meta.is_file() {
+        return Err(vault_err(
+            CODE_INVALID_NAME,
+            "只能粘贴 Markdown、TXT 或常见图片文件。",
+        ));
+    }
+    if source.starts_with(root) {
+        return Err(vault_err(
+            CODE_INVALID_NAME,
+            "仓库内文件请使用复制或剪切操作。",
+        ));
+    }
+    ensure_visible_file(&source)?;
+    if source_meta.len() > MAX_VAULT_FILE_BYTES {
+        return Err(vault_err(
+            CODE_TOO_LARGE,
+            "待粘贴文件超过 20 MB，无法导入。",
+        ));
+    }
+
+    let destination_dir = if target_dir.trim().is_empty() {
+        root.to_path_buf()
+    } else {
+        let normalized = validate_relative_path(target_dir)?;
+        resolve_in_vault(root, &to_relative_string(&normalized))?
+    };
+    if !fs::metadata(&destination_dir)
+        .map_err(|error| io_error_message("读取目标目录", &error))?
+        .is_dir()
+    {
+        return Err(vault_err(CODE_NOT_FOUND, "目标不是文件夹。"));
+    }
+
+    let source_name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| vault_err(CODE_INVALID_NAME, "文件名中包含无法识别的字符。"))?;
+    let (_, final_path) = find_available_name(&destination_dir, source_name)?;
+    ensure_visible_file(&final_path)?;
+    fs::copy(&source, &final_path).map_err(|error| io_error_message("粘贴文件", &error))?;
+
+    let target_relative = final_path
+        .strip_prefix(root)
+        .ok()
+        .and_then(|path| path.to_str())
+        .map(|path| path.replace('\\', "/"))
+        .ok_or_else(|| vault_err(CODE_OUT_OF_VAULT, "目标路径超出 vault 范围。"))?;
+    entry_at(root, &target_relative)
+}
+
+/// 把磁盘上的图片复制到 vault 根目录的 `.md-king/img`。应用生成的资源集中存放，
+/// 文档引用始终相对当前 Markdown 文件计算，随整个 vault 移动时不会断链。
+pub fn import_image_from_path(
+    root: &Path,
+    markdown_path: &str,
+    source_path: &str,
+) -> Result<VaultImageImport, String> {
+    let source = fs::canonicalize(source_path.trim())
+        .map_err(|error| io_error_message("读取待导入图片", &error))?;
+    let meta = fs::metadata(&source).map_err(|error| io_error_message("读取待导入图片", &error))?;
+    if !meta.is_file() || !is_image_file(&source) {
+        return Err(vault_err(
+            CODE_INVALID_NAME,
+            "仅支持 PNG、JPG、GIF、WebP、BMP 和 SVG 图片。",
+        ));
+    }
+    if meta.len() > MAX_VAULT_FILE_BYTES {
+        return Err(vault_err(CODE_TOO_LARGE, "图片超过 20 MB，无法导入。"));
+    }
+
+    let bytes = fs::read(&source).map_err(|error| io_error_message("读取待导入图片", &error))?;
+    let name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| vault_err(CODE_INVALID_NAME, "图片文件名中包含无法识别的字符。"))?;
+    import_image_bytes(root, markdown_path, name, &bytes)
+}
+
+/// 浏览器剪贴板只能给前端一个 Blob；前端转成 data URL 后经这条命令落盘。
+pub fn import_image_data(
+    root: &Path,
+    markdown_path: &str,
+    data_base64: &str,
+    extension: &str,
+) -> Result<VaultImageImport, String> {
+    let extension = extension.trim().trim_start_matches('.').to_ascii_lowercase();
+    let file_name = format!("截图-{}.{}", Local::now().format("%Y%m%d-%H%M%S-%3f"), extension);
+    if !is_image_file(Path::new(&file_name)) {
+        return Err(vault_err(
+            CODE_INVALID_NAME,
+            "仅支持 PNG、JPG、GIF、WebP、BMP 和 SVG 图片。",
+        ));
+    }
+
+    let payload = data_base64
+        .split_once(',')
+        .map(|(_, value)| value)
+        .unwrap_or(data_base64);
+    let bytes = STANDARD
+        .decode(payload.trim())
+        .map_err(|error| vault_err(CODE_INVALID_NAME, &format!("图片数据解码失败：{error}")))?;
+    if bytes.len() as u64 > MAX_VAULT_FILE_BYTES {
+        return Err(vault_err(CODE_TOO_LARGE, "图片超过 20 MB，无法导入。"));
+    }
+
+    import_image_bytes(root, markdown_path, &file_name, &bytes)
+}
+
+fn import_image_bytes(
+    root: &Path,
+    markdown_path: &str,
+    file_name: &str,
+    bytes: &[u8],
+) -> Result<VaultImageImport, String> {
+    validate_relative_path(markdown_path)?;
+    let markdown = resolve_in_vault(root, markdown_path)?;
+    let markdown_meta = fs::metadata(&markdown).map_err(|error| io_error_message("读取当前文档", &error))?;
+    if !markdown_meta.is_file() {
+        return Err(vault_err(CODE_NOT_FOUND, "当前 Markdown 文档不存在。"));
+    }
+    ensure_editable_file(&markdown)?;
+
+    let base_name = Path::new(file_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| vault_err(CODE_INVALID_NAME, "图片文件名中包含无法识别的字符。"))?;
+    if !is_image_file(Path::new(base_name)) {
+        return Err(vault_err(
+            CODE_INVALID_NAME,
+            "仅支持 PNG、JPG、GIF、WebP、BMP 和 SVG 图片。",
+        ));
+    }
+    // 从系统拖入的文件名理论上已经受 Windows 限制，但截图 Blob 的默认名不一定；
+    // 不合法时回退为通用名，避免把一次粘贴变成无法保存的错误。
+    let safe_name = if validate_component(base_name).is_ok() {
+        base_name.to_string()
+    } else {
+        format!(
+            "image.{}",
+            extension_of(Path::new(base_name)).expect("checked image extension")
+        )
+    };
+
+    let image_relative = ".md-king/img";
+    let image_dir = resolve_in_vault(root, image_relative)?;
+    fs::create_dir_all(&image_dir).map_err(|error| io_error_message("创建图片目录", &error))?;
+
+    let (_, target) = find_available_name(&image_dir, &safe_name)?;
+    write_atomic_durable(&target, bytes).map_err(|error| io_error_message("保存图片", &error))?;
+
+    let target_relative = target
+        .strip_prefix(root)
+        .ok()
+        .map(to_relative_string)
+        .ok_or_else(out_of_vault)?;
+
+    Ok(VaultImageImport {
+        entry: entry_at(root, &target_relative)?,
+        image_dir: entry_at(root, image_relative)?,
+    })
+}
+
+pub fn entry_absolute_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let absolute = resolve_in_vault(root, relative)?;
+    let meta = fs::metadata(&absolute).map_err(|error| io_error_message("读取条目", &error))?;
+    if meta.is_file() {
+        ensure_visible_file(&absolute)?;
+    }
+    Ok(absolute)
 }
 
 /// 找到可用的文件名，如果已存在则加 (1)、(2) 等后缀
@@ -1317,7 +1535,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_skips_noise_directories_and_unsupported_files() {
+    fn walk_skips_noise_directories_and_keeps_supported_images() {
         let scratch = Scratch::new("skip");
         scratch.file(".git/config", b"x");
         scratch.file("node_modules/pkg/readme.md", b"x");
@@ -1334,11 +1552,51 @@ mod tests {
         assert!(found.iter().all(|path| !path.starts_with("node_modules")));
         assert!(found.iter().all(|path| !path.starts_with("target")));
         assert!(found.iter().all(|path| !path.starts_with(".obsidian")));
-        assert!(found.iter().all(|path| !path.ends_with(".png")));
+        assert!(found.contains(&"docs/image.png".to_string()));
         assert!(found.contains(&"docs/guide.md".to_string()));
         assert!(found.contains(&"root.txt".to_string()));
         assert!(listing.skipped_dirs >= 4);
         assert!(!listing.truncated);
+    }
+
+    #[test]
+    fn imports_images_into_the_md_king_image_directory() {
+        let vault = Scratch::new("image-import");
+        let source = Scratch::new("image-source");
+        vault.file("notes/guide.md", b"# guide");
+        let source_image = source.file("diagram.png", b"png-data");
+
+        let imported = import_image_from_path(
+            vault.vault(),
+            "notes/guide.md",
+            source_image.to_string_lossy().as_ref(),
+        )
+        .expect("image should import");
+
+        assert_eq!(imported.entry.path, ".md-king/img/diagram.png");
+        assert_eq!(imported.image_dir.path, ".md-king/img");
+        assert_eq!(fs::read(vault.join(".md-king/img/diagram.png")).unwrap(), b"png-data");
+
+        let listing = list_entries(vault.vault(), None, true).expect("listing should include image");
+        assert!(paths(&listing).contains(&".md-king/img/diagram.png".to_string()));
+    }
+
+    #[test]
+    fn imports_clipboard_image_data_and_renames_collisions() {
+        let scratch = Scratch::new("clipboard-image");
+        scratch.file("note.md", b"# note");
+        let png = "data:image/png;base64,cG5nLWRhdGE=";
+
+        let first = import_image_data(scratch.vault(), "note.md", png, "png")
+            .expect("clipboard image should import");
+        let second = import_image_data(scratch.vault(), "note.md", png, "png")
+            .expect("second image should import");
+
+        assert!(first.entry.path.starts_with(".md-king/img/截图-"));
+        assert!(second.entry.path.starts_with(".md-king/img/截图-"));
+        assert_ne!(first.entry.path, second.entry.path);
+        assert_eq!(fs::read(scratch.join(&first.entry.path)).unwrap(), b"png-data");
+        assert_eq!(fs::read(scratch.join(&second.entry.path)).unwrap(), b"png-data");
     }
 
     #[test]
@@ -1604,6 +1862,33 @@ mod tests {
 
         let error = move_entry(scratch.vault(), "archive/notes", "archive/notes/child")
             .expect_err("directory must not move into its own child");
+        assert_eq!(error_code(&error), CODE_INVALID_NAME);
+    }
+
+    #[test]
+    fn external_visible_file_copy_uses_target_directory_and_renames_conflicts() {
+        let vault = Scratch::new("external-copy-vault");
+        let external = Scratch::new("external-copy-source");
+        vault.dir("草稿");
+        vault.file("草稿/说明.md", b"existing");
+        external.file("说明.md", b"external");
+
+        let copied = copy_external_file(vault.vault(), &external.join("说明.md"), "草稿")
+            .expect("external markdown should be copied");
+        assert_eq!(copied.path, "草稿/说明 (1).md");
+        assert_eq!(
+            fs::read(vault.join("草稿/说明 (1).md")).unwrap(),
+            b"external"
+        );
+
+        external.file("image.png", b"png");
+        let image = copy_external_file(vault.vault(), &external.join("image.png"), "")
+            .expect("supported images should be copied");
+        assert_eq!(image.path, "image.png");
+
+        external.file("report.docx", b"PK");
+        let error = copy_external_file(vault.vault(), &external.join("report.docx"), "")
+            .expect_err("unsupported external files must be rejected");
         assert_eq!(error_code(&error), CODE_INVALID_NAME);
     }
 

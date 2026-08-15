@@ -1,9 +1,10 @@
 import { create } from "zustand";
+import type { VaultEol } from "@/types/vault";
 
 /// 一个打开中的文档。分两类：
 /// - vault：对应磁盘上的真实文件，path 是 vault 内相对路径，关掉还能从文件树打开
 /// - scratch：粘贴/导入/新建产生的临时内容，没有落盘，关掉就没了
-export type DocumentTabKind = "vault" | "scratch";
+export type DocumentTabKind = "vault" | "scratch" | "image";
 
 export type DocumentTab = {
   id: string;
@@ -14,8 +15,12 @@ export type DocumentTab = {
   absolutePath?: string;
   title: string;
   content: string;
-  /// 内容与磁盘（或最后一次同步点）不一致。scratch 标签只要有内容就算脏。
+  /// 内容与磁盘（或最后一次同步点）不一致。
   dirty: boolean;
+  /// Vault 文件的写回基准。每个标签单独保存，切换标签后仍能正确自动保存。
+  eol?: VaultEol;
+  hasBom?: boolean;
+  modifiedMs?: number;
   /// 外部灌入内容时递增，编辑器据此决定何时做全量替换。
   revision: number;
 };
@@ -25,9 +30,11 @@ type DocumentTabsState = {
   activeTabId?: string;
 
   /// 打开 vault 文件。已经开着就直接激活，不重复开。
-  openVaultTab: (file: { path: string; absolutePath: string; title: string; content: string }) => string;
+  openVaultTab: (file: { path: string; absolutePath: string; title: string; content: string; eol?: VaultEol; hasBom?: boolean; modifiedMs?: number }) => string;
   /// 新建一个临时文档。source 只用于生成标题。
-  openScratchTab: (input: { title: string; content: string }) => string;
+  openScratchTab: (input: { title: string; content: string; dirty?: boolean }) => string;
+  /// 图片和 Markdown 一样作为工作区标签打开，但不会进入编辑、保存或转换流程。
+  openImageTab: (file: { path: string; absolutePath: string; title: string }) => string;
   setActiveTab: (id: string) => void;
   /// 拖动标签排序；beforeId 为空表示移到末尾。
   moveTab: (id: string, beforeId?: string) => void;
@@ -35,7 +42,7 @@ type DocumentTabsState = {
   updateTabContent: (id: string, content: string) => void;
   /// 外部替换内容（重新载入、冲突后重载），递增 revision 让编辑器全量刷新。
   replaceTabContent: (id: string, content: string) => void;
-  markTabClean: (id: string) => void;
+  markTabClean: (id: string, modifiedMs?: number) => void;
   closeTab: (id: string) => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
@@ -68,15 +75,20 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
   tabs: [],
   activeTabId: undefined,
 
-  openVaultTab: ({ path, absolutePath, title, content }) => {
-    const existing = get().tabs.find((tab) => tab.kind === "vault" && tab.path === path);
+  openVaultTab: (file) => {
+    const existing = get().tabs.find((tab) => tab.kind === "vault" && tab.path === file.path);
     if (existing) {
-      // 已经开着的文件重新点一次，只激活并刷新内容（磁盘上可能变了），
-      // 不再开一个重复标签。
+      // 有本地修改时不能拿刚读回来的磁盘内容覆盖它；只激活标签，
+      // 否则“重新点文件树”会绕过关闭确认直接丢掉改动。
+      if (existing.dirty) {
+        set({ activeTabId: existing.id });
+        return existing.id;
+      }
+      // 已经开着且干净的文件可刷新内容与写回基准，不再开一个重复标签。
       set((state) => ({
         activeTabId: existing.id,
         tabs: state.tabs.map((tab) => tab.id === existing.id
-          ? { ...tab, content, dirty: false, revision: tab.revision + 1 }
+          ? { ...tab, ...file, dirty: false, revision: tab.revision + 1 }
           : tab),
       }));
       return existing.id;
@@ -84,16 +96,31 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
 
     const id = nextTabId("vault");
     set((state) => ({
-      tabs: [...state.tabs, { id, kind: "vault", path, absolutePath, title, content, dirty: false, revision: 0 }],
+      tabs: [...state.tabs, { id, kind: "vault", ...file, dirty: false, revision: 0 }],
       activeTabId: id,
     }));
     return id;
   },
 
-  openScratchTab: ({ title, content }) => {
+  openScratchTab: ({ title, content, dirty = false }) => {
     const id = nextTabId("scratch");
     set((state) => ({
-      tabs: [...state.tabs, { id, kind: "scratch", title, content, dirty: content.trim().length > 0, revision: 0 }],
+      tabs: [...state.tabs, { id, kind: "scratch", title, content, dirty, revision: 0 }],
+      activeTabId: id,
+    }));
+    return id;
+  },
+
+  openImageTab: (file) => {
+    const existing = get().tabs.find((tab) => tab.kind === "image" && tab.path === file.path);
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return existing.id;
+    }
+
+    const id = nextTabId("image");
+    set((state) => ({
+      tabs: [...state.tabs, { id, kind: "image", ...file, content: "", dirty: false, revision: 0 }],
       activeTabId: id,
     }));
     return id;
@@ -115,6 +142,8 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
   updateTabContent: (id, content) => set((state) => ({
     tabs: state.tabs.map((tab) => {
       if (tab.id !== id) return tab;
+      // CodeMirror 初次挂载也会回传当前文本；内容没变时不能把刚打开的文件标成未保存。
+      if (tab.content === content) return tab;
       // scratch 标签的标题跟着正文首个标题走，边写边更新，
       // 这样标签上就不会长期挂着一个「未命名」。
       const title = tab.kind === "scratch" ? deriveScratchTitle(content, tab.title) : tab.title;
@@ -128,8 +157,10 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
       : tab),
   })),
 
-  markTabClean: (id) => set((state) => ({
-    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, dirty: false } : tab)),
+  markTabClean: (id, modifiedMs) => set((state) => ({
+    tabs: state.tabs.map((tab) => (tab.id === id
+      ? { ...tab, dirty: false, modifiedMs: modifiedMs ?? tab.modifiedMs }
+      : tab)),
   })),
 
   closeTab: (id) => set((state) => {
@@ -145,6 +176,6 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
   closeAllTabs: () => set({ tabs: [], activeTabId: undefined }),
 
   renameTab: (id, next) => set((state) => ({
-    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, ...next, kind: "vault" as const } : tab)),
+    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, ...next } : tab)),
   })),
 }));

@@ -1,15 +1,8 @@
-import { Check, ChevronDown, FolderOpen, Library, X } from "lucide-react";
+import { ChevronDown, FolderOpen, Library, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { vaultDisplayName } from "@/lib/vault-window";
 import { cn } from "@/lib/utils";
-
-/// vault root 是本机绝对路径，宽度只有 180~520px，全量显示必然截断成一串没用的盘符。
-/// 取末段目录名做主标题，完整路径进 title 属性。
-function vaultDisplayName(root: string) {
-  const normalized = root.replace(/[\\/]+$/, "");
-  const segments = normalized.split(/[\\/]/);
-  return segments[segments.length - 1] || normalized;
-}
 
 type VaultSwitcherProps = {
   vaultRoot?: string;
@@ -60,10 +53,12 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
             return (
               <DropdownMenuItem
                 key={root}
-                className="gap-2"
+                className={cn(
+                  "min-h-0 items-center gap-2 py-1",
+                  isActive && "bg-blue-50 text-blue-950 focus:bg-blue-100 focus:text-blue-950 dark:bg-blue-500/15 dark:text-blue-100 dark:focus:bg-blue-500/25 dark:focus:text-blue-50",
+                )}
                 onSelect={() => { if (!isActive) onSelectVault(root); }}
               >
-                <Check className={cn("size-4 shrink-0", isActive ? "text-blue-600 dark:text-blue-400" : "opacity-0")} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{vaultDisplayName(root)}</span>
                   <span className="block truncate text-[11px] text-slate-500 dark:text-zinc-400">{root}</span>

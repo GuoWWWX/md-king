@@ -1,17 +1,16 @@
 import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
-import { ArrowRight, ChevronsLeft, ChevronsRight, Loader2, Maximize2, Minimize2, Plus, Trash2, UploadCloud } from "lucide-react";
+import { ArrowRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, ExternalLink, FileText, FolderOpen, GripHorizontal, Loader2, Maximize2, Minimize2, Trash2, UploadCloud } from "lucide-react";
 import { type DragEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { actionableConversionWarnings, buildDocxOutputName, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { readMarkdownFile } from "@/lib/markdown-files";
-import { convertMarkdown, appendHistory } from "@/lib/tauri";
+import { appendHistory, convertMarkdown, openOutputPath, revealOutputPath, selectMarkdownFiles } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -26,6 +25,7 @@ type FloatingTask = {
   inputPath?: string;
   status: FloatingTaskStatus;
   message?: string;
+  outputPath?: string;
 };
 
 const fallbackTemplate: Template = {
@@ -46,8 +46,8 @@ const floatingWindowClosedWidth = 48;
 const floatingWindowClosedHeight = 48;
 const floatingWindowDragWidth = 78;
 const floatingWindowDragHeight = 78;
-const expandedWidth = 340;
-const expandedHeight = 520;
+const expandedWidth = 380;
+const expandedHeight = 500;
 const dockActivationDistance = 4;
 
 type DockSide = "left" | "right";
@@ -126,13 +126,11 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   const [dragging, setDragging] = useState(false);
   const [panelDragging, setPanelDragging] = useState(false);
   const [tasks, setTasks] = useState<FloatingTask[]>([]);
-  const [textDraft, setTextDraft] = useState("");
   const [isConverting, setIsConverting] = useState(false);
   const [dockSide, setDockSide] = useState<DockSide | null>(null);
   const [isIdleCollapsed, setIsIdleCollapsed] = useState(false);
   const [isIdleDimmed, setIsIdleDimmed] = useState(false);
   const idleTimerRef = useRef<number | undefined>(undefined);
-  const dragStateRef = useRef<{ startX: number; startY: number; startWindowX: number; startWindowY: number; moved: boolean } | null>(null);
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const defaultTemplate = templateOptions.find((template) => template.id === currentTemplateId)
     ?? templateOptions.find((template) => template.id === appConfig?.defaultTemplateId)
@@ -254,44 +252,21 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     setIsIdleDimmed(false);
   }
 
-  async function startSystemWindowDrag(startScreenX: number, startScreenY: number) {
+  async function startSystemWindowDrag() {
     if (!canUseSystemWindow) return;
     const appWindow = getCurrentWindow();
-    const position = await appWindow.outerPosition();
-    const scaleFactor = await appWindow.scaleFactor();
-    const logicalPosition = position.toLogical(scaleFactor);
-    dragStateRef.current = {
-      startX: startScreenX,
-      startY: startScreenY,
-      startWindowX: logicalPosition.x,
-      startWindowY: logicalPosition.y,
-      moved: false,
-    };
     setDragging(true);
     setDockSide(null);
     setIsIdleCollapsed(false);
     setIsIdleDimmed(false);
-
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const state = dragStateRef.current;
-      if (!state) return;
-      const deltaX = moveEvent.screenX - state.startX;
-      const deltaY = moveEvent.screenY - state.startY;
-      if (Math.abs(deltaX) + Math.abs(deltaY) > 2) state.moved = true;
-      void appWindow.setPosition(new LogicalPosition(state.startWindowX + deltaX, state.startWindowY + deltaY));
-    }
-
-    function handlePointerUp() {
-      dragStateRef.current = null;
+    try {
+      // 使用 Tauri 的原生拖动，窗口移动后指针离开 Webview 时仍能持续拖动。
+      await appWindow.startDragging();
+    } finally {
       setDragging(false);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
       resetIdleCollapseTimer();
-      void settleSystemWindowPosition().catch(() => undefined);
+      await settleSystemWindowPosition().catch(() => undefined);
     }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
   }
 
   function handleSystemBallPointerDown(event: PointerEvent<HTMLButtonElement>) {
@@ -423,7 +398,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   function handleBallPointerDown(event: PointerEvent<HTMLButtonElement>) {
     if (systemWindow) {
       resetIdleCollapseTimer();
-      void startSystemWindowDrag(event.screenX, event.screenY);
+      void startSystemWindowDrag();
       return;
     }
 
@@ -459,16 +434,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     setTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
   }
 
-  function addTextTask() {
-    const text = textDraft.trim();
-    if (!text) {
-      showFloatingToast(systemWindow, "error", "请先粘贴要转换的 Markdown 文本");
-      return;
-    }
-    setTasks((current) => [makeTask("粘贴文本", text), ...current]);
-    setTextDraft("");
-  }
-
   async function addFiles(files: File[]) {
     const nextTasks: FloatingTask[] = [];
     resetIdleCollapseTimer();
@@ -484,6 +449,17 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     if (nextTasks.length > 0) {
       setTasks((current) => [...nextTasks, ...current]);
       showFloatingToast(systemWindow, "success", `已加入 ${nextTasks.length} 个转换任务`);
+    }
+  }
+
+  async function chooseMarkdownFiles() {
+    try {
+      const paths = await selectMarkdownFiles();
+      if (paths.length === 0) return;
+      setTasks((current) => [...paths.map(makePathTask), ...current]);
+      showFloatingToast(systemWindow, "success", `已加入 ${paths.length} 个转换任务`);
+    } catch (error) {
+      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, "选择文件失败"));
     }
   }
 
@@ -504,20 +480,12 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     setPanelDragging(false);
     resetIdleCollapseTimer();
     const files = Array.from(event.dataTransfer.files);
-    const plainText = event.dataTransfer.getData("text/plain").trim();
-
     if (files.length > 0) {
       void addFiles(files);
       return;
     }
 
-    if (plainText) {
-      setTasks((current) => [makeTask("拖入文本", plainText), ...current]);
-      toast.success("已加入拖入文本");
-      return;
-    }
-
-    toast.error("没有识别到可转换的 Markdown/TXT 文件或文本");
+    showFloatingToast(systemWindow, "error", "请拖入 .md、.markdown 或 .txt 文件");
   }
 
   /// 悬浮球运行在独立 WebviewWindow，自带一份 store 快照。只上传新增项，
@@ -546,10 +514,22 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
     });
     updateTask(task.id, {
-      status: result.ok && !result.simulated ? "success" : result.simulated ? "success" : "failed",
+      status: result.ok ? "success" : "failed",
       message: `${result.message ?? (result.ok ? "转换完成" : "转换失败")}${actionableConversionWarnings(result.warnings).length > 0 ? "（有提示）" : ""}`,
+      outputPath: result.ok && !result.simulated ? result.output ?? output : undefined,
     });
     return result;
+  }
+
+  async function runOutputAction(task: FloatingTask, action: (path: string) => Promise<void>, fallbackMessage: string) {
+    if (!task.outputPath) return;
+    try {
+      await action(task.outputPath);
+    } catch (error) {
+      updateTask(task.id, {
+        message: `${task.message ?? "转换完成"}；${userFacingErrorMessage(error, fallbackMessage)}`,
+      });
+    }
   }
 
   async function runBatchConvert() {
@@ -562,16 +542,18 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     setIsConverting(true);
     setCurrentTemplateId(activeTemplateId);
     const results: ConvertResult[] = [];
+    let unexpectedFailureCount = 0;
     try {
       for (const task of pendingTasks) {
         try {
           results.push(await convertTask(task));
         } catch (error) {
+          unexpectedFailureCount += 1;
           updateTask(task.id, { status: "failed", message: userFacingErrorMessage(error, "转换失败") });
         }
       }
       await persistHistory(results.map(buildHistoryItem));
-      const failedCount = results.filter((result) => !result.ok).length;
+      const failedCount = results.filter((result) => !result.ok).length + unexpectedFailureCount;
       const warningCount = results.reduce((total, result) => total + actionableConversionWarnings(result.warnings).length, 0);
       showFloatingToast(systemWindow, failedCount > 0 ? "error" : warningCount > 0 ? "info" : "success", failedCount > 0 ? `批量转换完成，${failedCount} 个失败` : `已完成 ${results.length} 个转换任务${warningCount > 0 ? `，${warningCount} 条提示待检查` : ""}`);
     } finally {
@@ -584,7 +566,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       className={cn(
         systemWindow
           ? open
-            ? "fixed left-0 top-0 z-40 h-[520px] w-[340px] overflow-hidden bg-transparent"
+            ? "fixed left-0 top-0 z-40 h-[500px] w-[380px] overflow-hidden bg-transparent"
             : "fixed left-0 top-0 z-40 flex h-[48px] w-[48px] flex-col items-center justify-center bg-transparent"
           : "fixed z-40",
         systemWindow && isIdleDimmed && !open && "opacity-55 hover:opacity-100",
@@ -594,50 +576,68 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
         : { right: position.x, bottom: position.y }}
     >
       {open ? (
-        <div className="mk-floating-panel flex h-full w-full flex-col rounded-[18px] text-slate-900 dark:text-slate-50">
+        <div className="mk-floating-panel flex h-full w-full flex-col rounded-[8px] text-slate-900 dark:text-slate-50">
           <div
-            className="mk-floating-dragbar flex shrink-0 cursor-grab items-center justify-between gap-3 border-b border-sky-100/70 px-4 py-3 active:cursor-grabbing dark:border-white/10"
+            className="mk-floating-dragbar flex shrink-0 cursor-grab items-center justify-between gap-3 border-b border-slate-200/80 px-3 py-2.5 active:cursor-grabbing dark:border-white/10"
             onPointerDown={(event) => {
               if ((event.target as HTMLElement).closest("button")) return;
-              void startSystemWindowDrag(event.screenX, event.screenY);
+              event.preventDefault();
+              void startSystemWindowDrag();
             }}
           >
-            <div className="flex min-w-0 items-center gap-3">
-              <MdKingLogo className="size-9 shrink-0" />
+            <div className="flex min-w-0 items-center gap-2.5">
+              <MdKingLogo className="size-8 shrink-0" />
               <div className="min-w-0">
-                <p className="text-sm font-black text-slate-950 dark:text-slate-50">MD King</p>
-                <p className="mt-0.5 truncate text-xs font-medium text-slate-500 dark:text-slate-400">拖入 Markdown，按模板转换</p>
+                <p className="text-sm font-bold text-slate-950 dark:text-slate-50">转换任务</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{tasks.length > 0 ? `${tasks.length} 个文件待转换` : "暂无任务"}</p>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-[10px] bg-white/70 text-slate-500 shadow-sm hover:bg-white hover:text-slate-900 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/15"
-              onClick={() => setOpen(false)}
-              aria-label="收起悬浮球面板"
-            >
-              <Minimize2 className="size-4" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <GripHorizontal className="size-4 text-slate-400 dark:text-slate-500" aria-hidden="true" />
+              <TooltipButton
+                tooltip="收起"
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-white/10"
+                onClick={() => setOpen(false)}
+                aria-label="收起悬浮球面板"
+              >
+                <Minimize2 className="size-4" />
+              </TooltipButton>
+            </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
             <div
-              className={cn(
-                "mk-floating-drop shrink-0 rounded-[14px] p-2.5 text-center transition dark:border-slate-700 dark:bg-slate-950/50",
-              )}
+              className={cn("mk-floating-drop shrink-0 rounded-[8px] px-3 py-4 text-center transition")}
               data-active={panelDragging ? "true" : "false"}
               onDragLeave={handleDragLeave}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
             >
-              <UploadCloud className="mx-auto size-5 text-[var(--app-primary)] drop-shadow-sm" />
-              <p className="mt-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">拖入多个 .md 文件，或拖入 Markdown 文本</p>
+              <UploadCloud className="mx-auto size-6 text-[var(--app-primary)]" />
+              <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">拖入文件</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">.md · .markdown · .txt</p>
+              {canUseSystemWindow ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 h-7 border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
+                  onClick={() => void chooseMarkdownFiles()}
+                  disabled={isConverting}
+                >
+                  <FolderOpen className="size-3.5" />
+                  选择文件
+                </Button>
+              ) : null}
             </div>
 
-            <div className="shrink-0 space-y-1.5">
-              <Label className="text-xs text-slate-500">目标模板</Label>
+            <div className="flex shrink-0 items-center gap-2">
+              <Label className="shrink-0 text-xs text-slate-500 dark:text-slate-400">模板</Label>
               <Select value={activeTemplateId} onValueChange={(value) => { setSelectedTemplateId(value); setCurrentTemplateId(value); }}>
-                <SelectTrigger className="mk-floating-soft h-9 rounded-[12px] bg-white/72 dark:border-slate-700 dark:bg-slate-950">
+                <SelectTrigger className="mk-floating-soft h-8 min-w-0 flex-1 rounded-[6px] bg-white dark:border-slate-700 dark:bg-zinc-900">
                   <SelectValue placeholder="使用上次模板" />
                 </SelectTrigger>
                 <SelectContent>
@@ -646,40 +646,73 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               </Select>
             </div>
 
-            <div className="shrink-0 space-y-2">
-              <Textarea
-                className="mk-floating-soft min-h-16 resize-none rounded-[12px] bg-white/54 text-xs shadow-none focus-visible:ring-2 focus-visible:ring-[var(--app-primary)]/20 dark:border-slate-700 dark:bg-slate-950"
-                value={textDraft}
-                onChange={(event) => setTextDraft(event.target.value)}
-                placeholder={"# 标题\n\n也可以把一段 Markdown 文本粘贴到这里..."}
-                disabled={isConverting}
-              />
-              <Button variant="outline" size="sm" className="mk-floating-soft h-8 w-full rounded-[12px] bg-white/58 font-bold text-slate-700 hover:bg-white/86" onClick={addTextTask} disabled={isConverting}>
-                <Plus className="size-4" />
-                加入文本任务
-              </Button>
-            </div>
-
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1" aria-live="polite">
               {tasks.length === 0 ? (
-                <p className="mk-floating-soft rounded-[12px] p-3 text-center text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950/60">暂无任务，拖入文件或文本后会显示在这里。</p>
-              ) : tasks.map((task) => (
-                <div key={task.id} className="mk-floating-soft flex items-center gap-2 rounded-[12px] px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-950/60">
-                  <span className={cn("size-2 shrink-0 rounded-full shadow-sm", task.status === "success" ? "bg-emerald-500" : task.status === "failed" ? "bg-red-500" : task.status === "running" ? "bg-amber-500" : "bg-slate-300")} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-slate-800 dark:text-slate-100">{task.name}</p>
-                    <p className="truncate text-slate-400">{task.message ?? `${task.text.length} 字符`}</p>
-                  </div>
-                  <Button variant="ghost" size="icon-xs" onClick={() => setTasks((current) => current.filter((item) => item.id !== task.id))} disabled={isConverting} aria-label="移除任务">
-                    <Trash2 className="size-3" />
-                  </Button>
+                <div className="mk-floating-empty flex h-full min-h-28 items-center justify-center rounded-[8px] px-5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">暂无转换任务</div>
+              ) : (
+                <div className="space-y-2">
+                  {tasks.map((task) => (
+                    <div key={task.id} className="mk-floating-task rounded-[8px] px-2.5 py-2 text-xs">
+                      <div className="flex items-start gap-2">
+                        <span className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center", task.status === "success" ? "text-emerald-600 dark:text-emerald-400" : task.status === "failed" ? "text-red-600 dark:text-red-400" : task.status === "running" ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>{task.status === "success" ? <CircleCheck className="size-4" /> : task.status === "failed" ? <CircleAlert className="size-4" /> : task.status === "running" ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100" title={task.name}>{task.name}</p>
+                            <span className={cn("shrink-0 text-[11px]", task.status === "success" ? "text-emerald-600 dark:text-emerald-400" : task.status === "failed" ? "text-red-600 dark:text-red-400" : task.status === "running" ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>{task.status === "success" ? "已生成" : task.status === "failed" ? "失败" : task.status === "running" ? "转换中" : "待转换"}</span>
+                          </div>
+                          <p className="mt-0.5 break-all leading-4 text-slate-500 dark:text-slate-400">{task.message ?? task.inputPath ?? "等待转换"}</p>
+                          {task.outputPath ? (
+                            <div className="mt-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700/80">
+                              <p className="break-all leading-4 text-slate-600 dark:text-slate-300" title={task.outputPath}>{task.outputPath}</p>
+                              <div className="mt-1.5 flex items-center gap-1">
+                                <TooltipButton
+                                  tooltip="打开生成的 Word 文件"
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  className="rounded-[5px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10"
+                                  onClick={() => void runOutputAction(task, openOutputPath, "打开文件失败")}
+                                  aria-label="打开生成的 Word 文件"
+                                >
+                                  <ExternalLink className="size-3.5" />
+                                </TooltipButton>
+                                <TooltipButton
+                                  tooltip="资源管理器中打开"
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  className="rounded-[5px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10"
+                                  onClick={() => void runOutputAction(task, revealOutputPath, "打开资源管理器失败")}
+                                  aria-label="资源管理器中打开"
+                                >
+                                  <FolderOpen className="size-3.5" />
+                                </TooltipButton>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        <TooltipButton
+                          tooltip="移除任务"
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="rounded-[5px] text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-100"
+                          onClick={() => setTasks((current) => current.filter((item) => item.id !== task.id))}
+                          disabled={isConverting}
+                          aria-label="移除任务"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </TooltipButton>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
 
-            <Button className="h-10 w-full shrink-0 rounded-[12px] bg-sky-600 font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_14px_30px_rgba(14,165,233,0.22)] hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none dark:bg-sky-500 dark:hover:bg-sky-400" onClick={runBatchConvert} disabled={isConverting || tasks.length === 0}>
+            <Button className="h-9 w-full shrink-0 bg-sky-600 font-semibold text-white shadow-none hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 dark:bg-sky-500 dark:hover:bg-sky-400" onClick={runBatchConvert} disabled={isConverting || tasks.length === 0}>
               {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-              {isConverting ? "正在批量转换..." : `开始转换 ${tasks.length} 项`}
+              {isConverting ? "正在转换..." : `开始转换${tasks.length > 0 ? `（${tasks.length}）` : ""}`}
             </Button>
           </div>
         </div>
@@ -708,11 +741,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               void addFiles(files);
               return;
             }
-            const plainText = event.dataTransfer.getData("text/plain").trim();
-            if (plainText) {
-              setTasks((current) => [makeTask("拖入文本", plainText), ...current]);
-              toast.success("已加入拖入文本");
-            }
+            showFloatingToast(systemWindow, "error", "请拖入 .md、.markdown 或 .txt 文件");
           }}
         >
           <TooltipButton
@@ -746,7 +775,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               if (systemWindow) return;
               resetIdleCollapseTimer();
             }}
-            tooltip={systemWindow ? "点击展开；长按拖动；可拖入 Markdown/TXT 文件" : "拖动悬浮球；点击打开批量转换"}
+            tooltip={systemWindow ? "点击展开；拖动移动；可拖入 Markdown/TXT 文件" : "拖动悬浮球；点击打开批量转换"}
             aria-label="悬浮球批量转换"
           >
             {systemWindow && isIdleCollapsed && dockSide ? (

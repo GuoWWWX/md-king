@@ -1,4 +1,4 @@
-import { FileText, History, Info, LayoutTemplate, Settings } from "lucide-react";
+import { History, Info, LayoutTemplate, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
@@ -8,7 +8,7 @@ import { FloatingConverter } from "@/components/floating/floating-converter";
 import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/layout/app-shell";
-import type { PageMeta } from "@/components/layout/page-header";
+import { appPageMeta } from "@/components/layout/page-meta";
 import { AboutPage } from "@/pages/about/about-page";
 import { ConvertPage } from "@/pages/convert/convert-page";
 import { HistoryPage } from "@/pages/history/history-page";
@@ -18,45 +18,11 @@ import { checkPandoc, getAppConfig, getAppStatus, listHistory, listTemplates, ta
 import { useAppStore } from "@/stores/app-store";
 
 const navigation = [
-  { id: "convert", label: "转换", icon: FileText },
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
   { id: "history", label: "转换历史", icon: History },
   { id: "settings", label: "设置", icon: Settings },
   { id: "about", label: "关于", icon: Info },
 ];
-
-const pageMeta: Record<string, PageMeta> = {
-  convert: {
-    eyebrow: "AI Markdown 文档格式化工作台",
-    title: "转换 Markdown 为 Word",
-    description: "拖入 Markdown 文件，或粘贴 AI 生成内容，一键生成样式统一、可继续编辑的 DOCX 文档。",
-    tags: ["本地转换", "Word/WPS", "模板样式可复用"],
-  },
-  templates: {
-    eyebrow: "Word/WPS 模板中心",
-    title: "模板中心",
-    description: "管理 Word/WPS 样式模板，让同一份 Markdown 按不同模板生成稳定统一的文档效果。",
-    tags: ["参考 DOCX", "样式诊断", "样式管理器"],
-  },
-  history: {
-    eyebrow: "转换记录",
-    title: "转换历史",
-    description: "查看最近生成的 DOCX，快速复制输出路径、定位失败原因，或重新触发转换流程。",
-    tags: ["成功 / 失败", "模板追踪", "错误详情"],
-  },
-  settings: {
-    eyebrow: "偏好与系统集成",
-    title: "设置中心",
-    description: "配置默认输出目录、Pandoc 路径、转换行为和系统集成能力。",
-    tags: ["Pandoc", "右键菜单", "悬浮球"],
-  },
-  about: {
-    eyebrow: "关于 md-king",
-    title: "关于 md-king",
-    description: "面向 AI 时代的 Markdown 转 Word/WPS 本地效率工具。",
-    tags: ["隐私优先", "本地运行", "Pandoc 引擎"],
-  },
-};
 
 type QuickPasteStatusEvent = {
   level: "info" | "success" | "error";
@@ -167,28 +133,23 @@ function App() {
   }, [isFloatingWindow]);
 
   useEffect(() => {
-    if (!navigation.some((item) => item.id === activePage)) {
+    // convert 是承载 Markdown/图片标签的默认工作区，不再作为左侧导航项展示。
+    if (activePage !== "convert" && !navigation.some((item) => item.id === activePage)) {
       setActivePage("convert");
     }
   }, [activePage, setActivePage]);
 
-  // 转换页常驻挂载、非激活时藏起来：里面有编辑器的正文、光标和撤销历史，
-  // 切去设置页再回来不该丢。其余页面按需挂载，没有需要保留的状态。
-  //
-  // 激活时用 contents 让转换页自己的 flex 布局直接作用在 main 的子级上，
-  // 隐藏时必须换成真正生成盒子的 hidden —— contents 不生成盒子，
-  // display:none 会被它压掉，页面根本藏不住。
-  const renderPage = () => (
-    <>
-      <div className={activePage === "convert" ? "contents" : "hidden"} aria-hidden={activePage !== "convert"}>
-        <ConvertPage />
-      </div>
-      {activePage === "templates" ? <TemplatesPage /> : null}
-      {activePage === "history" ? <HistoryPage /> : null}
-      {activePage === "settings" ? <SettingsPage /> : null}
-      {activePage === "about" ? <AboutPage /> : null}
-    </>
-  );
+  // 非文档页面只替换 Markdown 编辑卡片的内容；转换工作台本身常驻，
+  // 所以文件树、文档标签、光标与预览布局都不会因切页而重置。
+  const workspaceContent = activePage === "templates"
+    ? <TemplatesPage />
+    : activePage === "history"
+      ? <HistoryPage />
+      : activePage === "settings"
+        ? <SettingsPage />
+        : activePage === "about"
+          ? <AboutPage />
+          : undefined;
 
   if (isFloatingWindow) {
     return (
@@ -205,8 +166,8 @@ function App() {
   return (
     <>
       <SystemFloatingWindowManager />
-      <AppShell navigation={navigation} pageMeta={pageMeta[activePage] ?? pageMeta.convert}>
-        {renderPage()}
+      <AppShell navigation={navigation} pageMeta={appPageMeta[activePage] ?? appPageMeta.convert}>
+        <ConvertPage workspaceContent={workspaceContent} />
       </AppShell>
       <Toaster position="top-center" closeButton visibleToasts={3} />
     </>

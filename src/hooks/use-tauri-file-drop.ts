@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauriEnvironment } from "@/lib/tauri";
 
-const SUPPORTED_PATTERN = /\.(md|markdown|txt)$/i;
+const SUPPORTED_TEXT_PATTERN = /\.(md|markdown|txt)$/i;
+const SUPPORTED_IMAGE_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
-type DropHandler = (paths: string[]) => void | Promise<void>;
+type DropHandler = (drop: { paths: string[]; position: { x: number; y: number } }) => void | Promise<void>;
 
 /**
  * 监听桌面端窗口级的文件拖放。
@@ -16,6 +17,7 @@ type DropHandler = (paths: string[]) => void | Promise<void>;
  */
 export function useTauriFileDrop(onDrop: DropHandler) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
   // 监听器只注册一次，闭包捕获的是首帧的 onDrop。放进 ref 每次渲染刷新，
   // 回调里才拿得到最新的状态，否则拖入的文档会被塞进一个早已过期的标签集合。
   const onDropRef = useRef(onDrop);
@@ -29,18 +31,25 @@ export function useTauriFileDrop(onDrop: DropHandler) {
 
     void getCurrentWindow()
       .onDragDropEvent(({ payload }) => {
-        if (payload.type === "enter" || payload.type === "over") {
+        if (payload.type === "enter") {
+          setIsDragging(true);
+          setIsDraggingImage(payload.paths.some(isImageDropPath));
+          return;
+        }
+        if (payload.type === "over") {
           setIsDragging(true);
           return;
         }
         if (payload.type === "leave") {
           setIsDragging(false);
+          setIsDraggingImage(false);
           return;
         }
 
         setIsDragging(false);
-        const supported = payload.paths.filter((path) => SUPPORTED_PATTERN.test(path));
-        if (supported.length > 0) void onDropRef.current(supported);
+        setIsDraggingImage(false);
+        const supported = payload.paths.filter(isSupportedDropPath);
+        if (supported.length > 0) void onDropRef.current({ paths: supported, position: payload.position });
       })
       .then((cleanup) => {
         // 注册是异步的，组件可能在 promise 落地前就卸载了，
@@ -57,9 +66,13 @@ export function useTauriFileDrop(onDrop: DropHandler) {
     // 反复注册注销。最新的回调通过上面的 ref 取。
   }, []);
 
-  return { isDragging };
+  return { isDragging, isDraggingImage };
 }
 
 export function isSupportedDropPath(path: string) {
-  return SUPPORTED_PATTERN.test(path);
+  return SUPPORTED_TEXT_PATTERN.test(path) || isImageDropPath(path);
+}
+
+export function isImageDropPath(path: string) {
+  return SUPPORTED_IMAGE_PATTERN.test(path);
 }

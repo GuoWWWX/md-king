@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { VaultClipboardEntry } from "@/lib/vault-clipboard";
 import type { VaultEntry, VaultEol, VaultSaveState } from "@/types/vault";
 
 /// 独立于 app-store：vault 状态（尤其 saveState / expandedDirs）更新频率远高于 appConfig，
@@ -74,7 +75,7 @@ type VaultState = {
   fileTreeWidth: number;
   previewVisible: boolean;
   locateRequest?: { path: string; id: number };
-  copiedEntryPath?: string;
+  clipboardEntry?: VaultClipboardEntry;
 
   setVaultRoot: (root: string | undefined) => void;
   setRecentVaults: (recentVaults: string[]) => void;
@@ -96,7 +97,7 @@ type VaultState = {
   setFileTreeWidth: (fileTreeWidth: number) => void;
   setPreviewVisible: (previewVisible: boolean) => void;
   requestLocatePath: (path: string) => void;
-  setCopiedEntryPath: (path: string | undefined) => void;
+  setClipboardEntry: (entry: VaultClipboardEntry | undefined) => void;
 };
 
 export const useVaultStore = create<VaultState>((set, get) => ({
@@ -120,7 +121,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   fileTreeWidth: DEFAULT_FILE_TREE_WIDTH,
   previewVisible: true,
   locateRequest: undefined,
-  copiedEntryPath: undefined,
+  clipboardEntry: undefined,
 
   setVaultRoot: (vaultRoot) => set({
     vaultRoot,
@@ -134,6 +135,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     saveState: "clean",
     saveError: undefined,
     locateRequest: undefined,
+    clipboardEntry: undefined,
   }),
 
   setRecentVaults: (recentVaults) => set({ recentVaults: recentVaults.slice(0, MAX_RECENT_VAULTS) }),
@@ -209,5 +211,5 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     fileTreeVisible: true,
     locateRequest: { path, id: (state.locateRequest?.id ?? 0) + 1 },
   })),
-  setCopiedEntryPath: (copiedEntryPath) => set({ copiedEntryPath }),
+  setClipboardEntry: (clipboardEntry) => set({ clipboardEntry }),
 }));

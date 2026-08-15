@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, FilePlus2, FolderPlus, Trash2 } from "lucide-react";
+import { AlertTriangle, FilePlus2, FolderOpen, FolderPlus, Trash2 } from "lucide-react";
 import { PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -161,17 +161,17 @@ export function RenameEntryDialog({ open, currentName, isDir, onOpenChange, onCo
 
 type DeleteEntryDialogProps = {
   open: boolean;
-  entryName: string;
-  isDir: boolean;
-  /// 目录非空时必须让用户明确知道会连带删掉子项，Rust 侧的 recursive 才敢传 true。
-  hasChildren?: boolean;
+  entries: Array<{ name: string; isDir: boolean; hasChildren: boolean }>;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => Promise<void> | void;
 };
 
-export function DeleteEntryDialog({ open, entryName, isDir, hasChildren = false, onOpenChange, onConfirm }: DeleteEntryDialogProps) {
+export function DeleteEntryDialog({ open, entries, onOpenChange, onConfirm }: DeleteEntryDialogProps) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const entry = entries[0];
+  const multiple = entries.length > 1;
+  const deletesChildren = entries.some((target) => target.isDir && target.hasChildren);
 
   useEffect(() => {
     if (!open) return;
@@ -197,11 +197,11 @@ export function DeleteEntryDialog({ open, entryName, isDir, hasChildren = false,
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             <Trash2 className="size-4 text-red-600 dark:text-red-400" />
-            删除{isDir ? "文件夹" : "文件"}
+            {multiple ? "删除多个项目" : `删除${entry?.isDir ? "文件夹" : "文件"}`}
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            确定删除 <span className="font-semibold text-slate-700 dark:text-zinc-200">{entryName}</span> 吗？
-            {isDir && hasChildren ? "该文件夹内的所有文件都会一并删除，" : ""}此操作不可撤销。
+            {multiple ? <>确定删除已选的 <span className="font-semibold text-slate-700 dark:text-zinc-200">{entries.length}</span> 个项目吗？</> : <>确定删除 <span className="font-semibold text-slate-700 dark:text-zinc-200">{entry?.name ?? "该项目"}</span> 吗？</>}
+            {deletesChildren ? "包含内容的文件夹会连同内部文件一起删除，" : ""}此操作不可撤销。
           </DialogDescription>
         </DialogHeader>
 
@@ -210,6 +210,126 @@ export function DeleteEntryDialog({ open, entryName, isDir, hasChildren = false,
         <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
           <Button variant="destructive" onClick={() => void submit()} disabled={busy}>{busy ? "删除中…" : "确认删除"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type RemoveRecentVaultDialogProps = {
+  open: boolean;
+  root?: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => Promise<void> | void;
+};
+
+export function RemoveRecentVaultDialog({ open, root, onOpenChange, onConfirm }: RemoveRecentVaultDialogProps) {
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(undefined);
+    setBusy(false);
+  }, [open]);
+
+  async function submit() {
+    setBusy(true);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "移除失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md" showCloseButton={!busy}>
+        <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
+          <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
+            <FolderOpen className="size-4 text-slate-500 dark:text-zinc-400" />
+            移除最近目录
+          </DialogTitle>
+          <DialogDescription className="mt-1 text-xs leading-5">
+            确定从最近打开的目录中移除 <span className="font-semibold text-slate-700 dark:text-zinc-200">{root ?? "该目录"}</span> 吗？这不会删除磁盘上的任何文件。
+          </DialogDescription>
+        </DialogHeader>
+
+        {error ? <p className="px-5 pt-4 text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
+
+        <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
+          <Button variant="destructive" onClick={() => void submit()} disabled={busy}>{busy ? "移除中…" : "确认移除"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type OpenVaultLocationDialogProps = {
+  open: boolean;
+  currentRoot?: string;
+  targetRoot?: string;
+  canOpenNewWindow?: boolean;
+  onOpenChange: (open: boolean) => void;
+  onOpenCurrent: () => Promise<void> | void;
+  onOpenNewWindow: () => Promise<void> | void;
+};
+
+export function OpenVaultLocationDialog({ open, currentRoot, targetRoot, canOpenNewWindow = true, onOpenChange, onOpenCurrent, onOpenNewWindow }: OpenVaultLocationDialogProps) {
+  const [error, setError] = useState<string>();
+  const [busyAction, setBusyAction] = useState<"current" | "window">();
+
+  useEffect(() => {
+    if (!open) return;
+    setError(undefined);
+    setBusyAction(undefined);
+  }, [open]);
+
+  async function submit(action: "current" | "window") {
+    setBusyAction(action);
+    setError(undefined);
+    try {
+      if (action === "current") await onOpenCurrent();
+      else await onOpenNewWindow();
+      onOpenChange(false);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "打开目录失败");
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
+  const busy = busyAction !== undefined;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg" showCloseButton={!busy}>
+        <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
+          <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
+            <FolderOpen className="size-4 text-blue-600 dark:text-blue-400" />
+            打开目录
+          </DialogTitle>
+          <DialogDescription className="mt-1 text-xs leading-5">
+            当前窗口正在打开 <span className="font-semibold text-slate-700 dark:text-zinc-200">{currentRoot ?? "另一个目录"}</span>。请选择 <span className="font-semibold text-slate-700 dark:text-zinc-200">{targetRoot ?? "新目录"}</span> 的打开位置。
+          </DialogDescription>
+        </DialogHeader>
+
+        {error ? <p className="px-5 pt-4 text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
+
+        <DialogFooter className="m-0 flex-wrap gap-2 rounded-none border-x-0 border-b-0 px-5 py-3">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
+          <Button variant="outline" onClick={() => void submit("current")} disabled={busy}>在当前窗口打开</Button>
+          <PrimaryActionButton
+            onClick={() => void submit("window")}
+            disabled={busy || !canOpenNewWindow}
+            title={canOpenNewWindow ? undefined : "浏览器预览不支持打开新的项目窗口"}
+          >
+            {busyAction === "window" ? "打开中…" : "在新窗口打开"}
+          </PrimaryActionButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

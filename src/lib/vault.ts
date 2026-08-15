@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { isTauriEnvironment } from "@/lib/tauri";
-import type { VaultEntry, VaultFileContent, VaultListing, VaultWriteParams, VaultWriteResult } from "@/types/vault";
+import { isTauriEnvironment, resolvePreviewImageSource } from "@/lib/tauri";
+import { registerBrowserPreviewImage } from "@/lib/browser-preview-images";
+import { isSupportedImagePath } from "@/lib/image-files";
+import type { VaultEntry, VaultFileContent, VaultImageImport, VaultListing, VaultWriteParams, VaultWriteResult } from "@/types/vault";
 
 /// vault 的 7 个 command 单独放这里而不是塞进 tauri.ts：后者已近 400 行，
 /// 且 vault 的浏览器 mock 需要一整套有状态的内存文件系统，混在一起会互相干扰。
@@ -18,7 +20,7 @@ type MockFile = {
 };
 
 /// 目录用 Set 单独存：空目录在 files 里没有任何条目，光靠文件路径推不出来。
-const mockDirs = new Set<string>(["笔记", "笔记/技术", "草稿"]);
+const mockDirs = new Set<string>(["笔记", "笔记/技术", "草稿", "图片"]);
 const mockFiles = new Map<string, MockFile>();
 
 function seedMockVault() {
@@ -34,6 +36,9 @@ function seedMockVault() {
   for (const [path, content] of seeds) {
     mockFiles.set(path, { content, modifiedMs: seedAt });
   }
+  const demoImage = "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2248%22%20height%3D%2232%22%3E%3Crect%20width%3D%2248%22%20height%3D%2232%22%20fill%3D%22%232563eb%22%2F%3E%3C%2Fsvg%3E";
+  mockFiles.set("图片/示例.svg", { content: "", modifiedMs: seedAt });
+  registerBrowserPreviewImage(`${BROWSER_VAULT_ROOT}/图片/示例.svg`, demoImage);
 }
 
 seedMockVault();
@@ -58,6 +63,25 @@ function baseNameOf(path: string) {
 
 function joinPath(parent: string, name: string) {
   return parent ? `${parent}/${name}` : name;
+}
+
+function nextAvailablePath(parent: string, name: string) {
+  if (!mockPathExists(joinPath(parent, name))) return joinPath(parent, name);
+  const dotIndex = name.lastIndexOf(".");
+  const stem = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const extension = dotIndex > 0 ? name.slice(dotIndex) : "";
+  for (let index = 1; index < 1000; index += 1) {
+    const path = joinPath(parent, `${stem} (${index})${extension}`);
+    if (!mockPathExists(path)) return path;
+  }
+  throw vaultError("EXISTS", "无法找到可用的图片文件名");
+}
+
+function screenshotImageName(extension: string) {
+  const now = new Date();
+  const twoDigits = (value: number) => String(value).padStart(2, "0");
+  const milliseconds = String(now.getMilliseconds()).padStart(3, "0");
+  return `截图-${now.getFullYear()}${twoDigits(now.getMonth() + 1)}${twoDigits(now.getDate())}-${twoDigits(now.getHours())}${twoDigits(now.getMinutes())}${twoDigits(now.getSeconds())}-${milliseconds}.${extension}`;
 }
 
 /// mock 侧也要跑一遍名称校验，否则浏览器里能建出 Rust 端会拒绝的名字，
@@ -92,7 +116,7 @@ function toEntry(path: string, isDir: boolean): VaultEntry {
   };
 }
 
-function mockListing(dir?: string, recursive = true): VaultListing {
+function mockListing(dir?: string, recursive = true, root = BROWSER_VAULT_ROOT): VaultListing {
   const prefix = dir ? `${dir}/` : "";
   const inScope = (path: string) => (prefix ? path.startsWith(prefix) : true) && path !== dir;
   const atRequestedDepth = (path: string) => (recursive ? true : parentOf(path) === (dir ?? ""));
@@ -103,7 +127,7 @@ function mockListing(dir?: string, recursive = true): VaultListing {
   ];
 
   entries.sort((left, right) => left.path.localeCompare(right.path, "zh-CN"));
-  return { root: BROWSER_VAULT_ROOT, entries, truncated: false, skippedDirs: 0 };
+  return { root, entries, truncated: false, skippedDirs: 0 };
 }
 
 /// 桌面端由 plugin-dialog 选目录；浏览器端返回固定的示例 root，让整条 UI 链路能跑通。
@@ -122,7 +146,15 @@ export function openVault(path: string) {
     return invoke<VaultListing>("open_vault", { path });
   }
 
-  return delay(mockListing());
+  return delay(mockListing(undefined, true, path.trim() || BROWSER_VAULT_ROOT));
+}
+
+export function removeRecentVault(root: string) {
+  if (isTauriEnvironment()) {
+    return invoke<void>("remove_recent_vault", { root });
+  }
+
+  return delay<void>(undefined);
 }
 
 export function listVaultEntries(root: string, dir: string | undefined, recursive: boolean) {
@@ -130,7 +162,7 @@ export function listVaultEntries(root: string, dir: string | undefined, recursiv
     return invoke<VaultListing>("list_vault_entries", { root, dir, recursive });
   }
 
-  return delay(mockListing(dir, recursive));
+  return delay(mockListing(dir, recursive, root));
 }
 
 export function readVaultFile(root: string, path: string) {
@@ -374,6 +406,50 @@ export function copyVaultEntry(root: string, sourcePath: string, targetDir: stri
   return delay(toEntry(targetPath, isDir));
 }
 
+export function copyExternalVaultFile(root: string, sourcePath: string, targetDir: string) {
+  if (isTauriEnvironment()) {
+    return invoke<VaultEntry>("copy_external_vault_file", { root, sourcePath, targetDir });
+  }
+  return Promise.reject(new Error("浏览器环境无法读取系统剪贴板文件"));
+}
+
+export function importVaultImageFromPath(root: string, markdownPath: string, sourcePath: string) {
+  if (isTauriEnvironment()) {
+    return invoke<VaultImageImport>("import_vault_image_from_path", { root, markdownPath, sourcePath });
+  }
+  return Promise.reject(new Error("浏览器环境无法读取本机图片路径"));
+}
+
+export function importVaultImageData(root: string, markdownPath: string, dataBase64: string, extension: string) {
+  if (isTauriEnvironment()) {
+    return invoke<VaultImageImport>("import_vault_image_data", { root, markdownPath, dataBase64, extension });
+  }
+
+  if (!mockFiles.has(markdownPath)) return Promise.reject(vaultError("NOT_FOUND", "当前文档不存在"));
+  const normalizedExtension = extension.trim().replace(/^\./, "").toLowerCase();
+  if (!isSupportedImagePath(`image.${normalizedExtension}`)) {
+    return Promise.reject(vaultError("INVALID_NAME", "不支持的图片格式"));
+  }
+  const imageDir = ".md-king/img";
+  mockDirs.add(".md-king");
+  mockDirs.add(imageDir);
+  const imagePath = nextAvailablePath(imageDir, screenshotImageName(normalizedExtension));
+  mockFiles.set(imagePath, { content: "", modifiedMs: Date.now() });
+  registerBrowserPreviewImage(`${root.replace(/[\\/]+$/, "")}/${imagePath}`, dataBase64);
+  return delay<VaultImageImport>({ entry: toEntry(imagePath, false), imageDir: toEntry(imageDir, true) });
+}
+
+export function resolveVaultImageSource(root: string, path: string) {
+  return resolvePreviewImageSource(`${root.replace(/[\\/]+$/, "")}/${path}`);
+}
+
+export function setVaultEntryClipboard(root: string, paths: string[]) {
+  if (isTauriEnvironment()) {
+    return invoke<void>("set_vault_entry_clipboard", { root, paths });
+  }
+  return Promise.resolve();
+}
+
 export function showInExplorer(path: string) {
   if (isTauriEnvironment()) {
     return invoke<void>("show_in_explorer", { path });
@@ -401,22 +477,6 @@ export async function copyTextToClipboard(text: string) {
 }
 
 export async function readPathsFromClipboard(): Promise<string[]> {
-  if (!isTauriEnvironment()) {
-    // 浏览器环境从剪贴板读取文件路径不太可行，返回空数组
-    return [];
-  }
-
-  // Tauri 环境尝试读取剪贴板文本
-  if (navigator.clipboard?.readText) {
-    try {
-      const text = await navigator.clipboard.readText();
-      // 尝试解析为文件路径（Windows/Unix 路径格式）
-      const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
-      return lines;
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
+  if (!isTauriEnvironment()) return [];
+  return invoke<string[]>("read_clipboard_file_paths");
 }

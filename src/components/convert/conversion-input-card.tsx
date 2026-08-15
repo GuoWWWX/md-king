@@ -9,6 +9,7 @@ import { LiveMarkdownEditor, type LiveMarkdownEditorHandle, type TableDisplayCon
 import { adjustCodeBlockIndent, getCodeBlockIndentContext } from "@/components/editor/cm/formatting-keymap";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/lib/document-outline";
+import { imageFileExtension } from "@/lib/image-files";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ type ConversionInputCardProps = {
   /// 换文档时变化的 key：内容变化不触发编辑器重载，只有它变了才做全量替换。
   documentKey: string;
   documentTabId?: string;
+  markdownSourcePath?: string;
   /// 一个标签都没打开时显示引导区，而不是一个空编辑器。
   hasDocument?: boolean;
   /// 编辑卡片顶部的文档上下文信息，不单独渲染成卡片。
@@ -33,7 +35,9 @@ type ConversionInputCardProps = {
   /// 桌面端的窗口级拖放正在进行。浏览器下的 HTML5 drop 由本组件自己处理，
   /// 这个只负责把桌面端那条通道的高亮状态透进来。
   externalDragging?: boolean;
+  externalDraggingImage?: boolean;
   onRequestSave?: () => void;
+  onImportImage?: (file: File) => Promise<string | undefined>;
   readingMode?: boolean;
   compactMode?: boolean;
   onOpenLink?: (target: string) => void;
@@ -43,12 +47,14 @@ type ConversionInputCardProps = {
 
 export type ConversionInputCardHandle = {
   setTableWidthMode: (mode: TableWidthMode, tableFrom: number | null) => TableDisplayContext | null;
+  insertText: (text: string) => boolean;
 };
 
 export const ConversionInputCard = forwardRef<ConversionInputCardHandle, ConversionInputCardProps>(function ConversionInputCard({
   markdown,
   documentKey,
   documentTabId,
+  markdownSourcePath,
   hasDocument = true,
   documentInfo,
   disabled = false,
@@ -59,7 +65,9 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   onBatchSelect,
   onReadClipboard,
   externalDragging = false,
+  externalDraggingImage = false,
   onRequestSave,
+  onImportImage,
   readingMode = false,
   compactMode = false,
   onOpenLink,
@@ -73,6 +81,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
 
   useImperativeHandle(ref, () => ({
     setTableWidthMode: (mode, tableFrom) => editorRef.current?.setTableWidthMode(mode, tableFrom) ?? null,
+    insertText: (text) => editorRef.current?.insertText(text) ?? false,
   }), []);
 
   // 字符数统计去掉空白，行数排除空行，给用户有意义的计数。
@@ -179,6 +188,20 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
     const view = getEditorView();
     if (!view) return onReadClipboard();
     try {
+      if (onImportImage && navigator.clipboard?.read) {
+        try {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            const imageType = item.types.find((type) => type.startsWith("image/"));
+            if (!imageType) continue;
+            const image = await item.getType(imageType);
+            const file = new File([image], `image.${imageFileExtension(new File([image], "image", { type: imageType }))}`, { type: imageType });
+            if (await editorRef.current?.importImage(file)) return;
+          }
+        } catch {
+          // 某些 WebView 只允许 paste 事件读取图片；右键菜单仍继续尝试文本粘贴。
+        }
+      }
       const text = await navigator.clipboard.readText();
       if (!text) return;
       const { from, to } = view.state.selection.main;
@@ -221,13 +244,13 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   return (
     <ContextMenu.Root onOpenChange={updateCodeIndentContext}>
       <ContextMenu.Trigger asChild>
-        <section data-mk-context-menu className="mk-card relative flex h-full min-h-[360px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-[5px] max-[760px]:min-h-[300px]">
+        <section data-mk-context-menu data-mk-editor-drop-target className="mk-card relative flex h-full min-h-[360px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-[5px] max-[760px]:min-h-[300px]">
       {documentInfo}
       {/* 拖放提示要盖在编辑器上：已有文档时引导区不渲染，
           没有这层的话桌面端拖文件进来毫无视觉反馈。 */}
       {externalDragging && hasDocument ? (
         <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-[10px] border-2 border-dashed border-blue-500 bg-blue-50/85 dark:border-blue-400 dark:bg-blue-950/70">
-          <span className="text-sm font-bold text-blue-700 dark:text-blue-200">松开以在新标签中打开</span>
+          <span className="text-sm font-bold text-blue-700 dark:text-blue-200">{externalDraggingImage ? "松开以插入图片" : "松开以在新标签中打开"}</span>
         </div>
       ) : null}
 
@@ -236,11 +259,13 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           ref={editorRef}
           documentKey={documentKey}
           initialContent={markdown}
+          markdownSourcePath={markdownSourcePath}
           readOnly={disabled || readingMode}
           isDark={isDark}
           placeholder={undefined}
           onDocChanged={onChange}
           onRequestSave={onRequestSave}
+          onImportImage={onImportImage}
           onOpenLink={onOpenLink}
           openLinksOnClick
           tableDefaultWidthMode={tableDefaultWidthMode}
@@ -269,12 +294,12 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
               选择文件
             </Button>
             {onBatchSelect ? (
-              <Button type="button" variant="outline" className="rounded-[10px] border-white/70 bg-white/70 text-blue-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-700" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
+              <Button type="button" variant="outline" className="border-white/70 bg-white/70 text-blue-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-700" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
                 <UploadCloud className="size-4" />
                 批量导入
               </Button>
             ) : null}
-            <Button type="button" variant="ghost" className="rounded-[10px] text-blue-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:text-white" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
+            <Button type="button" variant="ghost" className="text-blue-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:text-white" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
               <ClipboardPaste className="size-4" />
               粘贴剪贴板
             </Button>

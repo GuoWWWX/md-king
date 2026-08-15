@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
   "description": "Allow custom top bar, system floating window and window controls.",
-  "windows": ["main", "floating-converter"],
+  "windows": ["main", "floating-converter", "project-*"],
   "permissions": [
     "core:webview:allow-create-webview-window",
     "core:window:allow-start-dragging",

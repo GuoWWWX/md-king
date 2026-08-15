@@ -40,13 +40,13 @@ function TooltipContent({ className, sideOffset = 7, collisionPadding = 8, child
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         className={cn(
-          "z-[120] max-w-64 rounded-[6px] border border-slate-200/90 bg-white/96 px-2.5 py-1.5 text-xs font-medium leading-5 text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.12)] backdrop-blur-md data-[state=delayed-open]:animate-in data-[state=closed]:animate-out data-[state=delayed-open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=delayed-open]:zoom-in-95 data-[state=closed]:zoom-out-95 dark:border-zinc-700/90 dark:bg-zinc-900/96 dark:text-zinc-200 dark:shadow-[0_10px_28px_rgba(0,0,0,0.28)]",
+          "mk-tooltip-content z-[120] max-w-64 rounded-[6px] border border-slate-200/90 bg-white/96 px-2.5 py-1.5 text-xs font-medium leading-5 text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.12)] backdrop-blur-md data-[state=delayed-open]:animate-in data-[state=closed]:animate-out data-[state=delayed-open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=delayed-open]:zoom-in-95 data-[state=closed]:zoom-out-95 dark:border-zinc-700/90 dark:bg-zinc-900/96 dark:text-zinc-200 dark:shadow-[0_10px_28px_rgba(0,0,0,0.28)]",
           className,
         )}
         {...props}
       >
         {children}
-        <TooltipPrimitive.Arrow className="fill-white dark:fill-zinc-900" />
+        <TooltipPrimitive.Arrow className="mk-tooltip-arrow fill-white" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   )

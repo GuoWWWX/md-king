@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ChevronsDownUp, ChevronsUpDown, FilePlus2, FolderOpen, FolderPlus, Loader2, LocateFixed, RefreshCw, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, ArrowUpDown, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, ClockArrowDown, ClockArrowUp, FilePlus2, FolderOpen, FolderPlus, GripVertical, Loader2, LocateFixed, RefreshCw, Search, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { ResizableDivider } from "@/components/layout/resizable-divider";
 import { Button } from "@/components/ui/button";
-import { CreateEntryDialog, DeleteEntryDialog } from "@/components/vault/vault-dialogs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CreateEntryDialog, DeleteEntryDialog, OpenVaultLocationDialog, RemoveRecentVaultDialog } from "@/components/vault/vault-dialogs";
 import { FileTreeNode, vaultTreeNodeId, type FileTreeNodeAction } from "@/components/vault/file-tree-node";
 import { VaultSwitcher } from "@/components/vault/vault-switcher";
-import { createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, renameVaultEntry, selectVaultDirectory, copyVaultEntry, showInExplorer, copyTextToClipboard, readPathsFromClipboard } from "@/lib/vault";
+import { clipboardContainsVaultEntry, topLevelVaultEntries, vaultPasteTarget, type VaultClipboardEntry, type VaultClipboardItem } from "@/lib/vault-clipboard";
+import { isTauriEnvironment } from "@/lib/tauri";
+import { openVaultProjectWindow, vaultProjectWindowRoot } from "@/lib/vault-window";
+import { copyExternalVaultFile, copyTextToClipboard, copyVaultEntry, createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, readPathsFromClipboard, removeRecentVault as removeRecentVaultRecord, renameVaultEntry, selectVaultDirectory, setVaultEntryClipboard, showInExplorer } from "@/lib/vault";
 import { parseVaultError } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/stores/app-store";
 import { FILE_TREE_WIDTH_RANGE, useVaultStore } from "@/stores/vault-store";
 import { useDocumentTabsStore } from "@/stores/document-tabs-store";
 import type { VaultEntry } from "@/types/vault";
@@ -19,6 +24,7 @@ type FileTreePanelProps = {
   /// 传了才渲染右侧拖拽条；由 AppShell 自行插入分隔条时不要传，否则会出现两条。
   onWidthChange?: (width: number) => void;
   onOpenFile: (entry: VaultEntry) => void;
+  onOpenImage: (entry: VaultEntry) => void;
   className?: string;
 };
 
@@ -32,7 +38,35 @@ type DropPlacement = "before" | "after" | "inside";
 
 type ManualOrder = Record<string, string[]>;
 
+type FileTreeSortMode = "manual" | "name-asc" | "name-desc" | "modified-desc" | "modified-asc";
+
+type MarqueeRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type MarqueeCandidate = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+  didSelect: boolean;
+  timer: number;
+};
+
 const FILE_TREE_ORDER_KEY_PREFIX = "md-king-vault-order:";
+const FILE_TREE_SORT_KEY_PREFIX = "md-king-vault-sort:";
+const MARQUEE_HOLD_DELAY_MS = 180;
+const MARQUEE_MOVE_THRESHOLD_PX = 4;
+const FILE_TREE_SORT_OPTIONS: ReadonlyArray<{ value: FileTreeSortMode; label: string }> = [
+  { value: "manual", label: "自定义顺序" },
+  { value: "name-asc", label: "名称 A-Z" },
+  { value: "name-desc", label: "名称 Z-A" },
+  { value: "modified-desc", label: "修改时间：最新优先" },
+  { value: "modified-asc", label: "修改时间：最早优先" },
+];
 
 function parentOf(path: string) {
   const index = path.lastIndexOf("/");
@@ -49,18 +83,28 @@ function ancestorsOf(path: string) {
   return result;
 }
 
-/// 目录在前、同类按中文排序：Windows 资源管理器和 Obsidian 都是这个顺序，
-/// 用 localeCompare("zh-CN") 让「文档」排在「zebra」之前而不是按 UTF-16 码点乱序。
-function compareEntries(left: VaultEntry, right: VaultEntry, manualRanks?: ReadonlyMap<string, number>) {
-  const leftOrder = manualRanks?.get(left.name) ?? -1;
-  const rightOrder = manualRanks?.get(right.name) ?? -1;
-  if (leftOrder >= 0 || rightOrder >= 0) {
-    if (leftOrder < 0) return 1;
-    if (rightOrder < 0) return -1;
-    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+/// 自定义顺序沿用用户的拖拽结果；其他模式固定目录在前，并按指定字段排序。
+function compareEntries(left: VaultEntry, right: VaultEntry, manualRanks?: ReadonlyMap<string, number>, sortMode: FileTreeSortMode = "manual") {
+  if (sortMode === "manual") {
+    const leftOrder = manualRanks?.get(left.name) ?? -1;
+    const rightOrder = manualRanks?.get(right.name) ?? -1;
+    if (leftOrder >= 0 || rightOrder >= 0) {
+      if (leftOrder < 0) return 1;
+      if (rightOrder < 0) return -1;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    }
   }
   if (left.isDir !== right.isDir) return left.isDir ? -1 : 1;
-  return left.name.localeCompare(right.name, "zh-CN");
+  if (sortMode === "modified-desc") {
+    const byModified = right.modifiedMs - left.modifiedMs;
+    if (byModified !== 0) return byModified;
+  }
+  if (sortMode === "modified-asc") {
+    const byModified = left.modifiedMs - right.modifiedMs;
+    if (byModified !== 0) return byModified;
+  }
+  const byName = left.name.localeCompare(right.name, "zh-CN");
+  return sortMode === "name-desc" ? -byName : byName;
 }
 
 function loadManualOrder(root?: string): ManualOrder {
@@ -87,7 +131,35 @@ function persistManualOrder(root: string | undefined, order: ManualOrder) {
   }
 }
 
-export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: FileTreePanelProps) {
+function isFileTreeSortMode(value: string | null): value is FileTreeSortMode {
+  return FILE_TREE_SORT_OPTIONS.some((option) => option.value === value);
+}
+
+function loadFileTreeSortMode(root?: string): FileTreeSortMode {
+  if (!root) return "manual";
+  try {
+    const value = window.localStorage.getItem(`${FILE_TREE_SORT_KEY_PREFIX}${encodeURIComponent(root)}`);
+    return isFileTreeSortMode(value) ? value : "manual";
+  } catch {
+    return "manual";
+  }
+}
+
+function persistFileTreeSortMode(root: string | undefined, mode: FileTreeSortMode) {
+  if (!root) return;
+  try {
+    window.localStorage.setItem(`${FILE_TREE_SORT_KEY_PREFIX}${encodeURIComponent(root)}`, mode);
+  } catch {
+    // 无法持久化时仍保留当前会话的排序。
+  }
+}
+
+export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, className }: FileTreePanelProps) {
+  const appConfig = useAppStore((state) => state.appConfig);
+  const activeEntryPath = useDocumentTabsStore((state) => {
+    const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+    return activeTab?.kind === "vault" || activeTab?.kind === "image" ? activeTab.path : undefined;
+  });
   const vaultRoot = useVaultStore((state) => state.vaultRoot);
   const recentVaults = useVaultStore((state) => state.recentVaults);
   const entries = useVaultStore((state) => state.entries);
@@ -95,11 +167,11 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
   const expandedDirs = useVaultStore((state) => state.expandedDirs);
   const treeQuery = useVaultStore((state) => state.treeQuery);
   const isLoadingTree = useVaultStore((state) => state.isLoadingTree);
-  const hasActiveFile = useVaultStore((state) => Boolean(state.activeFilePath));
   const locateRequest = useVaultStore((state) => state.locateRequest);
   const setVaultRoot = useVaultStore((state) => state.setVaultRoot);
   const pushRecentVault = useVaultStore((state) => state.pushRecentVault);
   const removeRecentVault = useVaultStore((state) => state.removeRecentVault);
+  const setRecentVaults = useVaultStore((state) => state.setRecentVaults);
   const setEntries = useVaultStore((state) => state.setEntries);
   const mergeEntries = useVaultStore((state) => state.mergeEntries);
   const setIsLoadingTree = useVaultStore((state) => state.setIsLoadingTree);
@@ -107,26 +179,111 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
   const toggleDir = useVaultStore((state) => state.toggleDir);
   const expandDirs = useVaultStore((state) => state.expandDirs);
   const collapseAllDirs = useVaultStore((state) => state.collapseAllDirs);
-  const setCopiedEntryPath = useVaultStore((state) => state.setCopiedEntryPath);
+  const clipboardEntry = useVaultStore((state) => state.clipboardEntry);
+  const setClipboardEntry = useVaultStore((state) => state.setClipboardEntry);
 
+  const [selectedEntryPaths, setSelectedEntryPaths] = useState<Set<string>>(() => new Set());
   const [renamingPath, setRenamingPath] = useState<string>();
   const [createTarget, setCreateTarget] = useState<{ parentDir: string; isDir: boolean }>();
-  const [deleteTarget, setDeleteTarget] = useState<VaultEntry>();
+  const [deleteTargets, setDeleteTargets] = useState<VaultEntry[]>();
+  const [pendingVaultRoot, setPendingVaultRoot] = useState<string>();
+  const [recentVaultToRemove, setRecentVaultToRemove] = useState<string>();
   const [manualOrder, setManualOrder] = useState<ManualOrder>({});
+  const [sortMode, setSortMode] = useState<FileTreeSortMode>("manual");
+  const [marqueeRect, setMarqueeRect] = useState<MarqueeRect>();
   /// truncated 降级下已按需拉过的目录，避免同一目录被反复请求。
   const loadedDirsRef = useRef(new Set<string>());
   const locateFrameRef = useRef<number | undefined>(undefined);
   const locateTimerRef = useRef<number | undefined>(undefined);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const selectedEntryPathsRef = useRef(new Set<string>());
+  const marqueeCandidateRef = useRef<MarqueeCandidate | undefined>(undefined);
+  const ignoreNextEntryClickRef = useRef(false);
+  const openedProjectVaultRef = useRef<string | undefined>(undefined);
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.isDir && entry.hasChildren).map((entry) => entry.path),
     [entries],
   );
   const allDirectoriesExpanded = directoryPaths.length > 0 && directoryPaths.every((path) => expandedDirs.has(path));
+  const sortModeLabel = FILE_TREE_SORT_OPTIONS.find((option) => option.value === sortMode)?.label ?? "自定义顺序";
+
+  function replaceSelectedEntries(paths: Iterable<string>) {
+    const next = new Set(paths);
+    selectedEntryPathsRef.current = next;
+    setSelectedEntryPaths(next);
+  }
+
+  function selectOnly(entry: VaultEntry) {
+    replaceSelectedEntries([entry.path]);
+  }
+
+  function selectedEntriesFor(entry?: VaultEntry) {
+    const current = selectedEntryPathsRef.current;
+    const paths = entry && !current.has(entry.path) ? [entry.path] : [...current];
+    return topLevelVaultEntries(entries.filter((candidate) => paths.includes(candidate.path)));
+  }
+
+  function remapSelectedEntryPaths(sourcePath: string, targetPath: string, sourceIsDir: boolean) {
+    replaceSelectedEntries([...selectedEntryPathsRef.current].map((path) => {
+      if (path === sourcePath) return targetPath;
+      if (sourceIsDir && path.startsWith(`${sourcePath}/`)) return `${targetPath}${path.slice(sourcePath.length)}`;
+      return path;
+    }));
+  }
+
+  function removeSelectedEntryPaths(targets: VaultEntry[]) {
+    const next = [...selectedEntryPathsRef.current].filter((path) => !targets.some((target) => (
+      path === target.path || (target.isDir && path.startsWith(`${target.path}/`))
+    )));
+    replaceSelectedEntries(next);
+  }
 
   useEffect(() => {
     loadedDirsRef.current = new Set();
     setManualOrder(loadManualOrder(vaultRoot));
+    setSortMode(loadFileTreeSortMode(vaultRoot));
+    replaceSelectedEntries([]);
   }, [vaultRoot]);
+
+  useEffect(() => {
+    if (appConfig) setRecentVaults(appConfig.recentVaults);
+  }, [appConfig?.recentVaults, setRecentVaults]);
+
+  useEffect(() => {
+    if (!vaultRoot || clipboardEntry?.operation !== "cut" || !isTauriEnvironment()) return;
+    const validateCutClipboard = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const paths = await readPathsFromClipboard();
+        if (!clipboardEntry.entries.every((entry) => clipboardContainsVaultEntry(vaultRoot, entry.path, paths))) {
+          setClipboardEntry(undefined);
+        }
+      } catch {
+        // 系统剪贴板暂时被占用时保留剪切状态，下次聚焦再验证。
+      }
+    };
+    const handleVisibility = () => { if (document.visibilityState === "visible") void validateCutClipboard(); };
+    window.addEventListener("focus", validateCutClipboard);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", validateCutClipboard);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [clipboardEntry, setClipboardEntry, vaultRoot]);
+
+  useEffect(() => {
+    if (clipboardEntry?.operation !== "cut") return;
+    const clearCutForOtherClipboardWrite = (event: ClipboardEvent) => {
+      if (event.target instanceof Element && event.target.closest("[data-mk-file-tree-node-context]")) return;
+      setClipboardEntry(undefined);
+    };
+    document.addEventListener("copy", clearCutForOtherClipboardWrite);
+    document.addEventListener("cut", clearCutForOtherClipboardWrite);
+    return () => {
+      document.removeEventListener("copy", clearCutForOtherClipboardWrite);
+      document.removeEventListener("cut", clearCutForOtherClipboardWrite);
+    };
+  }, [clipboardEntry?.operation, setClipboardEntry]);
 
   const loadVault = useCallback(async (path: string) => {
     setIsLoadingTree(true);
@@ -135,22 +292,83 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
       setVaultRoot(listing.root);
       setEntries(listing.entries, listing.truncated);
       pushRecentVault(listing.root);
-    } catch (error) {
-      const { message } = parseVaultError(error, "打开目录失败");
-      toast.error(message);
+      const recent = useVaultStore.getState().recentVaults;
+      const app = useAppStore.getState();
+      if (app.appConfig) {
+        app.setAppConfig({ ...app.appConfig, vaultRoot: listing.root, recentVaults: recent });
+      }
     } finally {
       setIsLoadingTree(false);
     }
   }, [pushRecentVault, setEntries, setIsLoadingTree, setVaultRoot]);
 
+  useEffect(() => {
+    const projectRoot = vaultProjectWindowRoot(window.location.search);
+    if (!projectRoot || openedProjectVaultRef.current === projectRoot) return;
+    openedProjectVaultRef.current = projectRoot;
+    void loadVault(projectRoot).catch((error) => {
+      const { message } = parseVaultError(error, "打开项目目录失败");
+      toast.error(message);
+    });
+  }, [loadVault]);
+
+  const requestVaultOpen = useCallback(async (path: string) => {
+    const root = path.trim();
+    if (!root || root === vaultRoot) return;
+    if (vaultRoot) {
+      setPendingVaultRoot(root);
+      return;
+    }
+    try {
+      await loadVault(root);
+    } catch (error) {
+      const { message } = parseVaultError(error, "打开目录失败");
+      toast.error(message);
+    }
+  }, [loadVault, vaultRoot]);
+
   async function handleOpenVault() {
     try {
       const selected = await selectVaultDirectory();
       if (!selected) return;
-      await loadVault(selected);
+      await requestVaultOpen(selected);
     } catch (error) {
       const { message } = parseVaultError(error, "选择目录失败");
       toast.error(message);
+    }
+  }
+
+  async function openPendingVaultInCurrentWindow() {
+    const root = pendingVaultRoot;
+    if (!root) return;
+    try {
+      await loadVault(root);
+    } catch (error) {
+      const { message } = parseVaultError(error, "打开目录失败");
+      throw new Error(message);
+    }
+  }
+
+  async function openPendingVaultInNewWindow() {
+    const root = pendingVaultRoot;
+    if (!root) return;
+    await openVaultProjectWindow(root);
+  }
+
+  async function confirmRemoveRecentVault() {
+    const root = recentVaultToRemove;
+    if (!root) return;
+    try {
+      await removeRecentVaultRecord(root);
+      removeRecentVault(root);
+      const app = useAppStore.getState();
+      if (app.appConfig) {
+        app.setAppConfig({ ...app.appConfig, recentVaults: useVaultStore.getState().recentVaults });
+      }
+      setRecentVaultToRemove(undefined);
+    } catch (error) {
+      const { message } = parseVaultError(error, "移除最近目录失败");
+      throw new Error(message);
     }
   }
 
@@ -167,6 +385,12 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     } finally {
       setIsLoadingTree(false);
     }
+  }
+
+  function handleSortModeChange(nextMode: string) {
+    if (!isFileTreeSortMode(nextMode)) return;
+    setSortMode(nextMode);
+    persistFileTreeSortMode(vaultRoot, nextMode);
   }
 
   /// 全量索引被截断时才走这条：展开哪个目录就单独拉哪一层，避免整棵树重来。
@@ -214,6 +438,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
   useEffect(() => () => {
     if (locateFrameRef.current !== undefined) window.cancelAnimationFrame(locateFrameRef.current);
     if (locateTimerRef.current !== undefined) window.clearTimeout(locateTimerRef.current);
+    clearMarqueeCandidate();
   }, []);
 
   function handleToggle(path: string) {
@@ -230,7 +455,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     };
     const { tabs, renameTab } = useDocumentTabsStore.getState();
     for (const tab of tabs) {
-      if (tab.kind !== "vault" || !tab.path) continue;
+      if ((tab.kind !== "vault" && tab.kind !== "image") || !tab.path) continue;
       const nextPath = remapPath(tab.path);
       if (!nextPath) continue;
       renameTab(tab.id, {
@@ -381,6 +606,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
 
     try {
       const moved = await moveVaultEntry(vaultRoot, entry.path, destinationDir);
+      clearClipboardForEntry(entry);
+      remapSelectedEntryPaths(entry.path, moved.path, entry.isDir);
       remapOpenVaultPaths(entry.path, moved.path, entry.isDir);
       updateManualOrderAfterMove(entry, moved, target, placement);
       updateEntriesAfterMove(entry, moved, destinationDir);
@@ -412,6 +639,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
 
     try {
       const renamed = await renameVaultEntry(vaultRoot, entry.path, nextName.trim());
+      clearClipboardForEntry(entry);
+      remapSelectedEntryPaths(entry.path, renamed.path, entry.isDir);
       remapOpenVaultPaths(entry.path, renamed.path, entry.isDir);
       updateManualOrderAfterRename(entry, renamed);
       // 目录改名会连带影响所有后代 path，局部更新算不干净，直接重拉一次。
@@ -424,27 +653,234 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
   }
 
   async function handleDelete() {
-    if (!vaultRoot || !deleteTarget) return;
-    try {
-      await deleteVaultEntry(vaultRoot, deleteTarget.path, deleteTarget.isDir);
-      updateManualOrderAfterDelete(deleteTarget);
-      await handleRefresh();
-      toast.success(`已删除 ${deleteTarget.name}`);
-    } catch (error) {
-      const { message } = parseVaultError(error, "删除失败");
-      throw new Error(message);
+    if (!vaultRoot || !deleteTargets || deleteTargets.length === 0) return;
+    let deleted = 0;
+    let firstError: Error | undefined;
+    for (const target of deleteTargets) {
+      try {
+        await deleteVaultEntry(vaultRoot, target.path, target.isDir);
+        clearClipboardForEntry(target);
+        updateManualOrderAfterDelete(target);
+        deleted += 1;
+      } catch (error) {
+        if (!firstError) {
+          const { message } = parseVaultError(error, "删除失败");
+          firstError = new Error(message);
+        }
+      }
     }
+    if (deleted > 0) {
+      removeSelectedEntryPaths(deleteTargets);
+      await handleRefresh();
+      toast.success(deleted === 1 ? `已删除 ${deleteTargets[0].name}` : `已删除 ${deleted} 项`);
+    }
+    if (firstError) throw firstError;
+  }
+
+  function clearClipboardForEntry(entry: VaultEntry) {
+    const current = useVaultStore.getState().clipboardEntry;
+    if (!current) return;
+    if (current.entries.some((clipboardEntry) => (
+      clipboardEntry.path === entry.path || (entry.isDir && clipboardEntry.path.startsWith(`${entry.path}/`))
+    ))) {
+      setClipboardEntry(undefined);
+    }
+  }
+
+  async function startClipboardOperation(targets: VaultEntry[], operation: VaultClipboardEntry["operation"]) {
+    if (!vaultRoot) return;
+    const entriesToCopy = topLevelVaultEntries(targets).map(({ path, name, isDir }) => ({ path, name, isDir }));
+    if (entriesToCopy.length === 0) return;
+    setClipboardEntry(undefined);
+    try {
+      await setVaultEntryClipboard(vaultRoot, entriesToCopy.map((entry) => entry.path));
+      setClipboardEntry({ entries: entriesToCopy, operation });
+      const action = operation === "cut" ? "剪切" : "复制";
+      toast.success(entriesToCopy.length === 1 ? `已${action} ${entriesToCopy[0].name}` : `已${action} ${entriesToCopy.length} 项`);
+    } catch (error) {
+      const { message } = parseVaultError(error, operation === "cut" ? "剪切失败" : "复制失败");
+      toast.error(message);
+    }
+  }
+
+  async function pasteInto(targetDir: string) {
+    if (!vaultRoot) return;
+
+    let systemPaths: string[] = [];
+    try {
+      systemPaths = await readPathsFromClipboard();
+    } catch (error) {
+      if (!useVaultStore.getState().clipboardEntry) {
+        const { message } = parseVaultError(error, "无法读取剪贴板");
+        toast.error(message);
+        return;
+      }
+    }
+
+    const internal = useVaultStore.getState().clipboardEntry;
+    const internalStillValid = Boolean(
+      internal
+      && (!isTauriEnvironment() || internal.entries.every((entry) => clipboardContainsVaultEntry(vaultRoot, entry.path, systemPaths))),
+    );
+
+    if (internal && internalStillValid) {
+      const targetEntries = topLevelVaultEntries(internal.entries);
+      const completed: VaultClipboardItem[] = [];
+      let firstError = "";
+
+      for (const source of targetEntries) {
+        if (internal.operation === "cut" && parentOf(source.path) === targetDir) continue;
+        try {
+          if (internal.operation === "cut") {
+            const moved = await moveVaultEntry(vaultRoot, source.path, targetDir);
+            remapOpenVaultPaths(source.path, moved.path, source.isDir);
+            remapSelectedEntryPaths(source.path, moved.path, source.isDir);
+            completed.push({ path: moved.path, name: moved.name, isDir: moved.isDir });
+          } else {
+            const copied = await copyVaultEntry(vaultRoot, source.path, targetDir);
+            completed.push({ path: copied.path, name: copied.name, isDir: copied.isDir });
+          }
+        } catch (error) {
+          if (!firstError) firstError = parseVaultError(error, "粘贴失败").message;
+        }
+      }
+
+      if (internal.operation === "cut") setClipboardEntry(undefined);
+      if (completed.length > 0) {
+        await handleRefresh();
+        if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
+        const action = internal.operation === "cut" ? "移动" : "粘贴";
+        toast.success(completed.length === 1 ? `已${action} ${completed[0].name}` : `已${action} ${completed.length} 项`);
+      }
+      if (firstError) toast.error(firstError);
+      if (completed.length === 0 && !firstError && internal.operation === "cut") toast.info("所选项目已在当前位置");
+      return;
+    }
+
+    if (internal) setClipboardEntry(undefined);
+    if (systemPaths.length === 0) {
+      toast.error("剪贴板中没有可粘贴的 Markdown 文档");
+      return;
+    }
+
+    let pasted = 0;
+    let firstError = "";
+    for (const sourcePath of systemPaths) {
+      try {
+        await copyExternalVaultFile(vaultRoot, sourcePath, targetDir);
+        pasted += 1;
+      } catch (error) {
+        if (!firstError) firstError = parseVaultError(error, "粘贴失败").message;
+      }
+    }
+    if (pasted > 0) {
+      await handleRefresh();
+      if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
+      toast.success(`已粘贴 ${pasted} 个文档`);
+    }
+    if (pasted < systemPaths.length) {
+      toast.error(firstError || `${systemPaths.length - pasted} 个项目无法粘贴`);
+    }
+  }
+
+  function handleEntryClick(entry: VaultEntry, event: ReactMouseEvent<HTMLDivElement>) {
+    if (ignoreNextEntryClickRef.current) {
+      ignoreNextEntryClickRef.current = false;
+      return false;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      const next = new Set(selectedEntryPathsRef.current);
+      if (next.has(entry.path)) next.delete(entry.path);
+      else next.add(entry.path);
+      replaceSelectedEntries(next);
+      return false;
+    }
+    selectOnly(entry);
+    return true;
+  }
+
+  function handlePrepareContextMenu(entry: VaultEntry) {
+    if (!selectedEntryPathsRef.current.has(entry.path)) selectOnly(entry);
+  }
+
+  function clearMarqueeCandidate(pointerId?: number) {
+    const candidate = marqueeCandidateRef.current;
+    if (!candidate || (pointerId !== undefined && candidate.pointerId !== pointerId)) return;
+    window.clearTimeout(candidate.timer);
+    if (candidate.active && candidate.didSelect) ignoreNextEntryClickRef.current = true;
+    marqueeCandidateRef.current = undefined;
+    setMarqueeRect(undefined);
+  }
+
+  function updateMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    const candidate = marqueeCandidateRef.current;
+    const tree = treeRef.current;
+    if (!candidate || candidate.pointerId !== event.pointerId || !tree) return;
+    const distance = Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY);
+    if (!candidate.active) {
+      if (distance > MARQUEE_MOVE_THRESHOLD_PX) clearMarqueeCandidate(event.pointerId);
+      return;
+    }
+
+    event.preventDefault();
+    const bounds = tree.getBoundingClientRect();
+    const left = Math.min(candidate.startX, event.clientX);
+    const top = Math.min(candidate.startY, event.clientY);
+    const right = Math.max(candidate.startX, event.clientX);
+    const bottom = Math.max(candidate.startY, event.clientY);
+    const selected = new Set<string>();
+    for (const row of tree.querySelectorAll<HTMLElement>("[data-mk-vault-path]")) {
+      const rowBounds = row.getBoundingClientRect();
+      if (rowBounds.right >= left && rowBounds.left <= right && rowBounds.bottom >= top && rowBounds.top <= bottom) {
+        const path = row.dataset.mkVaultPath;
+        if (path) selected.add(path);
+      }
+    }
+    candidate.didSelect = true;
+    replaceSelectedEntries(selected);
+    setMarqueeRect({
+      left: left - bounds.left + tree.scrollLeft,
+      top: top - bounds.top + tree.scrollTop,
+      width: right - left,
+      height: bottom - top,
+    });
+  }
+
+  function handleTreePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!vaultRoot || event.button !== 0 || event.ctrlKey || event.metaKey) return;
+    if (event.target instanceof Element && event.target.closest("button, input, textarea, [contenteditable='true']")) return;
+    clearMarqueeCandidate();
+    const candidate: MarqueeCandidate = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      didSelect: false,
+      timer: 0,
+    };
+    candidate.timer = window.setTimeout(() => {
+      const current = marqueeCandidateRef.current;
+      if (!current || current.pointerId !== candidate.pointerId) return;
+      current.active = true;
+      try {
+        treeRef.current?.setPointerCapture(current.pointerId);
+      } catch {
+        // 指针已释放时不用框选，随后的 click 仍按普通单选处理。
+      }
+    }, MARQUEE_HOLD_DELAY_MS);
+    marqueeCandidateRef.current = candidate;
   }
 
   async function handleNodeAction(action: FileTreeNodeAction, entry: VaultEntry) {
     if (action === "rename") setRenamingPath(entry.path);
-    if (action === "delete") setDeleteTarget(entry);
+    if (action === "delete") setDeleteTargets(selectedEntriesFor(entry));
     if (action === "new-file") setCreateTarget({ parentDir: entry.path, isDir: false });
     if (action === "new-folder") setCreateTarget({ parentDir: entry.path, isDir: true });
 
     if (action === "copy-relative-path") {
       try {
         await copyTextToClipboard(entry.path);
+        setClipboardEntry(undefined);
         toast.success("已复制相对路径");
       } catch {
         toast.error("复制失败");
@@ -456,6 +892,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
       try {
         const absolutePath = `${vaultRoot}\\${entry.path.replace(/\//g, "\\")}`;
         await copyTextToClipboard(absolutePath);
+        setClipboardEntry(undefined);
         toast.success("已复制绝对路径");
       } catch {
         toast.error("复制失败");
@@ -474,53 +911,15 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     }
 
     if (action === "copy-entry") {
-      setCopiedEntryPath(entry.path);
-      toast.success(`已复制 ${entry.name}`);
+      await startClipboardOperation(selectedEntriesFor(entry), "copy");
+    }
+
+    if (action === "cut-entry") {
+      await startClipboardOperation(selectedEntriesFor(entry), "cut");
     }
 
     if (action === "paste-entry") {
-      if (!vaultRoot) return;
-      const copiedPath = useVaultStore.getState().copiedEntryPath;
-      if (!copiedPath) {
-        // 尝试从系统剪贴板读取文件路径
-        try {
-          const paths = await readPathsFromClipboard();
-          if (paths.length === 0) {
-            toast.error("剪贴板中没有可粘贴的内容");
-            return;
-          }
-
-          // 确定粘贴目标目录
-          const targetDir = entry.isDir ? entry.path : parentOf(entry.path);
-
-          for (const sourcePath of paths) {
-            try {
-              await copyVaultEntry(vaultRoot, sourcePath, targetDir);
-            } catch (error) {
-              const { message } = parseVaultError(error, "粘贴失败");
-              toast.error(message);
-            }
-          }
-
-          await handleRefresh();
-          toast.success(`已粘贴 ${paths.length} 个项目`);
-        } catch (error) {
-          toast.error("无法读取剪贴板");
-        }
-        return;
-      }
-
-      // 内部复制
-      try {
-        const targetDir = entry.isDir ? entry.path : parentOf(entry.path);
-        await copyVaultEntry(vaultRoot, copiedPath, targetDir);
-        await handleRefresh();
-        const copiedEntry = entries.find((e) => e.path === copiedPath);
-        toast.success(`已粘贴 ${copiedEntry?.name ?? "文件"}`);
-      } catch (error) {
-        const { message } = parseVaultError(error, "粘贴失败");
-        toast.error(message);
-      }
+      await pasteInto(vaultPasteTarget(entry));
     }
   }
 
@@ -539,8 +938,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     }
     for (const [parent, bucket] of byParent) {
       const order = manualOrder[parent];
-      const ranks = order ? new Map(order.map((name, index) => [name, index])) : undefined;
-      bucket.sort((left, right) => compareEntries(left, right, ranks));
+      const ranks = sortMode === "manual" && order ? new Map(order.map((name, index) => [name, index])) : undefined;
+      bucket.sort((left, right) => compareEntries(left, right, ranks, sortMode));
     }
 
     // 搜索时用「命中项 + 其全部祖先」的白名单，并把祖先目录视作展开，
@@ -575,7 +974,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
     walk("", 0);
 
     return { rows: result, matchCount: matches };
-  }, [entries, expandedDirs, keyword, manualOrder]);
+  }, [entries, expandedDirs, keyword, manualOrder, sortMode]);
 
   const body = (
     <div className={cn("mk-file-tree-panel mk-sidebar-panel flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-[8px]", className)}>
@@ -584,11 +983,21 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
           vaultRoot={vaultRoot}
           recentVaults={recentVaults}
           onOpenVault={() => void handleOpenVault()}
-          onSelectVault={(root) => void loadVault(root)}
-          onRemoveRecent={removeRecentVault}
+          onSelectVault={(root) => void requestVaultOpen(root)}
+          onRemoveRecent={setRecentVaultToRemove}
         />
 
-        <div className="flex items-center gap-0.5">
+        <div
+          className="mk-file-tree-toolbar flex min-w-0 items-center gap-0.5 overflow-hidden"
+          onWheel={(event) => {
+            const toolbar = event.currentTarget;
+            if (toolbar.scrollWidth <= toolbar.clientWidth) return;
+            const delta = event.deltaX || event.deltaY;
+            if (!delta) return;
+            event.preventDefault();
+            toolbar.scrollLeft += delta;
+          }}
+        >
           <Button
             variant="ghost"
             size="icon-sm"
@@ -622,16 +1031,53 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
           >
             <RefreshCw className={cn("size-3.5", isLoadingTree && "animate-spin")} />
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="mk-file-tree-tool"
+                title={`排序：${sortModeLabel}`}
+                aria-label={`文件树排序：${sortModeLabel}`}
+                disabled={!vaultRoot}
+              >
+                <ArrowUpDown className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuRadioGroup value={sortMode} onValueChange={handleSortModeChange}>
+                <DropdownMenuRadioItem value="manual">
+                  <GripVertical className="size-4 text-slate-500 dark:text-zinc-400" />
+                  自定义顺序
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="name-asc">
+                  <ArrowDownAZ className="size-4 text-slate-500 dark:text-zinc-400" />
+                  名称 A-Z
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="name-desc">
+                  <ArrowUpAZ className="size-4 text-slate-500 dark:text-zinc-400" />
+                  名称 Z-A
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="modified-desc">
+                  <ClockArrowDown className="size-4 text-slate-500 dark:text-zinc-400" />
+                  修改时间：最新优先
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="modified-asc">
+                  <ClockArrowUp className="size-4 text-slate-500 dark:text-zinc-400" />
+                  修改时间：最早优先
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
             title="定位当前文档"
             aria-label="在文件树中定位当前文档"
-            disabled={!vaultRoot || !hasActiveFile}
+            disabled={!vaultRoot || !activeEntryPath}
             onClick={() => {
-              const activePath = useVaultStore.getState().activeFilePath;
-              if (activePath) useVaultStore.getState().requestLocatePath(activePath);
+              if (activeEntryPath) useVaultStore.getState().requestLocatePath(activeEntryPath);
             }}
           >
             <LocateFixed className="size-3.5" />
@@ -686,10 +1132,46 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
           <div
+            ref={treeRef}
             role="tree"
             aria-label="文件树"
             data-mk-context-menu
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1 py-1"
+            tabIndex={0}
+            className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1 py-1"
+            onPointerDown={(event) => {
+              if (!(event.target instanceof Element) || !event.target.closest("[role='treeitem']")) {
+                replaceSelectedEntries([]);
+                event.currentTarget.focus();
+              }
+              handleTreePointerDown(event);
+            }}
+            onPointerMove={updateMarqueeSelection}
+            onPointerUp={(event) => clearMarqueeCandidate(event.pointerId)}
+            onPointerCancel={(event) => clearMarqueeCandidate(event.pointerId)}
+            onContextMenu={(event) => {
+              if (event.target instanceof Element && event.target.closest("[role='treeitem']")) return;
+              replaceSelectedEntries([]);
+            }}
+            onKeyDown={(event) => {
+              if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)) return;
+              const key = event.key.toLowerCase();
+              const modifier = event.ctrlKey || event.metaKey;
+              const selectedEntries = selectedEntriesFor();
+              const selectedEntry = selectedEntries[0];
+              if (modifier && key === "c" && selectedEntries.length > 0) {
+                event.preventDefault();
+                void startClipboardOperation(selectedEntries, "copy");
+              } else if (modifier && key === "x" && selectedEntries.length > 0) {
+                event.preventDefault();
+                void startClipboardOperation(selectedEntries, "cut");
+              } else if (modifier && key === "v") {
+                event.preventDefault();
+                void pasteInto(vaultPasteTarget(selectedEntry));
+              } else if (event.key === "Escape" && clipboardEntry?.operation === "cut") {
+                event.preventDefault();
+                setClipboardEntry(undefined);
+              }
+            }}
           >
         {!vaultRoot ? (
           <p className="px-2 py-6 text-center text-xs leading-5 text-slate-500 dark:text-zinc-400">
@@ -702,7 +1184,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
           </p>
         ) : rows.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs leading-5 text-slate-500 dark:text-zinc-400">
-            {keyword ? `没有匹配「${treeQuery.trim()}」的文件` : "该目录下没有 Markdown 文件"}
+            {keyword ? `没有匹配「${treeQuery.trim()}」的文件` : "该目录下没有 Markdown 文档或图片"}
           </p>
         ) : (
           rows.map(({ entry, depth, expanded }) => (
@@ -711,10 +1193,18 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
               entry={entry}
               depth={depth}
               expanded={expanded}
+              active={activeEntryPath === entry.path}
+              selected={selectedEntryPaths.has(entry.path)}
+              cut={clipboardEntry?.operation === "cut" && clipboardEntry.entries.some((clipboardItem) => clipboardItem.path === entry.path)}
               renaming={entry.path === renamingPath}
               onToggle={handleToggle}
               onSelect={onOpenFile}
+              onPreviewImage={onOpenImage}
               onAction={handleNodeAction}
+              onEntryClick={handleEntryClick}
+              onPrepareContextMenu={handlePrepareContextMenu}
+              marqueeSelecting={Boolean(marqueeRect)}
+              canStartDrag={() => !marqueeCandidateRef.current?.active}
               onRenameSubmit={(target, nextName) => void handleRenameSubmit(target, nextName)}
               onRenameCancel={() => setRenamingPath(undefined)}
               onDropIntoDirectory={(sourcePath, target, placement) => {
@@ -724,6 +1214,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
             />
           ))
         )}
+        {marqueeRect ? <span aria-hidden className="mk-file-tree-marquee" style={marqueeRect} /> : null}
           </div>
         </ContextMenu.Trigger>
 
@@ -733,6 +1224,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
             <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: false })} disabled={!vaultRoot}><FilePlus2 className="size-4" />新建文件</ContextMenu.Item>
             <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: true })} disabled={!vaultRoot}><FolderPlus className="size-4" />新建文件夹</ContextMenu.Item>
+            <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void pasteInto("")} disabled={!vaultRoot}><ClipboardPaste className="size-4" />粘贴</ContextMenu.Item>
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
             <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleRefresh()} disabled={!vaultRoot || isLoadingTree}><RefreshCw className="size-4" />刷新文件树</ContextMenu.Item>
           </ContextMenu.Content>
@@ -754,13 +1247,29 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, className }: F
       />
 
       <DeleteEntryDialog
-        open={Boolean(deleteTarget)}
-        entryName={deleteTarget?.name ?? ""}
-        isDir={deleteTarget?.isDir ?? false}
-        hasChildren={deleteTarget?.hasChildren ?? false}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(undefined); }}
+        open={Boolean(deleteTargets?.length)}
+        entries={deleteTargets ?? []}
+        onOpenChange={(open) => { if (!open) setDeleteTargets(undefined); }}
         onConfirm={handleDelete}
       />
+
+      <RemoveRecentVaultDialog
+        open={Boolean(recentVaultToRemove)}
+        root={recentVaultToRemove}
+        onOpenChange={(open) => { if (!open) setRecentVaultToRemove(undefined); }}
+        onConfirm={confirmRemoveRecentVault}
+      />
+
+      <OpenVaultLocationDialog
+        open={Boolean(pendingVaultRoot)}
+        currentRoot={vaultRoot}
+        targetRoot={pendingVaultRoot}
+        canOpenNewWindow={isTauriEnvironment()}
+        onOpenChange={(open) => { if (!open) setPendingVaultRoot(undefined); }}
+        onOpenCurrent={openPendingVaultInCurrentWindow}
+        onOpenNewWindow={openPendingVaultInNewWindow}
+      />
+
     </div>
   );
 

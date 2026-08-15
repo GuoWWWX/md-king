@@ -14,6 +14,7 @@ import { saveAppConfig } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { useOpenVaultFile } from "@/hooks/use-open-vault-file";
 import { FILE_TREE_WIDTH_RANGE } from "@/stores/vault-store";
+import { useDocumentTabsStore } from "@/stores/document-tabs-store";
 import type { ThemeMode } from "@/types";
 
 type AppShellProps = {
@@ -30,19 +31,16 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   const setFileTreeVisible = useVaultStore((state) => state.setFileTreeVisible);
   const setFileTreeWidth = useVaultStore((state) => state.setFileTreeWidth);
   const openVaultFile = useOpenVaultFile();
+  const openImageTab = useDocumentTabsStore((state) => state.openImageTab);
   const [documentDrawerOpen, setDocumentDrawerOpen] = useState(false);
   const [documentDrawerView, setDocumentDrawerView] = useState<DocumentDrawerView>("outline");
   const [documentDrawerWidth, setDocumentDrawerWidth] = useState(340);
 
-  // 文件树只服务转换页：模板中心/历史/设置/关于跟 vault 无关，
-  // 在那些页面留一条空侧栏既是噪音，也白占两百多像素。
-  const showFileTree = activePage === "convert" && fileTreeVisible;
-  const showFileTreeResizeEdge = activePage === "convert";
+  // 页面标签和 Markdown 文档共用同一个工作台，文件树始终保持原位置。
+  const showFileTree = fileTreeVisible;
+  const showFileTreeResizeEdge = true;
 
   function handleNavigate(page: string) {
-    // 文件树是转换工作台的一部分，进入转换页就直接恢复，避免左侧再放一个重复开关。
-    if (page === "convert") setFileTreeVisible(true);
-    else setDocumentDrawerOpen(false);
     setActivePage(page);
   }
 
@@ -86,8 +84,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AppTitlebar
           fileTreeVisible={fileTreeVisible}
-          onToggleFileTree={activePage === "convert" ? () => setFileTreeVisible(!fileTreeVisible) : undefined}
-          showDocumentDrawerControl={activePage === "convert"}
+          onToggleFileTree={() => setFileTreeVisible(!fileTreeVisible)}
+          showDocumentDrawerControl
           documentDrawerOpen={documentDrawerOpen}
           onToggleDocumentDrawer={() => setDocumentDrawerOpen((open) => !open)}
           documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 110) : 0}
@@ -106,7 +104,20 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
               {showFileTree ? (
                 <FileTreePanel
                   width={fileTreeWidth}
-                  onOpenFile={(entry) => void openVaultFile(entry.path)}
+                  onOpenFile={(entry) => {
+                    setActivePage("convert");
+                    void openVaultFile(entry.path);
+                  }}
+                  onOpenImage={(entry) => {
+                    const root = useVaultStore.getState().vaultRoot;
+                    if (!root) return;
+                    setActivePage("convert");
+                    openImageTab({
+                      path: entry.path,
+                      absolutePath: `${root.replace(/[\\/]+$/, "")}/${entry.path}`,
+                      title: entry.name,
+                    });
+                  }}
                 />
               ) : null}
               <ResizableDivider
@@ -128,40 +139,35 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
 
           <main
             aria-label={pageMeta.title}
-            className={`flex min-w-0 flex-1 flex-col overflow-hidden ${activePage === "convert" ? "" : "mk-workspace-panel rounded-[8px]"}`}
+            className="flex min-w-0 flex-1 flex-col overflow-hidden"
           >
-            {/* 转换页要铺满：三栏布局下再套一层最大宽度会在宽屏上留出诡异的空白。 */}
-            <div className={activePage === "convert"
-              ? "flex h-full min-h-0 w-full flex-col overflow-hidden"
-              : "mx-auto flex h-full min-h-0 w-full max-w-[1540px] flex-col overflow-y-auto overflow-x-hidden p-[5px]"}>
+            <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
               {children}
             </div>
           </main>
-          {activePage === "convert" ? (
-            <>
-              <ResizableDivider
-                orientation="vertical"
-                size={documentDrawerWidth}
-                min={160}
-                max={520}
-                from="end"
-                onResize={setDocumentDrawerWidth}
-                collapsed={!documentDrawerOpen}
-                // 同上：collapsed=true 表示刚收起，对应 open=false。
-                onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
-                ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
-                className={previewVisible ? "-ml-[5px]" : "-ml-[10px]"}
+          <>
+            <ResizableDivider
+              orientation="vertical"
+              size={documentDrawerWidth}
+              min={160}
+              max={520}
+              from="end"
+              onResize={setDocumentDrawerWidth}
+              collapsed={!documentDrawerOpen}
+              // 同上：collapsed=true 表示刚收起，对应 open=false。
+              onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
+              ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
+              className={previewVisible ? "-ml-[5px]" : "-ml-[10px]"}
+            />
+            {documentDrawerOpen ? (
+              <DocumentSideDrawer
+                open
+                width={documentDrawerWidth}
+                view={documentDrawerView}
+                onViewChange={handleDocumentDrawerViewChange}
               />
-              {documentDrawerOpen ? (
-                <DocumentSideDrawer
-                  open
-                  width={documentDrawerWidth}
-                  view={documentDrawerView}
-                  onViewChange={handleDocumentDrawerViewChange}
-                />
-              ) : null}
-            </>
-          ) : null}
+            ) : null}
+          </>
         </div>
       </div>
     </div>

@@ -182,7 +182,7 @@ fn run_resolved_pandoc_to_docx(
     command
         .arg(input_arg)
         .arg("--from")
-        .arg("markdown+tex_math_dollars+tex_math_single_backslash")
+        .arg("markdown+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe")
         .arg("--highlight-style=tango")
         .arg("-o")
         .arg(output_arg);

@@ -6,8 +6,9 @@ import { closeSearchPanel, highlightSelectionMatches, openSearchPanel, search, s
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { isSupportedImagePath } from "@/lib/image-files";
 import { cn } from "@/lib/utils";
-import { getTableDisplayContext, livePreviewPlugin, mermaidBlockExtension, tableBlockExtension, type TableDisplayContext } from "./cm/live-preview";
+import { getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, tableBlockExtension, type TableDisplayContext } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
@@ -22,7 +23,7 @@ export type LiveMarkdownEditorProps = {
   /** 受控换文件的判据：只有它变了才做全量替换，内容变化不触发（否则每次自己的输入都会把光标打回去）。 */
   documentKey: string;
   initialContent: string;
-  /** 预留给后续阶段的图片相对路径解析，本阶段不消费。 */
+  /** 用于解析 Markdown 图片的相对路径。 */
   markdownSourcePath?: string;
   readOnly?: boolean;
   isDark: boolean;
@@ -32,6 +33,8 @@ export type LiveMarkdownEditorProps = {
   /** 每次真实用户输入立即调用，不 debounce。给「未保存」状态用，脏标记必须是即时的。 */
   onDirty?: () => void;
   onRequestSave?: () => void;
+  /** 返回可直接插入编辑器的 Markdown 图片语法；落盘逻辑由页面层持有。 */
+  onImportImage?: (file: File) => Promise<string | undefined>;
   onOpenLink?: (target: string) => void;
   openLinksOnClick?: boolean;
   /** 未选中表格时使用的编辑器表格宽度默认值。 */
@@ -47,6 +50,8 @@ export type LiveMarkdownEditorHandle = {
   getValue: () => string;
   /** 供工具栏之类的外部逻辑直接 dispatch，拿不到时说明 view 还没挂载。 */
   getView: () => EditorView | null;
+  insertText: (text: string) => boolean;
+  importImage: (file: File) => Promise<boolean>;
   /** 未选中表格时更新全部表格；传入表格位置时只改当前表格。 */
   setTableWidthMode: (mode: TableWidthMode, tableFrom: number | null) => TableDisplayContext | null;
 };
@@ -62,7 +67,7 @@ function docChangeDebounceMs(length: number): number {
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
-  { documentKey, initialContent, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
+  { documentKey, initialContent, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -74,12 +79,14 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // mermaid 的块级装饰带着深浅色：主题变了图要重画，
   // 否则深色模式下拿到的还是缓存里的浅色版本。
   const mermaidCompartment = useRef(new Compartment()).current;
+  const imageBlockCompartment = useRef(new Compartment()).current;
 
   // 回调放 ref 里读：EditorView 只创建一次，闭包捕获的是首次渲染的函数，
   // 直接用会一直调到过期的 props。
   const onDocChangedRef = useRef(onDocChanged);
   const onDirtyRef = useRef(onDirty);
   const onRequestSaveRef = useRef(onRequestSave);
+  const onImportImageRef = useRef(onImportImage);
   const onOpenLinkRef = useRef(onOpenLink);
   const openLinksOnClickRef = useRef(openLinksOnClick);
   const onTableContextChangeRef = useRef(onTableContextChange);
@@ -89,6 +96,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   onDocChangedRef.current = onDocChanged;
   onDirtyRef.current = onDirty;
   onRequestSaveRef.current = onRequestSave;
+  onImportImageRef.current = onImportImage;
   onOpenLinkRef.current = onOpenLink;
   openLinksOnClickRef.current = openLinksOnClick;
   onTableContextChangeRef.current = onTableContextChange;
@@ -100,6 +108,29 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // 初始内容同理只在创建时读一次，之后的 props 变化不该反向覆盖用户正在编辑的内容。
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
+
+  function insertTextIntoView(view: EditorView, text: string) {
+    if (!text || view.state.facet(EditorState.readOnly)) return false;
+    const selection = view.state.selection.main;
+    view.dispatch({
+      changes: { from: selection.from, to: selection.to, insert: text },
+      selection: { anchor: selection.from + text.length },
+    });
+    view.focus();
+    return true;
+  }
+
+  async function importImageFiles(view: EditorView, files: File[]) {
+    if (view.state.facet(EditorState.readOnly) || !onImportImageRef.current) return false;
+    let inserted = false;
+    for (const file of files) {
+      const markdown = await onImportImageRef.current(file);
+      // 组件已卸载或文档已切换时，不能把慢回来的图片插入新标签。
+      if (viewRef.current !== view || !markdown) continue;
+      inserted = insertTextIntoView(view, markdown) || inserted;
+    }
+    return inserted;
+  }
 
   const createLinkInteractionExtension = useCallback(() => markdownLinkInteractionExtension({
     openLinksOnClick: () => openLinksOnClickRef.current,
@@ -121,6 +152,14 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       focus: () => viewRef.current?.focus(),
       getValue: () => viewRef.current?.state.doc.toString() ?? "",
       getView: () => viewRef.current,
+      insertText: (text) => {
+        const view = viewRef.current;
+        return view ? insertTextIntoView(view, text) : false;
+      },
+      importImage: async (file) => {
+        const view = viewRef.current;
+        return view ? importImageFiles(view, [file]) : false;
+      },
       setTableWidthMode: (mode, tableFrom) => {
         const view = viewRef.current;
         if (!view) return null;
@@ -227,8 +266,30 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       markdown({ base: livePreviewMarkdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
       livePreviewCompartment.of(livePreviewPlugin),
       mermaidCompartment.of(mermaidBlockExtension(isDark)),
+      imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath)),
       tableBlockExtension,
       tableBlockPasteExtension,
+      EditorView.domEventHandlers({
+        drop: (event, view) => {
+          const files = Array.from(event.dataTransfer?.files ?? []).filter((file) => file.type.startsWith("image/") || isSupportedImagePath(file.name));
+          if (files.length === 0 || !onImportImageRef.current) return false;
+          event.preventDefault();
+          void importImageFiles(view, files);
+          return true;
+        },
+        paste: (event, view) => {
+          const files = Array.from(event.clipboardData?.items ?? [])
+            .filter((item) => item.kind === "file" && (item.type.startsWith("image/") || isSupportedImagePath(item.getAsFile()?.name ?? "")))
+            .flatMap((item) => {
+              const file = item.getAsFile();
+              return file ? [file] : [];
+            });
+          if (files.length === 0 || !onImportImageRef.current) return false;
+          event.preventDefault();
+          void importImageFiles(view, files);
+          return true;
+        },
+      }),
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
       EditorView.contentAttributes.of({ "aria-label": "Markdown 输入内容" }),
@@ -304,6 +365,12 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       ],
     });
   }, [isDark, mermaidCompartment, themeCompartment]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: imageBlockCompartment.reconfigure(markdownImageBlockExtension(markdownSourcePath)),
+    });
+  }, [imageBlockCompartment, markdownSourcePath]);
 
   useEffect(() => {
     viewRef.current?.dispatch({

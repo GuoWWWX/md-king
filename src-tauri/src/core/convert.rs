@@ -25,6 +25,7 @@ const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
 const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConvertRequest {
@@ -2255,7 +2256,7 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
             continue;
         }
 
-        output.push(line.to_string());
+        output.push(preprocess_wikilinks_for_word(line));
     }
 
     let mut prepared = output.join("\n");
@@ -2263,6 +2264,63 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
         prepared.push('\n');
     }
     prepared
+}
+
+/// Pandoc 不识别 Obsidian 的 `[[目标|显示名]]`。导出时保留真实目标而不是
+/// 显示名：外链会直接显示 URL，文档引用会直接显示相对文档路径，避免 DOCX
+/// 里出现无法点击和无法理解的双中括号源码。
+fn preprocess_wikilinks_for_word(line: &str) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut cursor = 0;
+
+    while let Some(relative_start) = line[cursor..].find("[[") {
+        let start = cursor + relative_start;
+        let prefix = &line[..start];
+        let escaped = prefix
+            .chars()
+            .rev()
+            .take_while(|ch| *ch == '\\')
+            .count()
+            % 2
+            == 1;
+        let inside_inline_code = prefix.chars().filter(|ch| *ch == '`').count() % 2 == 1;
+        if escaped || prefix.ends_with('!') || inside_inline_code {
+            output.push_str(&line[cursor..start + 2]);
+            cursor = start + 2;
+            continue;
+        }
+
+        let Some(relative_end) = line[start + 2..].find("]]" ) else {
+            break;
+        };
+        let end = start + 2 + relative_end + 2;
+        let source = &line[start + 2..end - 2];
+        let (target, label) = match source.split_once('|') {
+            Some((target, label)) => (target.trim(), label.trim()),
+            None => (source.trim(), source.trim()),
+        };
+        let unsafe_target = target
+            .to_ascii_lowercase()
+            .starts_with("javascript:")
+            || target.to_ascii_lowercase().starts_with("data:")
+            || target.to_ascii_lowercase().starts_with("vbscript:");
+        if target.is_empty()
+            || label.is_empty()
+            || source.contains(['[', ']', '\r', '\n'])
+            || unsafe_target
+        {
+            output.push_str(&line[cursor..end]);
+            cursor = end;
+            continue;
+        }
+
+        output.push_str(&line[cursor..start]);
+        output.push_str(target);
+        cursor = end;
+    }
+
+    output.push_str(&line[cursor..]);
+    output
 }
 
 struct MarkdownFenceStart {
@@ -2468,9 +2526,19 @@ fn normalize_docx(
                 document_style,
                 block_style,
             );
-            let xml = normalize_document_captions(&xml, document_style);
+            let xml = if document_style.is_some_and(|style| {
+                style.image_caption.is_some() || style.table_caption.is_some()
+            }) {
+                normalize_document_captions(&xml, document_style)
+            } else {
+                xml
+            };
             let xml = apply_page_settings_to_document_xml(&xml, page_settings);
-            data = normalize_document_images(&xml, page_settings, image_style).into_bytes();
+            data = if xml.contains("<w:drawing") {
+                normalize_document_images(&xml, page_settings, image_style).into_bytes()
+            } else {
+                xml.into_bytes()
+            };
         } else if name == "word/styles.xml"
             && (apply_default_template_style || document_style.is_some())
         {
@@ -2866,6 +2934,10 @@ fn normalize_document_images(
     page_settings: Option<&PageSettingsConfig>,
     image_style: Option<&ImageStyleConfig>,
 ) -> String {
+    if !xml.contains("<w:drawing") {
+        return xml.to_string();
+    }
+
     let content_width_twips = page_settings
         .map(page_content_width_twips)
         .unwrap_or_else(|| {
@@ -5270,8 +5342,8 @@ fn normalize_table_xml(table_xml: &str, style: &TableStyleConfig) -> String {
     let column_count = count_table_columns(table_xml).max(1);
     let column_widths = table_column_widths_for_xml(table_xml, column_count, style);
     let table_xml = normalize_table_properties(table_xml, &column_widths, style);
-    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
     let mut row_index = 0usize;
+    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
     row.replace_all(&table_xml, |captures: &Captures| {
         let normalized = normalize_table_row_xml(
             &captures[0],
@@ -5300,10 +5372,6 @@ fn normalize_table_properties(
     column_widths: &[u32],
     style: &TableStyleConfig,
 ) -> String {
-    let table_properties =
-        Regex::new(r#"(?s)<w:tblPr>(.*?)</w:tblPr>"#).expect("valid table property regex");
-    let table_grid =
-        Regex::new(r#"(?s)<w:tblGrid>.*?</w:tblGrid>"#).expect("valid table grid regex");
     let grid = build_table_grid_xml(column_widths);
     let layout = if style.layout.trim().eq_ignore_ascii_case("auto") {
         "autofit"
@@ -5311,6 +5379,10 @@ fn normalize_table_properties(
         "fixed"
     };
 
+    let table_properties =
+        Regex::new(r#"(?s)<w:tblPr>(.*?)</w:tblPr>"#).expect("valid table property regex");
+    let table_grid =
+        Regex::new(r#"(?s)<w:tblGrid>.*?</w:tblGrid>"#).expect("valid table grid regex");
     let table_xml = table_properties
         .replace(table_xml, |captures: &Captures| {
             let removable =
@@ -5439,10 +5511,10 @@ fn table_column_widths_for_xml(
     }
 
     let count = column_count.max(1);
-    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
-    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
     let mut content_weights = vec![1.0_f64; count];
 
+    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
+    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
     for row_match in row.find_iter(table_xml) {
         for (column_index, cell_match) in cell.find_iter(row_match.as_str()).enumerate() {
             if column_index >= count {
@@ -5501,8 +5573,8 @@ fn normalize_table_row_xml(
     style: &TableStyleConfig,
 ) -> String {
     let row_xml = normalize_table_row_properties(row_xml, style, is_header);
-    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
     let mut cell_index = 0usize;
+    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
     cell.replace_all(&row_xml, |captures: &Captures| {
         let normalized = normalize_table_cell_xml(
             &captures[0],
@@ -5523,8 +5595,6 @@ fn normalize_table_row_properties(
     style: &TableStyleConfig,
     is_header: bool,
 ) -> String {
-    let row_properties =
-        Regex::new(r#"(?s)<w:trPr>(.*?)</w:trPr>"#).expect("valid table row property regex");
     let height = px_to_twips(style.min_row_height);
     let height_xml = format!(r#"<w:trHeight w:val="{height}" w:hRule="atLeast" />"#);
     let header_xml = if is_header && style.repeat_header_on_each_page {
@@ -5534,6 +5604,8 @@ fn normalize_table_row_properties(
     };
     let pagination_xml = format!("{header_xml}<w:cantSplit />");
 
+    let row_properties =
+        Regex::new(r#"(?s)<w:trPr>(.*?)</w:trPr>"#).expect("valid table row property regex");
     if row_properties.is_match(row_xml) {
         return row_properties
             .replace(row_xml, |captures: &Captures| {
@@ -5693,11 +5765,11 @@ fn cell_borders_xml(style: &str, width: f64, color: &str) -> String {
 }
 
 fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyleConfig) -> String {
-    let paragraph_properties =
-        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
     let cell_style = table_cell_style(style, is_header);
     let alignment = word_horizontal_align(&cell_style.horizontal_align);
     let line = line_height_twips(cell_style.font_size, cell_style.line_height);
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
     let output = paragraph_properties
         .replace_all(cell_xml, |captures: &Captures| {
             let removable = Regex::new(r#"<w:(?:jc|ind|spacing)\b[^>]*/>"#)
@@ -5763,7 +5835,6 @@ fn normalize_table_run_xml(run_xml: &str, is_header: bool, style: &TableStyleCon
     let properties = table_run_properties(table_cell_style(style, is_header));
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
-
     if run_properties.is_match(run_xml) {
         return run_properties
             .replace(run_xml, |captures: &Captures| {
@@ -7042,6 +7113,18 @@ mod tests {
         assert!(output.contains("$$\n\\frac{a}{b}\n$$"));
         assert!(output.contains("$$\nx + y\n$$"));
         assert!(output.contains("MD_KING_CODE_LANG:rust\n```rust\nlet value = 1;\n```"));
+    }
+
+    #[test]
+    fn exports_obsidian_wikilinks_as_their_actual_addresses() {
+        let input = "外链 [[https://example.com/docs|技术说明]]\n文档 [[笔记/说明.md#安装|安装说明]]\n嵌入 ![[图片.png]]\n行内代码 `[[保留.md|保留]]`\n转义 \\[[保留.md|保留]]\n";
+        let output = preprocess_markdown_for_word(input);
+
+        assert!(output.contains("外链 https://example.com/docs"));
+        assert!(output.contains("文档 笔记/说明.md#安装"));
+        assert!(output.contains("嵌入 ![[图片.png]]"));
+        assert!(output.contains("行内代码 `[[保留.md|保留]]`"));
+        assert!(output.contains("转义 \\[[保留.md|保留]]"));
     }
 
     #[test]

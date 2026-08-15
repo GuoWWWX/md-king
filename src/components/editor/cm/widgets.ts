@@ -10,8 +10,12 @@ import {
   ArrowRight,
   ArrowRightToLine,
   ArrowUpToLine,
+  AlignCenter,
+  AlignJustify,
   ClipboardPaste,
   Code2,
+  Expand,
+  Maximize2,
   Columns3,
   Copy,
   FileText,
@@ -20,6 +24,7 @@ import {
   GripVertical,
   Rows3,
   Scissors,
+  Table2,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +33,8 @@ import { TableWidthModeIcon } from "@/components/editor/table-width-mode-icon";
 import type { MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
+import { requestMediaPreview, svgDataUrl } from "@/components/media/image-viewer";
+import { resolvePreviewImageSource } from "@/lib/tauri";
 import {
   applyTableOperation,
   clearTableSelection,
@@ -46,6 +53,10 @@ import {
 import { TableCellCompositionGuard } from "./table-cell-edit";
 import { setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./table-display-settings";
 import { renderTableInlineMarkdown } from "./table-inline-renderer";
+
+type ImageWidthMode = "fit" | "natural";
+
+const imageWidthModes = new Map<string, ImageWidthMode>();
 
 const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
@@ -226,6 +237,20 @@ export class MermaidWidget extends WidgetType {
       event.stopPropagation();
     });
 
+    const previewButton = document.createElement("button");
+    previewButton.type = "button";
+    previewButton.className = "mk-cm-mermaid-expand";
+    previewButton.dataset.tooltip = "放大查看 Mermaid 图";
+    previewButton.setAttribute("aria-label", "放大查看 Mermaid 图");
+    previewButton.innerHTML = iconMarkup(Expand);
+    previewButton.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const svg = host.querySelector(".mk-cm-mermaid-canvas svg")?.outerHTML;
+      if (svg) requestMediaPreview({ src: svgDataUrl(svg), alt: "Mermaid 图表", title: "Mermaid 图表" });
+    });
+    host.append(previewButton);
+
     const sourceButton = document.createElement("button");
     sourceButton.type = "button";
     sourceButton.className = "mk-cm-mermaid-source";
@@ -283,8 +308,172 @@ export class MermaidWidget extends WidgetType {
   }
 }
 
+/** 独占一行的 Markdown 图片在编辑器内按块级预览，源码可通过右上角按钮恢复编辑。 */
+export class MarkdownImageWidget extends WidgetType {
+  constructor(
+    private readonly src: string,
+    private readonly alt: string,
+    private readonly markdownSourcePath: string | undefined,
+    private readonly blockFrom: number,
+    private readonly blockTo: number,
+    private readonly selected: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownImageWidget): boolean {
+    return other.src === this.src
+      && other.alt === this.alt
+      && other.markdownSourcePath === this.markdownSourcePath
+      && other.blockFrom === this.blockFrom
+      && other.blockTo === this.blockTo
+      && other.selected === this.selected;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const host = document.createElement("div");
+    host.className = "mk-cm-image";
+    host.dataset.state = "loading";
+    host.dataset.selected = String(this.selected);
+    host.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    const frame = document.createElement("div");
+    frame.className = "mk-cm-image-frame";
+    host.append(frame);
+
+    const canvas = document.createElement("div");
+    canvas.className = "mk-cm-image-canvas";
+    canvas.textContent = "正在加载图片…";
+    frame.append(canvas);
+
+    const showSource = () => {
+      view.dispatch({
+        selection: { anchor: this.blockFrom },
+        scrollIntoView: true,
+      });
+      view.focus();
+    };
+
+    const focusAfterImage = () => {
+      const afterImage = this.blockTo + 1;
+      const hasNextLine = this.blockTo < view.state.doc.length
+        && view.state.doc.sliceString(this.blockTo, afterImage) === "\n";
+      view.dispatch(
+        hasNextLine
+          ? { selection: { anchor: afterImage }, scrollIntoView: true }
+          : { changes: { from: this.blockTo, insert: "\n" }, selection: { anchor: afterImage }, scrollIntoView: true },
+      );
+      view.focus();
+    };
+
+    const sourceButton = document.createElement("button");
+    sourceButton.type = "button";
+    sourceButton.className = "mk-cm-image-source";
+    sourceButton.dataset.tooltip = "编辑图片 Markdown";
+    sourceButton.setAttribute("aria-label", "编辑图片 Markdown");
+    sourceButton.innerHTML = iconMarkup(Code2);
+    sourceButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showSource();
+    });
+    frame.append(sourceButton);
+
+    const widthModeKey = `${this.markdownSourcePath ?? "untitled"}\u0000${this.src}`;
+    let widthMode = imageWidthModes.get(widthModeKey) ?? "natural";
+    const widthButton = document.createElement("button");
+    widthButton.type = "button";
+    widthButton.className = "mk-cm-image-width";
+    const applyWidthMode = (next: ImageWidthMode) => {
+      widthMode = next;
+      imageWidthModes.set(widthModeKey, next);
+      host.dataset.widthMode = next;
+      const nextLabel = next === "fit" ? "切换为原始宽度" : "切换为适应窗口宽度";
+      widthButton.dataset.tooltip = nextLabel;
+      widthButton.setAttribute("aria-label", nextLabel);
+      widthButton.innerHTML = iconMarkup(next === "fit" ? AlignCenter : AlignJustify);
+    };
+    widthButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      applyWidthMode(widthMode === "fit" ? "natural" : "fit");
+      view.requestMeasure();
+    });
+    applyWidthMode(widthMode);
+    frame.append(widthButton);
+
+    const continuation = document.createElement("div");
+    continuation.className = "mk-cm-image-continuation";
+    continuation.setAttribute("role", "button");
+    continuation.setAttribute("aria-label", "在图片后继续输入");
+    continuation.tabIndex = 0;
+    continuation.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      focusAfterImage();
+    });
+    continuation.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      focusAfterImage();
+    });
+    host.append(continuation);
+
+    const previewButton = document.createElement("button");
+    previewButton.type = "button";
+    previewButton.className = "mk-cm-image-expand";
+    previewButton.dataset.tooltip = "放大查看图片";
+    previewButton.setAttribute("aria-label", "放大查看图片");
+    previewButton.innerHTML = iconMarkup(Maximize2);
+    frame.append(previewButton);
+
+    void resolvePreviewImageSource(this.src, this.markdownSourcePath)
+      .then((resolvedSrc) => {
+        if (!host.isConnected || !resolvedSrc) throw new Error("图片无法预览");
+        const image = document.createElement("img");
+        image.src = resolvedSrc;
+        image.alt = this.alt;
+        image.addEventListener("load", () => view.requestMeasure());
+        image.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          view.dispatch({
+            selection: { anchor: this.blockFrom, head: this.blockTo },
+            scrollIntoView: true,
+          });
+          view.focus();
+        });
+        previewButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          requestMediaPreview({ src: resolvedSrc, alt: this.alt, title: this.alt || "图片预览" });
+        });
+        canvas.replaceChildren(image);
+        delete host.dataset.state;
+        view.requestMeasure();
+      })
+      .catch(() => {
+        if (!host.isConnected) return;
+        host.dataset.state = "error";
+        canvas.textContent = "图片无法预览";
+        previewButton.disabled = true;
+        view.requestMeasure();
+      });
+
+    return host;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
 export const editMermaidSourceEffect = StateEffect.define<number>();
 export const editTableSourceEffect = StateEffect.define<number>();
+export const selectWholeTableEffect = StateEffect.define<number | null>();
 
 function iconMarkup(icon: LucideIcon): string {
   return renderToStaticMarkup(createElement(icon, { size: 14, strokeWidth: 2 }));
@@ -298,18 +487,20 @@ export class MarkdownLinkIconWidget extends WidgetType {
   constructor(
     private readonly kind: "external" | "document",
     private readonly target: string,
+    private readonly wikilinkFrom?: number,
   ) {
     super();
   }
 
   eq(other: MarkdownLinkIconWidget): boolean {
-    return other.kind === this.kind && other.target === this.target;
+    return other.kind === this.kind && other.target === this.target && other.wikilinkFrom === this.wikilinkFrom;
   }
 
   toDOM(): HTMLElement {
     const icon = document.createElement("span");
     icon.className = `mk-cm-link-icon mk-cm-link-icon--${this.kind}`;
     icon.dataset.mkLinkTarget = this.target;
+    if (this.wikilinkFrom !== undefined) icon.dataset.mkWikilinkFrom = String(this.wikilinkFrom);
     icon.setAttribute("aria-hidden", "true");
     icon.innerHTML = iconMarkup(this.kind === "external" ? Globe2 : FileText);
     return icon;
@@ -362,6 +553,7 @@ export class TableWidget extends WidgetType {
     private readonly tableTo: number,
     private readonly widthMode: TableWidthMode,
     private readonly documentSelected: boolean,
+    private readonly selectedFromToolbar: boolean,
   ) {
     super();
   }
@@ -371,7 +563,8 @@ export class TableWidget extends WidgetType {
       && other.tableFrom === this.tableFrom
       && other.tableTo === this.tableTo
       && other.widthMode === this.widthMode
-      && other.documentSelected === this.documentSelected;
+      && other.documentSelected === this.documentSelected
+      && other.selectedFromToolbar === this.selectedFromToolbar;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -406,6 +599,7 @@ export class TableWidget extends WidgetType {
     };
     let active: { row: number; column: number } | null = null;
     let selection: TableSelection | null = null;
+    let wholeTableSelected = false;
     // 默认按表格内容收缩，避免只有少量列时无意义地铺满编辑区。
     let wrapsContent = this.widthMode === "content";
 
@@ -464,7 +658,7 @@ export class TableWidget extends WidgetType {
       deleteRowButton.disabled = row < 0 || draft.rows.length <= 1;
     };
 
-    const updateSelection = (next: TableSelection) => {
+    const updateSelection = (next: TableSelection, selectWholeTable = false) => {
       if (next.kind === "range") {
         const bounds = tableSelectionBounds(draft, next);
         const isWholeRow = bounds.top === bounds.bottom
@@ -481,20 +675,29 @@ export class TableWidget extends WidgetType {
       } else {
         selection = next;
       }
+      wholeTableSelected = selectWholeTable;
+      wrapper.classList.toggle("is-toolbar-selected", wholeTableSelected);
       wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
       const bounds = tableSelectionBounds(draft, selection);
-      wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
-        const row = Number(element.dataset.tableRow);
-        const column = Number(element.dataset.tableColumn);
-        if (row >= bounds.top && row <= bounds.bottom && column >= bounds.left && column <= bounds.right) {
-          element.classList.add("mk-table-selected");
-        }
-      });
+      if (!wholeTableSelected) {
+        wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
+          const row = Number(element.dataset.tableRow);
+          const column = Number(element.dataset.tableColumn);
+          if (row >= bounds.top && row <= bounds.bottom && column >= bounds.left && column <= bounds.right) {
+            element.classList.add("mk-table-selected");
+          }
+        });
+      }
       refreshToolbar();
     };
 
     const clearSelection = () => {
       selection = null;
+      wholeTableSelected = false;
+      wrapper.classList.remove("is-toolbar-selected");
+      if (this.selectedFromToolbar) {
+        scheduleFrame(() => view.dispatch({ effects: selectWholeTableEffect.of(null) }));
+      }
       wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
       refreshToolbar();
     };
@@ -579,8 +782,12 @@ export class TableWidget extends WidgetType {
       });
       view.focus();
     };
+    const selectWholeTable = () => {
+      view.dispatch({ effects: selectWholeTableEffect.of(this.tableFrom) });
+    };
     const sourceButton = makeButton("编辑 Markdown 源码", Code2, showTableSource);
-    toolbar.append(sourceButton);
+    const selectTableButton = makeButton("选中整张表格", Table2, selectWholeTable);
+    toolbar.append(selectTableButton);
 
     const columnTools = document.createElement("div");
     columnTools.className = "mk-table-toolbar-group";
@@ -658,7 +865,7 @@ export class TableWidget extends WidgetType {
     });
     wrapButton.classList.add("mk-table-width-mode-button");
     wrapper.classList.toggle("is-wrap", wrapsContent);
-    toolbarEnd.append(wrapButton);
+    toolbarEnd.append(wrapButton, sourceButton);
     toolbar.append(columnTools, rowTools, toolbarEnd);
     refreshToolbar();
     wrapper.append(toolbar);
@@ -1323,6 +1530,17 @@ export class TableWidget extends WidgetType {
     tableScroll.addEventListener("scroll", positionDragHandles);
     dragHandleResizeObserver.observe(wrapper);
     scheduleFrame(positionDragHandles);
+    if (this.selectedFromToolbar) {
+      updateSelection({
+        kind: "range",
+        anchor: { row: 0, column: 0 },
+        focus: {
+          row: draft.rows.length - 1,
+          column: Math.max(draft.alignments.length, ...draft.rows.map((row) => row.length)) - 1,
+        },
+      }, true);
+      scheduleFrame(() => wrapper.focus({ preventScroll: true }));
+    }
     return wrapper;
   }
 

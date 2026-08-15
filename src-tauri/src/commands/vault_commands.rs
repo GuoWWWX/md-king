@@ -1,9 +1,18 @@
 use crate::core::config::{load_config, save_config, MAX_RECENT_VAULTS};
 use crate::core::vault::{
-    canonical_root, copy_entry, create_entry, delete_entry, display_path, list_entries, move_entry,
-    read_file, rename_entry, write_file, VaultEntry, VaultFileContent, VaultListing,
-    VaultWriteResult,
+    canonical_root, copy_entry, copy_external_file, create_entry, delete_entry, display_path,
+    entry_absolute_path, import_image_data, import_image_from_path, list_entries, move_entry,
+    read_file, rename_entry, write_file, VaultEntry, VaultFileContent, VaultImageImport,
+    VaultListing, VaultWriteResult,
 };
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use std::process::Command;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// 每个命令都自己重新规范化一次 root，而不是信任前端传回来的字符串。
 ///
@@ -132,6 +141,20 @@ fn remember_vault(root: &str) {
     let _ = save_config(config);
 }
 
+/// 只移除最近打开记录，不触碰磁盘目录，也不关闭当前已打开的仓库。
+#[tauri::command]
+pub fn remove_recent_vault(root: String) -> Result<(), String> {
+    let mut config = load_config();
+    let before = config.recent_vaults.len();
+    config
+        .recent_vaults
+        .retain(|item| !item.eq_ignore_ascii_case(root.trim()));
+    if config.recent_vaults.len() == before {
+        return Ok(());
+    }
+    save_config(config).map(|_| ())
+}
+
 #[tauri::command]
 pub fn copy_vault_entry(
     root: String,
@@ -140,6 +163,113 @@ pub fn copy_vault_entry(
 ) -> Result<VaultEntry, String> {
     let root = resolve_root(&root)?;
     copy_entry(&root, &source_path, &target_dir)
+}
+
+#[tauri::command]
+pub fn copy_external_vault_file(
+    root: String,
+    source_path: String,
+    target_dir: String,
+) -> Result<VaultEntry, String> {
+    let root = resolve_root(&root)?;
+    copy_external_file(&root, std::path::Path::new(&source_path), &target_dir)
+}
+
+#[tauri::command]
+pub fn import_vault_image_from_path(
+    root: String,
+    markdown_path: String,
+    source_path: String,
+) -> Result<VaultImageImport, String> {
+    let root = resolve_root(&root)?;
+    import_image_from_path(&root, &markdown_path, &source_path)
+}
+
+#[tauri::command]
+pub fn import_vault_image_data(
+    root: String,
+    markdown_path: String,
+    data_base64: String,
+    extension: String,
+) -> Result<VaultImageImport, String> {
+    let root = resolve_root(&root)?;
+    import_image_data(&root, &markdown_path, &data_base64, &extension)
+}
+
+#[tauri::command]
+pub fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    {
+        let script = "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Get-Clipboard -Format FileDropList -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }";
+        let output = hidden_powershell_command()
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+            .map_err(|error| format!("读取剪贴板失败：{error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "读取剪贴板失败：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        return Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect());
+    }
+
+    #[cfg(not(windows))]
+    {
+        Err("从文件管理器粘贴文档当前仅支持 Windows。".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn set_vault_entry_clipboard(root: String, paths: Vec<String>) -> Result<(), String> {
+    let root = resolve_root(&root)?;
+    if paths.is_empty() {
+        return Err("没有可复制的文件或文件夹。".to_string());
+    }
+    let absolutes = paths
+        .iter()
+        .map(|path| entry_absolute_path(&root, path))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    #[cfg(windows)]
+    {
+        let escaped_paths = absolutes
+            .iter()
+            .map(|path| format!("'{}'", path.to_string_lossy().replace('\'', "''")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let script =
+            format!("$ErrorActionPreference='Stop'; Set-Clipboard -LiteralPath @({escaped_paths})");
+        let output = hidden_powershell_command()
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .map_err(|error| format!("写入剪贴板失败：{error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        return Err(format!(
+            "写入剪贴板失败：{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = absolutes;
+        Err("文件复制剪贴板当前仅支持 Windows。".to_string())
+    }
+}
+
+#[cfg(windows)]
+fn hidden_powershell_command() -> Command {
+    let mut command = Command::new("powershell.exe");
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
 }
 
 #[tauri::command]

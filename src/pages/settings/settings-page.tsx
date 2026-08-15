@@ -1,6 +1,8 @@
 import { Check, Database, FolderOpen, HardDrive, Keyboard, MousePointer2, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { WorkspacePageHeader } from "@/components/layout/page-header";
+import { appPageMeta } from "@/components/layout/page-meta";
 import { SettingRow } from "@/components/settings/setting-row";
 import { SettingsSection } from "@/components/settings/settings-section";
 import { PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
@@ -126,26 +128,26 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1440px] min-w-0 flex-col gap-3 overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-zinc-800">
-        <div className="flex min-w-0 items-center gap-2">
-          <Badge className={hasChanges ? "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"}>{hasChanges ? "有未保存更改" : "已保存"}</Badge>
-          <span className="truncate text-sm text-slate-500 dark:text-zinc-400">保存后应用到后续转换与系统入口</span>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-            <SoftActionButton className="h-11 rounded-xl" onClick={handleReset} disabled={!hasChanges || isSaving}>
+    <div className="mk-settings-workspace mx-auto flex h-full w-full max-w-[1440px] min-w-0 flex-col gap-1 overflow-hidden">
+      <WorkspacePageHeader
+        meta={appPageMeta.settings}
+        actions={(
+          <>
+            <Badge className={hasChanges ? "rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : "rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16"}>{hasChanges ? "有未保存更改" : "已保存"}</Badge>
+            <SoftActionButton className="h-9" onClick={handleReset} disabled={!hasChanges || isSaving}>
               <RotateCcw className="size-4" />
               重置
             </SoftActionButton>
-            <PrimaryActionButton className="h-11 min-w-36 rounded-xl px-5" onClick={handleSave} disabled={!hasChanges || isSaving}>
+            <PrimaryActionButton className="h-9 min-w-28 px-4" onClick={handleSave} disabled={!hasChanges || isSaving}>
               <Save className="size-4" />
               {isSaving ? "正在保存..." : "保存设置"}
             </PrimaryActionButton>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="mk-settings-workspace-grid grid gap-1 lg:grid-cols-2">
         <SettingsSection title="转换默认项" description="输出位置与生成后的默认行为。" icon={HardDrive}>
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500 dark:text-zinc-400">默认输出目录</Label>

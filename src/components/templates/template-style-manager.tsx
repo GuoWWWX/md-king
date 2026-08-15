@@ -604,7 +604,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
                 </>
               )}
             </div>
-            <SoftActionButton className="h-10 shrink-0 rounded-full border-slate-200 bg-white text-slate-500 hover:text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50" onClick={requestCloseEditor}>
+            <SoftActionButton className="h-10 shrink-0 border-slate-200 bg-white text-slate-500 hover:text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50" onClick={requestCloseEditor}>
               {embedded ? <ArrowLeft className="size-4" /> : <X className="size-4" />}
               {closeLabel ?? (embedded ? "返回模板中心" : "关闭")}
             </SoftActionButton>
@@ -686,8 +686,8 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
         <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/96 px-5 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/96 xl:gap-4 xl:px-7">
           <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", hasChanges ? "bg-amber-50 text-amber-700 dark:bg-amber-500/16 dark:text-amber-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/16 dark:text-emerald-200")}>{hasChanges ? "有未保存更改" : "已保存"}</span>
           {activeTab === "styles" && !isDocumentStructureSelection ? <Button variant="ghost" className="text-slate-500 dark:text-zinc-400 dark:hover:text-zinc-100" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>重置当前样式</Button> : null}
-          <SoftActionButton className="h-9 rounded-[10px]" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>恢复默认样式</SoftActionButton>
-          <PrimaryActionButton className="h-9 rounded-[10px] px-5 font-semibold" onClick={() => void handleSaveEditor()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存更改"}</PrimaryActionButton>
+          <SoftActionButton className="h-9" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>恢复默认样式</SoftActionButton>
+          <PrimaryActionButton className="h-9 px-5 font-semibold" onClick={() => void handleSaveEditor()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存更改"}</PrimaryActionButton>
         </footer>
       </div>
     );
@@ -1178,7 +1178,7 @@ function StyleProperties({
               ))}
             </div>
             <div className="mt-3 flex justify-end">
-              <SoftActionButton className="h-9 rounded-[10px]" onClick={syncListLevelsFromBody}>同步正文文字样式</SoftActionButton>
+              <SoftActionButton className="h-9" onClick={syncListLevelsFromBody}>同步正文文字样式</SoftActionButton>
             </div>
           </PropertyCard>
         ) : null}
@@ -1684,7 +1684,7 @@ function TemplateInfoPanel({
             </Label>
             <div className="flex gap-2 max-sm:flex-col">
               <Input className="h-10 min-w-0 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} disabled={locked} placeholder="选择或填写 .docx 文件路径" />
-              <SoftActionButton className="h-10 shrink-0 rounded-lg" disabled={locked} onClick={onSelectReferenceDocx}>
+              <SoftActionButton className="h-10 shrink-0" disabled={locked} onClick={onSelectReferenceDocx}>
                 <Upload className="size-4" />
                 选择文件
               </SoftActionButton>

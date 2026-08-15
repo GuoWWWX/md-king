@@ -114,11 +114,11 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
 
       {!compact ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <SoftActionButton size="sm" className="rounded-lg" onClick={(event) => { event.stopPropagation(); void copyText(item.outputPath, "输出路径已复制"); }}>
+          <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void copyText(item.outputPath, "输出路径已复制"); }}>
             <Copy className="size-4" />
-            复制路径
+            复制输出路径
           </SoftActionButton>
-          <SoftActionButton size="sm" className="rounded-lg" onClick={(event) => { event.stopPropagation(); void openFile(item.outputPath); }} disabled={!canOpenOutput} title={item.simulated ? "浏览器预览没有实际 DOCX 文件" : undefined}>
+          <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void openFile(item.outputPath); }} disabled={!canOpenOutput} title={item.simulated ? "浏览器预览没有实际 DOCX 文件" : undefined}>
             <ExternalLink className="size-4" />
             打开文件
           </SoftActionButton>

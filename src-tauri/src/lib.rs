@@ -10,14 +10,15 @@ pub use core::template::{
 };
 
 use commands::{
-    append_history, check_pandoc, clear_history, convert_markdown, copy_vault_entry,
-    create_vault_entry, delete_vault_entry, get_app_config, get_app_status,
+    append_history, check_pandoc, clear_history, convert_markdown, copy_external_vault_file,
+    copy_vault_entry, create_vault_entry, delete_vault_entry, get_app_config, get_app_status,
     get_template_style_config, get_template_style_configs, import_template, list_history,
-    list_templates, list_vault_entries, load_preview_image, move_vault_entry, open_output_path,
-    open_vault, read_markdown_file, read_vault_file, rename_vault_entry,
+    import_vault_image_data, import_vault_image_from_path, list_templates, list_vault_entries,
+    load_preview_image, move_vault_entry, open_output_path,
+    open_vault, read_clipboard_file_paths, read_markdown_file, read_vault_file, remove_recent_vault, rename_vault_entry,
     reset_template_style_config, reveal_output_path, save_app_config, save_history,
-    save_template_style_config, save_templates, show_in_explorer, write_temp_image,
-    write_vault_file,
+    save_template_style_config, save_templates, set_vault_entry_clipboard, show_in_explorer,
+    write_temp_image, write_vault_file,
 };
 use core::config::load_config;
 use tauri::Manager;
@@ -99,6 +100,7 @@ pub fn run() {
             convert_markdown,
             write_temp_image,
             open_vault,
+            remove_recent_vault,
             list_vault_entries,
             read_vault_file,
             write_vault_file,
@@ -107,6 +109,11 @@ pub fn run() {
             move_vault_entry,
             delete_vault_entry,
             copy_vault_entry,
+            copy_external_vault_file,
+            import_vault_image_from_path,
+            import_vault_image_data,
+            read_clipboard_file_paths,
+            set_vault_entry_clipboard,
             show_in_explorer
         ])
         .run(tauri::generate_context!())

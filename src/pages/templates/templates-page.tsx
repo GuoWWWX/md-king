@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FilePlus, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
+import { WorkspacePageHeader } from "@/components/layout/page-header";
+import { appPageMeta } from "@/components/layout/page-meta";
 import { TemplateGalleryCard } from "@/components/templates/template-gallery-card";
 import { TemplateEditDrawer } from "@/components/templates/template-edit-drawer";
 import { TemplateImportDialog } from "@/components/templates/template-import-dialog";
@@ -463,16 +465,13 @@ export function TemplatesPage() {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_380px] gap-3 overflow-hidden max-[1180px]:grid-cols-1">
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-[16px]">
-        <div className="mb-3 flex shrink-0 items-end justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-black tracking-[-0.04em] text-blue-950 dark:text-zinc-50">模板中心</h2>
-            <p className="mt-1 text-sm text-blue-900/58 dark:text-zinc-400">选择参考 DOCX 模板，让同类文档保持稳定格式。</p>
-          </div>
+    <div className="flex h-full min-h-0 flex-col gap-1 overflow-hidden">
+      <WorkspacePageHeader
+        meta={appPageMeta.templates}
+        actions={(
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <PrimaryActionButton className="rounded-[14px]">
+              <PrimaryActionButton>
                 <Plus className="size-4" />
                 新建模板
                 <ChevronDown className="size-4" />
@@ -489,12 +488,16 @@ export function TemplatesPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        )}
+      />
 
-        <div className="mk-template-filter-panel mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-[12px] border border-blue-100/60 bg-white/24 p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
+      <div className="mk-templates-workspace grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-1 overflow-hidden">
+      <section className="flex min-h-0 flex-col overflow-hidden">
+
+        <div className="mk-template-filter-panel mb-1 flex shrink-0 flex-wrap items-center gap-2 rounded-[8px] border border-blue-100/60 bg-white p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="group h-9 w-[190px] justify-between rounded-[10px] border-white/70 bg-white/68 px-3 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full">
+              <Button variant="outline" className="group h-9 w-[190px] justify-between border-white/70 bg-white/68 px-3 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full">
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                   {selectedGroups.length === 0 ? (
                     <span className="truncate px-1 text-slate-500 dark:text-zinc-400">全部分组</span>
@@ -563,14 +566,14 @@ export function TemplatesPage() {
           </DropdownMenu>
 
           <div className="ml-auto flex min-w-0 items-center max-[640px]:ml-0 max-[640px]:w-full">
-            <Button variant="outline" className="h-9 min-w-0 rounded-[10px] border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full" onClick={() => openStyleManager(highlightedTemplate, "info")} disabled={!highlightedTemplate}>
+            <Button variant="outline" className="h-9 min-w-0 border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full" onClick={() => openStyleManager(highlightedTemplate, "info")} disabled={!highlightedTemplate}>
               <Palette className="size-4" />
               样式管理器
             </Button>
           </div>
         </div>
 
-        <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/80 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_16px_42px_rgba(37,99,235,0.08)] dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:shadow-none">
+        <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-white/80 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_16px_42px_rgba(37,99,235,0.08)] dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:shadow-none">
           <div className="mk-template-list-toolbar flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-blue-100/70 px-3 py-2.5 dark:border-zinc-700/70">
             <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
               <button
@@ -596,7 +599,7 @@ export function TemplatesPage() {
               variant="outline"
               size="sm"
               className={cn(
-                "mk-template-batch-delete rounded-[12px]",
+                "mk-template-batch-delete",
                 selectedIds.length > 0 ? "text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" : "text-slate-400 hover:text-slate-400 dark:text-zinc-500 dark:hover:text-zinc-500",
               )}
               onClick={() => deleteTemplates(selectedIds)}
@@ -618,7 +621,7 @@ export function TemplatesPage() {
           </div>
           ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-1">
             {pagedTemplates.map((template) => (
               <TemplateGalleryCard
                 key={template.id}
@@ -679,7 +682,7 @@ export function TemplatesPage() {
         </section>
       </section>
 
-      <aside className="grid min-h-0 grid-rows-[250px_minmax(0,1fr)] gap-3 overflow-hidden max-[1180px]:hidden">
+      <aside className="mk-template-side-panel grid min-h-0 grid-rows-[220px_minmax(0,1fr)] gap-1 overflow-hidden">
         <AppSurface as="section">
           <p className="text-sm font-black text-foreground">当前预览模板</p>
           <div className="mt-4 grid grid-cols-[86px_minmax(0,1fr)] gap-4">
@@ -743,6 +746,7 @@ export function TemplatesPage() {
         }}
       />
       <GroupManageDialog open={groupDialogOpen} groups={groups.filter((group) => group !== "全部")} onOpenChange={setGroupDialogOpen} onCreate={handleCreateGroup} onDelete={(group) => void handleDeleteGroup(group)} />
+      </div>
     </div>
   );
 }

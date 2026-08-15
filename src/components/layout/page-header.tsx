@@ -1,7 +1,8 @@
-import { Badge } from "@/components/ui/badge";
+import type { ReactNode } from "react";
+import { AppSurface } from "@/components/ui/app-surface";
+import { cn } from "@/lib/utils";
 
 export type PageMeta = {
-  eyebrow: string;
   title: string;
   description: string;
   tags?: string[];
@@ -9,27 +10,26 @@ export type PageMeta = {
 
 type PageHeaderProps = {
   meta: PageMeta;
+  actions?: ReactNode;
+  className?: string;
 };
 
-export function PageHeader({ meta }: PageHeaderProps) {
+export function PageHeader({ meta, actions, className }: PageHeaderProps) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3">
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="text-[11px] font-bold text-blue-700/55">{meta.eyebrow}</div>
-        <div className="flex min-w-0 items-baseline gap-3">
-          <h2 className="shrink-0 text-2xl font-black tracking-[-0.045em] text-slate-950 md:text-3xl">{meta.title}</h2>
-          <p className="hidden min-w-0 truncate text-sm text-slate-500 lg:block">{meta.description}</p>
-        </div>
+    <header className={cn("flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3 dark:border-zinc-800", className)}>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-lg font-black text-slate-950 dark:text-zinc-50">{meta.title}</h2>
+        <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-zinc-400">{meta.description}</p>
       </div>
-      {meta.tags?.length ? (
-        <div className="hidden shrink-0 flex-wrap gap-2 md:flex">
-          {meta.tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="mk-chip rounded-full px-3 py-1 text-xs font-bold text-blue-900/70">
-              {tag}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
+      {actions ? <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div> : null}
+    </header>
+  );
+}
+
+export function WorkspacePageHeader({ meta, actions }: Pick<PageHeaderProps, "meta" | "actions">) {
+  return (
+    <AppSurface as="section" padding="none" className="shrink-0">
+      <PageHeader meta={meta} actions={actions} className="border-b-0 px-4 py-3" />
+    </AppSurface>
   );
 }

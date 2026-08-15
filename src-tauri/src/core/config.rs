@@ -109,6 +109,14 @@ fn default_output_dir() -> Option<String> {
     Some(base.join("MD King").to_string_lossy().to_string())
 }
 
+fn is_legacy_relative_default_output_dir(value: &str) -> bool {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_matches('/')
+        .eq_ignore_ascii_case("documents/md king")
+}
+
 fn default_language() -> String {
     "zh".to_string()
 }
@@ -214,13 +222,12 @@ fn normalize_config(mut config: AppConfig) -> AppConfig {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
-    if config
+    let output_dir = config
         .default_output_dir
         .as_deref()
         .map(str::trim)
-        .unwrap_or("")
-        .is_empty()
-    {
+        .unwrap_or("");
+    if output_dir.is_empty() || is_legacy_relative_default_output_dir(output_dir) {
         config.default_output_dir = default_output_dir();
     }
 
@@ -340,6 +347,18 @@ mod tests {
         });
         assert_eq!(high.auto_save_delay_ms, 10_000);
         assert_eq!(high.file_tree_width, Some(520));
+    }
+
+    #[test]
+    fn migrates_legacy_relative_default_output_directory() {
+        let config = config_with(|config| {
+            config.default_output_dir = Some(r"Documents\MD King".to_string());
+        });
+
+        assert_eq!(
+            config.default_output_dir,
+            default_config().default_output_dir
+        );
     }
 
     #[test]
