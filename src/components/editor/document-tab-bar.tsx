@@ -51,6 +51,11 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
     hasTarget: boolean;
     lastBeforeId?: string;
   } | null>(null);
+  const windowDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
   const suppressTabClickRef = useRef(false);
   const [draggedTabId, setDraggedTabId] = useState<string>();
 
@@ -119,13 +124,16 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
     if (target.closest("[data-mk-tab-context-menu-content]")) return;
     const tab = target.closest<HTMLElement>("[data-tab-id]");
     const pageTab = target.closest<HTMLElement>("[data-page-tab-id]");
-    // Portal 中的事件沿 React 组件树传播，不会经过标题栏组件的捕获处理。
-    // 因此空白区域必须在这里直接启动 Tauri 原生窗口拖动。
     if (!tab && !pageTab) {
-      if (isTauriEnvironment()) {
-        event.preventDefault();
-        void getCurrentWindow().startDragging().catch(() => undefined);
-      }
+      if (!isTauriEnvironment()) return;
+      // 空白区先保留一次普通点击；只有移动超过阈值才交给原生窗口拖动，
+      // 这样原地双击仍能稳定触发最大化/还原。
+      windowDragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+      listRef.current.setPointerCapture(event.pointerId);
       return;
     }
     // 顶部标签位于无边框桌面窗口的标题栏内。少数 Tauri 拖动场景会吞掉
@@ -153,6 +161,20 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
   }
 
   function handleTabListPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const windowDrag = windowDragRef.current;
+    if (windowDrag && listRef.current) {
+      const movedX = event.clientX - windowDrag.startX;
+      const movedY = event.clientY - windowDrag.startY;
+      if (Math.hypot(movedX, movedY) < 4) return;
+      windowDragRef.current = null;
+      if (listRef.current.hasPointerCapture(windowDrag.pointerId)) {
+        listRef.current.releasePointerCapture(windowDrag.pointerId);
+      }
+      event.preventDefault();
+      void getCurrentWindow().startDragging().catch(() => undefined);
+      return;
+    }
+
     const drag = tabDragRef.current;
     if (!drag || !listRef.current) return;
     const delta = event.clientX - drag.startX;
@@ -191,6 +213,14 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
   }
 
   function finishTabListPointerDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const windowDrag = windowDragRef.current;
+    if (windowDrag) {
+      windowDragRef.current = null;
+      if (listRef.current?.hasPointerCapture(windowDrag.pointerId)) {
+        listRef.current.releasePointerCapture(windowDrag.pointerId);
+      }
+    }
+
     const drag = tabDragRef.current;
     if (!drag) return;
     if (drag.moved) {
@@ -213,11 +243,18 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
     suppressTabClickRef.current = false;
   }
 
+  function handleTabListDoubleClick(event: ReactMouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-tab-id], [data-page-tab-id], button")) return;
+    if (!isTauriEnvironment()) return;
+    event.preventDefault();
+    void getCurrentWindow().toggleMaximize().catch(() => undefined);
+  }
+
   return (
     <div className={cn("mk-document-tab-bar flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
       <div
         ref={listRef}
-        data-tauri-drag-region
         className="scrollbar-none flex min-w-0 flex-1 cursor-default select-none items-center gap-1 overflow-x-auto overflow-y-hidden"
         role="tablist"
         aria-label="打开的标签"
@@ -226,9 +263,10 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
         onPointerUp={finishTabListPointerDrag}
         onPointerCancel={finishTabListPointerDrag}
         onClickCapture={suppressClickAfterTabDrag}
+        onDoubleClick={handleTabListDoubleClick}
       >
         {tabs.length === 0 && pageTabs.length === 0 ? (
-          <span data-tauri-drag-region className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或新建一个</span>
+          <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或新建一个</span>
         ) : (
           <>
             {tabs.map((tab) => (
@@ -263,6 +301,7 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
             ))}
           </>
         )}
+        <span className="min-w-0 flex-1 self-stretch" aria-hidden />
       </div>
 
       {trailing}
