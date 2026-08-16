@@ -135,12 +135,12 @@ function normalizeDialogSelections(selected: string | string[] | null) {
   return Array.isArray(selected) ? selected : [selected];
 }
 
-export async function selectDirectory() {
+export async function selectDirectory(title = "选择默认输出目录") {
   if (!isTauriEnvironment()) {
     throw new Error("浏览器预览无法打开目录选择器，请在 Tauri 桌面端使用");
   }
 
-  return normalizeDialogSelection(await open({ directory: true, multiple: false, title: "选择默认输出目录" }));
+  return normalizeDialogSelection(await open({ directory: true, multiple: false, title }));
 }
 
 export async function selectDocxFile() {
@@ -166,6 +166,19 @@ export async function selectMarkdownFiles() {
     multiple: true,
     title: "选择 Markdown / TXT 文件",
     filters: [{ name: "Markdown / TXT 文档", extensions: ["md", "markdown", "txt"] }],
+  }));
+}
+
+export async function selectMdFile() {
+  if (!isTauriEnvironment()) {
+    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+  }
+
+  return normalizeDialogSelection(await open({
+    directory: false,
+    multiple: false,
+    title: "选择 Markdown 文件",
+    filters: [{ name: "Markdown 文档", extensions: ["md"] }],
   }));
 }
 

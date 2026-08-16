@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EditorState } from "@codemirror/state";
-import { cursorOnLines, selectionCoversRange, selectionOnLines, selectionTouchesOnSameLine } from "./selection-utils.ts";
+import { cursorOnLines, selectedMarkdownTableRows, selectionCoversRange, selectionIntersectsRange, selectionOnLines, selectionTouchesOnSameLine } from "./selection-utils.ts";
 
 function stateWithCursor(doc: string, anchor: number, head = anchor): EditorState {
   return EditorState.create({ doc, selection: { anchor, head } });
@@ -32,4 +32,27 @@ test("非空选区完整覆盖区间时才视为选中整个原子块", () => {
   assert.equal(selectionCoversRange(stateWithCursor(source, 0, source.length), tableFrom, tableTo), true);
   assert.equal(selectionCoversRange(stateWithCursor(source, tableFrom + 1, tableTo), tableFrom, tableTo), false);
   assert.equal(selectionCoversRange(stateWithCursor(source, tableFrom, tableFrom), tableFrom, tableTo), false);
+});
+
+test("非空选区覆盖链接任意部分时可切换到源码编辑", () => {
+  const source = "前缀 [[docs/说明.md|技术说明]] 后缀";
+  const linkFrom = source.indexOf("[[");
+  const linkTo = source.indexOf("]]") + 2;
+
+  assert.equal(selectionIntersectsRange(stateWithCursor(source, linkFrom + 3, linkFrom + 10), linkFrom, linkTo), true);
+  assert.equal(selectionIntersectsRange(stateWithCursor(source, linkTo, linkTo + 2), linkFrom, linkTo), false);
+  assert.equal(selectionIntersectsRange(stateWithCursor(source, linkFrom, linkFrom), linkFrom, linkTo), false);
+});
+
+test("文档拖选进入表格时按实际覆盖的渲染行高亮", () => {
+  const source = "上面的段落\n| 标题 | 内容 |\n| --- | --- |\n| 第一项 | 说明 |\n| 第二项 | 说明 |\n下面的段落";
+  const tableFrom = source.indexOf("| 标题");
+  const tableTo = source.indexOf("\n下面的段落");
+  const firstRow = source.indexOf("| 第一项");
+  const secondRow = source.indexOf("| 第二项");
+
+  assert.deepEqual(selectedMarkdownTableRows(stateWithCursor(source, 0, firstRow + 4), tableFrom, tableTo), [0, 1]);
+  assert.deepEqual(selectedMarkdownTableRows(stateWithCursor(source, firstRow + 2, firstRow + 6), tableFrom, tableTo), [1]);
+  assert.deepEqual(selectedMarkdownTableRows(stateWithCursor(source, source.length, secondRow + 2), tableFrom, tableTo), [2]);
+  assert.deepEqual(selectedMarkdownTableRows(stateWithCursor(source, firstRow), tableFrom, tableTo), []);
 });

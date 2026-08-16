@@ -13,6 +13,8 @@ import {
   AlignCenter,
   AlignJustify,
   ClipboardPaste,
+  ChevronDown,
+  ChevronRight,
   Code2,
   Expand,
   Maximize2,
@@ -232,10 +234,6 @@ export class MermaidWidget extends WidgetType {
     const host = document.createElement("div");
     host.className = "mk-cm-mermaid";
     host.dataset.codeLanguage = "mermaid";
-    host.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
 
     const previewButton = document.createElement("button");
     previewButton.type = "button";
@@ -302,9 +300,12 @@ export class MermaidWidget extends WidgetType {
     return host;
   }
 
-  /** 图表本身是预览面，只有右上角按钮能进入源码。 */
+  /**
+   * 图表主体交给编辑器处理选区：普通单击仍是空选区并保持预览，
+   * 拖选经过图表时才能让块级装饰恢复 Mermaid 源码。
+   */
   ignoreEvent(): boolean {
-    return true;
+    return false;
   }
 }
 
@@ -322,12 +323,24 @@ export class MarkdownImageWidget extends WidgetType {
   }
 
   eq(other: MarkdownImageWidget): boolean {
+    return this.hasSameImage(other)
+      && other.selected === this.selected;
+  }
+
+  updateDOM(dom: HTMLElement, _view: EditorView, previous: MarkdownImageWidget): boolean {
+    if (!this.hasSameImage(previous)) return false;
+    // 选中或取消选中时只切换外框。重建大图片会先回退到加载占位高度，
+    // 随后 load/requestMeasure 再撑开，表现为整个编辑页跳动闪烁。
+    dom.dataset.selected = String(this.selected);
+    return true;
+  }
+
+  private hasSameImage(other: MarkdownImageWidget): boolean {
     return other.src === this.src
       && other.alt === this.alt
       && other.markdownSourcePath === this.markdownSourcePath
       && other.blockFrom === this.blockFrom
-      && other.blockTo === this.blockTo
-      && other.selected === this.selected;
+      && other.blockTo === this.blockTo;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -442,7 +455,6 @@ export class MarkdownImageWidget extends WidgetType {
           event.stopPropagation();
           view.dispatch({
             selection: { anchor: this.blockFrom, head: this.blockTo },
-            scrollIntoView: true,
           });
           view.focus();
         });
@@ -511,35 +523,116 @@ export class MarkdownLinkIconWidget extends WidgetType {
   }
 }
 
+/** Obsidian 双链在编辑器中的紧凑渲染态。源码仍保存在文档里，只在选中时还原。 */
+export class MarkdownWikilinkWidget extends WidgetType {
+  constructor(
+    private readonly kind: "external" | "document",
+    private readonly target: string,
+    private readonly label: string,
+    private readonly wikilinkFrom: number,
+    private readonly invalid: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownWikilinkWidget): boolean {
+    return other.kind === this.kind
+      && other.target === this.target
+      && other.label === this.label
+      && other.wikilinkFrom === this.wikilinkFrom
+      && other.invalid === this.invalid;
+  }
+
+  toDOM(): HTMLElement {
+    const link = document.createElement("span");
+    link.className = `mk-cm-link mk-cm-link--${this.kind} mk-cm-link--wikilink${this.invalid ? " mk-cm-link--invalid" : ""}`;
+    link.dataset.mkLinkTarget = this.target;
+    link.dataset.mkWikilinkFrom = String(this.wikilinkFrom);
+    if (this.invalid) link.dataset.mkWikilinkInvalid = "true";
+    link.setAttribute("role", "link");
+    link.setAttribute("aria-label", this.invalid ? `非 Markdown 文件：${this.target}` : `打开文档：${this.target}`);
+    link.title = this.invalid ? "仅支持 Markdown 文档" : this.target;
+
+    const icon = document.createElement("span");
+    icon.className = `mk-cm-link-icon mk-cm-link-icon--${this.kind}${this.invalid ? " mk-cm-link-icon--invalid" : ""}`;
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = iconMarkup(this.kind === "external" ? Globe2 : FileText);
+    link.append(icon, document.createTextNode(this.label));
+    return link;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 export class MarkdownCalloutIconWidget extends WidgetType {
   constructor(
     private readonly type: string,
     private readonly tone: string,
-    private readonly fallbackTitle: string | undefined,
+    private readonly title: string,
+    private readonly collapsed: boolean | undefined,
+    private readonly calloutFrom: number | undefined,
+    private readonly onToggle: ((view: EditorView) => void) | undefined,
   ) {
     super();
   }
 
   eq(other: MarkdownCalloutIconWidget): boolean {
-    return other.type === this.type && other.tone === this.tone && other.fallbackTitle === this.fallbackTitle;
+    return other.type === this.type
+      && other.tone === this.tone
+      && other.title === this.title
+      && other.collapsed === this.collapsed
+      && other.calloutFrom === this.calloutFrom;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const host = document.createElement("span");
-    host.className = "mk-cm-callout-heading-prefix";
-    host.setAttribute("aria-hidden", "true");
+    host.className = `mk-cm-callout-heading-prefix${this.collapsed === undefined ? "" : " mk-cm-callout-toggle"}`;
     host.innerHTML = iconMarkup(markdownCalloutIcon(this.type, this.tone as MarkdownCalloutTone));
-    if (this.fallbackTitle) {
-      const title = document.createElement("span");
-      title.className = "mk-cm-callout-fallback-title";
-      title.textContent = this.fallbackTitle;
-      host.append(title);
+    if (this.calloutFrom === undefined || this.collapsed === undefined) {
+      host.setAttribute("aria-hidden", "true");
+    } else {
+      host.dataset.mkCalloutToggle = "true";
+      host.dataset.mkCalloutFrom = String(this.calloutFrom);
+      host.setAttribute("role", "button");
+      host.setAttribute("tabindex", "0");
+      host.setAttribute("aria-expanded", String(!this.collapsed));
+      host.setAttribute("aria-label", this.collapsed ? "展开引用块" : "收起引用块");
+
+      const toggle = document.createElement("span");
+      toggle.className = "mk-cm-callout-fold-icon";
+      toggle.setAttribute("aria-hidden", "true");
+      toggle.innerHTML = iconMarkup(this.collapsed ? ChevronRight : ChevronDown);
+      host.prepend(toggle);
+    }
+    const title = document.createElement("span");
+    title.className = "mk-cm-callout-title";
+    title.textContent = this.title;
+    host.append(title);
+
+    if (this.onToggle) {
+      host.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      host.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.onToggle?.(view);
+      });
+      host.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.onToggle?.(view);
+      });
     }
     return host;
   }
 
   ignoreEvent(): boolean {
-    return false;
+    return this.onToggle !== undefined;
   }
 }
 
@@ -552,25 +645,47 @@ export class TableWidget extends WidgetType {
     private readonly tableFrom: number,
     private readonly tableTo: number,
     private readonly widthMode: TableWidthMode,
-    private readonly documentSelected: boolean,
+    private readonly documentSelectedRows: readonly number[],
     private readonly selectedFromToolbar: boolean,
   ) {
     super();
   }
 
   eq(other: TableWidget): boolean {
+    return this.hasSameRenderedTable(other)
+      && other.documentSelectedRows.length === this.documentSelectedRows.length
+      && other.documentSelectedRows.every((row, index) => row === this.documentSelectedRows[index]);
+  }
+
+  updateDOM(dom: HTMLElement, _view: EditorView, previous: TableWidget): boolean {
+    if (!this.hasSameRenderedTable(previous)) return false;
+    const cleanup = previous.cleanups.get(dom);
+    if (cleanup) {
+      this.cleanups.set(dom, cleanup);
+      previous.cleanups.delete(dom);
+    }
+    if (!this.selectedFromToolbar) this.applyDocumentSelectedRows(dom);
+    return true;
+  }
+
+  private hasSameRenderedTable(other: TableWidget): boolean {
     return other.source === this.source
       && other.tableFrom === this.tableFrom
       && other.tableTo === this.tableTo
       && other.widthMode === this.widthMode
-      && other.documentSelected === this.documentSelected
       && other.selectedFromToolbar === this.selectedFromToolbar;
+  }
+
+  private applyDocumentSelectedRows(dom: HTMLElement): void {
+    const selectedRows = new Set(this.documentSelectedRows);
+    dom.querySelectorAll<HTMLElement>("th[data-table-row], td[data-table-row]").forEach((element) => {
+      element.classList.toggle("mk-table-selected", selectedRows.has(Number(element.dataset.tableRow)));
+    });
   }
 
   toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "mk-cm-table-wrapper";
-    wrapper.classList.toggle("is-document-selected", this.documentSelected);
     wrapper.dataset.tableFrom = String(this.tableFrom);
     wrapper.tabIndex = 0;
     wrapper.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -582,6 +697,34 @@ export class TableWidget extends WidgetType {
     };
     wrapper.addEventListener("pointerdown", announceTableContext, true);
     wrapper.addEventListener("focusin", announceTableContext);
+
+    let cellDrag: {
+      pointerId: number;
+      anchor: { row: number; column: number };
+      focus: { row: number; column: number };
+      dragged: boolean;
+    } | null = null;
+
+    const extendDocumentSelectionThroughRow = (event: MouseEvent) => {
+      if ((event.buttons & 1) === 0 || cellDrag) return;
+      const cell = document.elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>("th[data-table-row], td[data-table-row]");
+      if (!cell || !wrapper.contains(cell)) return;
+      const renderedRow = Number(cell.dataset.tableRow);
+      if (!Number.isInteger(renderedRow) || renderedRow < 0) return;
+
+      queueMicrotask(() => {
+        const selection = view.state.selection.main;
+        if (selection.empty || (selection.anchor > this.tableFrom && selection.anchor < this.tableTo)) return;
+        const sourceLineIndex = renderedRow === 0 ? 0 : renderedRow + 1;
+        const firstLine = view.state.doc.lineAt(this.tableFrom);
+        const sourceLineNumber = firstLine.number + sourceLineIndex;
+        if (sourceLineNumber > view.state.doc.lines) return;
+        const sourceLine = view.state.doc.line(sourceLineNumber);
+        const head = selection.anchor <= this.tableFrom ? sourceLine.to : sourceLine.from;
+        if (selection.head !== head) view.dispatch({ selection: { anchor: selection.anchor, head } });
+      });
+    };
 
     let draft: MarkdownTable = {
       rows: this.model.rows.map((row) => [...row]),
@@ -600,6 +743,12 @@ export class TableWidget extends WidgetType {
     let active: { row: number; column: number } | null = null;
     let selection: TableSelection | null = null;
     let wholeTableSelected = false;
+    let clearingToolbarSelection = false;
+    const clearSelectedFromToolbar = () => {
+      if (!this.selectedFromToolbar || clearingToolbarSelection) return;
+      clearingToolbarSelection = true;
+      scheduleFrame(() => view.dispatch({ effects: selectWholeTableEffect.of(null) }));
+    };
     // 默认按表格内容收缩，避免只有少量列时无意义地铺满编辑区。
     let wrapsContent = this.widthMode === "content";
 
@@ -676,18 +825,17 @@ export class TableWidget extends WidgetType {
         selection = next;
       }
       wholeTableSelected = selectWholeTable;
+      if (!selectWholeTable) clearSelectedFromToolbar();
       wrapper.classList.toggle("is-toolbar-selected", wholeTableSelected);
       wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
       const bounds = tableSelectionBounds(draft, selection);
-      if (!wholeTableSelected) {
-        wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
-          const row = Number(element.dataset.tableRow);
-          const column = Number(element.dataset.tableColumn);
-          if (row >= bounds.top && row <= bounds.bottom && column >= bounds.left && column <= bounds.right) {
-            element.classList.add("mk-table-selected");
-          }
-        });
-      }
+      wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
+        const row = Number(element.dataset.tableRow);
+        const column = Number(element.dataset.tableColumn);
+        if (row >= bounds.top && row <= bounds.bottom && column >= bounds.left && column <= bounds.right) {
+          element.classList.add("mk-table-selected");
+        }
+      });
       refreshToolbar();
     };
 
@@ -695,19 +843,11 @@ export class TableWidget extends WidgetType {
       selection = null;
       wholeTableSelected = false;
       wrapper.classList.remove("is-toolbar-selected");
-      if (this.selectedFromToolbar) {
-        scheduleFrame(() => view.dispatch({ effects: selectWholeTableEffect.of(null) }));
-      }
+      clearSelectedFromToolbar();
       wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
       refreshToolbar();
     };
 
-    let cellDrag: {
-      pointerId: number;
-      anchor: { row: number; column: number };
-      focus: { row: number; column: number };
-      dragged: boolean;
-    } | null = null;
     const cellAtPoint = (x: number, y: number) => {
       const target = document.elementFromPoint(x, y)
         ?.closest<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]");
@@ -721,9 +861,8 @@ export class TableWidget extends WidgetType {
       const next = cellAtPoint(event.clientX, event.clientY);
       if (!next || (next.row === cellDrag.focus.row && next.column === cellDrag.focus.column)) return;
       cellDrag.focus = next;
-      cellDrag.dragged = cellDrag.dragged
-        || next.row !== cellDrag.anchor.row
-        || next.column !== cellDrag.anchor.column;
+      const dragged = next.row !== cellDrag.anchor.row || next.column !== cellDrag.anchor.column;
+      cellDrag.dragged = cellDrag.dragged || dragged;
       updateSelection({ kind: "range", anchor: cellDrag.anchor, focus: next });
     };
     const finishCellDrag = (event: PointerEvent, cancelled = false) => {
@@ -732,7 +871,9 @@ export class TableWidget extends WidgetType {
       const completed = cellDrag;
       cellDrag = null;
       if (completed.dragged) wrapper.focus({ preventScroll: true });
-      else if (!cancelled) focusCell(completed.anchor.row, completed.anchor.column);
+      else if (!cancelled) {
+        focusCell(completed.anchor.row, completed.anchor.column);
+      }
     };
     const cancelCellDrag = (event: PointerEvent) => finishCellDrag(event, true);
     wrapper.addEventListener("pointermove", updateCellDrag);
@@ -1316,6 +1457,8 @@ export class TableWidget extends WidgetType {
       setColumnDragHandleVisible(Number(columnCell.dataset.tableColumn), true);
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("pointermove", extendDocumentSelectionThroughRow, true);
+    document.addEventListener("mousemove", extendDocumentSelectionThroughRow, true);
     document.addEventListener("pointermove", updateReorderDrag, true);
     document.addEventListener("pointerup", finishCellDrag, true);
     document.addEventListener("pointercancel", cancelCellDrag, true);
@@ -1338,6 +1481,8 @@ export class TableWidget extends WidgetType {
         if (pending !== undefined) window.clearTimeout(pending);
       });
       document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("pointermove", extendDocumentSelectionThroughRow, true);
+      document.removeEventListener("mousemove", extendDocumentSelectionThroughRow, true);
       document.removeEventListener("pointermove", updateReorderDrag, true);
       document.removeEventListener("pointerup", finishCellDrag, true);
       document.removeEventListener("pointercancel", cancelCellDrag, true);
@@ -1538,8 +1683,10 @@ export class TableWidget extends WidgetType {
           row: draft.rows.length - 1,
           column: Math.max(draft.alignments.length, ...draft.rows.map((row) => row.length)) - 1,
         },
-      }, true);
-      scheduleFrame(() => wrapper.focus({ preventScroll: true }));
+      }, this.selectedFromToolbar);
+      if (this.selectedFromToolbar) scheduleFrame(() => wrapper.focus({ preventScroll: true }));
+    } else if (this.documentSelectedRows.length > 0) {
+      this.applyDocumentSelectedRows(wrapper);
     }
     return wrapper;
   }

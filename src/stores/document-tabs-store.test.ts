@@ -122,3 +122,27 @@ test("关闭其他标签会只保留指定标签并激活它", () => {
     resetTabs();
   }
 });
+
+test("切换仓库时关闭全部文档和图片标签", () => {
+  resetTabs();
+  try {
+    useDocumentTabsStore.getState().openVaultTab({
+      path: "README.md",
+      absolutePath: "D:/仓库A/README.md",
+      title: "README.md",
+      content: "仓库 A",
+    });
+    useDocumentTabsStore.getState().openImageTab({
+      path: "assets/封面.png",
+      absolutePath: "D:/仓库A/assets/封面.png",
+      title: "封面.png",
+    });
+
+    useDocumentTabsStore.getState().closeAllTabs();
+
+    assert.deepEqual(useDocumentTabsStore.getState().tabs, []);
+    assert.equal(useDocumentTabsStore.getState().activeTabId, undefined);
+  } finally {
+    resetTabs();
+  }
+});

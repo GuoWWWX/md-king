@@ -4,6 +4,8 @@ export type MarkdownCalloutHeader = {
   type: string;
   tone: MarkdownCalloutTone;
   defaultTitle: string;
+  /** `-` 默认收起，`+` 默认展开；未写时保持普通展开的 Callout。 */
+  fold: "collapsed" | "expanded" | undefined;
   markerStart: number;
   markerEnd: number;
   title: string;
@@ -41,7 +43,7 @@ const calloutPresets: Record<string, CalloutPreset> = {
 
 /** 解析 Obsidian 兼容的 `> [!type] 标题` 首行。 */
 export function parseMarkdownCalloutHeader(text: string): MarkdownCalloutHeader | undefined {
-  const match = text.match(/^(\s*)\[!([a-z][\w-]*)\](?:[+-])?(?:[ \t]+|$)/i);
+  const match = text.match(/^(\s*)\[!([a-z][\w-]*)\]([+-])?(?:[ \t]+|$)/i);
   if (!match) return undefined;
 
   const type = match[2].toLocaleLowerCase();
@@ -50,6 +52,7 @@ export function parseMarkdownCalloutHeader(text: string): MarkdownCalloutHeader 
     type,
     tone: preset.tone,
     defaultTitle: preset.title,
+    fold: match[3] === "-" ? "collapsed" : match[3] === "+" ? "expanded" : undefined,
     markerStart: match[1].length,
     markerEnd: match[0].length,
     title: text.slice(match[0].length).trim(),

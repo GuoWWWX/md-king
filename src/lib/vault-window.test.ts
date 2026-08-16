@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { vaultDisplayName, vaultProjectWindowLabel, vaultProjectWindowRoot, vaultProjectWindowUrl } from "./vault-window.ts";
+import { restorableVaultRoot, vaultDisplayName, vaultProjectWindowLabel, vaultProjectWindowRoot, vaultProjectWindowUrl } from "./vault-window.ts";
 
 test("项目窗口使用稳定且安全的标签", () => {
   const root = "D:\\示例仓库";
@@ -22,4 +22,12 @@ test("项目窗口从查询参数读取非空仓库路径", () => {
   assert.equal(vaultProjectWindowRoot("?vault=D%3A%5C%E7%A4%BA%E4%BE%8B%E4%BB%93%E5%BA%93"), "D:\\示例仓库");
   assert.equal(vaultProjectWindowRoot("?vault=%20%20"), undefined);
   assert.equal(vaultDisplayName("D:\\示例仓库\\"), "示例仓库");
+});
+
+test("主窗口恢复上次目录且不覆盖项目窗口或已打开目录", () => {
+  const recent = ["D:\\最近目录", "E:\\其他目录"];
+  assert.equal(restorableVaultRoot(undefined, undefined, "G:\\上次目录", recent), "G:\\上次目录");
+  assert.equal(restorableVaultRoot(undefined, undefined, undefined, recent), "D:\\最近目录");
+  assert.equal(restorableVaultRoot("H:\\项目窗口目录", undefined, "G:\\上次目录", recent), undefined);
+  assert.equal(restorableVaultRoot(undefined, "I:\\当前目录", "G:\\上次目录", recent), undefined);
 });

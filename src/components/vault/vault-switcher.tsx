@@ -14,7 +14,7 @@ type VaultSwitcherProps = {
 };
 
 export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVault, onRemoveRecent, className }: VaultSwitcherProps) {
-  if (!vaultRoot) {
+  if (!vaultRoot && recentVaults.length === 0) {
     return (
       <Button
         variant="ghost"
@@ -34,10 +34,10 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
           variant="ghost"
           className={cn("mk-file-tree-switcher h-9 w-full justify-start gap-2 rounded-[8px] px-2 text-sm font-bold", className)}
           title={vaultRoot}
-          aria-label={`当前目录 ${vaultRoot}，点击切换`}
+          aria-label={vaultRoot ? `当前目录 ${vaultRoot}，点击切换` : "打开或选择最近目录"}
         >
-          <Library className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />
-          <span className="min-w-0 flex-1 truncate text-left">{vaultDisplayName(vaultRoot)}</span>
+          {vaultRoot ? <Library className="size-4 shrink-0 text-blue-600 dark:text-blue-400" /> : <FolderOpen className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />}
+          <span className="min-w-0 flex-1 truncate text-left">{vaultRoot ? vaultDisplayName(vaultRoot) : "打开目录"}</span>
           <ChevronDown className="size-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
         </Button>
       </DropdownMenuTrigger>

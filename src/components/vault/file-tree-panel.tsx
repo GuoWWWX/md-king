@@ -10,7 +10,7 @@ import { FileTreeNode, vaultTreeNodeId, type FileTreeNodeAction } from "@/compon
 import { VaultSwitcher } from "@/components/vault/vault-switcher";
 import { clipboardContainsVaultEntry, topLevelVaultEntries, vaultPasteTarget, type VaultClipboardEntry, type VaultClipboardItem } from "@/lib/vault-clipboard";
 import { isTauriEnvironment } from "@/lib/tauri";
-import { openVaultProjectWindow, vaultProjectWindowRoot } from "@/lib/vault-window";
+import { openVaultProjectWindow, restorableVaultRoot, vaultProjectWindowRoot } from "@/lib/vault-window";
 import { copyExternalVaultFile, copyTextToClipboard, copyVaultEntry, createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, readPathsFromClipboard, removeRecentVault as removeRecentVaultRecord, renameVaultEntry, selectVaultDirectory, setVaultEntryClipboard, showInExplorer } from "@/lib/vault";
 import { parseVaultError } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
@@ -200,6 +200,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
   const marqueeCandidateRef = useRef<MarqueeCandidate | undefined>(undefined);
   const ignoreNextEntryClickRef = useRef(false);
   const openedProjectVaultRef = useRef<string | undefined>(undefined);
+  const restoredVaultRef = useRef(false);
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.isDir && entry.hasChildren).map((entry) => entry.path),
     [entries],
@@ -289,6 +290,10 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     setIsLoadingTree(true);
     try {
       const listing = await openVault(path);
+      const previousRoot = useVaultStore.getState().vaultRoot;
+      if (previousRoot && previousRoot !== listing.root) {
+        useDocumentTabsStore.getState().closeAllTabs();
+      }
       setVaultRoot(listing.root);
       setEntries(listing.entries, listing.truncated);
       pushRecentVault(listing.root);
@@ -311,6 +316,22 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       toast.error(message);
     });
   }, [loadVault]);
+
+  useEffect(() => {
+    if (!appConfig || restoredVaultRef.current) return;
+    restoredVaultRef.current = true;
+    const root = restorableVaultRoot(
+      vaultProjectWindowRoot(window.location.search),
+      useVaultStore.getState().vaultRoot,
+      appConfig.vaultRoot,
+      appConfig.recentVaults,
+    );
+    if (!root) return;
+    void loadVault(root).catch((error) => {
+      const { message } = parseVaultError(error, "恢复上次目录失败");
+      toast.error(message);
+    });
+  }, [appConfig, loadVault]);
 
   const requestVaultOpen = useCallback(async (path: string) => {
     const root = path.trim();
@@ -1136,12 +1157,13 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             role="tree"
             aria-label="文件树"
             data-mk-context-menu
-            tabIndex={0}
+            tabIndex={vaultRoot ? 0 : undefined}
             className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1 py-1"
             onPointerDown={(event) => {
               if (!(event.target instanceof Element) || !event.target.closest("[role='treeitem']")) {
                 replaceSelectedEntries([]);
-                event.currentTarget.focus();
+                // 未打开目录时这里只是空状态提示，不应把整个文件树当作可选控件聚焦。
+                if (vaultRoot) event.currentTarget.focus();
               }
               handleTreePointerDown(event);
             }}

@@ -316,6 +316,18 @@
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
 }
 
+.mk-system-floating-ball {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.mk-system-floating-ball:hover,
+.mk-system-floating-ball:active {
+  background: transparent !important;
+}
+
 .mk-floating-panel::before {
   content: none;
 }
@@ -1337,7 +1349,13 @@ select {
     color: #0f766e;
   }
 
-  /* 双链两侧的透明命中区不占布局空间，让光标紧贴 `[[...]]` 时也能展开源码。 */
+  .mk-cm-link--invalid,
+  .mk-cm-link-icon--invalid {
+    color: #dc2626;
+    text-decoration-color: currentColor;
+  }
+
+  /* 扩大双链的可点击区域但不占布局空间；源码只由实际拖选触发。 */
   .mk-cm-link--wikilink {
     position: relative;
   }
@@ -1419,6 +1437,23 @@ select {
       inset 0 -1px 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
   }
 
+  /* Obsidian 的 `[!type]-` 收起时只保留标题行，正文行不参与编辑器布局。 */
+  .mk-cm-callout-line.mk-cm-callout-collapsed {
+    /* CodeMirror 的未分层 `.cm-line { display: block }` 会压过本文件的 layer。 */
+    display: none !important;
+  }
+
+  .mk-cm-callout-first.mk-cm-callout-collapsed-summary {
+    padding-bottom: 7px !important;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+    box-shadow:
+      inset 3px 0 0 var(--mk-callout-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
+  }
+
   .mk-cm-callout-line--cyan {
     --mk-callout-accent: #0891b2;
     --mk-callout-bg: #ecfeff;
@@ -1467,6 +1502,26 @@ select {
   .mk-cm-callout-heading-prefix svg {
     width: 15px;
     height: 15px;
+  }
+
+  .mk-cm-callout-fold-icon {
+    display: inline-flex;
+    color: currentColor;
+  }
+
+  .mk-cm-callout-fold-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .mk-cm-callout-toggle {
+    cursor: pointer;
+  }
+
+  .mk-cm-callout-toggle:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--mk-callout-accent) 72%, transparent);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .mk-cm-callout-title,
@@ -1674,7 +1729,7 @@ select {
     display: block;
     max-width: 100%;
     height: auto;
-    cursor: zoom-in;
+    cursor: default;
     object-fit: contain;
   }
 
@@ -1920,13 +1975,11 @@ select {
     background: #ffffff;
   }
 
-  .mk-cm-table-wrapper.is-document-selected,
-  .mk-cm-table-wrapper.is-toolbar-selected {
-    border-color: #60a5fa;
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.28);
+  /* 拖选行列时，单元格高亮本身就是选区反馈，不再叠加浏览器默认整表焦点框。 */
+  .mk-cm-table-wrapper:focus {
+    outline: none;
   }
 
-  .mk-cm-table-wrapper.is-document-selected .mk-table-toolbar,
   .mk-cm-table-wrapper.is-toolbar-selected .mk-table-toolbar {
     border-bottom-color: #bfdbfe;
     background: #eff6ff;
@@ -2007,6 +2060,7 @@ select {
     gap: 6px;
     min-height: 32px;
     padding: 4px 6px;
+    overflow: hidden;
     border-bottom: 1px solid #e2e8f0;
     background: #f8fafc;
   }
@@ -2257,7 +2311,6 @@ select {
   }
 
   .mk-cm-table-cell {
-    position: relative;
     min-width: 110px;
     min-height: 32px;
   }
@@ -2278,7 +2331,7 @@ select {
   }
 
   .mk-cm-table-cell-content:focus-visible {
-    box-shadow: inset 0 0 0 2px #93c5fd;
+    box-shadow: inset 0 0 0 1px #60a5fa;
   }
 
   .mk-cm-table-cell-content code {
@@ -2322,7 +2375,7 @@ select {
 
   .mk-cm-table-input:focus {
     background: #ffffff;
-    box-shadow: inset 0 0 0 2px #3b82f6;
+    box-shadow: inset 0 0 0 1px #3b82f6;
   }
 
   .mk-cm-table th {
@@ -2341,7 +2394,14 @@ select {
 
   .mk-cm-table .mk-table-selected {
     background: #bfdbfe !important;
-    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.34);
+    box-shadow: none;
+  }
+
+  /* 只有显式点击“选中整张表格”时才整表高亮；普通文本选区保留实际行列范围。 */
+  .mk-cm-table-wrapper.is-toolbar-selected .mk-cm-table th,
+  .mk-cm-table-wrapper.is-toolbar-selected .mk-cm-table td {
+    background: #bfdbfe !important;
+    box-shadow: none;
   }
 
   .mk-table-context-menu {
@@ -2847,6 +2907,11 @@ select {
     color: #5eead4;
   }
 
+  .dark .mk-cm-link--invalid,
+  .dark .mk-cm-link-icon--invalid {
+    color: #fca5a5;
+  }
+
   .dark .mk-cm-callout-line {
     background: color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
     color: #e2e8f0 !important;
@@ -3079,13 +3144,6 @@ select {
     background: #18181b;
   }
 
-  .dark .mk-cm-table-wrapper.is-document-selected,
-  .dark .mk-cm-table-wrapper.is-toolbar-selected {
-    border-color: #60a5fa;
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.28);
-  }
-
-  .dark .mk-cm-table-wrapper.is-document-selected .mk-table-toolbar,
   .dark .mk-cm-table-wrapper.is-toolbar-selected .mk-table-toolbar {
     border-bottom-color: rgba(96, 165, 250, 0.48);
     background: rgba(30, 58, 138, 0.32);
@@ -3125,7 +3183,7 @@ select {
 
   .dark .mk-cm-table-input:focus {
     background: #18181b;
-    box-shadow: inset 0 0 0 2px #60a5fa;
+    box-shadow: inset 0 0 0 1px #60a5fa;
   }
 
   .dark .mk-cm-table-cell-content code {
@@ -3160,7 +3218,13 @@ select {
 
   .dark .mk-cm-table .mk-table-selected {
     background: rgba(59, 130, 246, 0.28) !important;
-    box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.42);
+    box-shadow: none;
+  }
+
+  .dark .mk-cm-table-wrapper.is-toolbar-selected .mk-cm-table th,
+  .dark .mk-cm-table-wrapper.is-toolbar-selected .mk-cm-table td {
+    background: rgba(59, 130, 246, 0.28) !important;
+    box-shadow: none;
   }
 
   .dark .mk-cm-table tbody tr:nth-child(even) {

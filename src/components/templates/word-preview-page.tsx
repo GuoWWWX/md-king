@@ -18,6 +18,7 @@ import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
 import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { parseMarkdownCalloutHeader, type MarkdownCalloutTone } from "@/lib/markdown-callout";
+import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -57,7 +58,7 @@ export type PreviewOutlineItem = {
 type PreviewBlock =
   | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
-  | { type: "paragraph"; segments: PreviewTextSegment[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
+  | { type: "paragraph"; segments: PreviewTextSegment[]; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number }
   | { type: "math"; text: string }
@@ -875,6 +876,7 @@ function resolveListBaseDraft(drafts: Record<string, StyleDraft>, item: PreviewL
 function applyHeadingMappings(blocks: PreviewBlock[], mappings: MarkdownRulesSettings["headingMappings"]) {
   return blocks.map((block) => {
     if (block.type !== "heading") return block;
+    if (block.isDocumentTitle) return block;
     const sourceStyleId = `heading-${block.level}` as MarkdownHeadingStyleId;
     const target = mappings[sourceStyleId] ?? sourceStyleId;
     if (target === "title") return { ...block, level: 1 as HeadingLevel, isDocumentTitle: true };
@@ -906,7 +908,23 @@ function tocDepth(value: string | undefined) {
   return matched ? Math.min(6, Math.max(1, Number(matched[2]))) : 3;
 }
 
-function createPreviewTocPages(blocks: PreviewBlock[], enabled: boolean, depth: string | undefined, pageContentHeight: number): PreviewBlock[][] {
+function estimateTocHeight(entries: Extract<PreviewBlock, { type: "toc" }>['entries'], drafts: Record<string, StyleDraft>, contentWidth: number) {
+  const titleDraft = drafts["heading-1"];
+  const bodyDraft = drafts.normal;
+  const titleHeight = ptToPx(titleDraft.beforeSpacing + titleDraft.afterSpacing)
+    + resolveLineHeightPx(titleDraft);
+  const entriesHeight = entries.reduce((total, entry) => {
+    const indent = (entry.level - 1) * ptToPx(bodyDraft.fontSize) * 1.25;
+    const text = `${entry.number ? `${entry.number} ` : ""}${entry.text}`;
+    return total
+      + estimateTextLines(text, estimateCharsPerLine(Math.max(80, contentWidth - indent), bodyDraft)) * resolveLineHeightPx(bodyDraft)
+      + ptToPx(bodyDraft.afterSpacing);
+  }, 0);
+
+  return titleHeight + entriesHeight;
+}
+
+function createPreviewTocPages(blocks: PreviewBlock[], enabled: boolean, depth: string | undefined, pageContentHeight: number, drafts: Record<string, StyleDraft>, contentWidth: number, firstPageReservedHeight = 0): PreviewBlock[][] {
   if (!enabled) return [];
   const maxLevel = tocDepth(depth);
   const entries = blocks
@@ -914,11 +932,19 @@ function createPreviewTocPages(blocks: PreviewBlock[], enabled: boolean, depth: 
     .map((block) => ({ level: block.level, text: block.text, number: block.number, anchorId: block.anchorId }));
   if (entries.length === 0) return [];
 
-  const entriesPerPage = Math.max(1, Math.floor((pageContentHeight - 34) / 22));
   const pages: PreviewBlock[][] = [];
-  for (let index = 0; index < entries.length; index += entriesPerPage) {
-    pages.push([{ type: "toc", entries: entries.slice(index, index + entriesPerPage) }]);
+  let currentEntries: typeof entries = [];
+  for (const entry of entries) {
+    const availableHeight = pageContentHeight - (pages.length === 0 ? firstPageReservedHeight : 0);
+    const nextEntries = [...currentEntries, entry];
+    if (currentEntries.length > 0 && estimateTocHeight(nextEntries, drafts, contentWidth) > availableHeight) {
+      pages.push([{ type: "toc", entries: currentEntries }]);
+      currentEntries = [entry];
+      continue;
+    }
+    currentEntries = nextEntries;
   }
+  if (currentEntries.length > 0) pages.push([{ type: "toc", entries: currentEntries }]);
   return pages;
 }
 
@@ -965,8 +991,9 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
   return { items, nextIndex: index };
 }
 
-function parseMarkdownPreview(markdown: string): PreviewBlock[] {
-  const tokens = markdownParser.parse(markdown, {});
+function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metadata?: MarkdownFrontmatter } {
+  const frontmatter = splitYamlFrontmatter(markdown);
+  const tokens = markdownParser.parse(frontmatter.markdown, {});
   const blocks: PreviewBlock[] = [];
   const headingAnchorCounts = new Map<string, number>();
 
@@ -1061,7 +1088,7 @@ function parseMarkdownPreview(markdown: string): PreviewBlock[] {
     }
   }
 
-  return blocks;
+  return { blocks, metadata: frontmatter.metadata };
 }
 
 function estimatedTextUnits(text: string) {
@@ -1180,15 +1207,20 @@ function estimateTableCaptionHeight(block: Extract<PreviewBlock, { type: "table"
     : 0;
 }
 
+function paragraphDraft(block: Extract<PreviewBlock, { type: "paragraph" }>, drafts: Record<string, StyleDraft>) {
+  return block.metadata ? { ...drafts.title, fontSize: 12 } : drafts.normal;
+}
+
 function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string, StyleDraft>) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     return { before: ptToPx(draft.beforeSpacing), after: ptToPx(draft.afterSpacing) };
   }
   if (block.type === "paragraph") {
+    const draft = paragraphDraft(block, drafts);
     return {
-      before: block.continuedFromPrevious ? 0 : ptToPx(drafts.normal.beforeSpacing),
-      after: block.continuesNext ? 0 : ptToPx(drafts.normal.afterSpacing),
+      before: block.continuedFromPrevious ? 0 : ptToPx(draft.beforeSpacing),
+      after: block.continuesNext ? 0 : ptToPx(draft.afterSpacing),
     };
   }
   if (block.type === "quote") return { before: ptToPx(drafts.quote.beforeSpacing), after: ptToPx(drafts.quote.afterSpacing) };
@@ -1218,13 +1250,14 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "toc") {
-    return 34 + block.entries.length * 22;
+    return estimateTocHeight(block.entries, drafts, contentWidth);
   }
 
   if (block.type === "paragraph") {
-    const beforeSpacing = block.continuedFromPrevious ? 0 : drafts.normal.beforeSpacing;
-    const afterSpacing = block.continuesNext ? 0 : drafts.normal.afterSpacing;
-    return ptToPx(beforeSpacing + afterSpacing) + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal)) * resolveLineHeightPx(drafts.normal);
+    const draft = paragraphDraft(block, drafts);
+    const beforeSpacing = block.continuedFromPrevious ? 0 : draft.beforeSpacing;
+    const afterSpacing = block.continuesNext ? 0 : draft.afterSpacing;
+    return ptToPx(beforeSpacing + afterSpacing) + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth, draft)) * resolveLineHeightPx(draft);
   }
 
   if (block.type === "quote") {
@@ -1309,7 +1342,7 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
     if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes) <= pageContentHeight) return [block];
 
     if (block.type === "paragraph") {
-      return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth, drafts.normal) * 24).map((text) => ({ ...block, segments: textSegments(text) }));
+      return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth, paragraphDraft(block, drafts)) * 24).map((text) => ({ ...block, segments: textSegments(text) }));
     }
 
     if (block.type === "quote") {
@@ -1623,12 +1656,25 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "toc") {
+      const titleDraft = drafts["heading-1"];
+      const bodyDraft = drafts.normal;
       rendered.push(
-        <section key={index} className="mb-5">
-          <div className="mb-2 text-sm font-bold text-slate-900">目录</div>
-          <div className="space-y-1">
+        <section key={index}>
+          <div style={{ ...textStyle(titleDraft), marginTop: 0, marginBottom: `${titleDraft.afterSpacing}pt`, textIndent: 0 }}>Table of Contents</div>
+          <div>
             {block.entries.map((entry, entryIndex) => (
-              <div key={`${entry.level}-${entryIndex}-${entry.text}`} className="flex min-w-0 items-end gap-1 text-[10px] leading-5 text-slate-700" style={{ paddingLeft: `${(entry.level - 1) * 1.25}em` }}>
+              <div
+                key={`${entry.level}-${entryIndex}-${entry.text}`}
+                className="flex min-w-0 items-end gap-1"
+                style={{
+                  color: bodyDraft.color,
+                  fontFamily: `"${bodyDraft.chineseFont}", "${bodyDraft.latinFont}", sans-serif`,
+                  fontSize: `${bodyDraft.fontSize}pt`,
+                  lineHeight: bodyDraft.lineHeight,
+                  marginBottom: `${bodyDraft.afterSpacing}pt`,
+                  paddingLeft: `${(entry.level - 1) * 1.25}em`,
+                }}
+              >
                 <span className="shrink-0">{entry.number ? `${entry.number} ` : ""}{entry.text}</span>
                 {tableStyle.tocLeader === "cjk-dot" ? <span className="min-w-2 flex-1 overflow-hidden whitespace-nowrap text-slate-400">………………</span> : null}
                 {tableStyle.tocLeader === "dot-spaced" ? <span className="min-w-2 flex-1 overflow-hidden whitespace-nowrap text-slate-400">· · · · · · ·</span> : null}
@@ -1643,15 +1689,16 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "paragraph") {
+      const draft = paragraphDraft(block, drafts);
       rendered.push(
         <p
           key={index}
-          className={cn(selectedRing(selectedStyle, "normal"), "break-words")}
+          className={cn(selectedRing(selectedStyle, block.metadata ? "title" : "normal"), "break-words")}
           style={{
-            ...textStyle(drafts.normal),
-            marginTop: block.continuedFromPrevious ? 0 : `${drafts.normal.beforeSpacing}pt`,
-            marginBottom: block.continuesNext ? 0 : `${drafts.normal.afterSpacing}pt`,
-            textIndent: block.continuedFromPrevious ? 0 : `${drafts.normal.firstLineIndent}em`,
+            ...textStyle(draft),
+            marginTop: block.continuedFromPrevious ? 0 : `${draft.beforeSpacing}pt`,
+            marginBottom: block.continuesNext ? 0 : `${draft.afterSpacing}pt`,
+            textIndent: block.continuedFromPrevious ? 0 : `${draft.firstLineIndent}em`,
           }}
         >
           {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle, onOpenLink)}
@@ -2030,7 +2077,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     whiteSpace,
     textIndent: 0,
   };
-  const markdownBlocks = markdown?.trim() ? parseMarkdownPreview(markdown) : [];
+  const markdownPreview = markdown?.trim() ? parseMarkdownPreview(markdown) : undefined;
+  const markdownBlocks = markdownPreview?.blocks ?? [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
   const fallbackBlocks = createFallbackBlocks(captionText(caption, "图片样式预览"), captionText(tableCaption, "表格样式预览"));
   const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures)
@@ -2048,19 +2096,29 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const shouldPaginate = paginate && hasMarkdownPreview;
   const numberedBlocks = annotateHeadingNumbers(mappedBlocks, previewDrafts);
   const blocksWithTableColumnWidths = numberedBlocks.map((block) => resolveTableBlockColumnWidths(block, table, contentWidth));
+  const metadataBlocks: PreviewBlock[] = [
+    ...(markdownPreview?.metadata?.title ? [{ type: "heading" as const, level: 1 as HeadingLevel, text: markdownPreview.metadata.title, isDocumentTitle: true }] : []),
+    ...(markdownPreview?.metadata?.author ? [{ type: "paragraph" as const, metadata: "author" as const, segments: textSegments(markdownPreview.metadata.author) }] : []),
+    ...(markdownPreview?.metadata?.date ? [{ type: "paragraph" as const, metadata: "date" as const, segments: textSegments(markdownPreview.metadata.date) }] : []),
+  ];
+  const metadataHeight = metadataBlocks.reduce((total, block) => total + estimateBlockHeight(block, previewDrafts, table, contentWidth, mermaidSizes), 0);
   const tocPages = shouldPaginate && showTocPage
-    ? createPreviewTocPages(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth, pageContentHeight)
+    ? createPreviewTocPages(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth, pageContentHeight, previewDrafts, contentWidth, metadataHeight)
     : [];
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(blocksWithTableColumnWidths, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : blocksWithTableColumnWidths;
+  const documentBlocks = tocPages.length > 0 ? blocksWithTableColumnWidths : [...metadataBlocks, ...blocksWithTableColumnWidths];
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : documentBlocks;
   const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : [previewBlocks];
   const previewOutline = documentPages.flatMap((pageBlocks, pageIndex) => pageBlocks.flatMap((block) => {
     if (block.type !== "heading" || block.isDocumentTitle || !block.anchorId) return [];
     return [{ id: block.anchorId, level: block.level, text: block.text, number: block.number, page: tocPages.length + pageIndex + 1 }];
   }));
   const pageByHeadingId = new Map(previewOutline.map((item) => [item.id, item.page]));
-  const tocPagesWithPageNumbers = tocPages.map((pageBlocks) => pageBlocks.map((block) => block.type === "toc"
-    ? { ...block, entries: block.entries.map((entry) => ({ ...entry, page: entry.anchorId ? pageByHeadingId.get(entry.anchorId) : undefined })) }
-    : block));
+  const tocPagesWithPageNumbers = tocPages.map((pageBlocks, pageIndex) => [
+    ...(pageIndex === 0 ? metadataBlocks : []),
+    ...pageBlocks.map((block) => block.type === "toc"
+      ? { ...block, entries: block.entries.map((entry) => ({ ...entry, page: entry.anchorId ? pageByHeadingId.get(entry.anchorId) : undefined })) }
+      : block),
+  ]);
   const previewPages = [...tocPagesWithPageNumbers, ...documentPages];
   const previewOutlineSignature = previewOutline.map((item) => `${item.id}:${item.level}:${item.number ?? ""}:${item.page}:${item.text}`).join("|");
   const scale = interactiveViewport

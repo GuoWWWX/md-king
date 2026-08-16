@@ -697,10 +697,26 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       ...styles.title,
       chineseFont: "宋体",
       latinFont: "Times New Roman",
-      fontSize: 24,
+      fontSize: 18,
       align: "center",
       afterSpacing: 24,
     };
+    const defaultReportHeadingSizes: Record<string, number> = {
+      "heading-1": 16,
+      "heading-2": 15,
+      "heading-3": 14,
+      "heading-4": 12,
+      "heading-5": 10.5,
+      "heading-6": 9,
+    };
+    for (const [styleId, fontSize] of Object.entries(defaultReportHeadingSizes)) {
+      styles[styleId] = {
+        ...styles[styleId],
+        chineseFont: "宋体",
+        latinFont: "Times New Roman",
+        fontSize,
+      };
+    }
     styles.normal = {
       ...styles.normal,
       chineseFont: "宋体",
@@ -912,6 +928,23 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
       ...(config?.styles ?? {}),
     }).map(([styleId, draft]) => [styleId, normalizeLegacyStyleDraft(styleId, draft, defaults.styles[styleId] ?? createDefaultStyleDraft(styleId))]),
   );
+  if (templateId === "default-report") {
+    const legacyDefaults: Record<string, { chineseFont: string; fontSize: number }> = {
+      title: { chineseFont: "宋体", fontSize: 24 },
+      "heading-1": { chineseFont: "微软雅黑", fontSize: 22 },
+      "heading-2": { chineseFont: "微软雅黑", fontSize: 18 },
+      "heading-3": { chineseFont: "微软雅黑", fontSize: 16 },
+      "heading-4": { chineseFont: "微软雅黑", fontSize: 15 },
+      "heading-5": { chineseFont: "微软雅黑", fontSize: 14 },
+      "heading-6": { chineseFont: "微软雅黑", fontSize: 12 },
+    };
+    for (const [styleId, legacy] of Object.entries(legacyDefaults)) {
+      const current = styles[styleId];
+      if (current?.chineseFont === legacy.chineseFont && current.fontSize === legacy.fontSize) {
+        styles[styleId] = defaults.styles[styleId];
+      }
+    }
+  }
   const legacyDefaultHeadingOneDrafts = [
     { ...defaults.styles["heading-1"], fontSize: 20, align: "center" as const },
     { ...defaults.styles["heading-1"], fontSize: 20, align: "left" as const },

@@ -277,7 +277,7 @@ export function SettingsPage() {
 
         <SettingsSection title="系统集成" description="右键菜单、悬浮球和系统托盘。" icon={MousePointer2}>
           <SettingRow label="添加到右键菜单" description="开启并保存后，.md/.markdown 文件右键可直接转换为 Word，桌面空白处右键可打开 MD King。" checked={draft.enableContextMenu} badge="可用" onCheckedChange={(checked) => updateDraft("enableContextMenu", checked)} />
-          <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入多个 Markdown 文件或文本批量转换。" checked={draft.enableFloatingBall} badge="可用" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
+          <SettingRow label="启用悬浮球快捷转换" description="开启并保存后，应用右下角会显示悬浮球，可拖入 .md 文件或粘贴 Markdown 内容进行转换。" checked={draft.enableFloatingBall} badge="可用" onCheckedChange={(checked) => updateDraft("enableFloatingBall", checked)} />
           <SettingRow label="系统托盘" description="开启并保存后显示托盘图标；关闭主窗口时隐藏到托盘，托盘菜单可显示或退出。" checked={draft.enableTray} badge="可用" onCheckedChange={(checked) => updateDraft("enableTray", checked)} />
         </SettingsSection>
 

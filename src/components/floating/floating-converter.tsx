@@ -1,20 +1,23 @@
 import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
-import { ArrowRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, ExternalLink, FileText, FolderOpen, GripHorizontal, Loader2, Maximize2, Minimize2, Trash2, UploadCloud } from "lucide-react";
+import { ArrowRight, CircleAlert, CircleCheck, ExternalLink, FileText, FolderOpen, Loader2, Maximize2, Minimize2, Trash2, UploadCloud } from "lucide-react";
 import { type DragEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipButton } from "@/components/ui/tooltip";
-import { actionableConversionWarnings, buildDocxOutputName, buildOutputPath } from "@/lib/convert-utils";
+import { actionableConversionWarnings, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { readMarkdownFile } from "@/lib/markdown-files";
-import { appendHistory, convertMarkdown, openOutputPath, revealOutputPath, selectMarkdownFiles } from "@/lib/tauri";
+import { appendHistory, convertMarkdown, openOutputPath, revealOutputPath, selectDirectory, selectMdFile } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
-import type { ConvertResult, HistoryItem, Template } from "@/types";
+import type { HistoryItem, Template } from "@/types";
+import { floatingOutputName, isFloatingMarkdownFile, normalizeFloatingOutputName, parentDirectory } from "./floating-converter-utils";
+import { collapsedDockedX, revealedDockedX, type FloatingDockSide } from "./floating-window-geometry";
 
 type FloatingTaskStatus = "pending" | "running" | "success" | "failed";
 
@@ -23,6 +26,7 @@ type FloatingTask = {
   name: string;
   text: string;
   inputPath?: string;
+  outputName: string;
   status: FloatingTaskStatus;
   message?: string;
   outputPath?: string;
@@ -44,13 +48,13 @@ const positionStorageKey = "md-king:floating-ball-position";
 const systemPositionStorageKey = "md-king:system-floating-window-position";
 const floatingWindowClosedWidth = 48;
 const floatingWindowClosedHeight = 48;
-const floatingWindowDragWidth = 78;
-const floatingWindowDragHeight = 78;
 const expandedWidth = 380;
 const expandedHeight = 500;
 const dockActivationDistance = 4;
+const floatingWindowVisibleWidth = 14;
+const dockCollapseDelay = 1600;
 
-type DockSide = "left" | "right";
+type DockSide = FloatingDockSide;
 
 function makeTask(name: string, text: string, inputPath?: string): FloatingTask {
   return {
@@ -58,6 +62,7 @@ function makeTask(name: string, text: string, inputPath?: string): FloatingTask 
     name,
     text,
     inputPath,
+    outputName: floatingOutputName(inputPath, text),
     status: "pending",
   };
 }
@@ -128,9 +133,11 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   const [tasks, setTasks] = useState<FloatingTask[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [dockSide, setDockSide] = useState<DockSide | null>(null);
-  const [isIdleCollapsed, setIsIdleCollapsed] = useState(false);
-  const [isIdleDimmed, setIsIdleDimmed] = useState(false);
-  const idleTimerRef = useRef<number | undefined>(undefined);
+  const [outputDirectory, setOutputDirectory] = useState(appConfig?.defaultOutputDir ?? "");
+  const dockCollapsedRef = useRef(false);
+  const dockHoveredRef = useRef(false);
+  const dockTimerRef = useRef<number | undefined>(undefined);
+  const outputDirectoryTouchedRef = useRef(false);
   const templateOptions = useMemo(() => (templates.length > 0 ? templates : [fallbackTemplate]), [templates]);
   const defaultTemplate = templateOptions.find((template) => template.id === currentTemplateId)
     ?? templateOptions.find((template) => template.id === appConfig?.defaultTemplateId)
@@ -139,42 +146,111 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
   const activeTemplateId = selectedTemplateId || defaultTemplate?.id || fallbackTemplate.id;
   const canUseSystemWindow = systemWindow && isTauriEnvironment();
-  const edgeDocked = dockSide !== null;
+  const currentTask = tasks[0];
 
   const enabled = systemWindow ? true : (appConfig?.enableFloatingBall ?? true);
 
-  useEffect(() => {
-    if (!canUseSystemWindow) return;
-    const width = open ? expandedWidth : panelDragging ? floatingWindowDragWidth : floatingWindowClosedWidth;
-    const height = open ? expandedHeight : panelDragging ? floatingWindowDragHeight : floatingWindowClosedHeight;
-    void getCurrentWindow().setSize(new LogicalSize(width, height));
-  }, [canUseSystemWindow, open, panelDragging]);
+  function clearDockTimer() {
+    if (dockTimerRef.current === undefined) return;
+    window.clearTimeout(dockTimerRef.current);
+    dockTimerRef.current = undefined;
+  }
+
+  async function collapseDockedSystemWindow() {
+    if (!canUseSystemWindow || open || !dockSide || dockHoveredRef.current || dockCollapsedRef.current) return;
+
+    const appWindow = getCurrentWindow();
+    const currentPosition = await appWindow.outerPosition();
+    const scaleFactor = await appWindow.scaleFactor();
+    const logicalPosition = currentPosition.toLogical(scaleFactor);
+    const bounds = getScreenBounds();
+
+    await appWindow.setPosition(new LogicalPosition(
+      collapsedDockedX(dockSide, bounds.left, bounds.width, floatingWindowClosedWidth, floatingWindowVisibleWidth),
+      logicalPosition.y,
+    ));
+    dockCollapsedRef.current = true;
+  }
+
+  function scheduleDockCollapse(delay = dockCollapseDelay) {
+    clearDockTimer();
+    if (!canUseSystemWindow || open || !dockSide || dockHoveredRef.current || dockCollapsedRef.current) return;
+    dockTimerRef.current = window.setTimeout(() => {
+      dockTimerRef.current = undefined;
+      void collapseDockedSystemWindow().catch(() => undefined);
+    }, delay);
+  }
+
+  async function revealDockedSystemWindow() {
+    clearDockTimer();
+    if (!canUseSystemWindow || open || !dockSide) return;
+
+    const appWindow = getCurrentWindow();
+    const currentPosition = await appWindow.outerPosition();
+    const scaleFactor = await appWindow.scaleFactor();
+    const logicalPosition = currentPosition.toLogical(scaleFactor);
+    const bounds = getScreenBounds();
+
+    await appWindow.setPosition(new LogicalPosition(
+      revealedDockedX(dockSide, bounds.left, bounds.width, floatingWindowClosedWidth),
+      logicalPosition.y,
+    ));
+    dockCollapsedRef.current = false;
+  }
 
   useEffect(() => {
-    if (!canUseSystemWindow || open || !edgeDocked) return;
-    scheduleDockCollapse(1600);
-    return () => {
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-    };
-  }, [canUseSystemWindow, edgeDocked, open]);
+    if (!canUseSystemWindow) return;
+    const width = open ? expandedWidth : floatingWindowClosedWidth;
+    const height = open ? expandedHeight : floatingWindowClosedHeight;
+    void getCurrentWindow().setSize(new LogicalSize(width, height));
+  }, [canUseSystemWindow, open]);
 
   useEffect(() => {
     if (!canUseSystemWindow || open) return;
-    void getCurrentWindow().outerPosition().then(async (position) => {
-      const scaleFactor = await getCurrentWindow().scaleFactor();
-      const logicalPosition = position.toLogical(scaleFactor);
+    let cancelled = false;
+    const appWindow = getCurrentWindow();
+
+    void appWindow.outerPosition().then(async (currentPosition) => {
+      const scaleFactor = await appWindow.scaleFactor();
+      const logicalPosition = currentPosition.toLogical(scaleFactor);
       const bounds = getScreenBounds();
-      const collapsedLeft = logicalPosition.x < bounds.left;
-      const collapsedRight = logicalPosition.x + floatingWindowClosedWidth > bounds.left + bounds.width;
       const nearLeft = logicalPosition.x <= bounds.left + dockActivationDistance;
       const nearRight = logicalPosition.x + floatingWindowClosedWidth >= bounds.left + bounds.width - dockActivationDistance;
-      setDockSide(nearLeft ? "left" : nearRight ? "right" : null);
-      setIsIdleCollapsed(collapsedLeft || collapsedRight);
+      if (cancelled) return;
+
+      const nextDockSide: DockSide | null = nearLeft ? "left" : nearRight ? "right" : null;
+      dockCollapsedRef.current = Boolean(nextDockSide) && (
+        logicalPosition.x < bounds.left
+        || logicalPosition.x > bounds.left + bounds.width - floatingWindowClosedWidth
+      );
+      setDockSide(nextDockSide);
     }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
   }, [canUseSystemWindow, open]);
+
+  useEffect(() => {
+    if (!canUseSystemWindow || open || !dockSide) {
+      clearDockTimer();
+      return;
+    }
+
+    scheduleDockCollapse();
+    return clearDockTimer;
+  }, [canUseSystemWindow, open, dockSide]);
+
+  useEffect(() => clearDockTimer, []);
+
+  useEffect(() => {
+    if (outputDirectoryTouchedRef.current || !appConfig?.defaultOutputDir) return;
+    setOutputDirectory(appConfig.defaultOutputDir);
+  }, [appConfig?.defaultOutputDir]);
 
   async function settleSystemWindowPosition() {
     if (!canUseSystemWindow) return;
+    clearDockTimer();
     const appWindow = getCurrentWindow();
     const currentPosition = await appWindow.outerPosition();
     const scaleFactor = await appWindow.scaleFactor();
@@ -193,37 +269,13 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     const y = Math.min(Math.max(logicalPosition.y, bounds.top + 8), bounds.top + bounds.height - height - 8);
 
     await appWindow.setPosition(new LogicalPosition(x, y));
+    dockCollapsedRef.current = false;
     setDockSide(nextDockSide);
-    setIsIdleCollapsed(false);
-    setIsIdleDimmed(false);
     window.localStorage.setItem(systemPositionStorageKey, JSON.stringify({ x, y }));
   }
 
-  async function revealDockedSystemWindow() {
-    if (!canUseSystemWindow || open || !edgeDocked) return;
-    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-    const appWindow = getCurrentWindow();
-    const position = await appWindow.outerPosition();
-    const scaleFactor = await appWindow.scaleFactor();
-    const logicalPosition = position.toLogical(scaleFactor);
-    const bounds = getScreenBounds();
-    const side = dockSide ?? resolveDockSide(logicalPosition.x, floatingWindowClosedWidth, bounds);
-    const x = side === "left" ? bounds.left : bounds.left + bounds.width - floatingWindowClosedWidth;
-    await appWindow.setPosition(new LogicalPosition(x, logicalPosition.y));
-    setIsIdleCollapsed(false);
-    setIsIdleDimmed(false);
-  }
-
-  function scheduleDockCollapse(delay = 900) {
-    if (!canUseSystemWindow || open) return;
-    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-    idleTimerRef.current = window.setTimeout(() => {
-      setIsIdleCollapsed(edgeDocked);
-      setIsIdleDimmed(!edgeDocked);
-    }, delay);
-  }
-
   async function openSystemPanelFromBall() {
+    clearDockTimer();
     if (!canUseSystemWindow) {
       setOpen(true);
       return;
@@ -247,30 +299,27 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     }
 
     setOpen(true);
+    dockCollapsedRef.current = false;
     setDockSide(null);
-    setIsIdleCollapsed(false);
-    setIsIdleDimmed(false);
   }
 
   async function startSystemWindowDrag() {
     if (!canUseSystemWindow) return;
+    clearDockTimer();
     const appWindow = getCurrentWindow();
     setDragging(true);
     setDockSide(null);
-    setIsIdleCollapsed(false);
-    setIsIdleDimmed(false);
     try {
       // 使用 Tauri 的原生拖动，窗口移动后指针离开 Webview 时仍能持续拖动。
       await appWindow.startDragging();
     } finally {
       setDragging(false);
-      resetIdleCollapseTimer();
       await settleSystemWindowPosition().catch(() => undefined);
     }
   }
 
   function handleSystemBallPointerDown(event: PointerEvent<HTMLButtonElement>) {
-    resetIdleCollapseTimer();
+    clearDockTimer();
     if (!canUseSystemWindow) {
       setOpen((current) => !current);
       return;
@@ -306,8 +355,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       moved = true;
       setDragging(true);
       setDockSide(null);
-      setIsIdleCollapsed(false);
-      setIsIdleDimmed(false);
       if (positionReady) {
         void appWindow.setPosition(new LogicalPosition(startWindowX + deltaX, startWindowY + deltaY));
       }
@@ -318,7 +365,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       if (moved) {
-        resetIdleCollapseTimer();
         void settleSystemWindowPosition().catch(() => undefined);
         return;
       }
@@ -328,27 +374,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
   }
-
-  function resetIdleCollapseTimer() {
-    if (!systemWindow || open) return;
-    setIsIdleCollapsed(false);
-    setIsIdleDimmed(false);
-    scheduleDockCollapse(2200);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!canUseSystemWindow || open) return;
-    resetIdleCollapseTimer();
-    return () => {
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-    };
-  }, [canUseSystemWindow, open, tasks.length]);
 
   function handlePointerOpenPanel() {
     if (!systemWindow) return;
@@ -361,7 +386,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     void getCurrentWindow().onDragDropEvent(async ({ payload }) => {
       if (payload.type === "enter" || payload.type === "over") {
         setPanelDragging(true);
-        resetIdleCollapseTimer();
+        await revealDockedSystemWindow().catch(() => undefined);
         return;
       }
 
@@ -371,15 +396,15 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       }
 
       setPanelDragging(false);
-      resetIdleCollapseTimer();
-      const markdownPaths = payload.paths.filter((path) => /\.(md|markdown|txt)$/i.test(path));
+      const markdownPaths = payload.paths.filter(isFloatingMarkdownFile);
       if (markdownPaths.length === 0) {
-        showFloatingToast(systemWindow, "error", "请拖入 .md、.markdown 或 .txt 文件");
+        showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
         return;
       }
 
-      setTasks((current) => [...markdownPaths.map(makePathTask), ...current]);
-      showFloatingToast(systemWindow, "success", `已加入 ${markdownPaths.length} 个文本任务`);
+      setCurrentTask(makePathTask(markdownPaths[0]), parentDirectory(markdownPaths[0]));
+      showFloatingToast(systemWindow, "success", markdownPaths.length > 1 ? "一次处理一个文件，已载入第一个 .md 文件" : "已载入 Markdown 文件");
+      await openSystemPanelFromBall();
     }).then((cleanup) => {
       unlisten = cleanup;
     });
@@ -397,7 +422,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
 
   function handleBallPointerDown(event: PointerEvent<HTMLButtonElement>) {
     if (systemWindow) {
-      resetIdleCollapseTimer();
       void startSystemWindowDrag();
       return;
     }
@@ -422,7 +446,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       setDragging(false);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
-      resetIdleCollapseTimer();
       if (!moved) setOpen((current) => !current);
     }
 
@@ -434,32 +457,50 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     setTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
   }
 
-  async function addFiles(files: File[]) {
-    const nextTasks: FloatingTask[] = [];
-    resetIdleCollapseTimer();
-    for (const file of files) {
-      try {
-        const item = await readMarkdownFile(file);
-        nextTasks.push(makeTask(item.name, item.text));
-      } catch (error) {
-        showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, `读取 ${file.name} 失败`));
-      }
-    }
-
-    if (nextTasks.length > 0) {
-      setTasks((current) => [...nextTasks, ...current]);
-      showFloatingToast(systemWindow, "success", `已加入 ${nextTasks.length} 个转换任务`);
+  function setCurrentTask(task: FloatingTask, suggestedDirectory?: string) {
+    setTasks((current) => [task, ...current.filter((item) => item.status === "success" || item.status === "failed")]);
+    if (!outputDirectoryTouchedRef.current) {
+      setOutputDirectory(appConfig?.defaultOutputDir || suggestedDirectory || "");
     }
   }
 
-  async function chooseMarkdownFiles() {
+  async function addFiles(files: File[]) {
+    const markdownFiles = files.filter((file) => isFloatingMarkdownFile(file.name));
+    if (markdownFiles.length === 0) {
+      showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
+      return;
+    }
+
+    const file = markdownFiles[0];
     try {
-      const paths = await selectMarkdownFiles();
-      if (paths.length === 0) return;
-      setTasks((current) => [...paths.map(makePathTask), ...current]);
-      showFloatingToast(systemWindow, "success", `已加入 ${paths.length} 个转换任务`);
+      const item = await readMarkdownFile(file);
+      setCurrentTask(makeTask(item.name, item.text));
+      showFloatingToast(systemWindow, "success", markdownFiles.length > 1 ? "一次处理一个文件，已载入第一个 .md 文件" : "已载入 Markdown 文件");
+      if (systemWindow && !open) await openSystemPanelFromBall();
+    } catch (error) {
+      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, `读取 ${file.name} 失败`));
+    }
+  }
+
+  async function chooseMarkdownFile() {
+    try {
+      const path = await selectMdFile();
+      if (!path) return;
+      setCurrentTask(makePathTask(path), parentDirectory(path));
+      showFloatingToast(systemWindow, "success", "已载入 Markdown 文件");
     } catch (error) {
       showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, "选择文件失败"));
+    }
+  }
+
+  async function chooseOutputDirectory() {
+    try {
+      const path = await selectDirectory("选择导出目录");
+      if (!path) return;
+      outputDirectoryTouchedRef.current = true;
+      setOutputDirectory(path);
+    } catch (error) {
+      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, "选择导出目录失败"));
     }
   }
 
@@ -478,15 +519,31 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setPanelDragging(false);
-    resetIdleCollapseTimer();
     const files = Array.from(event.dataTransfer.files);
     if (files.length > 0) {
       void addFiles(files);
       return;
     }
 
-    showFloatingToast(systemWindow, "error", "请拖入 .md、.markdown 或 .txt 文件");
+    showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
   }
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePaste(event: ClipboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      const text = event.clipboardData?.getData("text/plain").trim();
+      if (!text) return;
+      event.preventDefault();
+      setCurrentTask(makeTask("剪贴板内容.md", text));
+      showFloatingToast(systemWindow, "success", "已载入剪贴板中的 Markdown 内容");
+    }
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [open, systemWindow, appConfig?.defaultOutputDir]);
 
   /// 悬浮球运行在独立 WebviewWindow，自带一份 store 快照。只上传新增项，
   /// 由后端读盘合并，避免把主窗口同期写入的记录整体覆盖掉。
@@ -502,9 +559,10 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
 
   async function convertTask(task: FloatingTask) {
     updateTask(task.id, { status: "running", message: "转换中..." });
-    const outputName = buildDocxOutputName(task.text);
+    const outputName = normalizeFloatingOutputName(task.outputName, floatingOutputName(task.inputPath, task.text));
     const input = task.inputPath?.trim() ? task.inputPath : task.text;
-    const output = task.inputPath?.trim() ? task.inputPath.replace(/\.(md|markdown|txt)$/i, ".docx") : buildOutputPath(appConfig?.defaultOutputDir, outputName);
+    const output = buildOutputPath(outputDirectory, outputName);
+    updateTask(task.id, { outputName });
     const result = await convertMarkdown({
       input,
       inputKind: task.inputPath?.trim() ? "path" : "text",
@@ -532,30 +590,25 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     }
   }
 
-  async function runBatchConvert() {
-    const pendingTasks = tasks.filter((task) => task.status === "pending" || task.status === "failed");
-    if (pendingTasks.length === 0) {
+  async function runConvert() {
+    if (!currentTask || (currentTask.status !== "pending" && currentTask.status !== "failed")) {
       showFloatingToast(systemWindow, "info", "当前没有待转换任务");
+      return;
+    }
+    if (!outputDirectory.trim()) {
+      updateTask(currentTask.id, { status: "failed", message: "请选择导出目录" });
       return;
     }
 
     setIsConverting(true);
     setCurrentTemplateId(activeTemplateId);
-    const results: ConvertResult[] = [];
-    let unexpectedFailureCount = 0;
     try {
-      for (const task of pendingTasks) {
-        try {
-          results.push(await convertTask(task));
-        } catch (error) {
-          unexpectedFailureCount += 1;
-          updateTask(task.id, { status: "failed", message: userFacingErrorMessage(error, "转换失败") });
-        }
-      }
-      await persistHistory(results.map(buildHistoryItem));
-      const failedCount = results.filter((result) => !result.ok).length + unexpectedFailureCount;
-      const warningCount = results.reduce((total, result) => total + actionableConversionWarnings(result.warnings).length, 0);
-      showFloatingToast(systemWindow, failedCount > 0 ? "error" : warningCount > 0 ? "info" : "success", failedCount > 0 ? `批量转换完成，${failedCount} 个失败` : `已完成 ${results.length} 个转换任务${warningCount > 0 ? `，${warningCount} 条提示待检查` : ""}`);
+      const result = await convertTask(currentTask);
+      await persistHistory([buildHistoryItem(result)]);
+      const warningCount = actionableConversionWarnings(result.warnings).length;
+      showFloatingToast(systemWindow, !result.ok ? "error" : warningCount > 0 ? "info" : "success", !result.ok ? "转换失败" : warningCount > 0 ? `转换完成，${warningCount} 条提示待检查` : "转换完成");
+    } catch (error) {
+      updateTask(currentTask.id, { status: "failed", message: userFacingErrorMessage(error, "转换失败") });
     } finally {
       setIsConverting(false);
     }
@@ -569,7 +622,6 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
             ? "fixed left-0 top-0 z-40 h-[500px] w-[380px] overflow-hidden bg-transparent"
             : "fixed left-0 top-0 z-40 flex h-[48px] w-[48px] flex-col items-center justify-center bg-transparent"
           : "fixed z-40",
-        systemWindow && isIdleDimmed && !open && "opacity-55 hover:opacity-100",
       )}
       style={systemWindow
         ? { alignItems: dockSide === "left" ? "flex-start" : dockSide === "right" ? "flex-end" : "center" }
@@ -589,11 +641,10 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               <MdKingLogo className="size-8 shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-slate-950 dark:text-slate-50">转换任务</p>
-                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{tasks.length > 0 ? `${tasks.length} 个文件待转换` : "暂无任务"}</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{tasks.length > 0 ? `${tasks.length} 个转换任务` : "暂无任务"}</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              <GripHorizontal className="size-4 text-slate-400 dark:text-slate-500" aria-hidden="true" />
               <TooltipButton
                 tooltip="收起"
                 type="button"
@@ -618,14 +669,14 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
             >
               <UploadCloud className="mx-auto size-6 text-[var(--app-primary)]" />
               <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">拖入文件</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">.md · .markdown · .txt</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">.md 文件或粘贴 Markdown 内容</p>
               {canUseSystemWindow ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="mt-3 h-7 border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
-                  onClick={() => void chooseMarkdownFiles()}
+                  onClick={() => void chooseMarkdownFile()}
                   disabled={isConverting}
                 >
                   <FolderOpen className="size-3.5" />
@@ -710,9 +761,48 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               )}
             </div>
 
-            <Button className="h-9 w-full shrink-0 bg-sky-600 font-semibold text-white shadow-none hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 dark:bg-sky-500 dark:hover:bg-sky-400" onClick={runBatchConvert} disabled={isConverting || tasks.length === 0}>
+            <div className="grid shrink-0 gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="w-14 shrink-0 text-xs text-slate-500 dark:text-slate-400">导出位置</Label>
+                <div className="relative min-w-0 flex-1">
+                  <Input
+                    className="h-8 cursor-pointer rounded-[6px] bg-white pr-8 text-xs dark:border-slate-700 dark:bg-zinc-900"
+                    value={outputDirectory}
+                    placeholder="选择导出目录"
+                    readOnly
+                    title={outputDirectory || "选择导出目录"}
+                    onClick={() => void chooseOutputDirectory()}
+                  />
+                  <TooltipButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="absolute right-1 top-1 size-6 rounded-[5px] text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
+                    tooltip="选择导出目录"
+                    aria-label="选择导出目录"
+                    onClick={() => void chooseOutputDirectory()}
+                  >
+                    <FolderOpen className="size-3.5" />
+                  </TooltipButton>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="floating-output-name" className="w-14 shrink-0 text-xs text-slate-500 dark:text-slate-400">文件名</Label>
+                <Input
+                  id="floating-output-name"
+                  className="h-8 rounded-[6px] bg-white text-xs dark:border-slate-700 dark:bg-zinc-900"
+                  value={currentTask?.outputName ?? ""}
+                  placeholder="输出文件名.docx"
+                  disabled={!currentTask || isConverting || currentTask.status === "success"}
+                  onChange={(event) => currentTask && updateTask(currentTask.id, { outputName: event.target.value })}
+                  onBlur={() => currentTask && updateTask(currentTask.id, { outputName: normalizeFloatingOutputName(currentTask.outputName, floatingOutputName(currentTask.inputPath, currentTask.text)) })}
+                />
+              </div>
+            </div>
+
+            <Button className="h-9 w-full shrink-0 bg-sky-600 font-semibold text-white shadow-none hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 dark:bg-sky-500 dark:hover:bg-sky-400" onClick={runConvert} disabled={isConverting || !currentTask || currentTask.status === "success" || !outputDirectory.trim() || !currentTask.outputName.trim()}>
               {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-              {isConverting ? "正在转换..." : `开始转换${tasks.length > 0 ? `（${tasks.length}）` : ""}`}
+              {isConverting ? "正在转换..." : "开始转换"}
             </Button>
           </div>
         </div>
@@ -724,46 +814,42 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
             "flex flex-col items-center gap-1 transition",
             panelDragging && "scale-105 opacity-100",
           )}
-          onPointerLeave={() => scheduleDockCollapse(650)}
+          onPointerEnter={() => {
+            dockHoveredRef.current = true;
+            void revealDockedSystemWindow().catch(() => undefined);
+          }}
+          onPointerLeave={() => {
+            dockHoveredRef.current = false;
+            scheduleDockCollapse(650);
+          }}
           onDragOver={(event) => {
             event.preventDefault();
+            clearDockTimer();
             event.dataTransfer.dropEffect = "copy";
             setPanelDragging(true);
-            resetIdleCollapseTimer();
           }}
           onDragLeave={() => setPanelDragging(false)}
           onDrop={(event) => {
             event.preventDefault();
             setPanelDragging(false);
-            resetIdleCollapseTimer();
             const files = Array.from(event.dataTransfer.files);
             if (files.length > 0) {
               void addFiles(files);
               return;
             }
-            showFloatingToast(systemWindow, "error", "请拖入 .md、.markdown 或 .txt 文件");
+            showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
           }}
         >
           <TooltipButton
             type="button"
             className={cn(
-              "relative flex h-11 items-center justify-center overflow-hidden rounded-[13px] transition-[width,opacity,transform,background-color,border-color] duration-200 ease-out hover:scale-[1.03] cursor-grab active:scale-[0.98] active:cursor-grabbing",
-              !systemWindow && "mk-floating-ball",
-              systemWindow && isIdleCollapsed ? "w-3.5" : "w-11",
-              systemWindow && edgeDocked && !isIdleCollapsed && "opacity-85",
-              systemWindow && isIdleCollapsed && dockSide === "left" && "rounded-l-none border border-l-0 border-slate-300/80 bg-white/92 text-slate-600 shadow-md dark:border-zinc-700 dark:bg-zinc-900/92 dark:text-zinc-200",
-              systemWindow && isIdleCollapsed && dockSide === "right" && "rounded-r-none border border-r-0 border-slate-300/80 bg-white/92 text-slate-600 shadow-md dark:border-zinc-700 dark:bg-zinc-900/92 dark:text-zinc-200",
+              "relative flex size-11 items-center justify-center overflow-hidden rounded-[13px] p-0 transition-[opacity,transform] duration-200 ease-out hover:scale-[1.03] hover:bg-transparent cursor-grab active:scale-[0.98] active:cursor-grabbing",
+              systemWindow ? "mk-system-floating-ball" : "mk-floating-ball",
               panelDragging && "scale-105 ring-2 ring-[var(--app-primary)]",
               !enabled && "opacity-80 ring-2 ring-white/80",
               dragging && "scale-105",
             )}
             data-dragging={panelDragging ? "true" : "false"}
-            onPointerEnter={() => {
-              if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-              setIsIdleCollapsed(false);
-              setIsIdleDimmed(false);
-              void revealDockedSystemWindow();
-            }}
             onPointerDown={(event) => {
               if (systemWindow) {
                 handleSystemBallPointerDown(event);
@@ -771,19 +857,11 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               }
               handleBallPointerDown(event);
             }}
-            onClick={() => {
-              if (systemWindow) return;
-              resetIdleCollapseTimer();
-            }}
-            tooltip={systemWindow ? "点击展开；拖动移动；可拖入 Markdown/TXT 文件" : "拖动悬浮球；点击打开批量转换"}
-            aria-label="悬浮球批量转换"
+            tooltip={systemWindow ? "点击展开；拖动移动；可拖入 .md 文件" : "拖动悬浮球；点击打开转换面板"}
+            aria-label="悬浮球转换"
           >
-            {systemWindow && isIdleCollapsed && dockSide ? (
-              dockSide === "right" ? <ChevronsLeft className="size-3.5 shrink-0" /> : <ChevronsRight className="size-3.5 shrink-0" />
-            ) : (
-              <MdKingLogo className="relative z-10 size-11" />
-            )}
-            {tasks.length > 0 && !isIdleCollapsed ? (
+            <MdKingLogo className="relative z-10 size-11" />
+            {tasks.length > 0 ? (
               <span className="absolute -right-1 -top-1 z-20 flex min-w-5 items-center justify-center rounded-full border border-white/90 bg-white px-1.5 py-0.5 text-[10px] font-black leading-none text-slate-950 shadow-lg">
                 {tasks.length > 9 ? "9+" : tasks.length}
               </span>
@@ -796,8 +874,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
                 className="flex size-6 items-center justify-center rounded-[8px] bg-slate-950 text-white shadow-sm disabled:opacity-40 dark:bg-white dark:text-slate-950"
                 tooltip="开始转换"
                 aria-label="开始转换"
-                onClick={() => void runBatchConvert()}
-                disabled={isConverting || tasks.length === 0}
+                onClick={() => void runConvert()}
+                disabled={isConverting || !currentTask || currentTask.status === "success" || !outputDirectory.trim() || !currentTask.outputName.trim()}
               >
                 {isConverting ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
               </TooltipButton>

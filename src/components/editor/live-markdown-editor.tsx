@@ -8,7 +8,7 @@ import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { isSupportedImagePath } from "@/lib/image-files";
 import { cn } from "@/lib/utils";
-import { getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, tableBlockExtension, type TableDisplayContext } from "./cm/live-preview";
+import { getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
@@ -58,7 +58,7 @@ export type LiveMarkdownEditorHandle = {
 
 /** 标记「这次改动来自外部载入而非用户输入」，避免把程序化替换误报成脏数据。 */
 const externalUpdate = Annotation.define<boolean>();
-const linkInteractionVersion = "strict-hitbox-v4";
+const linkInteractionVersion = "strict-hitbox-v6";
 
 function docChangeDebounceMs(length: number): number {
   if (length >= 300_000) return 700;
@@ -268,6 +268,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       mermaidCompartment.of(mermaidBlockExtension(isDark)),
       imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath)),
       tableBlockExtension,
+      tableSyntaxRefreshPlugin,
       tableBlockPasteExtension,
       EditorView.domEventHandlers({
         drop: (event, view) => {
@@ -404,7 +405,12 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     const next = initialContentRef.current;
     activeTableFromRef.current = null;
     if (view.state.doc.toString() === next) {
-      view.dispatch({ effects: resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current) });
+      view.dispatch({
+        effects: [
+          resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
+          resetCalloutCollapsedEffect.of(undefined),
+        ],
+      });
       reportTableContext(null);
       return;
     }
@@ -412,7 +418,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: next },
       selection: { anchor: 0 },
-      effects: resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
+      effects: [
+        resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
+        resetCalloutCollapsedEffect.of(undefined),
+      ],
       annotations: externalUpdate.of(true),
       // 换文件后旧文档的 undo 历史没有意义，撤回过去只会撤出上一个文件的内容。
       // 这里不清历史是刻意的：CM 的 history 会把整段替换当成一步，Ctrl+Z 能整体回退，

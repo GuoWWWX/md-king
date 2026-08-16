@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { ImageIcon, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState, type WheelEvent } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,7 @@ export function requestMediaPreview(request: MediaPreviewRequest) {
   window.dispatchEvent(new CustomEvent<MediaPreviewRequest>(mediaPreviewRequestEvent, { detail: request }));
 }
 
-export function ImageViewer({ src, alt, className }: { src: string; alt?: string; className?: string }) {
+export function ImageViewer({ src, alt, className, paper = false }: { src: string; alt?: string; className?: string; paper?: boolean }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -66,7 +66,7 @@ export function ImageViewer({ src, alt, className }: { src: string; alt?: string
   return (
     <div
       ref={viewportRef}
-      className={cn("min-h-0 min-w-0 bg-slate-50 dark:bg-zinc-900", allowPan ? "overflow-auto" : "overflow-hidden", className)}
+      className={cn("min-h-0 min-w-0", paper ? "bg-white dark:bg-[#202020]" : "bg-slate-50 dark:bg-zinc-900", allowPan ? "overflow-auto" : "overflow-hidden", className)}
       onWheel={handleWheel}
       aria-label={alt ? `${alt}，图片查看器` : "图片查看器"}
     >
@@ -86,11 +86,16 @@ export function ImageViewer({ src, alt, className }: { src: string; alt?: string
   );
 }
 
-export function ImageDocumentViewer({ src, alt }: { src?: string; alt: string }) {
+export function ImageDocumentViewer({ src, alt, path }: { src?: string; alt: string; path?: string }) {
+  const label = path || alt;
   return (
     <section className="mk-card flex h-full min-h-[360px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-[5px] max-[760px]:min-h-[300px]">
-      {src ? <ImageViewer src={src} alt={alt} className="h-full flex-1" /> : (
-        <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-slate-50 text-slate-400 dark:bg-zinc-900 dark:text-zinc-500">
+      <header className="flex h-8 shrink-0 min-w-0 items-center gap-1.5 border-b border-slate-200 px-3 text-xs dark:border-zinc-800">
+        <ImageIcon className="size-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
+        <span className="truncate font-semibold text-slate-700 dark:text-zinc-200" title={label}>{label}</span>
+      </header>
+      {src ? <ImageViewer src={src} alt={alt} paper className="h-full flex-1" /> : (
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-white text-slate-400 dark:bg-[#202020] dark:text-zinc-500">
           <Loader2 className="size-5 animate-spin" aria-label="正在加载图片" />
         </div>
       )}

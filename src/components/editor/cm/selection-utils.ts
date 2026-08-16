@@ -33,6 +33,15 @@ export function selectionTouches(state: EditorState, from: number, to: number, p
   return false;
 }
 
+/** 非空选区只要覆盖目标的任意部分即视为相交，供链接这类需要直接修改源码的内联对象使用。 */
+export function selectionIntersectsRange(state: EditorState, from: number, to: number): boolean {
+  const start = Math.max(0, Math.min(from, state.doc.length));
+  const end = Math.max(start, Math.min(to, state.doc.length));
+  if (start === end) return false;
+
+  return state.selection.ranges.some((range) => !range.empty && range.from < end && range.to > start);
+}
+
 /**
  * 行粒度判定：光标落在该节点覆盖的**任意一行**上，就整块还原成源码。
  *
@@ -71,6 +80,32 @@ export function selectionCoversRange(state: EditorState, from: number, to: numbe
   if (start === end) return false;
 
   return state.selection.ranges.some((range) => !range.empty && range.from <= start && range.to >= end);
+}
+
+/** 将文档选区覆盖到的 Markdown 表格源码行映射为渲染表格行。GFM 分隔行不对应可见行。 */
+export function selectedMarkdownTableRows(state: EditorState, from: number, to: number): number[] {
+  if (state.selection.ranges.every((range) => range.empty)) return [];
+
+  const start = Math.max(0, Math.min(from, state.doc.length));
+  const end = Math.max(start, Math.min(to, state.doc.length));
+  if (start === end) return [];
+
+  const selected = new Set<number>();
+  let sourceLineIndex = 0;
+  let line = state.doc.lineAt(start);
+  while (line.from < end) {
+    if (sourceLineIndex !== 1) {
+      const renderedRow = sourceLineIndex === 0 ? 0 : sourceLineIndex - 1;
+      if (state.selection.ranges.some((range) => !range.empty && range.from < line.to && range.to > line.from)) {
+        selected.add(renderedRow);
+      }
+    }
+    sourceLineIndex += 1;
+    if (line.number >= state.doc.lines) break;
+    line = state.doc.line(line.number + 1);
+  }
+
+  return [...selected].sort((left, right) => left - right);
 }
 
 /** 光标是否落在指定行号（1-based）上，供逐行装饰的代码块 / 引用使用。 */

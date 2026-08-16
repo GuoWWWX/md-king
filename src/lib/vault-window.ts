@@ -29,6 +29,11 @@ export function vaultProjectWindowRoot(search: string) {
   return root || undefined;
 }
 
+export function restorableVaultRoot(projectRoot: string | undefined, currentRoot: string | undefined, configuredRoot: string | undefined, recentVaults: string[]) {
+  if (projectRoot || currentRoot) return undefined;
+  return configuredRoot?.trim() || recentVaults.find((root) => root.trim())?.trim();
+}
+
 function isTauriWindowRuntime() {
   if (typeof window === "undefined") return false;
   const tauriWindow = window as Window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };

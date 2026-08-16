@@ -10,10 +10,43 @@ export type ObsidianWikilinkMatch = ObsidianWikilink & {
   to: number;
   displayFrom: number;
   displayTo: number;
+  /** 编辑器渲染态使用的文字；无别名双链默认只显示文件名。 */
+  displayLabel: string;
 };
 
 export function isExternalDocumentLink(target: string) {
   return /^(?:https?:|mailto:)/i.test(target.trim());
+}
+
+function wikilinkPathPart(target: string) {
+  return target.trim().split("#", 1)[0].split("?", 1)[0].replace(/\\/g, "/");
+}
+
+/** `[[目录/文件.md]]` 在编辑器中默认展示为 `文件`，避免路径撑满整行。 */
+export function defaultObsidianWikilinkLabel(target: string) {
+  const value = target.trim();
+  if (!value || value.startsWith("#") || isExternalDocumentLink(value)) return value;
+
+  const path = wikilinkPathPart(value);
+  const parts = path.split("/").filter(Boolean);
+  const fileName = parts[parts.length - 1];
+  return fileName ? fileName.replace(/\.md$/i, "") : value;
+}
+
+/**
+ * 双链仅面向 Markdown 文档。未写扩展名时保留为可解析的 Markdown 候选，
+ * 显式写出的其他扩展名则在编辑器中标红。
+ */
+export function isMarkdownWikilinkTarget(target: string) {
+  const value = target.trim();
+  if (!value || value.startsWith("#") || isExternalDocumentLink(value)) return true;
+
+  const path = wikilinkPathPart(value);
+  if (!path || path.endsWith("/")) return false;
+  const parts = path.split("/").filter(Boolean);
+  const fileName = parts[parts.length - 1] ?? "";
+  const extension = /\.[^.]+$/.exec(fileName)?.[0];
+  return !extension || extension.toLocaleLowerCase() === ".md";
 }
 
 function isEscapedAt(source: string, index: number) {
@@ -69,14 +102,23 @@ export function findObsidianWikilinks(source: string): ObsidianWikilinkMatch[] {
     }
 
     const separator = source.indexOf("|", from + 2);
-    const displayRange = separator >= from + 2 && separator < close
+    const hasExplicitLabel = separator >= from + 2 && separator < close;
+    const targetRange = trimmedRange(source, from + 2, hasExplicitLabel ? separator : close);
+    const explicitLabelRange = hasExplicitLabel
       ? trimmedRange(source, separator + 1, close)
-      : trimmedRange(source, from + 2, close);
+      : undefined;
+    const displayLabel = hasExplicitLabel ? parsed.label : defaultObsidianWikilinkLabel(parsed.target);
+    const labelOffset = hasExplicitLabel
+      ? 0
+      : source.slice(targetRange.from, targetRange.to).lastIndexOf(displayLabel);
+    const displayRange = explicitLabelRange ?? (labelOffset >= 0
+      ? { from: targetRange.from + labelOffset, to: targetRange.from + labelOffset + displayLabel.length }
+      : targetRange);
     if (displayRange.from >= displayRange.to) {
       cursor = to;
       continue;
     }
-    matches.push({ ...parsed, from, to, displayFrom: displayRange.from, displayTo: displayRange.to });
+    matches.push({ ...parsed, from, to, displayFrom: displayRange.from, displayTo: displayRange.to, displayLabel });
     cursor = to;
   }
   return matches;

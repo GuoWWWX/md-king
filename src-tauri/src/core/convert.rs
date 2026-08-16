@@ -2558,6 +2558,10 @@ fn normalize_docx(
                     .map_err(|error| format!("解析 numbering.xml 失败：{error}"))?;
                 data = ensure_heading_numbering_xml(&xml, heading_numbering).into_bytes();
             }
+        } else if name == "word/settings.xml" {
+            let xml = String::from_utf8(data)
+                .map_err(|error| format!("解析 settings.xml 失败：{error}"))?;
+            data = ensure_toc_fields_update_on_open(&xml, page_settings).into_bytes();
         }
         if name == "[Content_Types].xml" {
             has_content_types_xml = true;
@@ -3207,6 +3211,29 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
     ensure_page_break_after_toc(&xml)
 }
 
+fn ensure_toc_fields_update_on_open(
+    xml: &str,
+    page_settings: Option<&PageSettingsConfig>,
+) -> String {
+    if !page_settings.is_some_and(|settings| settings.toc_enabled) {
+        return xml.to_string();
+    }
+
+    let update_fields = Regex::new(r#"(?s)<w:updateFields\b[^>]*(?:/>|>.*?</w:updateFields>)"#)
+        .expect("valid updateFields regex");
+    if update_fields.is_match(xml) {
+        return update_fields
+            .replace(xml, r#"<w:updateFields w:val="true" />"#)
+            .to_string();
+    }
+
+    xml.replacen(
+        "</w:settings>",
+        "<w:updateFields w:val=\"true\" /></w:settings>",
+        1,
+    )
+}
+
 fn ensure_page_break_after_toc(xml: &str) -> String {
     let toc = Regex::new(
         r#"(?s)(<w:sdt>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>.*?</w:sdt>)(\s*)(<w:p><w:r><w:br w:type="page" /></w:r></w:p>)?"#,
@@ -3573,12 +3600,23 @@ fn normalize_template_style_xml(
 
     // 用户没保存过样式时，标题仍要对齐前端展示的默认值。
     if let Some(style_id) = word_style_id.as_deref() {
-        if let Some((align, half_points)) = default_heading_style_overrides(&style_id) {
-            return apply_exact_line_height_to_style_xml(&apply_default_heading_style(
+        if let Some((align, half_points, chinese_font, before, after, line)) =
+            default_heading_style_overrides(&style_id)
+        {
+            let normalized = apply_default_heading_style(
                 style_xml,
                 align,
                 half_points,
-            ));
+                chinese_font,
+                before,
+                after,
+                line,
+            );
+            return if heading_uses_exact_line_height(&style_id) {
+                apply_exact_line_height_to_style_xml(&normalized)
+            } else {
+                normalized
+            };
         }
     }
 
@@ -3627,22 +3665,26 @@ fn normalize_default_report_style_xml(
 /// 内置模板在「用户从未保存过样式配置」时的标题默认值。
 ///
 /// 这些值必须和前端 createDefaultStyleDraft 保持一致。不补这一层的话，
-/// reference.docx 里的原始定义会直接生效——那份文件里 Heading1 是
-/// jc=center、sz=40，而模板界面上「一级标题」显示的是左对齐 22pt，
+/// reference.docx 里的原始定义会直接生效——那份文件里的 Title 是
+/// 微软雅黑 20pt，Heading1 也是旧字号，与模板界面展示不一致，
 /// 用户改都没改就已经不一致了。
 ///
-/// 只纠正对齐和字号两项，其余（keepNext、spacing、outlineLvl、字体、颜色）
+/// 只纠正对齐、字号和中文字体，其余（keepNext、spacing、outlineLvl、颜色）
 /// 保留 reference.docx 的定义——整段替换 pPr 会把大纲级别一起丢掉，
 /// 那会让 Word 的导航窗格失效。
-fn default_heading_style_overrides(style_id: &str) -> Option<(&'static str, u32)> {
+fn default_heading_style_overrides(
+    style_id: &str,
+) -> Option<(&'static str, u32, &'static str, u32, u32, u32)> {
     match style_id {
-        // (对齐, 字号的 half-point 值)
-        "Heading1" => Some(("left", 44)),
-        "Heading2" => Some(("left", 36)),
-        "Heading3" => Some(("left", 32)),
-        "Heading4" => Some(("left", 30)),
-        "Heading5" => Some(("left", 28)),
-        "Heading6" => Some(("left", 24)),
+        // (对齐, 字号 half-point, 中文字体, 段前, 段后, 精确行距；后 3 项单位均为 twips)
+        // 必须与前端 createDefaultTemplateStyleConfig("default-report") 一致。
+        "Title" => Some(("center", 36, "宋体", 0, 480, 486)),
+        "Heading1" => Some(("left", 32, "宋体", 360, 200, 432)),
+        "Heading2" => Some(("left", 30, "宋体", 360, 200, 405)),
+        "Heading3" => Some(("left", 28, "宋体", 240, 120, 378)),
+        "Heading4" => Some(("left", 24, "宋体", 240, 120, 324)),
+        "Heading5" => Some(("left", 21, "宋体", 240, 120, 284)),
+        "Heading6" => Some(("left", 18, "宋体", 240, 120, 243)),
         _ => None,
     }
 }
@@ -3664,40 +3706,65 @@ fn apply_exact_line_height_to_style_xml(style_xml: &str) -> String {
         .to_string()
 }
 
-/// 把标题样式的对齐与字号纠正到前端默认值。
-fn apply_default_heading_style(style_xml: &str, align: &str, half_points: u32) -> String {
+/// 把标题样式的对齐、字号与中文字体纠正到前端默认值。
+fn apply_default_heading_style(
+    style_xml: &str,
+    align: &str,
+    half_points: u32,
+    chinese_font: &str,
+    before_spacing: u32,
+    after_spacing: u32,
+    line_spacing: u32,
+) -> String {
     // 两种写法都要吃下：自闭合的 <w:pPr ... /> 和成对的 <w:pPr ...>...</w:pPr>。
     // 写成一个 [^>]*(?:/>|>...) 的形式在无属性的 <w:pPr> 上会失配。
     let paragraph_re = Regex::new(r#"(?s)<w:pPr\b[^>]*/>|<w:pPr\b[^>]*>.*?</w:pPr>"#)
         .expect("valid style paragraph regex");
+    let paragraph_properties = format!(
+        r#"<w:pPr>{}<w:spacing w:before="{before_spacing}" w:after="{after_spacing}" w:line="{line_spacing}" w:lineRule="exact" /><w:jc w:val="{align}" /><w:ind w:firstLine="0" /></w:pPr>"#,
+        preserved_style_paragraph_flow_xml(style_xml),
+    );
     let aligned = if let Some(found) = paragraph_re.find(style_xml) {
-        let replaced = align_paragraph_properties(found.as_str(), align);
         format!(
             "{}{}{}",
             &style_xml[..found.start()],
-            replaced,
+            paragraph_properties,
             &style_xml[found.end()..]
         )
     } else {
         style_xml.replace(
             "</w:style>",
-            &format!(r#"<w:pPr><w:jc w:val="{align}" /></w:pPr></w:style>"#),
+            &format!("{paragraph_properties}</w:style>"),
         )
     };
 
-    // sz 和 szCs 要一起改：只改 sz 会让 Word 里的西文与中文字号不一致。
-    let sz_re = Regex::new(r#"<w:sz w:val="\d+" />"#).expect("valid size regex");
-    let sz_cs_re = Regex::new(r#"<w:szCs w:val="\d+" />"#).expect("valid complex size regex");
-    let with_size = sz_re.replace(
-        &aligned,
-        format!(r#"<w:sz w:val="{half_points}" />"#).as_str(),
+    let run_properties =
+        Regex::new(r#"(?s)<w:rPr\b[^>]*/>|<w:rPr\b[^>]*>.*?</w:rPr>"#)
+            .expect("valid style run property regex");
+    let defaults = format!(
+        r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="{chinese_font}" /><w:sz w:val="{half_points}" /><w:szCs w:val="{half_points}" />"#
     );
-    sz_cs_re
-        .replace(
-            &with_size,
-            format!(r#"<w:szCs w:val="{half_points}" />"#).as_str(),
-        )
-        .to_string()
+    if let Some(found) = run_properties.find(&aligned) {
+        let removable = Regex::new(r#"<w:(?:rFonts|sz|szCs)\b[^>]*/>"#)
+            .expect("valid default heading run cleanup regex");
+        let existing = found.as_str();
+        let inner = if existing.ends_with("/>") {
+            String::new()
+        } else {
+            existing
+                .split_once('>')
+                .and_then(|(_, tail)| tail.strip_suffix("</w:rPr>"))
+                .map(|value| removable.replace_all(value, "").to_string())
+                .unwrap_or_default()
+        };
+        return format!(
+            "{}<w:rPr>{defaults}{inner}</w:rPr>{}",
+            &aligned[..found.start()],
+            &aligned[found.end()..]
+        );
+    }
+
+    aligned.replace("</w:style>", &format!("<w:rPr>{defaults}</w:rPr></w:style>"))
 }
 
 fn capture_style_id(style_xml: &str) -> Option<String> {
@@ -3723,7 +3790,7 @@ fn normalize_text_style_xml(style_xml: &str, style: &TextStyleConfig) -> String 
 
 fn preserved_style_paragraph_flow_xml(style_xml: &str) -> String {
     let paragraph_properties =
-        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid style paragraph regex");
+        Regex::new(r#"(?s)<w:pPr\b[^>]*>(.*?)</w:pPr>"#).expect("valid style paragraph regex");
     let Some(properties) = paragraph_properties
         .captures(style_xml)
         .and_then(|captures| captures.get(1))
@@ -5252,7 +5319,12 @@ fn strip_heading_number_prefix(text: &str) -> String {
         r#"^\s*(?:\d+(?:\.\d+)*[\.、．]?\s+|[一二三四五六七八九十百千万]+[、.．]\s*|第[一二三四五六七八九十百千万]+[章节篇]\s*)"#,
     )
     .expect("valid heading number prefix regex");
-    prefix.replace(text, "").to_string()
+    let stripped = prefix.replace(text, "").to_string();
+    if stripped.trim().is_empty() {
+        text.to_string()
+    } else {
+        stripped
+    }
 }
 
 fn ensure_paragraph_numbering(paragraph_xml: &str, level: usize) -> String {
@@ -5297,30 +5369,30 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
         cell_padding_x: 10.0,
         cell_padding_y: 8.0,
         min_row_height: 28.0,
-        row_stripe: true,
+        row_stripe: false,
         cell_wrap: true,
         repeat_header_on_each_page: true,
         header: TableCellStyleConfig {
             chinese_font: "微软雅黑".to_string(),
             latin_font: "Times New Roman".to_string(),
-            font_size: 11.0,
+            font_size: 10.5,
             bold: true,
             color: "111827".to_string(),
-            background_color: "EEF2FF".to_string(),
+            background_color: "FFFFFF".to_string(),
             horizontal_align: "center".to_string(),
             vertical_align: "middle".to_string(),
             line_height: 1.4,
-            border_color: "A5B4FC".to_string(),
+            border_color: "CBD5E1".to_string(),
             border_width: 1.0,
         },
         body: TableCellStyleConfig {
             chinese_font: "微软雅黑".to_string(),
             latin_font: "Times New Roman".to_string(),
-            font_size: 10.0,
+            font_size: 10.5,
             bold: false,
             color: "111827".to_string(),
             background_color: "FFFFFF".to_string(),
-            horizontal_align: "center".to_string(),
+            horizontal_align: "left".to_string(),
             vertical_align: "middle".to_string(),
             line_height: 1.5,
             border_color: "CBD5E1".to_string(),
@@ -5955,17 +6027,18 @@ mod tests {
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_report_heading_numbering_config, document_style_config_from_value,
-        footer_page_number_xml, has_supported_text_extension, heading_numbering_config_from_value,
-        image_style_config_from_value, mark_task_list_paragraphs,
-        markdown_feature_config_from_value, normalize_default_report_styles_xml,
-        normalize_document_captions, normalize_document_images, normalize_document_xml,
-        normalize_docx, normalize_template_style_xml, normalize_template_styles_xml,
-        page_content_width_twips, page_settings_config_from_value,
-        pandoc_document_options_from_value, paragraph_shading_xml,
+        ensure_toc_fields_update_on_open, footer_page_number_xml, has_supported_text_extension,
+        heading_numbering_config_from_value, image_style_config_from_value,
+        mark_task_list_paragraphs, markdown_feature_config_from_value,
+        normalize_default_report_styles_xml, normalize_document_captions,
+        normalize_document_images, normalize_document_xml, normalize_docx,
+        normalize_template_style_xml, normalize_template_styles_xml, page_content_width_twips,
+        page_settings_config_from_value, pandoc_document_options_from_value, paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
-        read_style_fill, table_column_widths, table_column_widths_for_xml,
-        table_style_config_from_value, task_list_markers_from_numbering_xml, ConvertRequest,
-        HeadingNumberingConfig, HeadingTarget, MarkdownFeatureConfig,
+        read_style_fill, strip_heading_number_prefix, table_column_widths,
+        table_column_widths_for_xml, table_style_config_from_value,
+        task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
+        HeadingTarget, MarkdownFeatureConfig,
     };
     use regex::Regex;
     use serde_json::json;
@@ -6039,15 +6112,20 @@ mod tests {
         assert!(output.contains(r#"<w:gridCol w:w="8640" />"#));
         assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="8640" />"#));
         assert!(output.contains(r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#));
-        assert!(output.contains(r#"w:fill="EEF2FF""#));
-        assert!(output.contains(r#"<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF" />"#));
-        assert!(output.contains(r#"<w:jc w:val="center" />"#));
+        assert!(!output.contains(r#"w:fill="EEF2FF""#));
+        assert_eq!(
+            output
+                .matches(r#"<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF" />"#)
+                .count(),
+            2
+        );
+        assert!(output.contains(r#"<w:jc w:val="left" />"#));
         assert!(output.contains(r#"<w:vAlign w:val="center" />"#));
-        assert!(output.contains(r#"<w:b /><w:bCs /><w:sz w:val="22" /><w:szCs w:val="22" />"#));
+        assert!(output.contains(r#"<w:b /><w:bCs /><w:sz w:val="21" /><w:szCs w:val="21" />"#));
         assert!(output.contains(
-            r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="20" /><w:szCs w:val="20" />"#
+            r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="21" /><w:szCs w:val="21" />"#
         ));
-        assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 3);
+        assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 2);
         assert!(output.contains(r#"<w:tblHeader w:val="on" />"#));
         assert_eq!(output.matches("<w:cantSplit />").count(), 2);
     }
@@ -6934,6 +7012,37 @@ mod tests {
     }
 
     #[test]
+    fn marks_enabled_toc_fields_for_update_on_open() {
+        let enabled = page_settings_config_from_value(&json!({
+            "pageSettings": { "tocEnabled": true }
+        }))
+        .unwrap();
+        let existing = r#"<w:settings><w:updateFields w:val="false" /></w:settings>"#;
+        let output = ensure_toc_fields_update_on_open(existing, Some(&enabled));
+
+        assert_eq!(
+            output.matches(r#"<w:updateFields w:val="true" />"#).count(),
+            1
+        );
+
+        let disabled = page_settings_config_from_value(&json!({
+            "pageSettings": { "tocEnabled": false }
+        }))
+        .unwrap();
+        assert_eq!(
+            ensure_toc_fields_update_on_open(existing, Some(&disabled)),
+            existing
+        );
+    }
+
+    #[test]
+    fn preserves_standalone_manual_heading_number() {
+        assert_eq!(strip_heading_number_prefix("第一章"), "第一章");
+        assert_eq!(strip_heading_number_prefix("第一章 项目概览"), "项目概览");
+        assert_eq!(strip_heading_number_prefix("2. 范围"), "范围");
+    }
+
+    #[test]
     fn applies_toc_field_options_and_page_number_start() {
         let input = r#"<w:document><w:body><w:p><w:fldSimple w:instr="TOC \o &quot;1-3&quot; \h \z \u"><w:r><w:t>目录</w:t></w:r></w:fldSimple></w:p><w:sectPr><w:pgSz w:w="1" w:h="2" /></w:sectPr></w:body></w:document>"#;
         let settings = page_settings_config_from_value(&json!({
@@ -7751,9 +7860,8 @@ mod tests {
 
         let _ = fs::remove_file(path);
     }
-    /// reference.docx 里 Heading1 是 jc=center、sz=40，而模板界面上
-    /// 「一级标题」显示的是左对齐 22pt。不补默认值的话，用户什么都没改
-    /// 就已经预览左对齐、导出居中了。
+    /// reference.docx 里的 Title 和 Heading1 仍是旧字体字号。不补默认值的话，
+    /// 用户什么都没改就已经出现预览和导出不一致。
     #[test]
     fn heading_styles_fall_back_to_frontend_defaults() {
         let heading1 = r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1" /><w:pPr><w:keepNext /><w:outlineLvl w:val="0" /><w:spacing w:line="324" w:lineRule="auto" /><w:jc w:val="center" /></w:pPr><w:rPr><w:sz w:val="40" /><w:szCs w:val="40" /></w:rPr></w:style>"#;
@@ -7770,12 +7878,16 @@ mod tests {
             "不应残留居中"
         );
         assert!(
-            normalized.contains(r#"<w:sz w:val="44" />"#),
-            "字号应纠正为 22pt"
+            normalized.contains(r#"<w:sz w:val="32" />"#),
+            "字号应纠正为三号 16pt"
         );
         assert!(
-            normalized.contains(r#"<w:szCs w:val="44" />"#),
+            normalized.contains(r#"<w:szCs w:val="32" />"#),
             "复杂文本字号要一起改"
+        );
+        assert!(
+            normalized.contains(r#"w:eastAsia="宋体""#),
+            "中文字体应纠正为宋体"
         );
         // 大纲级别不能被顺手抹掉，否则 Word 的导航窗格会失效。
         assert!(
@@ -7783,10 +7895,20 @@ mod tests {
             "应保留大纲级别"
         );
         assert!(normalized.contains("<w:keepNext />"), "应保留段中不分页");
-        assert!(
-            normalized.contains(r#"<w:spacing w:line="324" w:lineRule="exact" />"#),
-            "标题行距应与浏览器的精确行框一致"
-        );
+        assert!(normalized.contains(
+            r#"<w:spacing w:before="360" w:after="200" w:line="432" w:lineRule="exact" />"#
+        ));
+        assert!(normalized.contains(r#"<w:ind w:firstLine="0" />"#));
+
+        let title = r#"<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title" /><w:pPr><w:jc w:val="left" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:b /><w:sz w:val="40" /><w:szCs w:val="40" /></w:rPr></w:style>"#;
+        let normalized_title = normalize_template_style_xml(title, &features, None, false);
+        assert!(normalized_title.contains(r#"<w:jc w:val="center" />"#));
+        assert!(normalized_title.contains(r#"w:eastAsia="宋体""#));
+        assert!(normalized_title.contains(r#"<w:sz w:val="36" />"#));
+        assert!(normalized_title.contains("<w:b />"), "标题原有加粗设置应保留");
+        assert!(normalized_title.contains(
+            r#"<w:spacing w:before="0" w:after="480" w:line="486" w:lineRule="exact" />"#
+        ));
     }
 
     #[test]

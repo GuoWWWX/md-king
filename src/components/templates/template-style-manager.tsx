@@ -1,5 +1,5 @@
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, FileText, Heading, ImageIcon, ListTree, Minus, Palette, Pilcrow, Quote, Search, SlidersHorizontal, Table2, Upload, X, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { WordColorPicker } from "@/components/ui/word-color-picker";
+import { WordFontPicker } from "@/components/ui/word-font-picker";
 import { WordFontSizeSelect } from "@/components/ui/word-font-size-select";
 import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
@@ -17,6 +18,7 @@ import { borderStyleOptions, captionNumberFormatOptions, captionPositionOptions,
 import { getTemplateStyleConfig, resetTemplateStyleConfig, saveTemplateStyleConfig, selectDocxFile } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
+import { wordFontOptions } from "@/lib/word-font-options";
 import type { HorizontalAlign, MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, Template, TemplateStyleConfig, VerticalAlign, WordHeadingTarget } from "@/types";
 
 type TemplateStyleManagerProps = {
@@ -295,6 +297,9 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [zoom, setZoom] = useState(60);
+  const [previewWidth, setPreviewWidth] = useState(420);
+  const [previewMaxWidth, setPreviewMaxWidth] = useState(540);
+  const stylesLayoutRef = useRef<HTMLDivElement>(null);
   const [activeListLevel, setActiveListLevel] = useState<(typeof listLevelOptions)[number]>(1);
   const tabsNavRef = useRef<HTMLElement | null>(null);
   const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -313,11 +318,30 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
   ));
   const hasChanges = styleHasChanges || metadataHasChanges;
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    const layout = stylesLayoutRef.current;
+    if (!layout || activeTab !== "styles") return undefined;
+
+    const updatePreviewWidthLimit = () => {
+      const navigationWidth = layout.clientWidth >= 1536 ? 270 : 240;
+      const available = layout.clientWidth - navigationWidth - 420;
+      const nextMax = Math.max(320, Math.min(720, available));
+      setPreviewMaxWidth(nextMax);
+    };
+
+    updatePreviewWidthLimit();
+    if (!window.ResizeObserver) return undefined;
+    const observer = new ResizeObserver(updatePreviewWidthLimit);
+    observer.observe(layout);
+    return () => observer.disconnect();
+  }, [activeTab]);
   const filteredNodes = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     if (!keyword) return styleNodes;
     return styleNodes.filter((node) => [node.name, node.displayName, node.markdown, node.description].join(" ").toLowerCase().includes(keyword));
   }, [query]);
+  const renderedPreviewWidth = Math.min(previewWidth, previewMaxWidth);
 
   function groupedNodes(group: StyleGroupKey) {
     return filteredNodes.filter((node) => node.group === group);
@@ -658,14 +682,18 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
             </TabScrollArea>
           ) : null}
           {activeTab === "styles" ? (
-            <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto @min-[720px]/style-editor:grid @min-[720px]/style-editor:grid-cols-[300px_minmax(0,1fr)] @min-[720px]/style-editor:grid-rows-[minmax(560px,58vh)_minmax(520px,1fr)] @min-[1280px]/style-editor:grid-cols-[240px_minmax(420px,1fr)_minmax(320px,420px)] @min-[1280px]/style-editor:grid-rows-[minmax(0,1fr)] @min-[1280px]/style-editor:overflow-x-hidden @min-[1280px]/style-editor:overflow-y-hidden @min-[1536px]/style-editor:grid-cols-[270px_minmax(620px,1fr)_minmax(460px,540px)]">
+            <div
+              ref={stylesLayoutRef}
+              className="flex h-full min-h-0 w-full flex-col overflow-y-auto @min-[720px]/style-editor:grid @min-[720px]/style-editor:grid-cols-[300px_minmax(0,1fr)] @min-[720px]/style-editor:grid-rows-[minmax(560px,58vh)_minmax(520px,1fr)] @min-[1280px]/style-editor:grid-cols-[240px_minmax(420px,1fr)_var(--style-preview-width)] @min-[1280px]/style-editor:grid-rows-[minmax(0,1fr)] @min-[1280px]/style-editor:overflow-x-hidden @min-[1280px]/style-editor:overflow-y-hidden @min-[1536px]/style-editor:grid-cols-[270px_minmax(620px,1fr)_var(--style-preview-width)]"
+              style={{ "--style-preview-width": `${renderedPreviewWidth}px` } as CSSProperties}
+            >
               <StyleNavigation query={query} setQuery={setQuery} groupedNodes={groupedNodes} activeStyleId={activeStyleId} setActiveStyleId={setActiveStyleId} />
               {isDocumentStructureSelection ? (
                 <DocumentStructureProperties selection={activeStyleId} pageSettings={styleConfig.pageSettings} patchPageSettings={patchPageSettings} />
               ) : (
                 <StyleProperties selectedStyle={selectedStyle} setActiveStyleId={setActiveStyleId} draft={currentDraft} bodyDraft={styleConfig.styles.normal ?? createDefaultStyleDraft("normal")} markdownFeatures={styleConfig.markdownFeatures} markdownRules={styleConfig.markdownRules} activeListLevel={activeListLevel} setActiveListLevel={setActiveListLevel} updateDraft={updateDraft} patchDraft={patchDraft} patchMarkdownFeatures={patchMarkdownFeatures} isLoading={isLoading} />
               )}
-              <PreviewColumn selectedStyle={isDocumentStructureSelection ? undefined : selectedStyle} styleConfig={styleConfig} zoom={zoom} setZoom={setZoom} markdown={previewMarkdown} markdownSourcePath={previewMarkdownSourcePath} />
+              <PreviewColumn selectedStyle={isDocumentStructureSelection ? undefined : selectedStyle} styleConfig={styleConfig} zoom={zoom} setZoom={setZoom} width={renderedPreviewWidth} maxWidth={previewMaxWidth} setWidth={setPreviewWidth} markdown={previewMarkdown} markdownSourcePath={previewMarkdownSourcePath} />
             </div>
           ) : null}
           {activeTab === "page" ? <TabScrollArea><PageSettingsPanel pageSettings={styleConfig.pageSettings} patchPageSettings={patchPageSettings} /></TabScrollArea> : null}
@@ -1185,8 +1213,8 @@ function StyleProperties({
 
         {!isTableRoot && !isImage && !isHorizontalRule ? <PropertyCard title={isHeadingStyle ? `文本属性（当前 ${activeHeadingLevelLabel}）` : isList ? `文本属性（当前 ${activeListLevel} 级）` : isInlineCode ? "行内代码样式" : isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="中文字体"><Select value={draft[chineseFontKey] as string} onValueChange={(value) => updateDraft(chineseFontKey, value)}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="微软雅黑">微软雅黑</SelectItem><SelectItem value="Microsoft YaHei UI">Microsoft YaHei UI</SelectItem><SelectItem value="宋体">宋体</SelectItem><SelectItem value="思源黑体">思源黑体</SelectItem><SelectItem value="仿宋">仿宋</SelectItem></SelectContent></Select></Field>
-            <Field label="英文字体"><Select value={draft[latinFontKey] as string} onValueChange={(value) => updateDraft(latinFontKey, value)}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Times New Roman">Times New Roman</SelectItem><SelectItem value="Inter">Inter</SelectItem><SelectItem value="Arial">Arial</SelectItem><SelectItem value="Consolas">Consolas</SelectItem><SelectItem value="Cascadia Mono">Cascadia Mono</SelectItem><SelectItem value="JetBrains Mono">JetBrains Mono</SelectItem></SelectContent></Select></Field>
+            <Field label="中文字体"><WordFontPicker value={draft[chineseFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(chineseFontKey, value)} /></Field>
+            <Field label="英文字体"><WordFontPicker value={draft[latinFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(latinFontKey, value)} /></Field>
             {!isList && (!isTableNode || isTableCaption) ? <Field label="字号"><WordFontSizeSelect value={draft[fontSizeKey] as number} onChange={(value) => updateDraft(fontSizeKey, value)} /></Field> : null}
             <Field label="文字颜色"><WordColorPicker value={draft[colorKey] as string} onChange={(value) => updateDraft(colorKey, value)} autoColor="#111827" /></Field>
             {(!isTableNode || isTableCaption) ? (
@@ -1195,7 +1223,7 @@ function StyleProperties({
                   <TooltipButton
                     type="button"
                     className={cn(
-                      "flex items-center justify-center border-r border-slate-200 text-base font-black transition dark:border-zinc-700",
+                      "h-full w-full min-h-0 rounded-none border-r border-slate-200 text-base font-black transition dark:border-zinc-700",
                       Number(draft[fontWeightKey]) >= 600 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
                     )}
                     aria-label="加粗"
@@ -1206,7 +1234,7 @@ function StyleProperties({
                     B
                   </TooltipButton>
                   <Select value={draft[fontWeightKey] as string} onValueChange={(value) => updateDraft(fontWeightKey, value)}>
-                    <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-none border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-full w-full self-stretch data-[size=default]:h-full rounded-none border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {fontWeightOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
@@ -1509,16 +1537,69 @@ function formatPaperPreviewLabel(pageSettings: PageSettingsDraft) {
   return `${paper?.label ?? pageSettings.paperSize} · ${orientation}`;
 }
 
-function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, markdown, markdownSourcePath }: { selectedStyle?: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void; markdown?: string; markdownSourcePath?: string }) {
+function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWidth, setWidth, markdown, markdownSourcePath }: { selectedStyle?: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void; width: number; maxWidth: number; setWidth: (value: number | ((current: number) => number)) => void; markdown?: string; markdownSourcePath?: string }) {
+  const resizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | undefined>(undefined);
+
+  function clampPreviewWidth(value: number) {
+    return Math.min(maxWidth, Math.max(320, value));
+  }
+
+  function handleResizePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    resizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function handleResizePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = resizeRef.current;
+    if (!resize) return;
+    setWidth(clampPreviewWidth(resize.startWidth + resize.startX - event.clientX));
+  }
+
+  function stopResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = resizeRef.current;
+    if (!resize) return;
+    resizeRef.current = undefined;
+    if (event.currentTarget.hasPointerCapture(resize.pointerId)) event.currentTarget.releasePointerCapture(resize.pointerId);
+  }
+
+  function handleResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") setWidth((current) => clampPreviewWidth(current + 20));
+    else if (event.key === "ArrowRight") setWidth((current) => clampPreviewWidth(current - 20));
+    else if (event.key === "Home") setWidth(320);
+    else if (event.key === "End") setWidth(maxWidth);
+    else return;
+    event.preventDefault();
+  }
+
   function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
     if (!event.ctrlKey) return;
     event.preventDefault();
+    event.stopPropagation();
     const direction = event.deltaY > 0 ? -1 : 1;
     setZoom((value) => clampPreviewZoom(value + direction * previewZoomStep));
   }
 
   return (
-    <aside className="flex min-h-[430px] shrink-0 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/70 @min-[720px]/style-editor:col-span-2 @min-[720px]/style-editor:min-h-[520px] @min-[1280px]/style-editor:col-span-1 @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-t-0">
+    <aside className="relative flex min-h-[430px] shrink-0 flex-col overflow-visible border-t border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/70 @min-[720px]/style-editor:col-span-2 @min-[720px]/style-editor:min-h-[520px] @min-[1280px]/style-editor:col-span-1 @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-t-0">
+      <div
+        role="separator"
+        aria-label="调整 Word 预览宽度"
+        aria-orientation="vertical"
+        aria-valuemin={320}
+        aria-valuemax={Math.round(maxWidth)}
+        aria-valuenow={Math.round(width)}
+        tabIndex={0}
+        className="group absolute inset-y-0 left-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize touch-none outline-none @min-[1280px]/style-editor:block"
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={stopResize}
+        onPointerCancel={stopResize}
+        onKeyDown={handleResizeKeyDown}
+      >
+        <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-200 transition-colors group-hover:bg-blue-400 group-focus-visible:bg-blue-500 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
+      </div>
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
         <p className="text-sm font-semibold text-slate-400 dark:text-zinc-500">实时预览（{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
         <div className="flex shrink-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
@@ -1548,7 +1629,7 @@ function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChang
         <TooltipButton
           key={optionValue}
           type="button"
-          className={cn("flex items-center justify-center border-r border-slate-200 last:border-r-0 dark:border-zinc-700", value === optionValue ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200")}
+          className={cn("h-full w-full min-h-0 rounded-none border-r border-slate-200 last:border-r-0 dark:border-zinc-700", value === optionValue ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200")}
           onClick={() => onChange(optionValue)}
           tooltip={label}
           aria-label={label}

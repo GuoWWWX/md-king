@@ -1348,7 +1348,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             {isWorkspacePage ? (
               <WorkspacePageSlot>{workspaceContent}</WorkspacePageSlot>
             ) : isImageTab ? (
-              <ImageDocumentViewer src={activeImageSource} alt={activeTab?.title ?? "图片"} />
+              <ImageDocumentViewer src={activeImageSource} alt={activeTab?.title ?? "图片"} path={activeTab?.path} />
             ) : (
               <ConversionInputCard
                 ref={conversionInputRef}

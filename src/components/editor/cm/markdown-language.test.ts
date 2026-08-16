@@ -19,3 +19,8 @@ test("四空格缩进后仍解析行内 Markdown", () => {
   assert.match(tree, /Emphasis\(/);
   assert.doesNotMatch(tree, /CodeBlock\(/);
 });
+
+test("尖括号中的内容按普通 Markdown 文本保留", () => {
+  const tree = parsedNodeNames("> [!question]- 点击查看答案\n> <先给结论和最关键的理由>");
+  assert.doesNotMatch(tree, /HTMLTag|HTMLBlock/);
+});

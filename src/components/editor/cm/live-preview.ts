@@ -1,8 +1,8 @@
-import { syntaxTree } from "@codemirror/language";
+import { forceParsing, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { isMermaidLanguage } from "@/lib/mermaid";
-import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink } from "@/lib/document-links";
+import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink, isMarkdownWikilinkTarget } from "@/lib/document-links";
 import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
-import { RangeSetBuilder, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import {
@@ -12,7 +12,7 @@ import {
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
-import { selectionCoversRange, selectionTouchesOnSameLine, cursorOnLines, selectionOnLines } from "./selection-utils";
+import { selectedMarkdownTableRows, selectionIntersectsRange, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
 import {
   applyTableWidthMode,
@@ -24,7 +24,7 @@ import {
   type TableDisplaySettings,
   type TableWidthMode,
 } from "./table-display-settings";
-import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -42,6 +42,42 @@ import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceE
 const hiddenMark = Decoration.replace({});
 const lineDecorationCache = new Map<string, Decoration>();
 const markDecorationCache = new Map<string, Decoration>();
+
+type CalloutCollapseChange = {
+  from: number;
+  collapsed: boolean;
+};
+
+/** 点击 Callout 标题后的显隐状态。位置会随正文编辑映射，不写回 Markdown 源码。 */
+export const setCalloutCollapsedEffect = StateEffect.define<CalloutCollapseChange>();
+/** 文档切换时不能把上一个文件的展开状态带到新文件。 */
+export const resetCalloutCollapsedEffect = StateEffect.define<void>();
+
+const calloutCollapseState = StateField.define<ReadonlyMap<number, boolean>>({
+  create: () => new Map(),
+  update: (value, transaction) => {
+    let next = value;
+    if (transaction.docChanged && value.size > 0) {
+      const mapped = new Map<number, boolean>();
+      for (const [from, collapsed] of value) {
+        const mappedFrom = transaction.changes.mapPos(from, 1);
+        if (mappedFrom >= 0 && mappedFrom <= transaction.state.doc.length) mapped.set(mappedFrom, collapsed);
+      }
+      next = mapped;
+    }
+    for (const effect of transaction.effects) {
+      if (effect.is(resetCalloutCollapsedEffect)) return new Map();
+      if (!effect.is(setCalloutCollapsedEffect)) continue;
+      if (next === value) next = new Map(value);
+      (next as Map<number, boolean>).set(effect.value.from, effect.value.collapsed);
+    }
+    return next;
+  },
+});
+
+function isCalloutCollapsed(state: EditorState, from: number, defaultFold: "collapsed" | "expanded" | undefined): boolean {
+  return state.field(calloutCollapseState, false)?.get(from) ?? defaultFold === "collapsed";
+}
 
 function lineDecoration(className: string): Decoration {
   let deco = lineDecorationCache.get(className);
@@ -86,6 +122,17 @@ function cursorInside(collector: DecorationCollector, from: number, to: number):
   return collector.focused && selectionTouchesOnSameLine(collector.state, from, to, 0);
 }
 
+/** 非空选区覆盖到的 Markdown 对象统一显示源码，表格和图片由各自的块级字段处理。 */
+function sourceSelected(collector: DecorationCollector, from: number, to: number): boolean {
+  return collector.focused && selectionIntersectsRange(collector.state, from, to);
+}
+
+// 双链只有被实际拖选时才还原源码。光标落在边界、悬停或单击旁边都保持渲染态，
+// 避免把普通定位误判为进入编辑状态。
+function wikilinkSourceActive(collector: DecorationCollector, from: number, to: number): boolean {
+  return sourceSelected(collector, from, to);
+}
+
 // 选区跨行时只在光标（head）所在行展开源码，其他行保持渲染态。
 function cursorLine(collector: DecorationCollector, from: number, to: number): boolean {
   return collector.focused && cursorOnLines(collector.state, from, to);
@@ -118,6 +165,14 @@ function addMark(collector: DecorationCollector, from: number, to: number, class
 function addWidget(collector: DecorationCollector, position: number, widget: WidgetType, side = -1): void {
   if (position < 0 || position > collector.state.doc.length) return;
   collector.decorations.push(Decoration.widget({ widget, side }).range(position));
+}
+
+function replaceInline(collector: DecorationCollector, from: number, to: number, widget: WidgetType): void {
+  if (from >= to || to > collector.state.doc.length) return;
+  if (collector.state.doc.lineAt(from).number !== collector.state.doc.lineAt(to).number) return;
+  const replacement = Decoration.replace({ widget });
+  collector.decorations.push(replacement.range(from, to));
+  collector.atomics.push(replacement.range(from, to));
 }
 
 function addLine(collector: DecorationCollector, linePos: number, className: string): void {
@@ -169,8 +224,8 @@ function handleHeading(collector: DecorationCollector, ref: SyntaxNodeRef, level
   const state = collector.state;
   addLine(collector, state.doc.lineAt(ref.from).from, `mk-cm-heading mk-cm-h${level}`);
 
-  // 标题是单行元素：光标在这一行时展开源码，选区跨过此行时也展开（用 cursorLine 只看 head 所在行）。
-  if (cursorLine(collector, ref.from, ref.to)) return;
+  // 标题在空光标或非空选区命中时都还原 Markdown 标记。
+  if (cursorLine(collector, ref.from, ref.to) || sourceSelected(collector, ref.from, ref.to)) return;
 
   const node = ref.node;
   for (const mark of childrenOfType(node, "HeaderMark")) {
@@ -194,7 +249,7 @@ function handleInlineWrapper(
   className: string,
 ): void {
   addMark(collector, ref.from, ref.to, className);
-  if (touchesSameLine(collector, ref.from, ref.to)) return;
+  if (touchesSameLine(collector, ref.from, ref.to) || sourceSelected(collector, ref.from, ref.to)) return;
   for (const mark of childrenOfType(ref.node, markType)) {
     hide(collector, mark.from, mark.to);
   }
@@ -228,7 +283,7 @@ function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const kind = isExternalDocumentLink(target) ? "external" : "document";
   // 光标已经进入源码时，链接必须退回为可编辑文本；保留 data 属性会让点击
   // `[`、`]` 或链接文字继续触发跳转，无法修改 Markdown。
-  const editingSource = cursorInside(collector, ref.from, ref.to);
+  const editingSource = cursorInside(collector, ref.from, ref.to) || sourceSelected(collector, ref.from, ref.to);
   const linkTarget = target && !editingSource ? { "data-mk-link-target": target } : undefined;
   const marks = childrenOfType(ref.node, "LinkMark");
   if (marks.length < 2) {
@@ -262,19 +317,12 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
     const to = line.from + link.to;
     if (insideProtectedInlineSource(collector.state, from)) continue;
 
-    const displayFrom = line.from + link.displayFrom;
-    const displayTo = line.from + link.displayTo;
     const kind = isExternalDocumentLink(link.target) ? "external" : "document";
-    // 双链源码展开后不再附带跳转目标，保证 `[[...]]` 的括号和文字都能直接编辑。
-    if (cursorInside(collector, from, to)) continue;
-    const attributes = {
-      "data-mk-link-target": link.target,
-      "data-mk-wikilink-from": String(from),
-    };
-    addMark(collector, displayFrom, displayTo, `mk-cm-link mk-cm-link--${kind} mk-cm-link--wikilink`, attributes);
-    addWidget(collector, displayFrom, new MarkdownLinkIconWidget(kind, link.target, from), -1);
-    hide(collector, from, displayFrom);
-    hide(collector, displayTo, to);
+    const invalid = kind === "document" && !isMarkdownWikilinkTarget(link.target);
+    // 双链整体作为一个可见对象替换，避免无别名时把完整目录路径撑满编辑区。
+    // 选区碰到该对象即回退为源码，供用户编辑目标、分隔符或显示名。
+    if (wikilinkSourceActive(collector, from, to)) continue;
+    replaceInline(collector, from, to, new MarkdownWikilinkWidget(kind, link.target, link.displayLabel, from, invalid));
   }
 
   for (const link of findBareExternalLinks(line.text)) {
@@ -282,7 +330,7 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
     const from = line.from + link.from;
     const to = line.from + link.to;
     if (insideProtectedInlineSource(collector.state, from)) continue;
-    if (cursorInside(collector, from, to)) continue;
+    if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
     const attributes = { "data-mk-link-target": link.target };
     addMark(collector, from, to, "mk-cm-link mk-cm-link--external", attributes);
     addWidget(collector, from, new MarkdownLinkIconWidget("external", link.target), -1);
@@ -301,6 +349,7 @@ function addRenderedSourceIndent(collector: DecorationCollector, lineFrom: numbe
   if (insideFencedCode(collector.state, line.from)) return;
   const indentLength = markdownSourceIndentLength(line.text);
   if (indentLength === 0) return;
+  if (sourceSelected(collector, line.from, line.to)) return;
   addLine(collector, line.from, markdownSourceIndentClass(line.text));
   hide(collector, line.from, line.from + indentLength);
 }
@@ -349,7 +398,7 @@ function addFallbackSourceList(collector: DecorationCollector, lineFrom: number)
   if (lineHasParsedListMark(state, markerFrom, markerTo)) return;
 
   addLine(collector, line.from, sourceList.ordered ? "mk-cm-list-line mk-cm-list-ordered" : "mk-cm-list-line");
-  if (touchesSameLine(collector, markerFrom, markerTo)) return;
+  if (touchesSameLine(collector, markerFrom, markerTo) || sourceSelected(collector, line.from, line.to)) return;
   const widget = Decoration.replace({
     widget: sourceList.ordered
       ? new OrderedListWidget(
@@ -382,6 +431,13 @@ function parsedOrderedListValue(state: EditorState, node: SyntaxNode, marker: st
   return Number.parseInt(marker, 10) || 1;
 }
 
+function calloutAtLine(state: EditorState, lineFrom: number) {
+  const line = state.doc.lineAt(lineFrom);
+  if (line.from !== lineFrom) return undefined;
+  const prefix = line.text.match(/^\s*>[ \t]?/);
+  return parseMarkdownCalloutHeader(line.text.slice(prefix?.[0].length ?? 0));
+}
+
 function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const state = collector.state;
   const line = state.doc.lineAt(ref.from);
@@ -394,20 +450,33 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   const callout = parseMarkdownCalloutHeader(state.doc.sliceString(firstContentStart, firstLine.to));
   const isFirstLine = line.number === firstLine.number;
   const isLastLine = line.number === lastLine.number;
+  const collapsed = callout?.fold
+    ? isCalloutCollapsed(state, firstLine.from, callout.fold)
+    : false;
   const classes = callout
-    ? `mk-cm-quote-line mk-cm-callout-line mk-cm-callout-line--${callout.tone}${isFirstLine ? " mk-cm-callout-first" : ""}${isLastLine ? " mk-cm-callout-last" : ""}`
+    ? `mk-cm-quote-line mk-cm-callout-line mk-cm-callout-line--${callout.tone}${isFirstLine ? " mk-cm-callout-first" : ""}${isLastLine ? " mk-cm-callout-last" : ""}${collapsed && isFirstLine ? " mk-cm-callout-collapsed-summary" : ""}${collapsed && !isFirstLine ? " mk-cm-callout-collapsed" : ""}`
     : "mk-cm-quote-line";
   addLine(collector, line.from, classes);
 
-  // QuoteMark 本身只占一个字符且必在单行内，用 cursorLine 判定（选区跨行时只看光标所在行）。
-  if (cursorLine(collector, ref.from, ref.to)) return;
+  // 选中引用正文时同样露出 `>`，避免选区中混入渲染符号而无法直接修改。
+  if (cursorLine(collector, ref.from, ref.to) || sourceSelected(collector, line.from, line.to)) return;
   hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
   if (!callout || !isFirstLine) return;
   const markerFrom = firstContentStart + callout.markerStart;
-  const markerTo = firstContentStart + callout.markerEnd;
-  addMark(collector, markerTo, firstLine.to, "mk-cm-callout-title");
-  addWidget(collector, markerTo, new MarkdownCalloutIconWidget(callout.type, callout.tone, callout.title ? undefined : callout.defaultTitle), -1);
-  hide(collector, markerFrom, markerTo);
+  addWidget(
+    collector,
+    markerFrom,
+    new MarkdownCalloutIconWidget(
+      callout.type,
+      callout.tone,
+      callout.title || callout.defaultTitle,
+      callout.fold ? collapsed : undefined,
+      callout.fold ? firstLine.from : undefined,
+      callout.fold ? (view) => { toggleCalloutCollapsed(view, firstLine.from); } : undefined,
+    ),
+    -1,
+  );
+  hide(collector, markerFrom, firstLine.to);
 }
 
 /**
@@ -416,7 +485,7 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
  */
 function handleHorizontalRule(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const line = collector.state.doc.lineAt(ref.from);
-  const editing = cursorLine(collector, ref.from, ref.to);
+  const editing = cursorLine(collector, ref.from, ref.to) || sourceSelected(collector, line.from, line.to);
   if (editing) return;
   addLine(collector, line.from, "mk-cm-hr");
   // 整行源码（`---`）替换成零宽内容，高度由 CSS 的 ::before 横线撑起来。
@@ -437,12 +506,12 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
   // `- [ ]` 作为一个整体判断：只有光标靠近这组标记时才一起显示源码，
   // 光标落在正文的其他位置不能单独露出前面的短横线。
   if (taskRange) {
-    if (touchesSameLine(collector, taskRange.from, taskRange.to)) return;
+    if (touchesSameLine(collector, taskRange.from, taskRange.to) || sourceSelected(collector, line.from, line.to)) return;
     hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
     return;
   }
 
-  if (touchesSameLine(collector, ref.from, ref.to)) return;
+  if (touchesSameLine(collector, ref.from, ref.to) || sourceSelected(collector, line.from, line.to)) return;
   if (ref.from >= ref.to || ref.to > state.doc.length) return;
   if (state.doc.lineAt(ref.from).number !== state.doc.lineAt(ref.to).number) return;
 
@@ -477,10 +546,10 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   const infoNode = ref.node.getChild("CodeInfo");
   const info = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : "";
   const language = codeFenceLanguageFromInfo(info);
-  // Mermaid 只有点专用按钮才会进入源码态。源码显示后，双击或拖选文字时必须继续
-  // 保留整块行装饰；否则非空选区会让 cursorLine 返回 false，出现源码仍在但卡片消失。
+  // Mermaid 被选中时与其他 Markdown 对象一样回退到源码；源码显示后继续
+  // 保留整块行装饰，避免选区变化时背景卡片闪退。
   const editing = cursorLine(collector, ref.from, ref.to)
-    || (isMermaidLanguage(language) && collector.focused && selectionOnLines(state, ref.from, ref.to));
+    || sourceSelected(collector, ref.from, ref.to);
   const indentClass = codeBlockIndentClass(codeBlockIndentPtFromInfo(info));
   const indented = indentClass ? ` ${indentClass}` : "";
   const indentAttribute = infoNode ? codeBlockIndentAttributeRange(doc.sliceString(infoNode.from, infoNode.to)) : null;
@@ -545,7 +614,8 @@ function handleTaskMarker(collector: DecorationCollector, ref: SyntaxNodeRef): v
   if (!/^\[(?: |x|X)\]$/.test(marker)) return;
   // 用行级判定：字符级 touches(pad=1) 会向外扩一格，光标停在上一行末尾就会跨行误触发。
   const sourceRange = taskSourceRange(ref.node) ?? ref;
-  if (touchesSameLine(collector, sourceRange.from, sourceRange.to)) return;
+  const line = collector.state.doc.lineAt(ref.from);
+  if (touchesSameLine(collector, sourceRange.from, sourceRange.to) || sourceSelected(collector, line.from, line.to)) return;
   const widget = Decoration.replace({ widget: new TaskCheckboxWidget(marker[1].toLowerCase() === "x") });
   collector.decorations.push(widget.range(ref.from, ref.to));
   collector.atomics.push(widget.range(ref.from, ref.to));
@@ -623,6 +693,20 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
   };
 }
 
+function toggleCalloutCollapsed(view: EditorView, from: number): boolean {
+  if (from > view.state.doc.length) return false;
+  const callout = calloutAtLine(view.state, from);
+  if (!callout?.fold) return false;
+  view.dispatch({
+    effects: setCalloutCollapsedEffect.of({
+      from,
+      collapsed: !isCalloutCollapsed(view.state, from, callout.fold),
+    }),
+  });
+  view.requestMeasure();
+  return true;
+}
+
 class LivePreviewPlugin {
   decorations: DecorationSet;
   /**
@@ -655,7 +739,10 @@ class LivePreviewPlugin {
       return;
     }
 
-    if (this.pendingRebuild || update.docChanged || update.viewportChanged || update.selectionSet || update.focusChanged) {
+    const calloutFoldChanged = update.transactions.some((transaction) => (
+      transaction.effects.some((effect) => effect.is(setCalloutCollapsedEffect) || effect.is(resetCalloutCollapsedEffect))
+    ));
+    if (this.pendingRebuild || update.docChanged || update.viewportChanged || update.selectionSet || update.focusChanged || calloutFoldChanged) {
       this.pendingRebuild = false;
       const built = buildDecorations(update.view);
       this.decorations = built.decorations;
@@ -664,11 +751,16 @@ class LivePreviewPlugin {
   }
 }
 
-export const livePreviewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
+const livePreviewViewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
   decorations: (plugin) => plugin.decorations,
   provide: (plugin) =>
     EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomics ?? Decoration.none),
 });
+
+export const livePreviewPlugin: Extension = [
+  calloutCollapseState,
+  livePreviewViewPlugin,
+];
 
 
 /**
@@ -696,6 +788,9 @@ function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: 
       const first = state.doc.lineAt(ref.from);
       const last = state.doc.lineAt(Math.min(ref.to, state.doc.length));
       if (sourceBlockFrom !== null && sourceBlockFrom >= first.from && sourceBlockFrom <= last.to) return false;
+      // Mermaid 是块级 replace，源码平时不在 DOM 里。非空选区经过该块时先撤销
+      // replace，才能和普通 Markdown 一样显示完整源码并继续修改。
+      if (selectionIntersectsRange(state, first.from, last.to)) return false;
 
       const body = extractFenceBody(state, ref.from, ref.to);
       if (!body.trim()) return false;
@@ -763,7 +858,8 @@ export function mermaidBlockExtension(dark: boolean): Extension {
         });
         if (!inSourceBlock) sourceBlockFrom = null;
       }
-      if (!tr.docChanged && sourceBlockFrom === value.sourceBlockFrom) return value;
+      // Mermaid 是否需要替换为图形取决于非空选区；选区变化也必须重建块级装饰。
+      if (!tr.docChanged && tr.selection === undefined && sourceBlockFrom === value.sourceBlockFrom) return value;
       return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom), sourceBlockFrom };
     },
     provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
@@ -829,12 +925,13 @@ function buildTableBlocks(
   state: EditorState,
   sourceTableFrom: number | null,
   displaySettings: TableDisplaySettings,
-  documentSelectedTableFroms: ReadonlySet<number>,
+  documentSelectedTableRows: ReadonlyMap<number, readonly number[]>,
   selectedFromToolbarTableFrom: number | null,
+  tree = syntaxTree(state),
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
-  syntaxTree(state).iterate({
+  tree.iterate({
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
 
@@ -859,7 +956,7 @@ function buildTableBlocks(
             first.from,
             last.to,
             tableWidthModeFor(displaySettings, first.from),
-            documentSelectedTableFroms.has(first.from),
+            documentSelectedTableRows.get(first.from) ?? [],
             selectedFromToolbarTableFrom === first.from,
           ),
           block: true,
@@ -872,38 +969,43 @@ function buildTableBlocks(
   return builder.finish();
 }
 
-function documentSelectedTableFroms(state: EditorState): ReadonlySet<number> {
-  const selected = new Set<number>();
+function documentSelectedTableRows(state: EditorState): ReadonlyMap<number, readonly number[]> {
+  const selected = new Map<number, readonly number[]>();
   if (state.selection.ranges.every((range) => range.empty)) return selected;
 
-  for (const range of state.selection.ranges) {
-    if (range.empty) continue;
-    syntaxTree(state).iterate({
-      from: range.from,
-      to: range.to,
-      enter: (ref) => {
-        if (ref.name !== "Table") return undefined;
-        const first = state.doc.lineAt(ref.from);
-        const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
-        const last = state.doc.lineAt(lastPos);
-        if (selectionCoversRange(state, first.from, last.to)) selected.add(first.from);
-        return false;
-      },
-    });
-  }
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "Table") return undefined;
+      const first = state.doc.lineAt(ref.from);
+      const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
+      const last = state.doc.lineAt(lastPos);
+      const rows = selectedMarkdownTableRows(state, first.from, last.to);
+      if (rows.length > 0) selected.set(first.from, rows);
+      return false;
+    },
+  });
 
   return selected;
 }
 
-function sameTablePositions(left: ReadonlySet<number>, right: ReadonlySet<number>): boolean {
-  return left.size === right.size && [...left].every((position) => right.has(position));
+function sameDocumentTableRows(
+  left: ReadonlyMap<number, readonly number[]>,
+  right: ReadonlyMap<number, readonly number[]>,
+): boolean {
+  return left.size === right.size && [...left].every(([position, rows]) => {
+    const otherRows = right.get(position);
+    return otherRows !== undefined
+      && rows.length === otherRows.length
+      && rows.every((row, index) => row === otherRows[index]);
+  });
 }
 
 interface TableBlockState {
   decorations: DecorationSet;
+  parserTree: ReturnType<typeof syntaxTree>;
   sourceTableFrom: number | null;
   displaySettings: TableDisplaySettings;
-  documentSelectedTableFroms: ReadonlySet<number>;
+  documentSelectedTableRows: ReadonlyMap<number, readonly number[]>;
   selectedFromToolbarTableFrom: number | null;
 }
 
@@ -929,16 +1031,20 @@ function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number)
 export const tableBlockExtension = StateField.define<TableBlockState>({
   create: (state) => {
     const displaySettings = createTableDisplaySettings();
-    const selectedTableFroms = documentSelectedTableFroms(state);
+    const selectedTableRows = documentSelectedTableRows(state);
+    const parserTree = syntaxTree(state);
     return {
-      decorations: buildTableBlocks(state, null, displaySettings, selectedTableFroms, null),
+      decorations: buildTableBlocks(state, null, displaySettings, selectedTableRows, null, parserTree),
+      parserTree,
       sourceTableFrom: null,
       displaySettings,
-      documentSelectedTableFroms: selectedTableFroms,
+      documentSelectedTableRows: selectedTableRows,
       selectedFromToolbarTableFrom: null,
     };
   },
   update: (value, tr) => {
+    const parserTree = syntaxTree(tr.state);
+    const parserChanged = parserTree !== value.parserTree;
     let sourceTableFrom = value.sourceTableFrom;
     let displaySettings = tr.docChanged
       ? mapTableDisplaySettings(value.displaySettings, (position) => tr.changes.mapPos(position))
@@ -957,10 +1063,10 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
     }
     if (tr.docChanged && !selectedFromToolbar) selectedFromToolbarTableFrom = null;
     if (tr.effects.some((effect) => effect.is(editTableSourceEffect))) selectedFromToolbarTableFrom = null;
-    const selectedTableFroms = tr.docChanged || tr.selection
-      ? documentSelectedTableFroms(tr.state)
-      : value.documentSelectedTableFroms;
-    const selectionChanged = !sameTablePositions(value.documentSelectedTableFroms, selectedTableFroms);
+    const selectedTableRows = tr.docChanged || tr.selection || parserChanged
+      ? documentSelectedTableRows(tr.state)
+      : value.documentSelectedTableRows;
+    const selectionChanged = !sameDocumentTableRows(value.documentSelectedTableRows, selectedTableRows);
     if (sourceTableFrom !== null && tr.selection && !selectionInsideSourceTable(tr.state, sourceTableFrom)) {
       sourceTableFrom = null;
     }
@@ -968,18 +1074,52 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
     if (!tr.docChanged
       && sourceTableFrom === value.sourceTableFrom
       && displaySettings === value.displaySettings
+      && !parserChanged
       && !selectionChanged
       && selectedFromToolbarTableFrom === value.selectedFromToolbarTableFrom) return value;
     return {
-      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableFroms, selectedFromToolbarTableFrom),
+      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableRows, selectedFromToolbarTableFrom, parserTree),
+      parserTree,
       sourceTableFrom,
       displaySettings,
-      documentSelectedTableFroms: selectedTableFroms,
+      documentSelectedTableRows: selectedTableRows,
       selectedFromToolbarTableFrom,
     };
   },
   provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
 });
+
+/**
+ * CodeMirror 会在空闲时间逐步扩展语法树。表格是 StateField，不能像内联预览那样
+ * 靠 viewport 更新自动重建，所以主动推进到当前可视末尾并派发空事务通知字段刷新。
+ */
+class TableSyntaxRefreshPlugin {
+  private frame: number | null = null;
+
+  constructor(view: EditorView) {
+    this.schedule(view);
+  }
+
+  update(update: ViewUpdate): void {
+    if (update.docChanged || update.viewportChanged) this.schedule(update.view);
+  }
+
+  destroy(): void {
+    if (this.frame !== null) cancelAnimationFrame(this.frame);
+  }
+
+  private schedule(view: EditorView): void {
+    if (this.frame !== null || syntaxTreeAvailable(view.state, view.viewport.to)) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = null;
+      if (syntaxTreeAvailable(view.state, view.viewport.to)) return;
+      forceParsing(view, view.viewport.to, 12);
+      this.schedule(view);
+    });
+  }
+}
+
+export const tableSyntaxRefreshPlugin = ViewPlugin.fromClass(TableSyntaxRefreshPlugin);
 
 export type TableDisplayContext = {
   tableFrom: number | null;

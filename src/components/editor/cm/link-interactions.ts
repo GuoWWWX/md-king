@@ -12,10 +12,29 @@ type MarkdownLinkRange = {
 };
 
 type WikilinkRange = MarkdownLinkRange & {
-  sourcePosition: number;
+  displayFrom: number;
+  displayTo: number;
 };
 
-function clickedLinkTarget(event: MouseEvent): string | undefined {
+type ClickedLink = {
+  target: string;
+  element: HTMLElement;
+};
+
+type PendingWikilinkPointer = {
+  target: string;
+  canOpen: boolean;
+  anchor: number;
+  displayFrom: number;
+  displayTo: number;
+  left: number;
+  right: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+};
+
+function clickedLink(event: MouseEvent): ClickedLink | undefined {
   if (!(event.target instanceof Element)) return undefined;
   const element = event.target.closest<HTMLElement>("[data-mk-link-target]");
   const target = element?.dataset.mkLinkTarget;
@@ -26,7 +45,7 @@ function clickedLinkTarget(event: MouseEvent): string | undefined {
     && event.clientX <= rect.right
     && event.clientY >= rect.top
     && event.clientY <= rect.bottom;
-  return inside ? target : undefined;
+  return inside ? { target, element } : undefined;
 }
 
 function linkAtPosition(view: EditorView, position: number): MarkdownLinkRange | undefined {
@@ -78,7 +97,11 @@ function wikilinkRange(view: EditorView, link: MarkdownLinkRange): WikilinkRange
     && wikilink.target === link.target
   ));
   return match
-    ? { ...link, sourcePosition: line.from + match.displayFrom }
+    ? {
+      ...link,
+      displayFrom: line.from + match.displayFrom,
+      displayTo: line.from + match.displayTo,
+    }
     : undefined;
 }
 
@@ -89,8 +112,33 @@ function wikilinkRangeAtSourcePosition(view: EditorView, from: number, target: s
     line.from + wikilink.from === from && wikilink.target === target
   ));
   return match
-    ? { from, to: line.from + match.to, target, sourcePosition: line.from + match.displayFrom }
+    ? {
+      from,
+      to: line.from + match.to,
+      target,
+      displayFrom: line.from + match.displayFrom,
+      displayTo: line.from + match.displayTo,
+    }
     : undefined;
+}
+
+function wikilinkRangeFromRenderedElement(
+  view: EditorView,
+  element: HTMLElement,
+  target: string,
+): WikilinkRange | undefined {
+  if (!element.classList.contains("mk-cm-link--wikilink")) return undefined;
+  const from = element.dataset.mkWikilinkFrom;
+  return from === undefined ? undefined : wikilinkRangeAtSourcePosition(view, Number(from), target);
+}
+
+function displayPositionAtPointer(
+  wikilink: Pick<PendingWikilinkPointer, "displayFrom" | "displayTo" | "left" | "right">,
+  clientX: number,
+): number {
+  const width = Math.max(1, wikilink.right - wikilink.left);
+  const ratio = Math.max(0, Math.min(1, (clientX - wikilink.left) / width));
+  return wikilink.displayFrom + Math.round((wikilink.displayTo - wikilink.displayFrom) * ratio);
 }
 
 function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent): boolean {
@@ -105,22 +153,11 @@ function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent)
   });
   const nearbyTarget = nearbyElement?.dataset.mkLinkTarget;
   if (!nearbyTarget) return false;
+  // 双链仅在实际拖选其可见对象时切回源码；单击两侧留白不应展开或跳转。
+  if (nearbyElement?.classList.contains("mk-cm-link--wikilink")) return false;
 
   const sameTargetElements = renderedElements.filter((element) => element.dataset.mkLinkTarget === nearbyTarget);
-  const markedWikilinkFrom = sameTargetElements
-    .map((element) => element.dataset.mkWikilinkFrom)
-    .find((value): value is string => value !== undefined);
-  if (markedWikilinkFrom !== undefined) {
-    const wikilink = wikilinkRangeAtSourcePosition(view, Number(markedWikilinkFrom), nearbyTarget);
-    if (wikilink) {
-      event.preventDefault();
-      view.dispatch({ selection: { anchor: wikilink.sourcePosition } });
-      view.focus();
-      return true;
-    }
-  }
 
-  // 图标和文字之间的空隙没有可靠的文档坐标；双链已经用源码起点处理完。
   // 普通 Markdown 链接仍需要坐标反查语法节点，因此放到这里再读取即可。
   const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
   if (position === null) return false;
@@ -132,15 +169,7 @@ function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent)
     .map((element) => element.getBoundingClientRect());
   if (renderedParts.length === 0) return false;
 
-  // 双链属于 Markdown 的编辑对象。点击它的图标、显示名及两侧紧邻位置时，
-  // 先展开 `[[...]]` 源码并把光标放到显示文字处，不能按普通超链接跳转。
-  const wikilink = wikilinkRange(view, link);
-  if (wikilink) {
-    event.preventDefault();
-    view.dispatch({ selection: { anchor: wikilink.sourcePosition } });
-    view.focus();
-    return true;
-  }
+  if (wikilinkRange(view, link)) return false;
 
   const left = Math.min(...renderedParts.map((rect) => rect.left));
   const right = Math.max(...renderedParts.map((rect) => rect.right));
@@ -158,25 +187,105 @@ export type MarkdownLinkInteractionOptions = {
 };
 
 export function markdownLinkInteractionExtension(options: MarkdownLinkInteractionOptions) {
+  let pendingLinkTarget: string | undefined;
+  let pendingWikilinkPointer: PendingWikilinkPointer | undefined;
+  let swallowNextClick = false;
+
   const handlers: DOMEventHandlers<unknown> = {
     mousedown: (event, view) => {
+      pendingLinkTarget = undefined;
+      pendingWikilinkPointer = undefined;
+      swallowNextClick = false;
       if (!options.openLinksOnClick()) return false;
-      // 边界命中必须先判断：DOM 的链接矩形包含右边缘，若先按链接本体处理，
-      // 光标紧贴链接前后时会被提前拦截，无法展开隐藏的 Markdown 源码。
+      if (event.button !== 0) return false;
+
+      const clicked = clickedLink(event);
+      if (clicked) {
+        const wikilink = wikilinkRangeFromRenderedElement(view, clicked.element, clicked.target);
+        if (wikilink) {
+          const rect = clicked.element.getBoundingClientRect();
+          const pointer: PendingWikilinkPointer = {
+            target: clicked.target,
+            canOpen: clicked.element.dataset.mkWikilinkInvalid !== "true",
+            displayFrom: wikilink.displayFrom,
+            displayTo: wikilink.displayTo,
+            left: rect.left,
+            right: rect.right,
+            startX: event.clientX,
+            startY: event.clientY,
+            anchor: 0,
+            dragging: false,
+          };
+          pointer.anchor = displayPositionAtPointer(pointer, event.clientX);
+          pendingWikilinkPointer = pointer;
+          event.preventDefault();
+          view.focus();
+          return true;
+        }
+
+        // 普通 Markdown 链接仍交给编辑器创建选区；鼠标松开时再按空选区决定是否打开。
+        pendingLinkTarget = clicked.target;
+        return false;
+      }
+
+      // 命中双链两侧的透明区域时才展开源码。真实链接本体不在这里拦截，
+      // 否则既无法拖选，也永远到不了后续的打开逻辑。
       if (placePointerInsideHiddenLinkSource(view, event)) return true;
-      const target = clickedLinkTarget(event);
-      if (target) {
+      return false;
+    },
+    mousemove: (event, view) => {
+      const pointer = pendingWikilinkPointer;
+      if (!pointer) return false;
+      if (!pointer.dragging) {
+        const distance = Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY);
+        if (distance < 4) return false;
+        pointer.dragging = true;
+      }
+
+      const head = displayPositionAtPointer(pointer, event.clientX);
+      view.dispatch({
+        selection: {
+          anchor: pointer.anchor,
+          head: head === pointer.anchor ? Math.min(pointer.displayTo, pointer.anchor + 1) : head,
+        },
+      });
+      view.focus();
+      event.preventDefault();
+      return true;
+    },
+    mouseup: (event, view) => {
+      const wikilinkPointer = pendingWikilinkPointer;
+      pendingWikilinkPointer = undefined;
+      if (wikilinkPointer) {
+        if (event.button !== 0 || !options.openLinksOnClick()) return false;
+        event.preventDefault();
+        swallowNextClick = true;
+        if (!wikilinkPointer.dragging && wikilinkPointer.canOpen) options.onOpenLink(wikilinkPointer.target);
+        return true;
+      }
+
+      const target = pendingLinkTarget;
+      pendingLinkTarget = undefined;
+      if (!target || event.button !== 0 || !options.openLinksOnClick()) return false;
+      if (view.state.selection.ranges.some((range) => !range.empty)) return false;
+
+      event.preventDefault();
+      swallowNextClick = true;
+      options.onOpenLink(target);
+      return true;
+    },
+    click: (event, view) => {
+      if (swallowNextClick) {
+        swallowNextClick = false;
         event.preventDefault();
         return true;
       }
-      return false;
-    },
-    click: (event) => {
       if (!options.openLinksOnClick() && !event.ctrlKey && !event.metaKey) return false;
-      const target = clickedLinkTarget(event);
-      if (!target) return false;
+      if (view.state.selection.ranges.some((range) => !range.empty)) return false;
+      const clicked = clickedLink(event);
+      if (!clicked) return false;
       event.preventDefault();
-      options.onOpenLink(target);
+      options.onOpenLink(clicked.target);
       return true;
     },
   };

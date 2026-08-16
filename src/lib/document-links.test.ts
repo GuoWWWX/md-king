@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { documentLinkFragment, findBareExternalLinks, findObsidianWikilinks, parseObsidianWikilink, resolveVaultDocumentLink } from "./document-links.ts";
+import { defaultObsidianWikilinkLabel, documentLinkFragment, findBareExternalLinks, findObsidianWikilinks, isMarkdownWikilinkTarget, parseObsidianWikilink, resolveVaultDocumentLink } from "./document-links.ts";
 
 test("解析 Obsidian 文档引用及显示名", () => {
   assert.deepEqual(parseObsidianWikilink("[[笔记/技术/说明.md]]"), { target: "笔记/技术/说明.md", label: "笔记/技术/说明.md" });
@@ -11,8 +11,25 @@ test("解析 Obsidian 文档引用及显示名", () => {
 
 test("扫描 wikilink 时保留显示名范围并忽略嵌入", () => {
   assert.deepEqual(findObsidianWikilinks("见 [[docs/说明.md|技术说明]] 和 ![[图片.png]]"), [
-    { target: "docs/说明.md", label: "技术说明", from: 2, to: 21, displayFrom: 15, displayTo: 19 },
+    { target: "docs/说明.md", label: "技术说明", displayLabel: "技术说明", from: 2, to: 21, displayFrom: 15, displayTo: 19 },
   ]);
+});
+
+test("无别名的 wikilink 默认显示文件名，拖选定位到文件名源码", () => {
+  const source = "见 [[10-AI应用开发/08-项目实战/_index.md]]";
+  const [link] = findObsidianWikilinks(source);
+
+  assert.equal(link.displayLabel, "_index");
+  assert.equal(source.slice(link.displayFrom, link.displayTo), "_index");
+  assert.equal(defaultObsidianWikilinkLabel("笔记/说明.md#安装"), "说明");
+});
+
+test("显式指向非 Markdown 文件的 wikilink 可被识别", () => {
+  assert.equal(isMarkdownWikilinkTarget("笔记/说明.md"), true);
+  assert.equal(isMarkdownWikilinkTarget("笔记/说明"), true);
+  assert.equal(isMarkdownWikilinkTarget("#当前标题"), true);
+  assert.equal(isMarkdownWikilinkTarget("笔记/说明.pdf"), false);
+  assert.equal(isMarkdownWikilinkTarget("笔记/说明.txt"), false);
 });
 
 test("直接粘贴的外链会忽略行尾标点", () => {

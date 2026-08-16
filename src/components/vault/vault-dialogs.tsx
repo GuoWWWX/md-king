@@ -315,6 +315,7 @@ export function OpenVaultLocationDialog({ open, currentRoot, targetRoot, canOpen
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
             当前窗口正在打开 <span className="font-semibold text-slate-700 dark:text-zinc-200">{currentRoot ?? "另一个目录"}</span>。请选择 <span className="font-semibold text-slate-700 dark:text-zinc-200">{targetRoot ?? "新目录"}</span> 的打开位置。
+            在当前窗口打开会关闭现有的文档和图片标签；在新窗口打开会保留当前工作区。
           </DialogDescription>
         </DialogHeader>
 
