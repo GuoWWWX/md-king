@@ -252,7 +252,7 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
   }
 
   return (
-    <div className={cn("mk-document-tab-bar flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
+    <div className={cn("mk-document-tab-bar flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
       <div
         ref={listRef}
         className="scrollbar-none flex min-w-0 flex-1 cursor-default select-none items-center gap-1 overflow-x-auto overflow-y-hidden"
@@ -342,7 +342,7 @@ function PageTabItem({ tab, active, tabCount, onSelect, onClose, onCloseOthers, 
           tabIndex={0}
           title={tab.label}
           className={cn(
-            "mk-document-tab group flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
+            "mk-document-tab group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
             active
               ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-zinc-600/80 dark:bg-zinc-700/76 dark:text-zinc-50"
               : "border-transparent text-slate-600 hover:bg-slate-100 dark:border-zinc-700/45 dark:bg-zinc-800/72 dark:text-zinc-300 dark:hover:bg-zinc-700/80",
@@ -444,7 +444,7 @@ function DocumentTabItem({ tab, active, tabCount, showDirtyIndicator, onSelect, 
           data-mk-context-menu
           title={tab.path ?? tab.title}
           className={cn(
-            "mk-document-tab group flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
+            "mk-document-tab group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
             active
               ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-zinc-600/80 dark:bg-zinc-700/76 dark:text-zinc-50"
               : "border-transparent text-slate-600 hover:bg-slate-100 dark:border-zinc-700/45 dark:bg-zinc-800/72 dark:text-zinc-300 dark:hover:bg-zinc-700/80",

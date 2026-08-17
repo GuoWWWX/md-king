@@ -25,12 +25,12 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 1px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 1px);
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: 'Geist Variable', "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -103,6 +103,11 @@
 .ring-indigo-200,
 .focus-visible\:ring-indigo-200:focus-visible {
   --tw-ring-color: color-mix(in srgb, var(--app-primary) 24%, white) !important;
+}
+
+.outline-indigo-400,
+.outline-blue-400 {
+  outline-color: var(--app-primary) !important;
 }
 
 .shadow-indigo-100,
@@ -316,6 +321,139 @@
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
 }
 
+/* Keep the document-format workspace dense without changing controls elsewhere. */
+.template-style-manager :is([data-slot="input"], [data-slot="select-trigger"], .word-style-picker-control) {
+  height: 2rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.template-style-manager [data-slot="select-trigger"][data-size="default"] {
+  height: 2rem;
+}
+
+.template-style-manager [data-slot="label"] {
+  font-size: 0.8125rem;
+  line-height: 1rem;
+}
+
+.template-style-manager .word-style-picker-control .text-sm {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.template-style-manager .template-style-tabs > button,
+.template-style-manager .style-navigation-group {
+  font-size: 0.8125rem;
+  line-height: 1rem;
+}
+
+.template-style-manager .style-navigation-item {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.template-style-manager .template-style-properties > div:first-child > h3 {
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+}
+
+.template-style-manager .template-style-property-card > h4 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.template-style-manager :is(.style-level-control, .style-list-type-control, .style-orientation-control) > button {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.template-style-manager .style-weight-control > button {
+  font-size: 0.9375rem;
+  line-height: 1rem;
+}
+
+/* Keep segmented control selections in sync with the configured app accent. */
+.template-style-manager
+  :is(.style-level-control, .style-list-type-control, .style-weight-control, .style-align-control, .style-orientation-control)
+  > button[aria-pressed="true"] {
+  background-color: var(--app-primary-soft) !important;
+  color: var(--app-primary-text) !important;
+}
+
+.dark .template-style-manager
+  :is(.style-level-control, .style-list-type-control, .style-weight-control, .style-align-control, .style-orientation-control)
+  > button[aria-pressed="true"] {
+  background-color: color-mix(in srgb, var(--app-primary) 20%, #202020) !important;
+  color: color-mix(in srgb, var(--app-primary) 64%, white) !important;
+}
+
+/* Navigation and hierarchy selections use the same configured accent while
+   preserving their respective filled and outlined interaction treatments. */
+.template-style-manager .style-navigation-item[data-active="true"] {
+  background-color: var(--app-primary-soft) !important;
+  color: var(--app-primary-text) !important;
+  box-shadow: inset 2px 0 0 var(--app-primary) !important;
+}
+
+.template-style-manager .style-navigation-item[data-active="true"] > span:last-child {
+  border-color: color-mix(in srgb, var(--app-primary) 28%, white) !important;
+  color: var(--app-primary) !important;
+}
+
+.template-style-manager .style-level-control > button[aria-pressed="true"] {
+  color: var(--app-primary-text) !important;
+  --tw-ring-color: color-mix(in srgb, var(--app-primary) 26%, white) !important;
+}
+
+.template-style-manager .style-navigation-group[data-active="true"] > span > span:nth-child(2) {
+  border-color: color-mix(in srgb, var(--app-primary) 28%, white) !important;
+  color: var(--app-primary) !important;
+}
+
+.dark .template-style-manager .style-navigation-item[data-active="true"] {
+  background-color: color-mix(in srgb, var(--app-primary) 20%, #202020) !important;
+  color: color-mix(in srgb, var(--app-primary) 64%, white) !important;
+  box-shadow: inset 2px 0 0 var(--app-primary) !important;
+}
+
+.dark .template-style-manager .style-navigation-item[data-active="true"] > span:last-child,
+.dark .template-style-manager .style-navigation-group[data-active="true"] > span > span:nth-child(2) {
+  border-color: color-mix(in srgb, var(--app-primary) 48%, #a1a1aa) !important;
+  color: color-mix(in srgb, var(--app-primary) 64%, white) !important;
+}
+
+.dark .template-style-manager .style-level-control > button[aria-pressed="true"] {
+  background-color: #282828 !important;
+  color: color-mix(in srgb, var(--app-primary) 64%, white) !important;
+  --tw-ring-color: color-mix(in srgb, var(--app-primary) 52%, #a1a1aa) !important;
+}
+
+.template-style-manager > footer [data-slot="button"] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* 样式编辑器中的信息、页面和规则卡片与工作区深色基底统一；
+   输入控件仍保留 #282828，形成清晰的编辑层级。 */
+.dark .template-style-manager .template-style-panel-card {
+  border-color: rgba(212, 212, 216, 0.22) !important;
+  background: #202020 !important;
+}
+
+.dark .template-style-manager,
+.dark .template-style-manager .template-style-workspace,
+.dark .template-style-manager .template-style-navigation,
+.dark .template-style-manager .template-style-properties {
+  background: #202020 !important;
+}
+
+.dark .template-style-manager > header,
+.dark .template-style-manager .template-style-tabs,
+.dark .template-style-manager > footer {
+  background: #202020 !important;
+}
+
 .mk-system-floating-ball {
   border: 0 !important;
   background: transparent !important;
@@ -439,9 +577,25 @@
   background-color: var(--app-primary-soft) !important;
 }
 
+/* 浅色主题仍使用主题强调色；深色主题必须维持低对比的深灰交互面。 */
+.dark :is(
+  .hover\:bg-indigo-50,
+  .hover\:bg-indigo-50\/30,
+  .hover\:bg-indigo-50\/40,
+  .hover\:bg-indigo-200,
+  .hover\:bg-blue-50,
+  .hover\:bg-blue-50\/30,
+  .hover\:bg-blue-50\/40,
+  .hover\:bg-blue-100,
+  .hover\:bg-sky-50
+):hover {
+  background-color: color-mix(in srgb, var(--app-primary) 14%, #2e2e2e) !important;
+}
+
 :root {
   font-family:
-    'Geist Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    'Geist Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
   color: var(--foreground);
   background: var(--background);
   font-synthesis: none;
@@ -450,7 +604,9 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
-  --radius: 0.375rem;
+  --radius: 0.3125rem;
+  --font-emoji: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
+  --app-control-hover: #edf0f5;
   --background: #f8f9ff;
   --foreground: #0f172a;
   --card: #ffffff;
@@ -500,6 +656,7 @@
   --muted-foreground: #d4d4d8;
   --accent: #333333;
   --accent-foreground: #f8fafc;
+  --app-control-hover: #383838;
   --destructive: #f87171;
   --destructive-foreground: #ffffff;
   --border: rgba(212, 212, 216, 0.22);
@@ -646,6 +803,31 @@
   color: #94a3b8 !important;
 }
 
+/* Standard interactive surfaces use the same 5px corner radius across the app. */
+[data-slot="button"]:not(.rounded-full):not(.mk-floating-ball):not(.mk-system-floating-ball),
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"],
+[data-slot="card"] {
+  border-radius: var(--radius);
+}
+
+.mk-convert-control,
+.mk-template-filter-panel,
+.mk-template-list-panel,
+.mk-floating-panel,
+.mk-floating-drop,
+.mk-floating-empty,
+.mk-floating-task,
+.mk-document-tab-bar,
+.mk-document-tab,
+[data-mk-tab-context-menu-content],
+.mk-file-tree-row,
+.mk-file-tree-search,
+.mk-file-tree-switcher {
+  border-radius: var(--radius) !important;
+}
+
 /* Tooltip 通过 Portal 挂到 body，不能依赖上下文容器的深色类。统一使用略亮的
    实体深灰，且箭头和气泡同色，避免透明主体被全局 .bg-white 覆盖后出现黑色断层。 */
 .dark .mk-tooltip-content {
@@ -668,13 +850,55 @@
 .dark input,
 .dark textarea,
 .dark [data-slot="select-trigger"] {
-  background-color: rgba(31, 31, 31, 0.82) !important;
+  background-color: #282828 !important;
   color: #f8fafc !important;
-  border-color: rgba(212, 212, 216, 0.24) !important;
+  border-color: rgba(212, 212, 216, 0.22) !important;
 }
 
 .dark ::placeholder {
   color: #64748b !important;
+}
+
+/* Disabled controls must read as unavailable in dark mode instead of retaining
+   the contrast and accent colors of interactive controls. */
+.dark :is(input, textarea):disabled {
+  background-color: #343434 !important;
+  color: #71717a !important;
+  border-color: rgba(212, 212, 216, 0.14) !important;
+  opacity: 1 !important;
+}
+
+.dark :is(input, textarea):disabled::placeholder {
+  color: #71717a !important;
+}
+
+.dark [data-slot="select-trigger"][data-disabled] {
+  background-color: #343434 !important;
+  color: #71717a !important;
+  border-color: rgba(212, 212, 216, 0.14) !important;
+  opacity: 1 !important;
+}
+
+.dark [data-slot="select-trigger"][data-disabled] svg,
+.dark [data-slot="button"]:disabled {
+  color: #71717a !important;
+  opacity: 1 !important;
+}
+
+.dark [data-slot="button"][data-variant="default"]:disabled {
+  background-color: #343434 !important;
+  border-color: rgba(212, 212, 216, 0.14) !important;
+}
+
+/* 供未使用共享 Button 的紧凑图标和页面控件复用，避免浅白 hover 穿透到深色界面。 */
+.dark :is(
+  [class*="hover:bg-white"],
+  [class*="hover:bg-slate-50"],
+  [class*="hover:bg-slate-100"],
+  [class*="hover:bg-slate-200"],
+  [class*="hover:bg-slate-300"]
+):hover:not(:disabled) {
+  background-color: var(--app-control-hover) !important;
 }
 
 .dark .bg-emerald-50 {
@@ -700,7 +924,15 @@
 html,
 body,
 #root {
+  width: 100%;
+  height: 100%;
   min-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
@@ -1066,6 +1298,8 @@ select {
 
   .mk-file-tree-rename-input {
     border-width: 0.5px;
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   .mk-file-tree-rename-input:focus-visible {
@@ -1074,6 +1308,8 @@ select {
 
   .mk-file-tree-row {
     color: #334155;
+    -webkit-user-select: none;
+    user-select: none;
     /* 行高只有 28px，用 transition 会让快速滚动时留下拖影 */
     transition: background-color 120ms ease, opacity 120ms ease;
   }
@@ -1272,10 +1508,15 @@ select {
     flex: 1;
   }
 
-  .mk-editor-compact .cm-content {
+  .mk-editor-medium .cm-content {
     max-width: 960px;
   }
 
+  .mk-editor-compact .cm-content {
+    max-width: 760px;
+  }
+
+  .mk-editor-medium .cm-scroller,
   .mk-editor-compact .cm-scroller {
     justify-content: center;
   }
@@ -1524,6 +1765,77 @@ select {
     border-radius: 2px;
   }
 
+  /* 文首 YAML Frontmatter 在阅读态显示为文档属性，编辑时落光标即可回到源码。 */
+  .mk-cm-frontmatter {
+    overflow: hidden;
+    margin: 4px 0 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    background: #f8fafc;
+    color: #334155;
+    font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .mk-cm-frontmatter--editable {
+    cursor: text;
+  }
+
+  .mk-cm-frontmatter-heading {
+    padding: 5px 9px;
+    border-bottom: 1px solid #e2e8f0;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .mk-cm-frontmatter-properties {
+    display: grid;
+  }
+
+  .mk-cm-frontmatter-row {
+    display: grid;
+    grid-template-columns: minmax(88px, 0.35fr) minmax(0, 1fr);
+    align-items: center;
+    min-height: 28px;
+    padding: 0 9px;
+    border-top: 1px solid #eef2f7;
+  }
+
+  .mk-cm-frontmatter-row:first-child {
+    border-top: 0;
+  }
+
+  .mk-cm-frontmatter-key {
+    overflow: hidden;
+    color: #64748b;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mk-cm-frontmatter-value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: #1e293b;
+    overflow-wrap: anywhere;
+  }
+
+  .mk-cm-frontmatter-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 11px;
+    line-height: 1;
+  }
+
   .mk-cm-callout-title,
   .mk-cm-callout-fallback-title {
     color: var(--mk-callout-accent);
@@ -1766,7 +2078,7 @@ select {
   .mk-cm-image[data-state="loading"] .mk-cm-image-canvas,
   .mk-cm-image[data-state="error"] .mk-cm-image-canvas {
     color: #64748b;
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
     font-size: 12px;
   }
 
@@ -1856,7 +2168,7 @@ select {
   .mk-cm-mermaid[data-state="loading"] .mk-cm-mermaid-canvas,
   .mk-cm-mermaid[data-state="error"] .mk-cm-mermaid-canvas {
     justify-content: flex-start;
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
     font-size: 12px;
     color: #64748b;
   }
@@ -1911,7 +2223,7 @@ select {
     position: absolute;
     left: 12px;
     top: 4px;
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
@@ -2676,13 +2988,17 @@ select {
     color: #a1a1aa !important;
   }
 
+  .dark .mk-file-tree-tool:disabled {
+    color: #71717a !important;
+    opacity: 1 !important;
+  }
+
   .dark .mk-file-tree-tool:hover:not(:disabled) {
     color: #f4f4f5 !important;
     background: rgba(82, 82, 82, 0.46) !important;
   }
 
-  /* 底色/边框故意让全局的 `.dark input` 规则接管，和其余深色输入框保持一致；
-     但那条规则带 !important，焦点环必须同样加 !important 才压得住，否则聚焦无反馈。 */
+  /* 文件树的搜索可用时和工具栏同为深色；禁用时才用更浅的灰底提示不可搜索。 */
   .dark .mk-file-tree-search,
   .dark .mk-file-tree-rename-input {
     border-color: rgba(212, 212, 216, 0.22);
@@ -2690,8 +3006,23 @@ select {
     color: #f4f4f5;
   }
 
-  .dark .mk-file-tree-search::placeholder {
-    color: #71717a;
+  .dark .mk-file-tree-search:not(:disabled) {
+    background: #202020 !important;
+  }
+
+  .dark .mk-file-tree-search:not(:disabled)::placeholder {
+    color: #a1a1aa !important;
+  }
+
+  .dark .mk-file-tree-search:disabled {
+    background: #343434 !important;
+    color: #71717a !important;
+    border-color: rgba(212, 212, 216, 0.14) !important;
+    opacity: 1 !important;
+  }
+
+  .dark .mk-file-tree-search:disabled::placeholder {
+    color: #71717a !important;
   }
 
   .dark .mk-file-tree-search:focus-visible,
@@ -2833,6 +3164,7 @@ select {
 
   .dark .mk-document-tab-bar [role="tab"][aria-selected="true"] {
     border-color: rgba(212, 212, 216, 0.42) !important;
+    background: #2a2a2a !important;
     color: #f4f4f5 !important;
     box-shadow: inset 0 0 0 1px rgba(212, 212, 216, 0.12);
   }
@@ -2945,6 +3277,34 @@ select {
   .dark .mk-cm-callout-title,
   .dark .mk-cm-callout-fallback-title {
     color: color-mix(in srgb, var(--mk-callout-accent) 70%, white) !important;
+  }
+
+  .dark .mk-cm-frontmatter {
+    border-color: rgba(212, 212, 216, 0.22);
+    background: #27272a;
+    color: #e4e4e7;
+  }
+
+  .dark .mk-cm-frontmatter-heading {
+    border-color: rgba(212, 212, 216, 0.18);
+    color: #d4d4d8;
+  }
+
+  .dark .mk-cm-frontmatter-row {
+    border-color: rgba(212, 212, 216, 0.14);
+  }
+
+  .dark .mk-cm-frontmatter-key {
+    color: #a1a1aa;
+  }
+
+  .dark .mk-cm-frontmatter-value {
+    color: #f4f4f5;
+  }
+
+  .dark .mk-cm-frontmatter-tag {
+    background: #3f3f46;
+    color: #e4e4e7;
   }
 
   .dark .mk-cm-hr::before {
@@ -3311,6 +3671,17 @@ select {
     color: #f8fafc !important;
   }
 
+  /* 所有 Word 预览共用同一块深灰画布，纸张之外不再出现渐变或不同灰阶。 */
+  .dark .mk-word-preview-viewport,
+  .dark .mk-template-preview-viewport,
+  .dark .mk-template-side-preview {
+    border: 1px solid rgba(212, 212, 216, 0.16) !important;
+    background: #2e2e2e !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      inset 0 -12px 28px rgba(0, 0, 0, 0.16) !important;
+  }
+
   .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) .mk-word-callout {
     background-color: color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
   }
@@ -3383,16 +3754,10 @@ select {
       inset 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
   }
 
-  .dark .mk-template-preview-viewport {
-    background:
-      linear-gradient(180deg, rgba(63, 63, 70, 0.72), rgba(39, 39, 42, 0.84)),
-      #27272a !important;
-  }
-
   .dark .mk-template-filter-panel,
   .dark .mk-template-list-panel {
     border-color: rgba(161, 161, 170, 0.18) !important;
-    background: rgba(39, 39, 42, 0.52) !important;
+    background: #202020 !important;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.04),
       0 18px 44px rgba(0, 0, 0, 0.18) !important;
@@ -3428,30 +3793,54 @@ select {
     opacity: 1 !important;
   }
 
+  .mk-template-batch-delete:disabled {
+    border-color: #94a3b8 !important;
+    background: #f1f5f9 !important;
+    color: #475569 !important;
+    opacity: 1 !important;
+  }
+
+  .dark .mk-template-batch-delete:disabled {
+    border-color: rgba(161, 161, 170, 0.2) !important;
+    background: rgba(39, 39, 42, 0.62) !important;
+    color: #a1a1aa !important;
+  }
+
   .dark .mk-template-card {
     border-color: rgba(161, 161, 170, 0.18) !important;
+    background: #202020 !important;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.04),
       0 18px 42px rgba(0, 0, 0, 0.18) !important;
   }
 
-  .dark .mk-template-card-previewed {
-    border-color: rgba(96, 165, 250, 0.62) !important;
-    background:
-      linear-gradient(145deg, rgba(39, 39, 42, 0.98), rgba(31, 31, 31, 0.94)),
-      #27272a !important;
+  .mk-selected-card {
+    border-color: color-mix(in srgb, var(--app-primary) 38%, white) !important;
+    background: #ffffff !important;
     box-shadow:
-      inset 4px 0 0 rgba(59, 130, 246, 0.9),
-      inset 0 0 0 1px rgba(147, 197, 253, 0.36),
+      inset 4px 0 0 var(--app-primary),
+      inset 0 0 0 1px color-mix(in srgb, var(--app-primary) 22%, white) !important;
+  }
+
+  .mk-selected-card-ring {
+    border-color: color-mix(in srgb, var(--app-primary) 30%, white) !important;
+  }
+
+  .dark .mk-selected-card {
+    border-color: color-mix(in srgb, var(--app-primary) 62%, #a1a1aa) !important;
+    background: #202020 !important;
+    box-shadow:
+      inset 4px 0 0 var(--app-primary),
+      inset 0 0 0 1px color-mix(in srgb, var(--app-primary) 34%, #202020),
       0 18px 42px rgba(0, 0, 0, 0.2) !important;
   }
 
-  .dark .mk-template-card-active-ring {
-    border-color: rgba(147, 197, 253, 0.62) !important;
+  .dark .mk-selected-card-ring {
+    border-color: color-mix(in srgb, var(--app-primary) 58%, #a1a1aa) !important;
   }
 
-  .dark .mk-template-side-preview {
-    background: transparent !important;
+  .dark .mk-template-side-preview-card {
+    background: #202020 !important;
   }
 
   .dark .mk-command-preview {
@@ -3477,7 +3866,7 @@ select {
   .dark .mk-history-filter-panel [data-slot="select-trigger"],
   .dark .mk-history-filter-panel button {
     border-color: rgba(161, 161, 170, 0.2) !important;
-    background: rgba(31, 31, 31, 0.82) !important;
+    background: #282828 !important;
   }
 
   .dark .mk-quick-window {
@@ -3610,6 +3999,7 @@ select {
     }
 
     .mk-template-side-panel,
+    .mk-template-side-resizer,
     .mk-history-detail {
       display: none !important;
     }

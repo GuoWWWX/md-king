@@ -43,14 +43,14 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
           interactive
           data-mk-context-menu
           className={cn(
-            "mk-template-card group relative cursor-pointer overflow-hidden transition",
-            isPreviewed && "mk-template-card-previewed border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
-            isSelected && "bg-white/88 dark:bg-zinc-900/74",
+            "mk-template-card group relative cursor-pointer overflow-hidden bg-white transition dark:bg-zinc-900",
+            isPreviewed && "mk-template-card-previewed mk-selected-card",
+            isSelected && "dark:bg-zinc-900/74",
           )}
           onClick={() => onPreview(template)}
         >
       {isPreviewed ? (
-        <span className="mk-template-card-active-ring pointer-events-none absolute inset-1 rounded-[10px] border border-blue-200/70 dark:border-blue-500/50" />
+        <span className="mk-template-card-active-ring mk-selected-card-ring pointer-events-none absolute inset-1 rounded-[10px] border" />
       ) : null}
 
       <div className="mk-template-card-preview mb-2.5 h-44 overflow-hidden rounded-[8px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70 dark:border-zinc-700/70 dark:bg-zinc-950/70 dark:shadow-none">

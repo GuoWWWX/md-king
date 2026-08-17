@@ -2,13 +2,16 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
-import { closeSearchPanel, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
+import { closeSearchPanel, getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Search, X } from "lucide-react";
+import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { isSupportedImagePath } from "@/lib/image-files";
+import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { cn } from "@/lib/utils";
-import { getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
+import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
@@ -60,10 +63,197 @@ export type LiveMarkdownEditorHandle = {
 const externalUpdate = Annotation.define<boolean>();
 const linkInteractionVersion = "strict-hitbox-v6";
 
+const searchPhrases = {
+  Find: "查找",
+  Replace: "替换",
+  next: "下一个",
+  previous: "上一个",
+  all: "全选",
+  "match case": "大小写",
+  regexp: "正则",
+  "by word": "全词",
+  replace: "替换",
+  "replace all": "全替换",
+  close: "关闭查找",
+};
+
+type SearchPanelMode = "find" | "replace";
+
+function updateSearchResultStatus(view: EditorView, panel: HTMLElement) {
+  const output = panel.querySelector<HTMLElement>("[data-mk-search-result-count]");
+  if (!output) return;
+
+  const query = getSearchQuery(view.state);
+  let count = 0;
+  let current = 0;
+  let truncated = false;
+  if (query.valid) {
+    const selection = view.state.selection.main;
+    const cursor = query.getCursor(view.state);
+    while (true) {
+      const next = cursor.next();
+      if (next.done) break;
+      count += 1;
+      if (selection.from === next.value.from && selection.to === next.value.to) current = count;
+      if (count >= 9999) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+
+  output.textContent = count === 0
+    ? "0 个结果"
+    : current > 0
+      ? `${current}/${truncated ? "9999+" : count}`
+      : `${truncated ? "9999+" : count} 个结果`;
+
+  panel.querySelectorAll<HTMLButtonElement>("button[name='prev'], button[name='next'], button[name='replace'], button[name='replaceAll']")
+    .forEach((button) => {
+      button.disabled = count === 0;
+    });
+}
+
+function setSearchReplaceExpanded(panel: HTMLElement, expanded: boolean, focusReplace = false) {
+  panel.dataset.searchMode = expanded ? "replace" : "find";
+  const toggle = panel.querySelector<HTMLButtonElement>("[data-mk-search-replace-toggle]");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.setAttribute("aria-label", expanded ? "收起替换" : "展开替换");
+    toggle.dataset.tooltip = expanded ? "收起替换" : "展开替换";
+    toggle.removeAttribute("title");
+    toggle.innerHTML = renderToStaticMarkup(createElement(expanded ? ChevronDown : ChevronRight, { size: 15, strokeWidth: 2 }));
+  }
+  if (focusReplace) {
+    const replaceInput = panel.querySelector<HTMLInputElement>('input[name="replace"]');
+    replaceInput?.focus();
+    replaceInput?.select();
+  }
+}
+
+function prepareSearchPanel(view: EditorView, panel: HTMLElement) {
+  if (panel.querySelector("[data-mk-search-replace-toggle]")) return;
+
+  const searchInput = panel.querySelector<HTMLInputElement>("input[name='search']");
+  const replaceInput = panel.querySelector<HTMLInputElement>("input[name='replace']");
+  const closeButton = panel.querySelector<HTMLButtonElement>("button[name='close']");
+  if (!searchInput || !replaceInput || !closeButton) return;
+
+  const iconMarkup = (icon: typeof Search) => renderToStaticMarkup(createElement(icon, { size: 15, strokeWidth: 2 }));
+  const setIconButton = (button: HTMLButtonElement | null, icon: typeof Search, label: string) => {
+    if (!button) return;
+    button.dataset.mkSearchIconButton = "";
+    button.setAttribute("aria-label", label);
+    button.dataset.tooltip = label;
+    button.removeAttribute("title");
+    button.innerHTML = iconMarkup(icon);
+  };
+
+  const findRow = document.createElement("div");
+  findRow.dataset.mkSearchFindRow = "";
+
+  const replaceRow = document.createElement("div");
+  replaceRow.dataset.mkSearchReplaceRow = "";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.dataset.mkSearchReplaceToggle = "";
+  toggle.addEventListener("click", () => {
+    setSearchReplaceExpanded(panel, panel.dataset.searchMode !== "replace");
+  });
+
+  const findField = document.createElement("div");
+  findField.dataset.mkSearchFindField = "";
+  const searchIcon = document.createElement("span");
+  searchIcon.dataset.mkSearchFieldIcon = "";
+  searchIcon.setAttribute("aria-hidden", "true");
+  searchIcon.innerHTML = iconMarkup(Search);
+  findField.append(searchIcon, searchInput);
+
+  const optionLabels: Array<{ inputName: string; key: string; label: string; text: string }> = [
+    { inputName: "case", key: "case", label: "大小写", text: "Aa" },
+    { inputName: "word", key: "word", label: "全词匹配", text: "词" },
+    { inputName: "re", key: "regexp", label: "正则表达式", text: ".*" },
+  ];
+  optionLabels.forEach(({ inputName, key, label, text }) => {
+    const input = panel.querySelector<HTMLInputElement>(`input[name='${inputName}']`);
+    const option = input?.closest<HTMLLabelElement>("label");
+    if (!input || !option) return;
+    option.dataset.mkSearchOption = key;
+    option.setAttribute("aria-label", label);
+    option.dataset.tooltip = label;
+    option.removeAttribute("title");
+    const optionText = document.createElement("span");
+    optionText.dataset.mkSearchOptionText = "";
+    optionText.textContent = text;
+    option.replaceChildren(input, optionText);
+    findField.append(option);
+  });
+
+  const previousButton = panel.querySelector<HTMLButtonElement>("button[name='prev']");
+  const nextButton = panel.querySelector<HTMLButtonElement>("button[name='next']");
+  setIconButton(previousButton, ArrowUp, "上一个");
+  setIconButton(nextButton, ArrowDown, "下一个");
+  closeButton.dataset.mkSearchIconButton = "";
+  closeButton.setAttribute("aria-label", "关闭查找");
+  closeButton.dataset.tooltip = "关闭查找";
+  closeButton.removeAttribute("title");
+  closeButton.innerHTML = iconMarkup(X);
+
+  findRow.append(toggle, findField);
+  const resultCount = document.createElement("span");
+  resultCount.dataset.mkSearchResultCount = "";
+  resultCount.setAttribute("aria-live", "polite");
+  findRow.append(resultCount);
+  if (previousButton) findRow.append(previousButton);
+  if (nextButton) findRow.append(nextButton);
+  findRow.append(closeButton);
+
+  const replaceIndent = document.createElement("span");
+  replaceIndent.dataset.mkSearchReplaceIndent = "";
+  replaceIndent.setAttribute("aria-hidden", "true");
+  const replaceField = document.createElement("div");
+  replaceField.dataset.mkSearchReplaceField = "";
+  const replaceIcon = searchIcon.cloneNode(true) as HTMLElement;
+  replaceField.append(replaceIcon, replaceInput);
+  replaceRow.append(replaceIndent, replaceField);
+  ["replace", "replaceAll"].forEach((name) => {
+    const button = panel.querySelector<HTMLButtonElement>(`button[name='${name}']`);
+    if (button) replaceRow.append(button);
+  });
+
+  panel.replaceChildren(findRow, replaceRow);
+  const scheduleStatusUpdate = () => requestAnimationFrame(() => updateSearchResultStatus(view, panel));
+  searchInput.addEventListener("input", scheduleStatusUpdate);
+  panel.querySelectorAll<HTMLInputElement>("[data-mk-search-option] input").forEach((input) => input.addEventListener("change", scheduleStatusUpdate));
+  panel.querySelectorAll<HTMLButtonElement>("button[name='prev'], button[name='next'], button[name='replace'], button[name='replaceAll']")
+    .forEach((button) => button.addEventListener("click", scheduleStatusUpdate));
+  updateSearchResultStatus(view, panel);
+}
+
+function showSearchPanel(view: EditorView, mode: SearchPanelMode) {
+  openSearchPanel(view);
+  // CodeMirror 会在 dispatch 后更新浮层 DOM，下一帧再切换模式并聚焦对应输入框。
+  requestAnimationFrame(() => {
+    const panel = view.dom.querySelector<HTMLElement>(".cm-panel.cm-search");
+    if (!panel) return;
+    prepareSearchPanel(view, panel);
+    setSearchReplaceExpanded(panel, mode === "replace", mode === "replace");
+    if (mode === "find") {
+      const searchInput = panel.querySelector<HTMLInputElement>('input[name="search"]');
+      searchInput?.focus();
+      searchInput?.select();
+    }
+  });
+}
+
 function docChangeDebounceMs(length: number): number {
   if (length >= 300_000) return 700;
   if (length >= 80_000) return 400;
   return 200;
+}
+
+function initialEditorSelection(content: string) {
+  return { anchor: parseYamlFrontmatter(content)?.to ?? 0 };
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
@@ -80,6 +270,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // 否则深色模式下拿到的还是缓存里的浅色版本。
   const mermaidCompartment = useRef(new Compartment()).current;
   const imageBlockCompartment = useRef(new Compartment()).current;
+  const frontmatterCompartment = useRef(new Compartment()).current;
 
   // 回调放 ref 里读：EditorView 只创建一次，闭包捕获的是首次渲染的函数，
   // 直接用会一直调到过期的 props。
@@ -215,13 +406,13 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
             return true;
           },
         },
-        // Ctrl+F / Ctrl+R 都开同一个面板（面板本身自带替换输入框）。
-        // 必须 preventDefault：Ctrl+R 在 WebView 里是刷新页面，一旦漏下去当前编辑内容就没了。
+      // Ctrl+F 只显示查找，Ctrl+R 显示查找和替换。
+      // 必须 preventDefault：Ctrl+R 在 WebView 里是刷新页面，一旦漏下去当前编辑内容就没了。
         {
           key: "Mod-f",
           preventDefault: true,
           run: (view) => {
-            openSearchPanel(view);
+            showSearchPanel(view, "find");
             return true;
           },
         },
@@ -229,12 +420,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
           key: "Mod-r",
           preventDefault: true,
           run: (view) => {
-            openSearchPanel(view);
-            // 面板是下一帧才插进 DOM 的，同步 querySelector 拿不到替换框。
-            requestAnimationFrame(() => {
-              const replaceInput = view.dom.querySelector<HTMLInputElement>('.cm-panel.cm-search input[name="replace"]');
-              replaceInput?.select();
-            });
+            showSearchPanel(view, "replace");
             return true;
           },
         },
@@ -265,8 +451,9 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
       markdown({ base: livePreviewMarkdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
       livePreviewCompartment.of(livePreviewPlugin),
-      mermaidCompartment.of(mermaidBlockExtension(isDark)),
-      imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath)),
+      frontmatterCompartment.of(frontmatterBlockExtension(!readOnly)),
+      mermaidCompartment.of(mermaidBlockExtension(isDark, !readOnly)),
+      imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
       tableBlockExtension,
       tableSyntaxRefreshPlugin,
       tableBlockPasteExtension,
@@ -294,9 +481,15 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
       EditorView.contentAttributes.of({ "aria-label": "Markdown 输入内容" }),
+      // CodeMirror 搜索面板使用 state phrase 注入文案，避免用 CSS 伪元素伪造中文按钮文字。
+      EditorState.phrases.of(searchPhrases),
       themeCompartment.of(markdownEditorTheme(isDark)),
       readOnlyCompartment.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
       EditorView.updateListener.of((update) => {
+        if (update.docChanged || update.selectionSet) {
+          const searchPanel = update.view.dom.querySelector<HTMLElement>(".cm-panel.cm-search");
+          if (searchPanel) updateSearchResultStatus(update.view, searchPanel);
+        }
         if (update.docChanged && activeTableFromRef.current !== null) {
           const previousTableFrom = activeTableFromRef.current;
           let tableFrom = previousTableFrom;
@@ -317,7 +510,11 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     if (placeholder) extensions.push(cmPlaceholder(placeholder));
 
     const view = new EditorView({
-      state: EditorState.create({ doc: initialContentRef.current, extensions }),
+      state: EditorState.create({
+        doc: initialContentRef.current,
+        selection: initialEditorSelection(initialContentRef.current),
+        extensions,
+      }),
       parent: host,
     });
     viewRef.current = view;
@@ -362,16 +559,17 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     viewRef.current?.dispatch({
       effects: [
         themeCompartment.reconfigure(markdownEditorTheme(isDark)),
-        mermaidCompartment.reconfigure(mermaidBlockExtension(isDark)),
+        frontmatterCompartment.reconfigure(frontmatterBlockExtension(!readOnly)),
+        mermaidCompartment.reconfigure(mermaidBlockExtension(isDark, !readOnly)),
       ],
     });
-  }, [isDark, mermaidCompartment, themeCompartment]);
+  }, [frontmatterCompartment, isDark, mermaidCompartment, readOnly, themeCompartment]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: imageBlockCompartment.reconfigure(markdownImageBlockExtension(markdownSourcePath)),
+      effects: imageBlockCompartment.reconfigure(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
     });
-  }, [imageBlockCompartment, markdownSourcePath]);
+  }, [imageBlockCompartment, markdownSourcePath, readOnly]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
@@ -383,6 +581,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     viewRef.current?.dispatch({
       effects: readOnlyCompartment.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
     });
+    if (readOnly) {
+      activeTableFromRef.current = null;
+      reportTableContext(null);
+    }
   }, [readOnly, readOnlyCompartment]);
 
   useEffect(() => {
@@ -403,13 +605,16 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     lastDocumentKeyRef.current = documentKey;
 
     const next = initialContentRef.current;
+    const selection = initialEditorSelection(next);
     activeTableFromRef.current = null;
     if (view.state.doc.toString() === next) {
       view.dispatch({
+        selection,
         effects: [
           resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
           resetCalloutCollapsedEffect.of(undefined),
         ],
+        scrollIntoView: true,
       });
       reportTableContext(null);
       return;
@@ -417,7 +622,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: next },
-      selection: { anchor: 0 },
+      selection,
       effects: [
         resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
         resetCalloutCollapsedEffect.of(undefined),

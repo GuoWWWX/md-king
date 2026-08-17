@@ -24,14 +24,12 @@ type HistoryRecordCardProps = {
   onDelete?: (item: HistoryItem) => void;
 };
 
-async function copyText(text?: string, message = "已复制") {
+async function copyText(text?: string) {
   if (!text) {
-    toast.info("暂无可复制内容");
     return;
   }
   try {
     await navigator.clipboard.writeText(text);
-    toast.success(message);
   } catch (error) {
     toast.error(clipboardWriteErrorMessage(error));
   }
@@ -66,14 +64,14 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
           radius="sm"
           data-mk-context-menu
           className={cn(
-            "relative min-w-0 overflow-hidden",
-            selected && "border-blue-200 bg-white/86 shadow-[inset_3px_0_0_rgba(37,99,235,0.72)] dark:border-blue-500/60 dark:bg-zinc-900/86 dark:shadow-[inset_3px_0_0_rgba(59,130,246,0.82)]",
+            "mk-history-record-card relative min-w-0 overflow-hidden",
+            selected && "mk-selected-card",
             checked && "bg-white/88 dark:bg-zinc-900/88",
           )}
           interactive={Boolean(onSelect)}
           onClick={() => onSelect?.(item)}
         >
-      {selected ? <span className="pointer-events-none absolute inset-1 rounded-[6px] border border-blue-200/70 dark:border-blue-500/50" /> : null}
+      {selected ? <span className="mk-selected-card-ring pointer-events-none absolute inset-1 rounded-[10px] border" /> : null}
 
       <div className="flex min-w-0 items-start justify-between gap-3">
         {onToggleChecked ? (
@@ -114,7 +112,7 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
 
       {!compact ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void copyText(item.outputPath, "输出路径已复制"); }}>
+          <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void copyText(item.outputPath); }}>
             <Copy className="size-4" />
             复制输出路径
           </SoftActionButton>
@@ -145,8 +143,8 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSelect?.(item)} disabled={!onSelect}>查看记录详情</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.inputPath, "输入路径已复制")} disabled={!item.inputPath}>复制输入路径</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.outputPath, "输出路径已复制")} disabled={!item.outputPath}>复制输出路径</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.inputPath)} disabled={!item.inputPath}>复制输入路径</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.outputPath)} disabled={!item.outputPath}>复制输出路径</ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void openFile(item.outputPath)} disabled={!canOpenOutput}>打开生成文件</ContextMenu.Item>
           {onDelete ? (
             <>

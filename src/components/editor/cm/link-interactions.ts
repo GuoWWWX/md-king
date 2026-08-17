@@ -153,8 +153,20 @@ function placePointerInsideHiddenLinkSource(view: EditorView, event: MouseEvent)
   });
   const nearbyTarget = nearbyElement?.dataset.mkLinkTarget;
   if (!nearbyTarget) return false;
-  // 双链仅在实际拖选其可见对象时切回源码；单击两侧留白不应展开或跳转。
-  if (nearbyElement?.classList.contains("mk-cm-link--wikilink")) return false;
+  if (nearbyElement.classList.contains("mk-cm-link--wikilink")) {
+    const link = wikilinkRangeFromRenderedElement(view, nearbyElement, nearbyTarget);
+    if (!link) return false;
+    const rect = nearbyElement.getBoundingClientRect();
+    if (event.clientX >= rect.left && event.clientX <= rect.right) return false;
+
+    // 链接本体保持可点击跳转；只有左右紧邻区域作为源码编辑入口。
+    // 直接落到真实源码边界，避免先替换 DOM 再依赖 posAtCoords 导致光标掉到下一行。
+    const sourcePosition = event.clientX < rect.left ? link.from : link.to;
+    event.preventDefault();
+    view.dispatch({ selection: { anchor: sourcePosition } });
+    view.focus();
+    return true;
+  }
 
   const sameTargetElements = renderedElements.filter((element) => element.dataset.mkLinkTarget === nearbyTarget);
 
@@ -196,10 +208,11 @@ export function markdownLinkInteractionExtension(options: MarkdownLinkInteractio
       pendingLinkTarget = undefined;
       pendingWikilinkPointer = undefined;
       swallowNextClick = false;
-      if (!options.openLinksOnClick()) return false;
       if (event.button !== 0) return false;
 
       const clicked = clickedLink(event);
+      if (!clicked && placePointerInsideHiddenLinkSource(view, event)) return true;
+      if (!options.openLinksOnClick()) return false;
       if (clicked) {
         const wikilink = wikilinkRangeFromRenderedElement(view, clicked.element, clicked.target);
         if (wikilink) {
@@ -228,9 +241,6 @@ export function markdownLinkInteractionExtension(options: MarkdownLinkInteractio
         return false;
       }
 
-      // 命中双链两侧的透明区域时才展开源码。真实链接本体不在这里拦截，
-      // 否则既无法拖选，也永远到不了后续的打开逻辑。
-      if (placePointerInsideHiddenLinkSource(view, event)) return true;
       return false;
     },
     mousemove: (event, view) => {

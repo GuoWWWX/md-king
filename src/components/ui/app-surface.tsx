@@ -26,9 +26,9 @@ const surfacePadding = {
 };
 
 const surfaceRadius = {
-  sm: "rounded-[8px]",
-  md: "rounded-[8px]",
-  lg: "rounded-[10px]",
+  sm: "rounded-[5px]",
+  md: "rounded-[5px]",
+  lg: "rounded-[5px]",
 };
 
 export function AppSurface({
@@ -55,13 +55,13 @@ export function AppSurface({
 type AppButtonProps = React.ComponentProps<typeof Button>;
 
 export function PrimaryActionButton({ className, ...props }: AppButtonProps) {
-  return <Button className={cn("mk-blue-button rounded-[8px]", className)} {...props} />;
+  return <Button className={cn("mk-blue-button rounded-[5px]", className)} {...props} />;
 }
 
 export function SoftActionButton({ className, variant = "outline", ...props }: AppButtonProps) {
-  return <Button variant={variant} className={cn("rounded-[8px] border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-900", className)} {...props} />;
+  return <Button variant={variant} className={cn("rounded-[5px] border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-900", className)} {...props} />;
 }
 
 export function DocPreviewSurface({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("mk-doc-preview rounded-[8px]", className)} {...props} />;
+  return <div className={cn("mk-doc-preview rounded-[5px]", className)} {...props} />;
 }

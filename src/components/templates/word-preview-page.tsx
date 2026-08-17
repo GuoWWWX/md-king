@@ -272,10 +272,16 @@ function codeBlockBorder(draft: StyleDraft) {
   return `1px solid ${draft.codeBorderColor || "#E2E8F0"}`;
 }
 
+const emojiFontFallback = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"';
+
+function previewFontFamily(primary: string, secondary: string, generic = "sans-serif") {
+  return `"${primary}", "${secondary}", ${emojiFontFallback}, ${generic}`;
+}
+
 function textStyle(draft: StyleDraft): CSSProperties {
   return {
     color: draft.color,
-    fontFamily: `"${draft.chineseFont}", "${draft.latinFont}", sans-serif`,
+    fontFamily: previewFontFamily(draft.chineseFont, draft.latinFont),
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
     lineHeight: draft.lineHeight,
@@ -290,7 +296,7 @@ function textStyle(draft: StyleDraft): CSSProperties {
 function inlineCodeStyle(draft: StyleDraft): CSSProperties {
   return {
     color: draft.color,
-    fontFamily: `"${draft.latinFont}", "${draft.chineseFont}", monospace`,
+    fontFamily: previewFontFamily(draft.latinFont, draft.chineseFont, "monospace"),
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
     lineHeight: 1.35,
@@ -1668,7 +1674,7 @@ function renderMarkdownBlocks({
                 className="flex min-w-0 items-end gap-1"
                 style={{
                   color: bodyDraft.color,
-                  fontFamily: `"${bodyDraft.chineseFont}", "${bodyDraft.latinFont}", sans-serif`,
+                  fontFamily: previewFontFamily(bodyDraft.chineseFont, bodyDraft.latinFont),
                   fontSize: `${bodyDraft.fontSize}pt`,
                   lineHeight: bodyDraft.lineHeight,
                   marginBottom: `${bodyDraft.afterSpacing}pt`,
@@ -2019,7 +2025,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const whiteSpace = table.cellWrap ? "normal" : "nowrap";
   const captionStyle: CSSProperties = {
     color: tableCaption.color,
-    fontFamily: `"${tableCaption.chineseFont}", "${tableCaption.latinFont}", sans-serif`,
+    fontFamily: previewFontFamily(tableCaption.chineseFont, tableCaption.latinFont),
     fontSize: `${tableCaption.fontSize}pt`,
     fontWeight: tableCaption.fontWeight,
     lineHeight: tableCaption.lineHeight,
@@ -2029,7 +2035,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   };
   const figureCaptionStyle: CSSProperties = {
     color: caption.color,
-    fontFamily: `"${caption.chineseFont}", "${caption.latinFont}", sans-serif`,
+    fontFamily: previewFontFamily(caption.chineseFont, caption.latinFont),
     fontSize: `${caption.fontSize}pt`,
     fontWeight: caption.fontWeight,
     lineHeight: caption.lineHeight,
@@ -2045,7 +2051,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const headerStyle: CSSProperties = {
     backgroundColor: tableHeader.headerBackgroundColor === "transparent" ? undefined : tableHeader.headerBackgroundColor,
     color: tableHeader.color,
-    fontFamily: `"${tableHeader.chineseFont}", "${tableHeader.latinFont}", sans-serif`,
+    fontFamily: previewFontFamily(tableHeader.chineseFont, tableHeader.latinFont),
     fontWeight: tableHeader.headerBold ? 700 : 500,
     fontSize: `${tableHeader.headerFontSize}pt`,
     lineHeight: tableHeader.headerLineHeight,
@@ -2063,7 +2069,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const bodyCellStyle: CSSProperties = {
     backgroundColor: tableBody.bodyBackgroundColor,
     color: tableBody.color,
-    fontFamily: `"${tableBody.chineseFont}", "${tableBody.latinFont}", sans-serif`,
+    fontFamily: previewFontFamily(tableBody.chineseFont, tableBody.latinFont),
     fontSize: `${tableBody.bodyFontSize}pt`,
     lineHeight: tableBody.bodyLineHeight,
     minHeight: `${table.minRowHeight}px`,
@@ -2252,7 +2258,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
       <div
         ref={viewportRef}
         className={cn(
-          "min-h-0 flex-1 rounded-lg bg-slate-200/60 p-3 2xl:p-4",
+          "mk-word-preview-viewport min-h-0 flex-1 rounded-lg bg-slate-200/60 p-3 2xl:p-4",
           interactiveViewport ? "cursor-grab select-none overflow-auto active:cursor-grabbing" : "overflow-y-auto overflow-x-hidden",
           interactiveViewport && isDraggingPreview && "cursor-grabbing",
           viewportClassName,

@@ -1,15 +1,16 @@
-import { AlignCenter, AlignJustify, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, Maximize2, Minimize2, Moon, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Settings2, Sun, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Trash2 } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
-import { ConversionInputCard, type ConversionInputCardHandle } from "@/components/convert/conversion-input-card";
+import { ConversionInputCard, type ConversionInputCardHandle, type EditorContentWidthMode } from "@/components/convert/conversion-input-card";
 import { ImageDocumentViewer, MediaPreviewDialogHost } from "@/components/media/image-viewer";
 import type { TableDisplayContext, TableWidthMode } from "@/components/editor/live-markdown-editor";
 import { TableWidthModeIcon } from "@/components/editor/table-width-mode-icon";
 import { RESIZABLE_PANEL_COLLAPSE_THRESHOLD } from "@/components/layout/resizable-divider";
 import { TemplateStyleManager } from "@/components/templates/template-style-manager";
 import { WordPreviewPage, type PreviewOutlineItem } from "@/components/templates/word-preview-page";
+import { WordPreviewToolbar } from "@/components/templates/word-preview-toolbar";
 import { AppSurface, PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,8 +53,33 @@ const inlinePreviewSidebarMinWidth = 720;
 // Word 预览会把整篇文档分页后全部挂进 DOM。超过该体量时保留编辑与导出，
 // 避免长文档在每次内容变化后占满渲染线程。
 const inlinePreviewCharacterLimit = 250_000;
-const editorCompactModeStorageKey = "md-king.editor.compact-mode";
+const editorContentWidthModeStorageKey = "md-king.editor.compact-mode";
 const previewContextMenuItemClass = "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:data-[highlighted]:bg-zinc-800";
+const editorContentWidthModes: EditorContentWidthMode[] = ["wide", "medium", "compact"];
+const editorContentWidthModeLabels: Record<EditorContentWidthMode, string> = {
+  wide: "展开排版",
+  medium: "中等排版",
+  compact: "紧凑排版",
+};
+const editorContentWidthIconBars: Record<EditorContentWidthMode, readonly string[]> = {
+  wide: ["100%", "100%", "100%"],
+  medium: ["100%", "64%", "100%"],
+  compact: ["100%", "78%", "58%"],
+};
+
+function nextEditorContentWidthMode(mode: EditorContentWidthMode) {
+  return editorContentWidthModes[(editorContentWidthModes.indexOf(mode) + 1) % editorContentWidthModes.length];
+}
+
+function EditorContentWidthIcon({ mode }: { mode: EditorContentWidthMode }) {
+  return (
+    <span aria-hidden="true" className="flex h-3 w-3.5 flex-col items-center justify-between">
+      {editorContentWidthIconBars[mode].map((width, index) => (
+        <span key={index} className="block h-0.5 rounded-full bg-current" style={{ width }} />
+      ))}
+    </span>
+  );
+}
 const workspacePageTabs: DocumentPageTab[] = [
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
   { id: "history", label: "转换历史", icon: History },
@@ -114,13 +140,13 @@ type DocumentInfoBarProps = {
   onLocatePath: (path: string) => void;
   readingMode: boolean;
   onToggleReadingMode: () => void;
-  compactMode: boolean;
-  onToggleCompactMode: () => void;
+  contentWidthMode: EditorContentWidthMode;
+  onCycleContentWidthMode: () => void;
   tableDisplayContext: TableDisplayContext;
   onTableWidthModeChange: (mode: TableWidthMode) => void;
 };
 
-function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, canSave, onSave, onCopyRelativePath, onCopyAbsolutePath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode, compactMode, onToggleCompactMode, tableDisplayContext, onTableWidthModeChange }: DocumentInfoBarProps) {
+function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, canSave, onSave, onCopyRelativePath, onCopyAbsolutePath, onRevealPath, onLocatePath, readingMode, onToggleReadingMode, contentWidthMode, onCycleContentWidthMode, tableDisplayContext, onTableWidthModeChange }: DocumentInfoBarProps) {
   const pathParts = (tab?.path ?? "").split(/[\\/]/).filter(Boolean);
   const relativePath = tab?.path && !isAbsoluteFilePath(tab.path) ? tab.path : undefined;
   const absolutePath = tab?.absolutePath ?? (tab?.path && isAbsoluteFilePath(tab.path) ? tab.path : undefined);
@@ -182,7 +208,7 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
               tooltip={tableWidthTooltip}
               onClick={() => onTableWidthModeChange(nextTableWidthMode)}
             >
-              <TableWidthModeIcon mode={tableDisplayContext.widthMode} className="size-4" />
+              <TableWidthModeIcon mode={tableDisplayContext.widthMode} className="size-[18px]" />
             </TooltipButton>
           </div>
         ) : null}
@@ -194,11 +220,11 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
           variant="ghost"
           size="icon-xs"
           className="size-7 rounded-[4px] border-0 bg-transparent p-0 text-slate-500 shadow-none hover:bg-transparent hover:text-slate-900 active:bg-transparent dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
-          tooltip={compactMode ? "当前：紧凑排版；点击切换为展开排版" : "当前：展开排版；点击切换为紧凑排版"}
-          aria-label={compactMode ? "当前：紧凑排版；点击切换为展开排版" : "当前：展开排版；点击切换为紧凑排版"}
-          onClick={onToggleCompactMode}
+          tooltip={`当前：${editorContentWidthModeLabels[contentWidthMode]}；点击切换为${editorContentWidthModeLabels[nextEditorContentWidthMode(contentWidthMode)]}`}
+          aria-label={`当前：${editorContentWidthModeLabels[contentWidthMode]}；点击切换为${editorContentWidthModeLabels[nextEditorContentWidthMode(contentWidthMode)]}`}
+          onClick={onCycleContentWidthMode}
         >
-          {compactMode ? <AlignCenter className="size-3.5" /> : <AlignJustify className="size-3.5" />}
+          <EditorContentWidthIcon mode={contentWidthMode} />
         </TooltipButton>
         <Button
           type="button"
@@ -310,11 +336,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const canSaveActiveDocument = canSaveVaultTab(activeTab, vaultRoot);
   const [activeImageSource, setActiveImageSource] = useState<string>();
   const [readingMode, setReadingMode] = useState(false);
-  const [compactMode, setCompactMode] = useState(() => {
+  const [contentWidthMode, setContentWidthMode] = useState<EditorContentWidthMode>(() => {
     try {
-      return window.localStorage.getItem(editorCompactModeStorageKey) === "true";
+      const savedMode = window.localStorage.getItem(editorContentWidthModeStorageKey);
+      if (savedMode === "compact") return "compact";
+      // 旧版只保存 true/false：原紧凑模式就是现在的中等宽度。
+      return savedMode === "medium" || savedMode === "true" ? "medium" : "wide";
     } catch {
-      return false;
+      return "wide";
     }
   });
   const conversionInputRef = useRef<ConversionInputCardHandle>(null);
@@ -338,11 +367,11 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     return () => { cancelled = true; };
   }, [activeTab?.path, isImageTab, vaultRoot]);
 
-  function toggleCompactMode() {
-    setCompactMode((current) => {
-      const next = !current;
+  function cycleContentWidthMode() {
+    setContentWidthMode((current) => {
+      const next = nextEditorContentWidthMode(current);
       try {
-        window.localStorage.setItem(editorCompactModeStorageKey, String(next));
+        window.localStorage.setItem(editorContentWidthModeStorageKey, next);
       } catch {
         // 本地偏好不可写时仍允许本次会话正常切换。
       }
@@ -521,11 +550,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     return () => window.clearTimeout(timer);
   }, [activeTab?.dirty, activeTab?.id, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canSaveActiveDocument, markdown]);
 
-  async function copyActiveDocumentPath(path: string | undefined, kind: "相对" | "绝对") {
+  async function copyActiveDocumentPath(path: string | undefined) {
     if (!path) return;
     try {
       await navigator.clipboard.writeText(path);
-      toast.success(`已复制${kind}路径`);
     } catch {
       toast.error("复制路径失败");
     }
@@ -950,7 +978,6 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
       openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text });
       setOutputNameEdited(false);
-      toast.success(text.trim() ? "已从剪贴板读取到编辑区" : "剪贴板为空，已清空编辑区");
     } catch (error) {
       toast.error(clipboardReadErrorMessage(error));
     }
@@ -1252,7 +1279,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
               previewClassName="h-full"
             />
           </div>
-          {renderConvertFooter("mt-[5px] shrink-0")}
+          {renderConvertFooter("mt-1 shrink-0")}
         </div>
       </>
     );
@@ -1338,7 +1365,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         </DialogContent>
       </Dialog>
 
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-[5px] overflow-hidden">
+    <div className="grid h-full min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-1 overflow-hidden">
       <div
         ref={splitPaneRef}
         className="grid min-h-0 min-w-0 gap-0 overflow-hidden"
@@ -1352,7 +1379,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             ) : (
               <ConversionInputCard
                 ref={conversionInputRef}
-                documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} previewPaused={previewPausedForLongDocument} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyRelativePath={() => void copyActiveDocumentPath(activeTab?.path && !isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined, "相对")} onCopyAbsolutePath={() => void copyActiveDocumentPath(activeTab?.absolutePath ?? (activeTab?.path && isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined), "绝对")} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} compactMode={compactMode} onToggleCompactMode={toggleCompactMode} tableDisplayContext={tableDisplayContext} onTableWidthModeChange={handleTableWidthModeChange} />}
+                documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} previewPaused={previewPausedForLongDocument} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyRelativePath={() => void copyActiveDocumentPath(activeTab?.path && !isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined)} onCopyAbsolutePath={() => void copyActiveDocumentPath(activeTab?.absolutePath ?? (activeTab?.path && isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined))} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} contentWidthMode={contentWidthMode} onCycleContentWidthMode={cycleContentWidthMode} tableDisplayContext={tableDisplayContext} onTableWidthModeChange={handleTableWidthModeChange} />}
                 hasDocument={Boolean(activeTab)}
                 markdown={markdown}
                 documentKey={documentKey}
@@ -1370,7 +1397,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 externalDragging={isWindowDragging}
                 externalDraggingImage={isWindowDraggingImage}
                 readingMode={readingMode}
-                compactMode={compactMode}
+                contentWidthMode={contentWidthMode}
                 onOpenLink={(target) => void handleOpenLink(target)}
                 tableDefaultWidthMode={globalTableWidthMode}
                 onTableContextChange={setTableDisplayContext}
@@ -1390,7 +1417,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             </div>
 
             <div
-              className={cn("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-x-0 gap-y-[5px] overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)]" : "grid-cols-1")}
+              className={cn("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-x-0 gap-y-1 overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)]" : "grid-cols-1")}
               style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
             >
               {showInlinePreviewSidebar ? (
@@ -1515,13 +1542,9 @@ function ConvertPreviewPanel({
   }
 
   async function copyPreviewMarkdown() {
-    if (!markdown.trim()) {
-      toast.info("暂无可复制的 Markdown 内容");
-      return;
-    }
+    if (!markdown.trim()) return;
     try {
       await navigator.clipboard.writeText(markdown);
-      toast.success("Markdown 内容已复制");
     } catch {
       toast.error("复制失败");
     }
@@ -1536,38 +1559,18 @@ function ConvertPreviewPanel({
           <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
           <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
-          {onOpenAdvancedStyle ? (
-            <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={onOpenAdvancedStyle} tooltip="高级样式" aria-label="高级样式">
-              <Settings2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-            </TooltipButton>
-          ) : null}
-          <TooltipButton
-            variant="ghost"
-            size="icon"
-            className="size-7 rounded-full"
-            onClick={onTogglePaperTheme}
-            tooltip={paperTheme === "dark" ? "切换为浅色纸张" : "切换为深色纸张"}
-            aria-label={paperTheme === "dark" ? "切换为浅色纸张" : "切换为深色纸张"}
-          >
-            {paperTheme === "dark"
-              ? <Sun className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              : <Moon className="size-3.5 text-slate-500 dark:text-zinc-400" />}
-          </TooltipButton>
-          <span className="h-4 w-px bg-slate-200 dark:bg-zinc-700" />
-          <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} tooltip="缩小预览" aria-label="缩小预览">
-            <ZoomOut className="size-3.5 text-slate-500 dark:text-zinc-400" />
-          </TooltipButton>
-          <span className="w-10 text-center text-xs font-bold text-slate-500 dark:text-zinc-400">{zoom}%</span>
-          <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} tooltip="放大预览" aria-label="放大预览">
-            <ZoomIn className="size-3.5 text-slate-500 dark:text-zinc-400" />
-          </TooltipButton>
-          <TooltipButton variant="ghost" size="icon" className="size-7 rounded-full" onClick={onToggleExpanded} tooltip={expanded ? "缩小还原" : "放大查看"} aria-label={expanded ? "缩小还原" : "放大查看"}>
-            {expanded
-              ? <Minimize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              : <Maximize2 className="size-3.5 text-slate-500 dark:text-zinc-400" />}
-          </TooltipButton>
-        </div>
+        <WordPreviewToolbar
+          zoom={zoom}
+          canZoomOut={zoom > previewZoomMin}
+          canZoomIn={zoom < previewZoomMax}
+          onZoomOut={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))}
+          onZoomIn={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))}
+          paperTheme={paperTheme}
+          onTogglePaperTheme={onTogglePaperTheme}
+          onOpenAdvancedStyle={onOpenAdvancedStyle}
+          expanded={expanded}
+          onToggleExpanded={onToggleExpanded}
+        />
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
         <WordPreviewPage

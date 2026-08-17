@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 
 const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
+export type EditorContentWidthMode = "wide" | "medium" | "compact";
+
 type ConversionInputCardProps = {
   markdown: string;
   /// 换文档时变化的 key：内容变化不触发编辑器重载，只有它变了才做全量替换。
@@ -39,7 +41,7 @@ type ConversionInputCardProps = {
   onRequestSave?: () => void;
   onImportImage?: (file: File) => Promise<string | undefined>;
   readingMode?: boolean;
-  compactMode?: boolean;
+  contentWidthMode?: EditorContentWidthMode;
   onOpenLink?: (target: string) => void;
   tableDefaultWidthMode?: TableWidthMode;
   onTableContextChange?: (context: TableDisplayContext) => void;
@@ -69,7 +71,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   onRequestSave,
   onImportImage,
   readingMode = false,
-  compactMode = false,
+  contentWidthMode = "wide",
   onOpenLink,
   tableDefaultWidthMode = "content",
   onTableContextChange,
@@ -164,22 +166,20 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
     if (!view) return;
     const selection = view.state.selection.main;
     const text = view.state.sliceDoc(selection.from, selection.to);
-    if (!text) {
-      toast.info("请先选中要复制的内容");
-      return;
-    }
+    if (!text) return false;
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("已复制选中内容");
+      return true;
     } catch {
       toast.error("复制失败");
+      return false;
     }
   }
 
   async function cutEditorSelection() {
     const view = getEditorView();
-    if (!view || view.state.selection.main.empty) return copyEditorSelection();
-    await copyEditorSelection();
+    if (!view || view.state.selection.main.empty) return;
+    if (!await copyEditorSelection()) return;
     const { from, to } = view.state.selection.main;
     view.dispatch({ changes: { from, to } });
   }
@@ -270,7 +270,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           openLinksOnClick
           tableDefaultWidthMode={tableDefaultWidthMode}
           onTableContextChange={onTableContextChange}
-          className={cn("h-full", compactMode && "mk-editor-compact")}
+          className={cn("h-full", contentWidthMode !== "wide" && `mk-editor-${contentWidthMode}`)}
         />
       ) : (
         <div

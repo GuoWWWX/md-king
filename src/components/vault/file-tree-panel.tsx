@@ -6,7 +6,8 @@ import { ResizableDivider } from "@/components/layout/resizable-divider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CreateEntryDialog, DeleteEntryDialog, OpenVaultLocationDialog, RemoveRecentVaultDialog } from "@/components/vault/vault-dialogs";
-import { FileTreeNode, vaultTreeNodeId, type FileTreeNodeAction } from "@/components/vault/file-tree-node";
+import { canDropFileTreeEntry, fileTreeDropPlacement, type FileTreeDropPlacement } from "@/components/vault/file-tree-drag";
+import { FileTreeNode, VAULT_ENTRY_DRAG_TYPE, vaultEntryDragSourcePath, vaultTreeNodeId, type FileTreeNodeAction } from "@/components/vault/file-tree-node";
 import { VaultSwitcher } from "@/components/vault/vault-switcher";
 import { clipboardContainsVaultEntry, topLevelVaultEntries, vaultPasteTarget, type VaultClipboardEntry, type VaultClipboardItem } from "@/lib/vault-clipboard";
 import { isTauriEnvironment } from "@/lib/tauri";
@@ -34,7 +35,7 @@ type VisibleRow = {
   expanded: boolean;
 };
 
-type DropPlacement = "before" | "after" | "inside";
+type DropPlacement = FileTreeDropPlacement;
 
 type ManualOrder = Record<string, string[]>;
 
@@ -54,6 +55,20 @@ type MarqueeCandidate = {
   active: boolean;
   didSelect: boolean;
   timer: number;
+};
+
+type PointerFileDragCandidate = {
+  pointerId: number;
+  sourcePath: string;
+  startX: number;
+  startY: number;
+  active: boolean;
+};
+
+type PointerFileDragState = {
+  sourcePath: string;
+  targetPath?: string;
+  placement?: DropPlacement;
 };
 
 const FILE_TREE_ORDER_KEY_PREFIX = "md-king-vault-order:";
@@ -191,6 +206,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
   const [manualOrder, setManualOrder] = useState<ManualOrder>({});
   const [sortMode, setSortMode] = useState<FileTreeSortMode>("manual");
   const [marqueeRect, setMarqueeRect] = useState<MarqueeRect>();
+  const [rootDropActive, setRootDropActive] = useState(false);
+  const [pointerFileDrag, setPointerFileDrag] = useState<PointerFileDragState>();
   /// truncated 降级下已按需拉过的目录，避免同一目录被反复请求。
   const loadedDirsRef = useRef(new Set<string>());
   const locateFrameRef = useRef<number | undefined>(undefined);
@@ -198,9 +215,12 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
   const treeRef = useRef<HTMLDivElement>(null);
   const selectedEntryPathsRef = useRef(new Set<string>());
   const marqueeCandidateRef = useRef<MarqueeCandidate | undefined>(undefined);
+  const pointerFileDragCandidateRef = useRef<PointerFileDragCandidate | undefined>(undefined);
+  const pointerFileDragRef = useRef<PointerFileDragState | undefined>(undefined);
   const ignoreNextEntryClickRef = useRef(false);
   const openedProjectVaultRef = useRef<string | undefined>(undefined);
   const restoredVaultRef = useRef(false);
+  const usePointerFileDrag = isTauriEnvironment();
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.isDir && entry.hasChildren).map((entry) => entry.path),
     [entries],
@@ -460,6 +480,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (locateFrameRef.current !== undefined) window.cancelAnimationFrame(locateFrameRef.current);
     if (locateTimerRef.current !== undefined) window.clearTimeout(locateTimerRef.current);
     clearMarqueeCandidate();
+    pointerFileDragCandidateRef.current = undefined;
+    pointerFileDragRef.current = undefined;
   }, []);
 
   function handleToggle(path: string) {
@@ -543,7 +565,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     return [...configured, ...remaining];
   }
 
-  function updateManualOrderAfterMove(entry: VaultEntry, moved: VaultEntry, target: VaultEntry, placement: DropPlacement) {
+  function updateManualOrderAfterMove(entry: VaultEntry, moved: VaultEntry, target: VaultEntry | null, placement: DropPlacement) {
     setManualOrder((current) => {
       const next = { ...current };
       if (entry.isDir) {
@@ -555,7 +577,11 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       }
 
       const sourceParent = parentOf(entry.path);
-      const destinationParent = placement === "inside" ? target.path : parentOf(target.path);
+      const destinationParent = placement === "root"
+        ? ""
+        : placement === "inside"
+          ? target?.path ?? ""
+          : parentOf(target?.path ?? "");
       if (sourceParent !== destinationParent && next[sourceParent]) {
         const remaining = next[sourceParent].filter((name) => name !== entry.name);
         if (remaining.length > 0) next[sourceParent] = remaining;
@@ -564,9 +590,9 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
 
       const names = orderedSiblingNames(destinationParent, entry.path, next)
         .filter((name) => name !== moved.name);
-      if (placement === "inside") {
+      if (placement === "inside" || placement === "root") {
         names.push(moved.name);
-      } else {
+      } else if (target) {
         const targetIndex = names.indexOf(target.name);
         const insertionIndex = targetIndex < 0 ? names.length : targetIndex + (placement === "after" ? 1 : 0);
         names.splice(insertionIndex, 0, moved.name);
@@ -613,10 +639,15 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     });
   }
 
-  async function handleMoveEntry(entry: VaultEntry, target: VaultEntry, placement: DropPlacement) {
-    const destinationDir = placement === "inside" ? target.path : parentOf(target.path);
-    if (!vaultRoot || entry.path === target.path) return;
-    if (placement === "inside" && !target.isDir) return;
+  async function handleMoveEntry(entry: VaultEntry, target: VaultEntry | null, placement: DropPlacement) {
+    const destinationDir = placement === "root"
+      ? ""
+      : placement === "inside"
+        ? target?.path ?? ""
+        : parentOf(target?.path ?? "");
+    if (!vaultRoot || (target && entry.path === target.path)) return;
+    if (placement !== "root" && !target) return;
+    if (placement === "inside" && !target?.isDir) return;
     if (entry.isDir && (destinationDir === entry.path || destinationDir.startsWith(`${entry.path}/`))) return;
 
     // 同目录拖动只改变展示顺序，不做无意义的磁盘操作和整树刷新。
@@ -716,8 +747,6 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     try {
       await setVaultEntryClipboard(vaultRoot, entriesToCopy.map((entry) => entry.path));
       setClipboardEntry({ entries: entriesToCopy, operation });
-      const action = operation === "cut" ? "剪切" : "复制";
-      toast.success(entriesToCopy.length === 1 ? `已${action} ${entriesToCopy[0].name}` : `已${action} ${entriesToCopy.length} 项`);
     } catch (error) {
       const { message } = parseVaultError(error, operation === "cut" ? "剪切失败" : "复制失败");
       toast.error(message);
@@ -770,11 +799,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       if (completed.length > 0) {
         await handleRefresh();
         if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
-        const action = internal.operation === "cut" ? "移动" : "粘贴";
-        toast.success(completed.length === 1 ? `已${action} ${completed[0].name}` : `已${action} ${completed.length} 项`);
       }
       if (firstError) toast.error(firstError);
-      if (completed.length === 0 && !firstError && internal.operation === "cut") toast.info("所选项目已在当前位置");
       return;
     }
 
@@ -797,7 +823,6 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (pasted > 0) {
       await handleRefresh();
       if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
-      toast.success(`已粘贴 ${pasted} 个文档`);
     }
     if (pasted < systemPaths.length) {
       toast.error(firstError || `${systemPaths.length - pasted} 个项目无法粘贴`);
@@ -831,6 +856,73 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (candidate.active && candidate.didSelect) ignoreNextEntryClickRef.current = true;
     marqueeCandidateRef.current = undefined;
     setMarqueeRect(undefined);
+  }
+
+  function updatePointerFileDragState(next: PointerFileDragState | undefined) {
+    pointerFileDragRef.current = next;
+    setPointerFileDrag(next);
+  }
+
+  function pointerFileDropAt(sourcePath: string, clientX: number, clientY: number): PointerFileDragState {
+    const tree = treeRef.current;
+    if (!tree) return { sourcePath };
+    const bounds = tree.getBoundingClientRect();
+    if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) return { sourcePath };
+
+    const element = document.elementFromPoint(clientX, clientY);
+    const row = element instanceof Element ? element.closest<HTMLElement>("[data-mk-vault-path]") : null;
+    if (!row || !tree.contains(row)) return { sourcePath, placement: "root" };
+
+    const target = entries.find((entry) => entry.path === row.dataset.mkVaultPath);
+    if (!target) return { sourcePath };
+    const rowBounds = row.getBoundingClientRect();
+    const placement = fileTreeDropPlacement(target, clientY, rowBounds.top, rowBounds.height);
+    if (!canDropFileTreeEntry(sourcePath, target, placement)) return { sourcePath };
+    return { sourcePath, targetPath: target.path, placement };
+  }
+
+  function updatePointerFileDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const candidate = pointerFileDragCandidateRef.current;
+    if (!candidate || candidate.pointerId !== event.pointerId) return false;
+    const distance = Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY);
+    if (!candidate.active && distance <= MARQUEE_MOVE_THRESHOLD_PX) return true;
+
+    if (!candidate.active) {
+      candidate.active = true;
+      ignoreNextEntryClickRef.current = true;
+      replaceSelectedEntries([candidate.sourcePath]);
+      try {
+        treeRef.current?.setPointerCapture(candidate.pointerId);
+      } catch {
+        // WebView 已释放指针时，本次拖动直接在 pointerup 中取消。
+      }
+    }
+
+    event.preventDefault();
+    updatePointerFileDragState(pointerFileDropAt(candidate.sourcePath, event.clientX, event.clientY));
+    return true;
+  }
+
+  function finishPointerFileDrag(event: ReactPointerEvent<HTMLDivElement>, cancelled = false) {
+    const candidate = pointerFileDragCandidateRef.current;
+    if (!candidate || candidate.pointerId !== event.pointerId) return false;
+    pointerFileDragCandidateRef.current = undefined;
+    try {
+      if (treeRef.current?.hasPointerCapture(candidate.pointerId)) treeRef.current.releasePointerCapture(candidate.pointerId);
+    } catch {
+      // 指针捕获已经由 WebView 释放。
+    }
+
+    const drop = pointerFileDragRef.current;
+    updatePointerFileDragState(undefined);
+    if (!candidate.active) return false;
+    ignoreNextEntryClickRef.current = true;
+    if (!cancelled && drop?.placement) {
+      const source = entries.find((entry) => entry.path === candidate.sourcePath);
+      const target = drop.targetPath ? entries.find((entry) => entry.path === drop.targetPath) ?? null : null;
+      if (source) void handleMoveEntry(source, target, drop.placement);
+    }
+    return true;
   }
 
   function updateMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
@@ -871,6 +963,22 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (!vaultRoot || event.button !== 0 || event.ctrlKey || event.metaKey) return;
     if (event.target instanceof Element && event.target.closest("button, input, textarea, [contenteditable='true']")) return;
     clearMarqueeCandidate();
+    pointerFileDragCandidateRef.current = undefined;
+    if (pointerFileDragRef.current) updatePointerFileDragState(undefined);
+    const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-mk-vault-path]") : null;
+    if (row) {
+      const sourcePath = row.dataset.mkVaultPath;
+      if (usePointerFileDrag && sourcePath && entries.some((entry) => entry.path === sourcePath)) {
+        pointerFileDragCandidateRef.current = {
+          pointerId: event.pointerId,
+          sourcePath,
+          startX: event.clientX,
+          startY: event.clientY,
+          active: false,
+        };
+      }
+      return;
+    }
     const candidate: MarqueeCandidate = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -902,7 +1010,6 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       try {
         await copyTextToClipboard(entry.path);
         setClipboardEntry(undefined);
-        toast.success("已复制相对路径");
       } catch {
         toast.error("复制失败");
       }
@@ -914,7 +1021,6 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         const absolutePath = `${vaultRoot}\\${entry.path.replace(/\//g, "\\")}`;
         await copyTextToClipboard(absolutePath);
         setClipboardEntry(undefined);
-        toast.success("已复制绝对路径");
       } catch {
         toast.error("复制失败");
       }
@@ -1121,7 +1227,12 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         </div>
 
         <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+          <Search
+            className={cn(
+              "pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-slate-400",
+              vaultRoot ? "dark:text-zinc-300" : "dark:text-zinc-600",
+            )}
+          />
           <input
             value={treeQuery}
             onChange={(event) => setTreeQuery(event.target.value)}
@@ -1158,7 +1269,11 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             aria-label="文件树"
             data-mk-context-menu
             tabIndex={vaultRoot ? 0 : undefined}
-            className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1 py-1"
+            className={cn(
+              "relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1 py-1",
+              (rootDropActive || pointerFileDrag?.placement === "root") && "bg-blue-500/5 ring-1 ring-inset ring-blue-500 dark:bg-blue-400/8 dark:ring-blue-400",
+            )}
+            data-root-drop-active={rootDropActive || pointerFileDrag?.placement === "root" || undefined}
             onPointerDown={(event) => {
               if (!(event.target instanceof Element) || !event.target.closest("[role='treeitem']")) {
                 replaceSelectedEntries([]);
@@ -1167,9 +1282,50 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
               }
               handleTreePointerDown(event);
             }}
-            onPointerMove={updateMarqueeSelection}
-            onPointerUp={(event) => clearMarqueeCandidate(event.pointerId)}
-            onPointerCancel={(event) => clearMarqueeCandidate(event.pointerId)}
+            onPointerMove={(event) => {
+              if (!updatePointerFileDrag(event)) updateMarqueeSelection(event);
+            }}
+            onPointerUp={(event) => {
+              if (finishPointerFileDrag(event)) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+              clearMarqueeCandidate(event.pointerId);
+            }}
+            onPointerCancel={(event) => {
+              finishPointerFileDrag(event, true);
+              clearMarqueeCandidate(event.pointerId);
+            }}
+            onDragEnter={(event) => {
+              if (!vaultRoot || (event.target instanceof Element && event.target.closest("[role='treeitem']"))) return;
+              if (!Array.from(event.dataTransfer.types).includes(VAULT_ENTRY_DRAG_TYPE)) return;
+              event.preventDefault();
+              setRootDropActive(true);
+            }}
+            onDragOver={(event) => {
+              if (event.target instanceof Element && event.target.closest("[role='treeitem']")) {
+                setRootDropActive(false);
+                return;
+              }
+              if (!vaultRoot || !Array.from(event.dataTransfer.types).includes(VAULT_ENTRY_DRAG_TYPE)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setRootDropActive(true);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setRootDropActive(false);
+            }}
+            onDragEnd={() => setRootDropActive(false)}
+            onDrop={(event) => {
+              if (event.target instanceof Element && event.target.closest("[role='treeitem']")) return;
+              const sourcePath = vaultEntryDragSourcePath(event.dataTransfer);
+              if (!sourcePath) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setRootDropActive(false);
+              const source = entries.find((entry) => entry.path === sourcePath);
+              if (source) void handleMoveEntry(source, null, "root");
+            }}
             onContextMenu={(event) => {
               if (event.target instanceof Element && event.target.closest("[role='treeitem']")) return;
               replaceSelectedEntries([]);
@@ -1227,6 +1383,9 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
               onPrepareContextMenu={handlePrepareContextMenu}
               marqueeSelecting={Boolean(marqueeRect)}
               canStartDrag={() => !marqueeCandidateRef.current?.active}
+              nativeDragEnabled={!usePointerFileDrag}
+              pointerDragging={pointerFileDrag?.sourcePath === entry.path}
+              pointerDropPlacement={pointerFileDrag?.targetPath === entry.path && pointerFileDrag.placement !== "root" ? pointerFileDrag.placement : undefined}
               onRenameSubmit={(target, nextName) => void handleRenameSubmit(target, nextName)}
               onRenameCancel={() => setRenamingPath(undefined)}
               onDropIntoDirectory={(sourcePath, target, placement) => {

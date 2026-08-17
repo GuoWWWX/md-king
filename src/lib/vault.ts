@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment, resolvePreviewImageSource } from "@/lib/tauri";
-import { registerBrowserPreviewImage } from "@/lib/browser-preview-images";
+import { registerBrowserPreviewImage, remapBrowserPreviewImages } from "@/lib/browser-preview-images";
 import { isSupportedImagePath } from "@/lib/image-files";
 import type { VaultEntry, VaultFileContent, VaultImageImport, VaultListing, VaultWriteParams, VaultWriteResult } from "@/types/vault";
 
@@ -268,6 +268,8 @@ export function renameVaultEntry(root: string, path: string, newName: string) {
     mockFiles.set(nextPath, { content: file?.content ?? "", modifiedMs: Date.now() });
   }
 
+  remapBrowserPreviewImages(`${root}/${path}`, `${root}/${nextPath}`);
+
   return delay(toEntry(nextPath, isDir));
 }
 
@@ -306,6 +308,8 @@ export function moveVaultEntry(root: string, path: string, targetDir: string) {
     mockFiles.delete(path);
     mockFiles.set(nextPath, { content: file?.content ?? "", modifiedMs: Date.now() });
   }
+
+  remapBrowserPreviewImages(`${root}/${path}`, `${root}/${nextPath}`);
 
   return delay(toEntry(nextPath, isDir));
 }

@@ -4,6 +4,7 @@ import { ContextMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { TooltipAnchor } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { canDropFileTreeEntry, fileTreeDropPlacement, type FileTreeDropPlacement } from "@/components/vault/file-tree-drag";
 import { isSupportedImagePath } from "@/lib/image-files";
 import { cn } from "@/lib/utils";
 import { resolveVaultImageSource } from "@/lib/vault";
@@ -12,8 +13,12 @@ import type { VaultEntry } from "@/types/vault";
 
 const INDENT_PER_LEVEL = 12;
 const BASE_PADDING = 6;
-const VAULT_ENTRY_DRAG_TYPE = "application/x-md-king-vault-entry";
+export const VAULT_ENTRY_DRAG_TYPE = "application/x-md-king-vault-entry";
 let currentDraggedPath: string | undefined;
+
+export function vaultEntryDragSourcePath(dataTransfer: DataTransfer) {
+  return dataTransfer.getData(VAULT_ENTRY_DRAG_TYPE) || currentDraggedPath;
+}
 const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
 export function vaultTreeNodeId(path: string) {
@@ -38,16 +43,14 @@ type FileTreeNodeProps = {
   onPrepareContextMenu?: (entry: VaultEntry) => void;
   marqueeSelecting?: boolean;
   canStartDrag?: () => boolean;
+  nativeDragEnabled?: boolean;
+  pointerDragging?: boolean;
+  pointerDropPlacement?: Exclude<FileTreeDropPlacement, "root">;
   /// 内联重命名的提交/取消由父组件持有，节点只负责输入框的本地文本。
   onRenameSubmit?: (entry: VaultEntry, nextName: string) => void;
   onRenameCancel?: () => void;
   onDropIntoDirectory?: (sourcePath: string, target: VaultEntry, placement: "before" | "after" | "inside") => void;
 };
-
-function parentOf(path: string) {
-  const index = path.lastIndexOf("/");
-  return index < 0 ? "" : path.slice(0, index);
-}
 
 function VaultImageThumbnail({ entry }: { entry: VaultEntry }) {
   const vaultRoot = useVaultStore((state) => state.vaultRoot);
@@ -86,7 +89,7 @@ function VaultImageThumbnail({ entry }: { entry: VaultEntry }) {
   );
 }
 
-export function FileTreeNode({ entry, depth, expanded, active = false, selected = false, cut = false, renaming = false, onToggle, onSelect, onPreviewImage, onAction, onEntryClick, onPrepareContextMenu, marqueeSelecting = false, canStartDrag, onRenameSubmit, onRenameCancel, onDropIntoDirectory }: FileTreeNodeProps) {
+export function FileTreeNode({ entry, depth, expanded, active = false, selected = false, cut = false, renaming = false, onToggle, onSelect, onPreviewImage, onAction, onEntryClick, onPrepareContextMenu, marqueeSelecting = false, canStartDrag, nativeDragEnabled = true, pointerDragging = false, pointerDropPlacement, onRenameSubmit, onRenameCancel, onDropIntoDirectory }: FileTreeNodeProps) {
   const [draftName, setDraftName] = useState(entry.name);
   const [isDragging, setIsDragging] = useState(false);
   const [dropPlacement, setDropPlacement] = useState<"before" | "after" | "inside">();
@@ -107,19 +110,13 @@ export function FileTreeNode({ entry, depth, expanded, active = false, selected 
 
   const indent = BASE_PADDING + depth * INDENT_PER_LEVEL;
   const canAcceptDrop = (sourcePath: string | undefined, placement: "before" | "after" | "inside") => {
-    const destination = placement === "inside" ? entry.path : parentOf(entry.path);
-    return Boolean(
-      sourcePath
-        && sourcePath !== entry.path
-        && (placement !== "inside" || entry.isDir)
-        && destination !== sourcePath
-        && !destination.startsWith(`${sourcePath}/`),
-    );
+    return canDropFileTreeEntry(sourcePath, entry, placement);
   };
-  const isDropTarget = dropPlacement !== undefined;
+  const effectiveDropPlacement = pointerDropPlacement ?? dropPlacement;
+  const isDropTarget = effectiveDropPlacement !== undefined;
 
   function dragSourcePath(dataTransfer: DataTransfer) {
-    return dataTransfer.getData(VAULT_ENTRY_DRAG_TYPE) || currentDraggedPath;
+    return vaultEntryDragSourcePath(dataTransfer);
   }
 
   function isVaultEntryDrag(dataTransfer: DataTransfer) {
@@ -128,9 +125,7 @@ export function FileTreeNode({ entry, depth, expanded, active = false, selected 
 
   function getDropPlacement(event: ReactDragEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const offset = event.clientY - rect.top;
-    if (entry.isDir && offset >= rect.height * 0.25 && offset <= rect.height * 0.75) return "inside" as const;
-    return offset < rect.height / 2 ? "before" as const : "after" as const;
+    return fileTreeDropPlacement(entry, event.clientY, rect.top, rect.height);
   }
 
   function handleActivate() {
@@ -203,14 +198,14 @@ export function FileTreeNode({ entry, depth, expanded, active = false, selected 
             active && "mk-file-tree-row-active",
             selected && "mk-file-tree-row-selected",
             cut && "mk-file-tree-row-cut",
-            isDragging && "opacity-50",
+            (isDragging || pointerDragging) && "opacity-50",
             isDropTarget && "bg-slate-200 text-slate-950 dark:bg-zinc-700 dark:text-zinc-50",
           )}
           style={{ paddingLeft: indent }}
           onClick={(event) => {
             if (onEntryClick?.(entry, event) !== false) handleActivate();
           }}
-          draggable
+          draggable={nativeDragEnabled}
           onDragStart={(event) => {
             if (marqueeSelecting || canStartDrag?.() === false) {
               event.preventDefault();
@@ -267,9 +262,9 @@ export function FileTreeNode({ entry, depth, expanded, active = false, selected 
           }}
           tabIndex={0}
         >
-          {dropPlacement === "inside" ? <span aria-hidden className="pointer-events-none absolute inset-0 z-10 rounded-[6px] bg-blue-500/10 ring-1 ring-inset ring-blue-500 dark:bg-blue-400/10 dark:ring-blue-400" /> : null}
-          {dropPlacement === "before" ? <span aria-hidden className="pointer-events-none absolute inset-x-1 -top-px z-10 h-0.5 rounded-full bg-blue-500 dark:bg-blue-400" /> : null}
-          {dropPlacement === "after" ? <span aria-hidden className="pointer-events-none absolute inset-x-1 -bottom-px z-10 h-0.5 rounded-full bg-blue-500 dark:bg-blue-400" /> : null}
+          {effectiveDropPlacement === "inside" ? <span aria-hidden className="pointer-events-none absolute inset-0 z-10 rounded-[6px] bg-blue-500/10 ring-1 ring-inset ring-blue-500 dark:bg-blue-400/10 dark:ring-blue-400" /> : null}
+          {effectiveDropPlacement === "before" ? <span aria-hidden className="pointer-events-none absolute inset-x-1 -top-px z-10 h-0.5 rounded-full bg-blue-500 dark:bg-blue-400" /> : null}
+          {effectiveDropPlacement === "after" ? <span aria-hidden className="pointer-events-none absolute inset-x-1 -bottom-px z-10 h-0.5 rounded-full bg-blue-500 dark:bg-blue-400" /> : null}
           {entry.isDir ? (
             <ChevronRight className={cn("size-3.5 shrink-0 text-slate-400 transition-transform dark:text-zinc-500", expanded && "rotate-90")} />
           ) : (

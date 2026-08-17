@@ -1,4 +1,4 @@
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, FileText, Heading, ImageIcon, ListTree, Minus, Palette, Pilcrow, Quote, Search, SlidersHorizontal, Table2, Upload, X, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, FileText, Heading, ImageIcon, ListTree, Minus, Palette, Pilcrow, Quote, Search, SlidersHorizontal, Table2, Upload, X, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { WordFontPicker } from "@/components/ui/word-font-picker";
 import { WordFontSizeSelect } from "@/components/ui/word-font-size-select";
 import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
+import { WordPreviewToolbar } from "@/components/templates/word-preview-toolbar";
 import { borderStyleOptions, captionNumberFormatOptions, captionPositionOptions, codeBlockPresets, createDefaultStyleDraft, createDefaultTemplateStyleConfig, getDefaultNumberFormat, imageWidthModeOptions, listLevelTypeOptions, listMarkerOptions, listNumberFormatOptions, listNumberingModeOptions, listWrapModeOptions, markdownMappings, mergeTemplateStyleConfig, numberFormatOptions, styleGroupLabels, styleNodes, tablePresets } from "@/lib/style-manager-data";
 import { getTemplateStyleConfig, resetTemplateStyleConfig, saveTemplateStyleConfig, selectDocxFile } from "@/lib/tauri";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
@@ -604,8 +605,8 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
 
   function renderEditorContent() {
     return (
-      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col bg-white dark:bg-zinc-950">
-        <header className="shrink-0 border-b border-slate-200 px-5 py-3 dark:border-zinc-800 xl:px-7 xl:py-4">
+      <div className="template-style-manager flex h-full min-h-0 min-w-0 w-full flex-1 flex-col bg-white dark:bg-zinc-950">
+        <header className="shrink-0 border-b border-slate-200 px-4 py-2.5 dark:border-zinc-800 xl:px-5">
           <div className="flex items-center justify-between gap-5">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">
@@ -614,28 +615,22 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
               </div>
               {embedded ? (
                 <>
-                  <h2 className="mt-1.5 truncate text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-2xl">样式编辑：{template?.name ?? "技术文档模板"}</h2>
-                  <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-zinc-400">
-                    {template?.isBuiltIn ? "系统模板 · 可修改 · 可随时重置为内置默认" : "自定义模板 · 样式会保存到本机模板配置"}
-                  </p>
+                  <h2 className="mt-1 truncate text-xl font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-[22px]">样式编辑：{template?.name ?? "技术文档模板"}</h2>
                 </>
               ) : (
                 <>
-                  <DialogTitle className="mt-1.5 truncate text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-2xl">样式编辑：{template?.name ?? "技术文档模板"}</DialogTitle>
-                  <DialogDescription className="mt-1 text-sm leading-5 text-slate-500 dark:text-zinc-400">
-                    {template?.isBuiltIn ? "系统模板 · 可修改 · 可随时重置为内置默认" : "自定义模板 · 样式会保存到本机模板配置"}
-                  </DialogDescription>
+                  <DialogTitle className="mt-1 truncate text-xl font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-[22px]">样式编辑：{template?.name ?? "技术文档模板"}</DialogTitle>
                 </>
               )}
             </div>
-            <SoftActionButton className="h-10 shrink-0 border-slate-200 bg-white text-slate-500 hover:text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50" onClick={requestCloseEditor}>
+            <SoftActionButton className="h-8 shrink-0 border-slate-200 bg-white px-2.5 text-xs text-slate-500 hover:text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50" onClick={requestCloseEditor}>
               {embedded ? <ArrowLeft className="size-4" /> : <X className="size-4" />}
               {closeLabel ?? (embedded ? "返回模板中心" : "关闭")}
             </SoftActionButton>
           </div>
         </header>
 
-        <nav ref={tabsNavRef} className="relative flex h-12 shrink-0 items-end gap-8 overflow-x-auto border-b border-slate-200 px-5 dark:border-zinc-800 xl:px-7">
+        <nav ref={tabsNavRef} className="template-style-tabs relative flex h-10 shrink-0 items-end gap-6 overflow-x-auto border-b border-slate-200 px-4 dark:border-zinc-800 xl:px-5">
           {editorTabs.map((tab) => (
             <button
               key={tab.id}
@@ -643,7 +638,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
                 tabButtonRefs.current[tab.id] = node;
               }}
               className={cn(
-                "relative z-10 flex h-full shrink-0 items-center text-sm font-semibold text-slate-500 transition-colors hover:text-slate-950 dark:text-zinc-400 dark:hover:text-zinc-50",
+                "relative z-10 flex h-full shrink-0 items-center text-[13px] font-semibold text-slate-500 transition-colors hover:text-slate-950 dark:text-zinc-400 dark:hover:text-zinc-50",
                 activeTab === tab.id && "text-[var(--app-primary)]",
               )}
               onClick={() => setActiveTab(tab.id)}
@@ -657,7 +652,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
           />
         </nav>
 
-        <div className="@container/style-editor min-h-0 flex-1 overflow-hidden bg-slate-50/50 dark:bg-zinc-950">
+        <div className="template-style-workspace @container/style-editor min-h-0 flex-1 overflow-hidden bg-slate-50/50 dark:bg-zinc-950">
           {activeTab === "info" ? (
             <TabScrollArea>
               <TemplateInfoPanel
@@ -684,7 +679,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
           {activeTab === "styles" ? (
             <div
               ref={stylesLayoutRef}
-              className="flex h-full min-h-0 w-full flex-col overflow-y-auto @min-[720px]/style-editor:grid @min-[720px]/style-editor:grid-cols-[300px_minmax(0,1fr)] @min-[720px]/style-editor:grid-rows-[minmax(560px,58vh)_minmax(520px,1fr)] @min-[1280px]/style-editor:grid-cols-[240px_minmax(420px,1fr)_var(--style-preview-width)] @min-[1280px]/style-editor:grid-rows-[minmax(0,1fr)] @min-[1280px]/style-editor:overflow-x-hidden @min-[1280px]/style-editor:overflow-y-hidden @min-[1536px]/style-editor:grid-cols-[270px_minmax(620px,1fr)_var(--style-preview-width)]"
+              className="flex h-full min-h-0 w-full flex-col overflow-y-auto @min-[720px]/style-editor:grid @min-[720px]/style-editor:grid-cols-[280px_minmax(0,1fr)] @min-[720px]/style-editor:grid-rows-[minmax(520px,58vh)_minmax(500px,1fr)] @min-[1280px]/style-editor:grid-cols-[230px_minmax(420px,1fr)_var(--style-preview-width)] @min-[1280px]/style-editor:grid-rows-[minmax(0,1fr)] @min-[1280px]/style-editor:overflow-x-hidden @min-[1280px]/style-editor:overflow-y-hidden @min-[1536px]/style-editor:grid-cols-[260px_minmax(620px,1fr)_var(--style-preview-width)]"
               style={{ "--style-preview-width": `${renderedPreviewWidth}px` } as CSSProperties}
             >
               <StyleNavigation query={query} setQuery={setQuery} groupedNodes={groupedNodes} activeStyleId={activeStyleId} setActiveStyleId={setActiveStyleId} />
@@ -711,11 +706,11 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
           ) : null}
         </div>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/96 px-5 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/96 xl:gap-4 xl:px-7">
-          <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", hasChanges ? "bg-amber-50 text-amber-700 dark:bg-amber-500/16 dark:text-amber-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/16 dark:text-emerald-200")}>{hasChanges ? "有未保存更改" : "已保存"}</span>
-          {activeTab === "styles" && !isDocumentStructureSelection ? <Button variant="ghost" className="text-slate-500 dark:text-zinc-400 dark:hover:text-zinc-100" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>重置当前样式</Button> : null}
-          <SoftActionButton className="h-9" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>恢复默认样式</SoftActionButton>
-          <PrimaryActionButton className="h-9 px-5 font-semibold" onClick={() => void handleSaveEditor()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存更改"}</PrimaryActionButton>
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/96 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/96 xl:px-5">
+          <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", hasChanges ? "bg-amber-50 text-amber-700 dark:bg-amber-500/16 dark:text-amber-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/16 dark:text-emerald-200")}>{hasChanges ? "有未保存更改" : "已保存"}</span>
+          {activeTab === "styles" && !isDocumentStructureSelection ? <Button variant="ghost" className="h-8 px-2.5 text-xs text-slate-500 dark:text-zinc-400 dark:hover:text-zinc-100" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>重置当前样式</Button> : null}
+          <SoftActionButton className="h-8 px-2.5 text-xs" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>恢复默认样式</SoftActionButton>
+          <PrimaryActionButton className="h-8 px-3.5 text-xs font-semibold" onClick={() => void handleSaveEditor()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存更改"}</PrimaryActionButton>
         </footer>
       </div>
     );
@@ -786,14 +781,14 @@ function StyleNavigation({
   }
 
   return (
-    <aside className="min-h-0 max-h-[340px] shrink-0 overflow-hidden border-b border-slate-200 border-r-0 bg-white dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:h-full @min-[720px]/style-editor:max-h-none @min-[720px]/style-editor:min-h-[560px] @min-[720px]/style-editor:border-r @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0">
-      <div className="border-b border-slate-200 p-3.5 dark:border-zinc-800">
+    <aside className="template-style-navigation min-h-0 max-h-[320px] shrink-0 overflow-hidden border-b border-slate-200 border-r-0 bg-white dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:h-full @min-[720px]/style-editor:max-h-none @min-[720px]/style-editor:min-h-[520px] @min-[720px]/style-editor:border-r @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0">
+      <div className="border-b border-slate-200 p-3 dark:border-zinc-800">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-          <Input className="h-10 rounded-lg border-slate-200 bg-slate-50 pl-10 dark:border-zinc-700 dark:bg-zinc-900/72" placeholder="搜索样式..." value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+          <Input className="rounded-lg border-slate-200 bg-slate-50 pl-8.5 dark:border-zinc-700 dark:bg-zinc-900/72" placeholder="搜索样式..." value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
       </div>
-      <div className="h-[calc(100%-69px)] overflow-auto px-3.5 py-3">
+      <div className="h-[calc(100%-56px)] overflow-auto px-3 py-2.5">
         {(Object.keys(styleGroupLabels) as StyleGroupKey[]).map((group) => {
           const nodes = groupedNodes(group);
           if (nodes.length === 0) return null;
@@ -806,28 +801,29 @@ function StyleNavigation({
             (nodes.some((node) => listStyleIds.includes(node.id)) ? 1 : 0);
           const groupCount = group === "basic" ? basicNavigationCount : nodes.length;
           return (
-            <section key={group} className="mb-3">
+            <section key={group} className="mb-2.5">
               <button
                 type="button"
+                data-active={groupActive}
                 className={cn(
-                  "mb-1.5 flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left transition",
+                  "style-navigation-group mb-1 flex w-full items-center justify-between rounded-lg border px-2 py-1.5 text-left transition",
                   groupActive
                     ? "border-slate-200 bg-slate-50 text-slate-950 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                     : "border-transparent text-slate-950 hover:border-slate-200 hover:bg-slate-50 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-900",
                 )}
                 onClick={() => toggleGroup(group)}
               >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <ChevronDown className={cn("size-3.5 shrink-0 text-slate-500 transition-transform dark:text-zinc-500", collapsed && "-rotate-90")} />
-                  <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md border bg-white dark:bg-zinc-950", groupActive ? "border-indigo-100 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-zinc-700 dark:text-zinc-400")}>
-                    <GroupIcon className="size-4" />
+                <span className="flex min-w-0 items-center gap-2">
+                  <ChevronDown className={cn("size-3 shrink-0 text-slate-500 transition-transform dark:text-zinc-500", collapsed && "-rotate-90")} />
+                  <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border bg-white dark:bg-zinc-950", groupActive ? "border-indigo-100 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-zinc-700 dark:text-zinc-400")}>
+                    <GroupIcon className="size-3.5" />
                   </span>
-                  <span className="truncate text-sm font-bold">{styleGroupLabels[group]}</span>
+                  <span className="truncate text-[13px] font-bold">{styleGroupLabels[group]}</span>
                 </span>
-                <span className={cn("ml-2 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold", groupActive ? "bg-white text-slate-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400")}>{groupCount}</span>
+                <span className={cn("ml-2 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", groupActive ? "bg-white text-slate-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400")}>{groupCount}</span>
               </button>
               {!collapsed ? (
-                <div className="ml-4 space-y-1 border-l border-slate-200 pl-3 dark:border-zinc-800">
+                <div className="ml-3.5 space-y-0.5 border-l border-slate-200 pl-2.5 dark:border-zinc-800">
                   {group === "basic" ? (
                     <>
                       {nodes.some((node) => headingStyleIds.includes(node.id)) ? (
@@ -861,28 +857,29 @@ function StyleNavigation({
           );
         })}
         {matchingDocumentStructureItems.length > 0 ? (
-          <section className="mb-3">
+          <section className="mb-2.5">
             <button
               type="button"
+              data-active={isDocumentStructureStyleId(activeStyleId)}
               className={cn(
-                "mb-1.5 flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left transition",
+                "style-navigation-group mb-1 flex w-full items-center justify-between rounded-lg border px-2 py-1.5 text-left transition",
                 isDocumentStructureStyleId(activeStyleId)
                   ? "border-slate-200 bg-slate-50 text-slate-950 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                   : "border-transparent text-slate-950 hover:border-slate-200 hover:bg-slate-50 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-900",
               )}
               onClick={() => setDocumentStructureCollapsed((collapsed) => !collapsed)}
             >
-              <span className="flex min-w-0 items-center gap-2.5">
-                <ChevronDown className={cn("size-3.5 shrink-0 text-slate-500 transition-transform dark:text-zinc-500", documentStructureCollapsed && "-rotate-90")} />
-                <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md border bg-white dark:bg-zinc-950", isDocumentStructureStyleId(activeStyleId) ? "border-indigo-100 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-zinc-700 dark:text-zinc-400")}>
-                  <FileText className="size-4" />
+              <span className="flex min-w-0 items-center gap-2">
+                <ChevronDown className={cn("size-3 shrink-0 text-slate-500 transition-transform dark:text-zinc-500", documentStructureCollapsed && "-rotate-90")} />
+                <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border bg-white dark:bg-zinc-950", isDocumentStructureStyleId(activeStyleId) ? "border-indigo-100 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-zinc-700 dark:text-zinc-400")}>
+                  <FileText className="size-3.5" />
                 </span>
-                <span className="truncate text-sm font-bold">文档结构</span>
+                <span className="truncate text-[13px] font-bold">文档结构</span>
               </span>
-              <span className={cn("ml-2 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold", isDocumentStructureStyleId(activeStyleId) ? "bg-white text-slate-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400")}>{matchingDocumentStructureItems.length}</span>
+              <span className={cn("ml-2 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", isDocumentStructureStyleId(activeStyleId) ? "bg-white text-slate-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400")}>{matchingDocumentStructureItems.length}</span>
             </button>
             {!documentStructureCollapsed || query.trim() !== "" ? (
-              <div className="ml-4 space-y-1 border-l border-slate-200 pl-3 dark:border-zinc-800">
+              <div className="ml-3.5 space-y-0.5 border-l border-slate-200 pl-2.5 dark:border-zinc-800">
                 {matchingDocumentStructureItems.map((item) => <DocumentStructureNavigationItem key={item.id} item={item} active={activeStyleId === item.id} onSelect={() => setActiveStyleId(item.id)} />)}
               </div>
             ) : null}
@@ -899,8 +896,9 @@ function DocumentStructureNavigationItem({ item, active, onSelect }: { item: (ty
   return (
     <TooltipButton
       type="button"
+      data-active={active}
       className={cn(
-        "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left text-xs font-medium leading-3 transition",
+        "style-navigation-item flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2 py-0.5 text-left text-[12px] font-medium leading-4 transition",
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
@@ -909,7 +907,7 @@ function DocumentStructureNavigationItem({ item, active, onSelect }: { item: (ty
     >
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
-        <ItemIcon className="size-2.5" />
+        <ItemIcon className="size-3" />
       </span>
     </TooltipButton>
   );
@@ -921,8 +919,9 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
   return (
     <TooltipButton
       type="button"
+      data-active={active}
       className={cn(
-        "flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-left text-xs font-medium leading-3 transition",
+        "style-navigation-item flex min-h-7 w-full items-center justify-between gap-1.5 rounded-lg px-2 py-0.5 text-left text-[12px] font-medium leading-4 transition",
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
@@ -933,7 +932,7 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
         <span className="block truncate">{node.displayName}</span>
       </span>
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
-        <NodeIcon className="size-2.5" />
+        <NodeIcon className="size-3" />
       </span>
     </TooltipButton>
   );
@@ -1086,17 +1085,17 @@ function StyleProperties({
   }
 
   return (
-    <section className="min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[560px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
-      <div className="mb-5">
-        <h3 className="text-[26px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{isHeadingStyle ? headingNavigationNode.displayName : isList ? listNavigationNode.displayName : selectedStyle.displayName}</h3>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">Word 样式：{isHeadingStyle ? selectedStyle.name : isList ? listNavigationNode.name : selectedStyle.name}</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">Markdown 标记：{mappedHeadingMarkdown ?? (isList ? listNavigationNode.markdown : selectedStyle.markdown)}</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">{isLoading ? "加载中" : "可编辑"}</span>
+    <section className="template-style-properties min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[520px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
+      <div className="mb-4">
+        <h3 className="text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{isHeadingStyle ? headingNavigationNode.displayName : isList ? listNavigationNode.displayName : selectedStyle.displayName}</h3>
+        <div className="mt-2.5 flex flex-wrap gap-1.5 text-[11px]">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">Word 样式：{isHeadingStyle ? selectedStyle.name : isList ? listNavigationNode.name : selectedStyle.name}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">Markdown 标记：{mappedHeadingMarkdown ?? (isList ? listNavigationNode.markdown : selectedStyle.markdown)}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">{isLoading ? "加载中" : "可编辑"}</span>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <MarkdownFeatureStyleSwitch selectedStyleId={selectedStyle.id} markdownFeatures={markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} />
 
         {isQuote ? (
@@ -1166,18 +1165,19 @@ function StyleProperties({
 
         {isHeadingStyle ? (
           <PropertyCard title="标题级别">
-            <div className="grid grid-cols-7 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5 dark:border-zinc-700 dark:bg-zinc-900/72">
+            <div className="style-level-control grid h-8 grid-cols-7 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
               {headingLevelOptions.map((option) => (
                 <button
                   key={option.id}
                   type="button"
                   className={cn(
-                    "h-10 rounded-md text-sm font-semibold transition",
+                    "h-auto rounded-[3px] text-xs font-semibold transition",
                     activeHeadingStyleId === option.id
                       ? "bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-100 dark:bg-zinc-950 dark:text-indigo-200 dark:ring-indigo-500/30"
                       : "text-slate-600 hover:bg-white/70 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-950/70 dark:hover:text-zinc-100",
                   )}
                   onClick={() => setActiveStyleId(option.id)}
+                  aria-pressed={activeHeadingStyleId === option.id}
                 >
                   {option.label}
                 </button>
@@ -1188,25 +1188,26 @@ function StyleProperties({
 
         {isList ? (
           <PropertyCard title="列表级别">
-            <div className="grid grid-cols-4 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5 dark:border-zinc-700 dark:bg-zinc-900/72">
+            <div className="style-level-control grid h-8 grid-cols-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
               {listLevelOptions.map((level) => (
                 <button
                   key={level}
                   type="button"
                   className={cn(
-                    "h-10 rounded-md text-sm font-semibold transition",
+                    "h-auto rounded-[3px] text-xs font-semibold transition",
                     activeListLevel === level
                       ? "bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-100 dark:bg-zinc-950 dark:text-indigo-200 dark:ring-indigo-500/30"
                       : "text-slate-600 hover:bg-white/70 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-950/70 dark:hover:text-zinc-100",
                   )}
                   onClick={() => setActiveListLevel(level)}
+                  aria-pressed={activeListLevel === level}
                 >
                   {level} 级
                 </button>
               ))}
             </div>
             <div className="mt-3 flex justify-end">
-              <SoftActionButton className="h-9" onClick={syncListLevelsFromBody}>同步正文文字样式</SoftActionButton>
+              <SoftActionButton className="h-8 px-2.5 text-xs" onClick={syncListLevelsFromBody}>同步正文文字样式</SoftActionButton>
             </div>
           </PropertyCard>
         ) : null}
@@ -1219,11 +1220,11 @@ function StyleProperties({
             <Field label="文字颜色"><WordColorPicker value={draft[colorKey] as string} onChange={(value) => updateDraft(colorKey, value)} autoColor="#111827" /></Field>
             {(!isTableNode || isTableCaption) ? (
               <Field label="字重">
-                <div className="grid h-10 grid-cols-[40px_minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
+                <div className="style-weight-control grid h-8 grid-cols-[36px_minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
                   <TooltipButton
                     type="button"
                     className={cn(
-                      "h-full w-full min-h-0 rounded-none border-r border-slate-200 text-base font-black transition dark:border-zinc-700",
+                      "h-full w-full min-h-0 rounded-none border-r border-slate-200 text-[15px] font-black transition dark:border-zinc-700",
                       Number(draft[fontWeightKey]) >= 600 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
                     )}
                     aria-label="加粗"
@@ -1273,13 +1274,13 @@ function StyleProperties({
           <PropertyCard title={`${activeListLevel} 级列表格式`}>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label={`${activeListLevel} 级类型`}>
-                <div className="grid h-10 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
+                <div className="style-list-type-control grid h-8 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
                   {listLevelTypeOptions.map((option) => (
                     <button
                       key={option.value}
                       type="button"
                       className={cn(
-                        "flex items-center justify-center border-r border-slate-200 text-sm font-semibold last:border-r-0 dark:border-zinc-700",
+                        "flex items-center justify-center border-r border-slate-200 text-[13px] font-semibold last:border-r-0 dark:border-zinc-700",
                         activeListLevelType === option.value ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
                       )}
                       onClick={() => updateDraft(activeListLevelTypeKey, option.value)}
@@ -1539,6 +1540,19 @@ function formatPaperPreviewLabel(pageSettings: PageSettingsDraft) {
 
 function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWidth, setWidth, markdown, markdownSourcePath }: { selectedStyle?: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void; width: number; maxWidth: number; setWidth: (value: number | ((current: number) => number)) => void; markdown?: string; markdownSourcePath?: string }) {
   const resizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | undefined>(undefined);
+  const [isAppDark, setIsAppDark] = useState(() => typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  const [paperThemeOverride, setPaperThemeOverride] = useState<"light" | "dark" | undefined>(undefined);
+  const paperTheme = paperThemeOverride ?? (isAppDark ? "dark" : "light");
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const root = document.documentElement;
+    const syncTheme = () => setIsAppDark(root.classList.contains("dark"));
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    syncTheme();
+    return () => observer.disconnect();
+  }, []);
 
   function clampPreviewWidth(value: number) {
     return Math.min(maxWidth, Math.max(320, value));
@@ -1602,14 +1616,18 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWi
       </div>
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
         <p className="text-sm font-semibold text-slate-400 dark:text-zinc-500">实时预览（{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
-        <div className="flex shrink-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:shadow-none">
-          <TooltipButton variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))} disabled={zoom <= previewZoomMin} tooltip="缩小预览" aria-label="缩小预览"><ZoomOut className="size-4 text-slate-500 dark:text-zinc-400" /></TooltipButton>
-          <span className="w-10 text-center text-xs font-bold text-slate-500 dark:text-zinc-400">{zoom}%</span>
-          <TooltipButton variant="ghost" size="icon" className="size-8 rounded-full" onClick={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))} disabled={zoom >= previewZoomMax} tooltip="放大预览" aria-label="放大预览"><ZoomIn className="size-4 text-slate-500 dark:text-zinc-400" /></TooltipButton>
-        </div>
+        <WordPreviewToolbar
+          zoom={zoom}
+          canZoomOut={zoom > previewZoomMin}
+          canZoomIn={zoom < previewZoomMax}
+          onZoomOut={() => setZoom((value) => clampPreviewZoom(value - previewZoomStep))}
+          onZoomIn={() => setZoom((value) => clampPreviewZoom(value + previewZoomStep))}
+          paperTheme={paperTheme}
+          onTogglePaperTheme={() => setPaperThemeOverride(paperTheme === "dark" ? "light" : "dark")}
+        />
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
-        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} markdown={markdown} markdownSourcePath={markdownSourcePath} paginate={Boolean(markdown?.trim())} showTocPage badgeText={selectedStyle ? `当前：${selectedStyle.displayName}` : "文档结构预览"} interactiveViewport viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
+        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} markdown={markdown} markdownSourcePath={markdownSourcePath} paginate={Boolean(markdown?.trim())} showTocPage badgeText={selectedStyle ? `当前：${selectedStyle.displayName}` : "文档结构预览"} interactiveViewport paperTheme={paperTheme} viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
       </div>
     </aside>
   );
@@ -1624,7 +1642,7 @@ function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChang
   ];
 
   return (
-    <div className="grid h-10 grid-cols-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
+    <div className="style-align-control grid h-8 grid-cols-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
       {options.map(({ value: optionValue, label, icon: Icon }) => (
         <TooltipButton
           key={optionValue}
@@ -1635,7 +1653,7 @@ function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChang
           aria-label={label}
           aria-pressed={value === optionValue}
         >
-          <Icon className="size-4" />
+          <Icon className="size-3.5" />
         </TooltipButton>
       ))}
     </div>
@@ -1670,23 +1688,23 @@ function VerticalAlignSelect({ value, onChange }: { value: VerticalAlign; onChan
 
 function PropertyCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="border-t border-slate-200 pt-4 dark:border-zinc-800">
-      <h4 className="mb-3 flex items-center justify-between gap-2 text-[15px] font-bold text-slate-950 dark:text-zinc-50"><span className="flex items-center gap-2"><SlidersHorizontal className="size-4 text-indigo-600 dark:text-indigo-300" />{title}</span><ChevronDown className="size-4 text-slate-400 dark:text-zinc-500" /></h4>
-      <div className="space-y-3.5">{children}</div>
+    <section className="template-style-property-card border-t border-slate-200 pt-3 dark:border-zinc-800">
+      <h4 className="mb-2.5 flex items-center justify-between gap-2 text-sm font-bold text-slate-950 dark:text-zinc-50"><span className="flex items-center gap-1.5"><SlidersHorizontal className="size-3.5 text-indigo-600 dark:text-indigo-300" />{title}</span><ChevronDown className="size-3.5 text-slate-400 dark:text-zinc-500" /></h4>
+      <div className="space-y-3">{children}</div>
     </section>
   );
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="min-w-0 space-y-1.5"><Label className="block text-sm leading-5 text-slate-700 dark:text-zinc-300">{label}</Label>{children}</div>;
+  return <div className="min-w-0 space-y-1"><Label className="block text-[13px] leading-4 text-slate-700 dark:text-zinc-300">{label}</Label>{children}</div>;
 }
 
 function SettingSwitch({ label, checked, onCheckedChange, disabled = false }: { label: string; checked: boolean; onCheckedChange?: (checked: boolean) => void; disabled?: boolean }) {
-  return <div className="flex items-center justify-between gap-4 text-sm text-slate-700 dark:text-zinc-300"><span>{label}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
+  return <div className="flex items-center justify-between gap-4 text-[13px] text-slate-700 dark:text-zinc-300"><span>{label}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
 }
 
 function TabScrollArea({ children }: { children: ReactNode }) {
-  return <div className="h-full overflow-auto p-5 xl:p-6">{children}</div>;
+  return <div className="h-full overflow-auto p-4 xl:p-5">{children}</div>;
 }
 
 function TemplateInfoPanel({
@@ -1730,8 +1748,8 @@ function TemplateInfoPanel({
   const locked = !canEdit || disabled;
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="space-y-5">
+    <div className="grid gap-[5px] xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="space-y-[5px]">
         <PanelCard title="模板信息">
           {template?.isBuiltIn ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/12 dark:text-amber-200">
@@ -1765,7 +1783,7 @@ function TemplateInfoPanel({
             </Label>
             <div className="flex gap-2 max-sm:flex-col">
               <Input className="h-10 min-w-0 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} disabled={locked} placeholder="选择或填写 .docx 文件路径" />
-              <SoftActionButton className="h-10 shrink-0" disabled={locked} onClick={onSelectReferenceDocx}>
+              <SoftActionButton className="h-8 shrink-0 px-2.5 text-xs" disabled={locked} onClick={onSelectReferenceDocx}>
                 <Upload className="size-4" />
                 选择文件
               </SoftActionButton>
@@ -1777,9 +1795,9 @@ function TemplateInfoPanel({
         </PanelCard>
       </div>
 
-      <div className="space-y-5">
+      <div className="space-y-[5px]">
         <PanelCard title="样式来源">
-          <div className="space-y-3">
+          <div className="space-y-[5px]">
             <button
               type="button"
               className="flex w-full items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left transition hover:bg-white dark:border-zinc-700 dark:bg-zinc-900/72 dark:hover:bg-zinc-900"
@@ -1811,7 +1829,7 @@ function TemplateInfoPanel({
         </PanelCard>
 
         <PanelCard title="当前状态">
-          <div className="space-y-2 text-sm">
+          <div className="space-y-[5px] text-sm">
             <InfoRow label="类型" value={template?.isBuiltIn ? "系统模板" : "自定义模板"} />
             <InfoRow label="底稿" value={referenceDocxPath.trim() ? "已设置 Word 底稿" : "未设置 Word 底稿"} />
             <InfoRow label="默认" value={template?.isDefault ? "当前默认模板" : "非默认模板"} />
@@ -1833,7 +1851,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: PageSettingsDraft; patchPageSettings: (patch: Partial<PageSettingsDraft>) => void }) {
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-[5px] lg:grid-cols-2">
       <PanelCard title="纸张">
         <Field label="纸张大小">
           <Select value={pageSettings.paperSize} onValueChange={(value) => patchPageSettings({ paperSize: value as PageSettingsDraft["paperSize"] })}>
@@ -1851,7 +1869,7 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
           </Select>
         </Field>
         <Field label="方向">
-          <div className="grid h-10 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
+          <div className="style-orientation-control grid h-8 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
             {([
               ["portrait", "纵向"],
               ["landscape", "横向"],
@@ -1860,7 +1878,7 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
                 key={value}
                 type="button"
                 className={cn(
-                  "flex items-center justify-center border-r border-slate-200 text-sm font-semibold last:border-r-0 dark:border-zinc-700",
+                  "flex items-center justify-center border-r border-slate-200 text-[13px] font-semibold last:border-r-0 dark:border-zinc-700",
                   pageSettings.orientation === value ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
                 )}
                 onClick={() => patchPageSettings({ orientation: value })}
@@ -1890,10 +1908,10 @@ function DocumentStructureProperties({ selection, pageSettings, patchPageSetting
   const item = documentStructureItems.find((entry) => entry.id === selection) ?? documentStructureItems[0];
 
   return (
-    <section className="min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-5 py-5 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[560px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
-      <div className="mb-5">
-        <h3 className="text-[26px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{item.label}</h3>
-        <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">{item.description}</p>
+    <section className="template-style-properties min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[520px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
+      <div className="mb-4">
+        <h3 className="text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{item.label}</h3>
+        <p className="mt-1.5 text-[13px] text-slate-500 dark:text-zinc-400">{item.description}</p>
       </div>
       {selection === "document-header-footer" ? <HeaderFooterSettingsPanel pageSettings={pageSettings} patchPageSettings={patchPageSettings} /> : <TableOfContentsSettingsPanel pageSettings={pageSettings} patchPageSettings={patchPageSettings} />}
     </section>
@@ -1987,14 +2005,14 @@ function MappingPanel({
 
   return (
     <div>
-      <AppSurface variant="plain" radius="sm" padding="none" className="p-5">
+      <AppSurface variant="plain" radius="sm" padding="none" className="template-style-panel-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-xl font-bold">Markdown 识别规则</h3>
           </div>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-400">标题逐级映射</span>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="mt-5 grid gap-[5px] md:grid-cols-2">
           {headingMappings.map(([from], index) => {
             const sourceStyleId = markdownHeadingStyleIds[index];
             const target = markdownRules.headingMappings[sourceStyleId];
@@ -2053,7 +2071,7 @@ function MappingPanel({
 }
 
 function PanelCard({ title, children }: { title: string; children: ReactNode }) {
-  return <AppSurface as="section" variant="plain" radius="sm" padding="none" className="space-y-4 p-5"><h3 className="font-bold text-slate-950 dark:text-zinc-50">{title}</h3>{children}</AppSurface>;
+  return <AppSurface as="section" variant="plain" radius="sm" padding="none" className="template-style-panel-card space-y-4 p-5"><h3 className="font-bold text-slate-950 dark:text-zinc-50">{title}</h3>{children}</AppSurface>;
 }
 
 function normalizeTemplateTags(category: string, tagsText: string) {

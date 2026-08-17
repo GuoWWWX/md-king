@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type WheelEvent } from "react";
 import { CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FilePlus, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { WorkspacePageHeader } from "@/components/layout/page-header";
@@ -8,8 +8,9 @@ import { TemplateEditDrawer } from "@/components/templates/template-edit-drawer"
 import { TemplateImportDialog } from "@/components/templates/template-import-dialog";
 import { TemplateStyleManager } from "@/components/templates/template-style-manager";
 import { WordPreviewPage } from "@/components/templates/word-preview-page";
-import { Badge } from "@/components/ui/badge";
-import { AppSurface, DocPreviewSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
+import { WordPreviewToolbar } from "@/components/templates/word-preview-toolbar";
+import { ResizableDivider } from "@/components/layout/resizable-divider";
+import { AppSurface, PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { TooltipButton } from "@/components/ui/tooltip";
 import {
@@ -31,6 +32,18 @@ import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import type { ImportTemplateRequest, Template, TemplateStyleConfig } from "@/types";
+
+type PreviewPaperTheme = "light" | "dark";
+
+const templatePreviewZoomMin = 20;
+const templatePreviewZoomMax = 200;
+const templatePreviewZoomStep = 10;
+const templatePreviewMinWidth = 320;
+const templatePreviewMaxWidth = 560;
+
+function clampTemplatePreviewZoom(value: number) {
+  return Math.min(templatePreviewZoomMax, Math.max(templatePreviewZoomMin, value));
+}
 
 function removeGroupTag(tags: string[], group: string) {
   return tags.filter((tag) => tag !== group);
@@ -145,6 +158,12 @@ export function TemplatesPage() {
   const [previewTemplateId, setPreviewTemplateId] = useState<string | undefined>(currentTemplateId ?? appConfig?.defaultTemplateId);
   const [previewStyleConfig, setPreviewStyleConfig] = useState<TemplateStyleConfig>(() => mergeTemplateStyleConfig(currentTemplateId ?? appConfig?.defaultTemplateId ?? "default-report"));
   const [cardPreviewStyleConfigs, setCardPreviewStyleConfigs] = useState<Record<string, TemplateStyleConfig>>({});
+  const [templatePreviewWidth, setTemplatePreviewWidth] = useState(templatePreviewMaxWidth);
+  const [templatePreviewZoom, setTemplatePreviewZoom] = useState(60);
+  const [templatePreviewPaperThemeOverride, setTemplatePreviewPaperThemeOverride] = useState<PreviewPaperTheme | undefined>(undefined);
+  const isDark = (appConfig?.themeMode ?? "light") === "dark"
+    || ((appConfig?.themeMode ?? "light") === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const templatePreviewPaperTheme = templatePreviewPaperThemeOverride ?? (isDark ? "dark" : "light");
 
   useEffect(() => {
     setCustomGroups(loadCustomTemplateGroups());
@@ -320,6 +339,17 @@ export function TemplatesPage() {
     setStyleTemplate(template);
   }
 
+  function toggleTemplatePreviewPaperTheme() {
+    setTemplatePreviewPaperThemeOverride(templatePreviewPaperTheme === "dark" ? "light" : "dark");
+  }
+
+  function handleTemplatePreviewWheel(event: WheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setTemplatePreviewZoom((value) => clampTemplatePreviewZoom(value + direction * templatePreviewZoomStep));
+  }
+
   async function handleImport(request: ImportTemplateRequest) {
     const template = await importTemplate(request);
     if (request.isDefault && appConfig) {
@@ -491,10 +521,13 @@ export function TemplatesPage() {
         )}
       />
 
-      <div className="mk-templates-workspace grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-1 overflow-hidden">
-      <section className="flex min-h-0 flex-col overflow-hidden">
+      <div
+        className="mk-templates-workspace grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_0px_minmax(320px,var(--template-preview-width))] gap-0 overflow-hidden"
+        style={{ "--template-preview-width": `${templatePreviewWidth}px` } as CSSProperties}
+      >
+      <section className="mr-[5px] flex min-h-0 flex-col gap-1 overflow-hidden">
 
-        <div className="mk-template-filter-panel mb-1 flex shrink-0 flex-wrap items-center gap-2 rounded-[8px] border border-blue-100/60 bg-white p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
+        <div className="mk-template-filter-panel flex shrink-0 flex-wrap items-center gap-2 rounded-[8px] border border-blue-100/60 bg-white p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/60">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="group h-9 w-[190px] justify-between border-white/70 bg-white/68 px-3 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full">
@@ -573,7 +606,7 @@ export function TemplatesPage() {
           </div>
         </div>
 
-        <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-white/80 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_16px_42px_rgba(37,99,235,0.08)] dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:shadow-none">
+        <section className="mk-template-list-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-slate-200 bg-white shadow-none dark:border-zinc-700/70 dark:bg-zinc-900/60">
           <div className="mk-template-list-toolbar flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-blue-100/70 px-3 py-2.5 dark:border-zinc-700/70">
             <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
               <button
@@ -600,7 +633,7 @@ export function TemplatesPage() {
               size="sm"
               className={cn(
                 "mk-template-batch-delete",
-                selectedIds.length > 0 ? "text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" : "text-slate-400 hover:text-slate-400 dark:text-zinc-500 dark:hover:text-zinc-500",
+                selectedIds.length > 0 ? "border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" : "text-slate-600 dark:text-zinc-400",
               )}
               onClick={() => deleteTemplates(selectedIds)}
               disabled={selectedIds.length === 0}
@@ -682,42 +715,47 @@ export function TemplatesPage() {
         </section>
       </section>
 
-      <aside className="mk-template-side-panel grid min-h-0 grid-rows-[220px_minmax(0,1fr)] gap-1 overflow-hidden">
-        <AppSurface as="section">
-          <p className="text-sm font-black text-foreground">当前预览模板</p>
-          <div className="mt-4 grid grid-cols-[86px_minmax(0,1fr)] gap-4">
-            <DocPreviewSurface className="h-28 p-3 shadow-sm">
-              <div className="mx-auto h-20 w-14 rounded-md bg-white shadow-lg">
-                <div className="space-y-1.5 p-2">
-                  <div className="h-2 w-8 rounded-full bg-primary" />
-                  <div className="h-1 rounded-full bg-primary/15" />
-                  <div className="h-1 rounded-full bg-primary/15" />
-                </div>
-              </div>
-            </DocPreviewSurface>
-            <div className="min-w-0">
-              <h3 className="truncate text-base font-black text-foreground">{highlightedTemplate?.name ?? "默认报告模板"}</h3>
-              {highlightedTemplate?.isDefault ? <Badge variant="secondary" className="mt-2 rounded-full">默认模板</Badge> : null}
-              <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{highlightedTemplate?.description ?? "适用于 AI 生成的通用报告、方案和说明文档。"}</p>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <PrimaryActionButton disabled={!highlightedTemplate} onClick={() => highlightedTemplate ? void setDefaultTemplate(highlightedTemplate) : undefined}>设为默认</PrimaryActionButton>
-            <SoftActionButton disabled={!highlightedTemplate} onClick={() => openStyleManager(highlightedTemplate, "styles")}>编辑样式</SoftActionButton>
-          </div>
-        </AppSurface>
+      <ResizableDivider
+        orientation="vertical"
+        from="end"
+        size={templatePreviewWidth}
+        min={templatePreviewMinWidth}
+        max={templatePreviewMaxWidth}
+        onResize={setTemplatePreviewWidth}
+        ariaLabel="调整模板 Word 预览宽度"
+        className="mk-template-side-resizer"
+      />
 
-        <AppSurface as="section" padding="none" className="min-h-0 overflow-hidden p-0">
-          <WordPreviewPage
-            styleConfig={previewStyleConfig}
-            zoom={64}
-            paginate
-            headerTitle="样式预览"
-            headerSubtitle={highlightedTemplate?.name ?? "未选择模板"}
-            badgeText="DOCX"
-            className="max-h-none min-h-0 border-0 bg-transparent p-3 shadow-none"
-            viewportClassName="mk-template-side-preview bg-transparent p-2"
-          />
+      <aside className="mk-template-side-panel flex min-h-0 flex-col overflow-hidden">
+        <AppSurface as="section" padding="none" className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+          <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
+              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{highlightedTemplate?.name ?? "未选择模板"}</p>
+            </div>
+            <WordPreviewToolbar
+              zoom={templatePreviewZoom}
+              canZoomOut={templatePreviewZoom > templatePreviewZoomMin}
+              canZoomIn={templatePreviewZoom < templatePreviewZoomMax}
+              onZoomOut={() => setTemplatePreviewZoom((value) => clampTemplatePreviewZoom(value - templatePreviewZoomStep))}
+              onZoomIn={() => setTemplatePreviewZoom((value) => clampTemplatePreviewZoom(value + templatePreviewZoomStep))}
+              paperTheme={templatePreviewPaperTheme}
+              onTogglePaperTheme={toggleTemplatePreviewPaperTheme}
+              onOpenAdvancedStyle={() => openStyleManager(highlightedTemplate, "styles")}
+            />
+          </div>
+          <div className="min-h-0 flex-1" onWheel={handleTemplatePreviewWheel}>
+            <WordPreviewPage
+              styleConfig={previewStyleConfig}
+              zoom={templatePreviewZoom}
+              paginate
+              showHeader={false}
+              interactiveViewport
+              paperTheme={templatePreviewPaperTheme}
+              className="mk-template-side-preview-card max-h-none min-h-0 overflow-hidden border-0 bg-transparent p-0 shadow-none"
+              viewportClassName="mk-template-side-preview bg-transparent p-2 dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80"
+            />
+          </div>
         </AppSurface>
       </aside>
 

@@ -90,7 +90,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           onToggleDocumentDrawer={() => setDocumentDrawerOpen((open) => !open)}
           documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 110) : 0}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 gap-[5px] p-[5px]">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-1 p-1">
           <ActivityBar
             activePage={activePage}
             navigation={navigation}
@@ -130,9 +130,9 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
                 // onCollapsedChange 传的是「是否已收起」，和 visible 语义相反，必须取反。
                 onCollapsedChange={(collapsed) => setFileTreeVisible(!collapsed)}
                 ariaLabel="调整文件树宽度"
-                // 容器本身零宽，但仍会占掉一份 flex gap。负 margin 抵消掉，
-                // 让这道缝和图标栏那边一样宽。
-                className="-ml-[5px]"
+                // 容器本身零宽，但仍会占掉一份 flex gap。抵消一份 4px 间距，
+                // 让文件树右侧与图标栏、上下外边距保持一致。
+                className="-ml-1"
               />
             </>
           ) : null}

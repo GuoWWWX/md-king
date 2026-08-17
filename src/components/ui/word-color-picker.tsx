@@ -81,7 +81,7 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
         <Button
           type="button"
           variant="outline"
-          className={cn("h-10 w-full justify-between rounded-lg border-slate-200 bg-slate-50 px-3 text-slate-900 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-50 dark:hover:bg-zinc-800", className)}
+          className={cn("word-style-picker-control h-9 w-full justify-between rounded-lg border-slate-200 bg-slate-50 px-3 text-slate-900 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-50 dark:hover:bg-zinc-800", className)}
         >
           <span className="flex min-w-0 items-center gap-2.5">
             <ColorSwatch color={normalizedValue} selected={false} />
@@ -90,7 +90,7 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
           <ChevronDown className="size-4 shrink-0 text-slate-500 dark:text-zinc-400" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={8} className="w-[318px] rounded-xl border border-slate-200 bg-white p-3 text-slate-900 shadow-xl shadow-slate-900/12 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50">
+      <DropdownMenuContent align="start" sideOffset={8} className="w-[318px] rounded-lg border border-slate-200 bg-white p-3 text-slate-900 shadow-xl shadow-slate-900/12 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50">
         <button
           type="button"
           className="flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm font-semibold text-slate-900 outline-none transition hover:bg-slate-100 focus-visible:bg-slate-100 dark:text-zinc-50 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"

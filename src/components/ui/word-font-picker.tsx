@@ -71,7 +71,7 @@ export function WordFontPicker({ value, options, onValueChange, className, disab
         aria-expanded={open}
         aria-autocomplete="list"
         aria-label="选择或搜索字体"
-        className="h-10 pr-9 bg-slate-50 dark:bg-zinc-900/72"
+        className="h-9 pr-9 bg-slate-50 dark:bg-zinc-900/72"
         onFocus={(event) => {
           setOpen(true);
           event.currentTarget.select();

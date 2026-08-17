@@ -37,6 +37,19 @@ export function registerBrowserPreviewImage(path: string, source: string) {
   browserPreviewImages.set(normalizePath(path), source);
 }
 
+/** 浏览器内存 vault 移动或重命名文件后，同步迁移图片预览路径。 */
+export function remapBrowserPreviewImages(sourcePath: string, targetPath: string) {
+  const source = normalizePath(sourcePath);
+  const target = normalizePath(targetPath);
+  if (!source || source === target) return;
+
+  for (const [path, previewSource] of [...browserPreviewImages]) {
+    if (path !== source && !path.startsWith(`${source}/`)) continue;
+    browserPreviewImages.delete(path);
+    browserPreviewImages.set(`${target}${path.slice(source.length)}`, previewSource);
+  }
+}
+
 export function resolveBrowserPreviewImage(path: string, sourcePath?: string) {
   if (isDirectImageSource(path)) return path;
 

@@ -58,6 +58,32 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // 桌面端不应把 WebView 当浏览器使用：刷新、缩放、打印、历史导航和开发者工具
+    // 都可能中断正在编辑或转换的任务。CodeMirror 内已实现的保存和查找/替换要保留。
+    const preventNativeWebViewShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isCodeMirror = Boolean(target?.closest(".cm-editor"));
+      const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      const isDeveloperShortcut = modifier && event.shiftKey && ["i", "j", "c", "k"].includes(key);
+      const isBrowserShortcut = modifier && ["d", "h", "l", "n", "o", "p", "r", "s", "t", "u", "w", "0", "=", "+", "-"].includes(key);
+      const isBrowserFindOutsideEditor = modifier && key === "f" && !isCodeMirror;
+      const isHistoryNavigation = event.altKey && !modifier && ["arrowleft", "arrowright"].includes(key);
+      const isFunctionShortcut = event.key === "F5" || event.key === "F12" || (event.key === "F3" && !isCodeMirror);
+      const isBackspaceNavigation = event.key === "Backspace" && !modifier && !event.altKey && !isCodeMirror && !(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement) && !target?.isContentEditable;
+
+      if (!isDeveloperShortcut && !isBrowserShortcut && !isBrowserFindOutsideEditor && !isHistoryNavigation && !isFunctionShortcut && !isBackspaceNavigation) return;
+
+      // 编辑器内的保存、查找/替换及文本编辑组合键不应被浏览器快捷键拦截。
+      if (isCodeMirror && modifier && ["d", "f", "g", "l", "r", "s"].includes(key)) return;
+      event.preventDefault();
+    };
+
+    window.addEventListener("keydown", preventNativeWebViewShortcut, true);
+    return () => window.removeEventListener("keydown", preventNativeWebViewShortcut, true);
+  }, []);
+
+  useEffect(() => {
     // 首屏前不发起任何 Tauri IPC：某些 Windows/WebView2 环境首次 IPC 可能被系统拦截，
     // 此时至少要先把可操作的工作台显示出来，而不是无限停留在启动页。
     const bootTimer = window.setTimeout(() => setBootReady(true), BOOT_SCREEN_MAX_WAIT_MS);

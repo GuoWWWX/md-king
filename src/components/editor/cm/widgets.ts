@@ -33,6 +33,7 @@ import {
 import { markdownCalloutIcon } from "@/components/markdown-callout-icon";
 import { TableWidthModeIcon } from "@/components/editor/table-width-mode-icon";
 import type { MarkdownCalloutTone } from "@/lib/markdown-callout";
+import type { MarkdownFrontmatterEntry } from "@/lib/markdown-frontmatter";
 import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 import { requestMediaPreview, svgDataUrl } from "@/components/media/image-viewer";
@@ -220,12 +221,16 @@ export class MermaidWidget extends WidgetType {
     private readonly source: string,
     private readonly dark: boolean,
     private readonly blockFrom: number,
+    private readonly editable: boolean,
   ) {
     super();
   }
 
   eq(other: MermaidWidget): boolean {
-    return other.source === this.source && other.dark === this.dark && other.blockFrom === this.blockFrom;
+    return other.source === this.source
+      && other.dark === this.dark
+      && other.blockFrom === this.blockFrom
+      && other.editable === this.editable;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -249,23 +254,25 @@ export class MermaidWidget extends WidgetType {
     });
     host.append(previewButton);
 
-    const sourceButton = document.createElement("button");
-    sourceButton.type = "button";
-    sourceButton.className = "mk-cm-mermaid-source";
-    sourceButton.dataset.tooltip = "编辑 Mermaid 源码";
-    sourceButton.setAttribute("aria-label", "编辑 Mermaid 源码");
-    sourceButton.innerHTML = iconMarkup(Code2);
-    sourceButton.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      view.dispatch({
-        selection: { anchor: this.blockFrom },
-        effects: editMermaidSourceEffect.of(this.blockFrom),
-        scrollIntoView: true,
+    if (this.editable) {
+      const sourceButton = document.createElement("button");
+      sourceButton.type = "button";
+      sourceButton.className = "mk-cm-mermaid-source";
+      sourceButton.dataset.tooltip = "编辑 Mermaid 源码";
+      sourceButton.setAttribute("aria-label", "编辑 Mermaid 源码");
+      sourceButton.innerHTML = iconMarkup(Code2);
+      sourceButton.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        view.dispatch({
+          selection: { anchor: this.blockFrom },
+          effects: editMermaidSourceEffect.of(this.blockFrom),
+          scrollIntoView: true,
+        });
+        view.focus();
       });
-      view.focus();
-    });
-    host.append(sourceButton);
+      host.append(sourceButton);
+    }
 
     const canvas = document.createElement("div");
     canvas.className = "mk-cm-mermaid-canvas";
@@ -318,6 +325,7 @@ export class MarkdownImageWidget extends WidgetType {
     private readonly blockFrom: number,
     private readonly blockTo: number,
     private readonly selected: boolean,
+    private readonly editable: boolean,
   ) {
     super();
   }
@@ -340,7 +348,8 @@ export class MarkdownImageWidget extends WidgetType {
       && other.alt === this.alt
       && other.markdownSourcePath === this.markdownSourcePath
       && other.blockFrom === this.blockFrom
-      && other.blockTo === this.blockTo;
+      && other.blockTo === this.blockTo
+      && other.editable === this.editable;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -362,78 +371,82 @@ export class MarkdownImageWidget extends WidgetType {
     canvas.textContent = "正在加载图片…";
     frame.append(canvas);
 
-    const showSource = () => {
-      view.dispatch({
-        selection: { anchor: this.blockFrom },
-        scrollIntoView: true,
-      });
-      view.focus();
-    };
-
-    const focusAfterImage = () => {
-      const afterImage = this.blockTo + 1;
-      const hasNextLine = this.blockTo < view.state.doc.length
-        && view.state.doc.sliceString(this.blockTo, afterImage) === "\n";
-      view.dispatch(
-        hasNextLine
-          ? { selection: { anchor: afterImage }, scrollIntoView: true }
-          : { changes: { from: this.blockTo, insert: "\n" }, selection: { anchor: afterImage }, scrollIntoView: true },
-      );
-      view.focus();
-    };
-
-    const sourceButton = document.createElement("button");
-    sourceButton.type = "button";
-    sourceButton.className = "mk-cm-image-source";
-    sourceButton.dataset.tooltip = "编辑图片 Markdown";
-    sourceButton.setAttribute("aria-label", "编辑图片 Markdown");
-    sourceButton.innerHTML = iconMarkup(Code2);
-    sourceButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      showSource();
-    });
-    frame.append(sourceButton);
-
     const widthModeKey = `${this.markdownSourcePath ?? "untitled"}\u0000${this.src}`;
     let widthMode = imageWidthModes.get(widthModeKey) ?? "natural";
-    const widthButton = document.createElement("button");
-    widthButton.type = "button";
-    widthButton.className = "mk-cm-image-width";
     const applyWidthMode = (next: ImageWidthMode) => {
       widthMode = next;
       imageWidthModes.set(widthModeKey, next);
       host.dataset.widthMode = next;
-      const nextLabel = next === "fit" ? "切换为原始宽度" : "切换为适应窗口宽度";
-      widthButton.dataset.tooltip = nextLabel;
-      widthButton.setAttribute("aria-label", nextLabel);
-      widthButton.innerHTML = iconMarkup(next === "fit" ? AlignCenter : AlignJustify);
     };
-    widthButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      applyWidthMode(widthMode === "fit" ? "natural" : "fit");
-      view.requestMeasure();
-    });
     applyWidthMode(widthMode);
-    frame.append(widthButton);
+    if (this.editable) {
+      const showSource = () => {
+        view.dispatch({
+          selection: { anchor: this.blockFrom },
+          scrollIntoView: true,
+        });
+        view.focus();
+      };
+      const focusAfterImage = () => {
+        const afterImage = this.blockTo + 1;
+        const hasNextLine = this.blockTo < view.state.doc.length
+          && view.state.doc.sliceString(this.blockTo, afterImage) === "\n";
+        view.dispatch(
+          hasNextLine
+            ? { selection: { anchor: afterImage }, scrollIntoView: true }
+            : { changes: { from: this.blockTo, insert: "\n" }, selection: { anchor: afterImage }, scrollIntoView: true },
+        );
+        view.focus();
+      };
+      const sourceButton = document.createElement("button");
+      sourceButton.type = "button";
+      sourceButton.className = "mk-cm-image-source";
+      sourceButton.dataset.tooltip = "编辑图片 Markdown";
+      sourceButton.setAttribute("aria-label", "编辑图片 Markdown");
+      sourceButton.innerHTML = iconMarkup(Code2);
+      sourceButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showSource();
+      });
+      frame.append(sourceButton);
 
-    const continuation = document.createElement("div");
-    continuation.className = "mk-cm-image-continuation";
-    continuation.setAttribute("role", "button");
-    continuation.setAttribute("aria-label", "在图片后继续输入");
-    continuation.tabIndex = 0;
-    continuation.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      focusAfterImage();
-    });
-    continuation.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      focusAfterImage();
-    });
-    host.append(continuation);
+      const widthButton = document.createElement("button");
+      widthButton.type = "button";
+      widthButton.className = "mk-cm-image-width";
+      const syncWidthButton = () => {
+        const nextLabel = widthMode === "fit" ? "切换为原始宽度" : "切换为适应窗口宽度";
+        widthButton.dataset.tooltip = nextLabel;
+        widthButton.setAttribute("aria-label", nextLabel);
+        widthButton.innerHTML = iconMarkup(widthMode === "fit" ? AlignCenter : AlignJustify);
+      };
+      syncWidthButton();
+      widthButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        applyWidthMode(widthMode === "fit" ? "natural" : "fit");
+        syncWidthButton();
+        view.requestMeasure();
+      });
+      frame.append(widthButton);
+
+      const continuation = document.createElement("div");
+      continuation.className = "mk-cm-image-continuation";
+      continuation.setAttribute("role", "button");
+      continuation.setAttribute("aria-label", "在图片后继续输入");
+      continuation.tabIndex = 0;
+      continuation.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        focusAfterImage();
+      });
+      continuation.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        focusAfterImage();
+      });
+      host.append(continuation);
+    }
 
     const previewButton = document.createElement("button");
     previewButton.type = "button";
@@ -450,14 +463,16 @@ export class MarkdownImageWidget extends WidgetType {
         image.src = resolvedSrc;
         image.alt = this.alt;
         image.addEventListener("load", () => view.requestMeasure());
-        image.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          view.dispatch({
-            selection: { anchor: this.blockFrom, head: this.blockTo },
+        if (this.editable) {
+          image.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            view.dispatch({
+              selection: { anchor: this.blockFrom, head: this.blockTo },
+            });
+            view.focus();
           });
-          view.focus();
-        });
+        }
         previewButton.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -636,6 +651,81 @@ export class MarkdownCalloutIconWidget extends WidgetType {
   }
 }
 
+/** 文首 YAML 属性的紧凑预览。编辑时点击或选中属性区会恢复原始 YAML。 */
+export class MarkdownFrontmatterWidget extends WidgetType {
+  constructor(
+    private readonly entries: readonly MarkdownFrontmatterEntry[],
+    private readonly editable: boolean,
+    private readonly sourceFrom: number,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownFrontmatterWidget): boolean {
+    return other.editable === this.editable
+      && other.sourceFrom === this.sourceFrom
+      && other.entries.length === this.entries.length
+      && other.entries.every((entry, index) => (
+        entry.key === this.entries[index]?.key
+        && JSON.stringify(entry.value) === JSON.stringify(this.entries[index]?.value)
+      ));
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const host = document.createElement("section");
+    host.className = `mk-cm-frontmatter${this.editable ? " mk-cm-frontmatter--editable" : ""}`;
+    host.setAttribute("aria-label", "文档属性");
+    if (this.editable) {
+      host.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        view.dispatch({ selection: { anchor: this.sourceFrom }, scrollIntoView: true });
+        view.focus();
+      });
+    }
+
+    const heading = document.createElement("div");
+    heading.className = "mk-cm-frontmatter-heading";
+    heading.textContent = "文档属性";
+    host.append(heading);
+
+    const properties = document.createElement("div");
+    properties.className = "mk-cm-frontmatter-properties";
+    for (const entry of this.entries) {
+      const row = document.createElement("div");
+      row.className = "mk-cm-frontmatter-row";
+
+      const key = document.createElement("span");
+      key.className = "mk-cm-frontmatter-key";
+      key.textContent = entry.key;
+
+      const value = document.createElement("span");
+      value.className = "mk-cm-frontmatter-value";
+      const values = Array.isArray(entry.value) ? entry.value : [entry.value];
+      if (values.length === 0) {
+        value.textContent = "-";
+      } else if (Array.isArray(entry.value)) {
+        values.forEach((item) => {
+          const tag = document.createElement("span");
+          tag.className = "mk-cm-frontmatter-tag";
+          tag.textContent = item;
+          value.append(tag);
+        });
+      } else {
+        value.textContent = values[0];
+      }
+      row.append(key, value);
+      properties.append(row);
+    }
+    host.append(properties);
+    return host;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
 /** GFM 表格的可编辑渲染态 widget。草稿只在提交时一次性写回 Markdown。 */
 export class TableWidget extends WidgetType {
   private readonly cleanups = new WeakMap<HTMLElement, () => void>();
@@ -647,6 +737,7 @@ export class TableWidget extends WidgetType {
     private readonly widthMode: TableWidthMode,
     private readonly documentSelectedRows: readonly number[],
     private readonly selectedFromToolbar: boolean,
+    private readonly editable: boolean,
   ) {
     super();
   }
@@ -673,7 +764,8 @@ export class TableWidget extends WidgetType {
       && other.tableFrom === this.tableFrom
       && other.tableTo === this.tableTo
       && other.widthMode === this.widthMode
-      && other.selectedFromToolbar === this.selectedFromToolbar;
+      && other.selectedFromToolbar === this.selectedFromToolbar
+      && other.editable === this.editable;
   }
 
   private applyDocumentSelectedRows(dom: HTMLElement): void {
@@ -683,7 +775,110 @@ export class TableWidget extends WidgetType {
     });
   }
 
+  /** 阅读模式只保留表格渲染，不能进入单元格、拖拽或源码操作。 */
+  private createReadonlyDOM(view: EditorView): HTMLElement {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mk-cm-table-wrapper mk-cm-table-wrapper--readonly";
+    wrapper.dataset.tableFrom = String(this.tableFrom);
+    wrapper.classList.toggle("is-wrap", this.widthMode === "content");
+
+    const tableScroll = document.createElement("div");
+    tableScroll.className = "mk-cm-table-scroll";
+    const table = document.createElement("table");
+    table.className = "mk-cm-table";
+    const buildRow = (rowIndex: number, isHeader: boolean) => {
+      const row = document.createElement("tr");
+      this.model.rows[rowIndex].forEach((cell, columnIndex) => {
+        const element = document.createElement(isHeader ? "th" : "td");
+        element.dataset.tableRow = String(rowIndex);
+        element.dataset.tableColumn = String(columnIndex);
+        const content = renderTableInlineMarkdown(cell);
+        content.removeAttribute("tabindex");
+        element.append(content);
+        row.append(element);
+      });
+      return row;
+    };
+
+    if (this.model.rows.length > 0) {
+      const head = document.createElement("thead");
+      head.append(buildRow(0, true));
+      table.append(head);
+    }
+    if (this.model.rows.length > 1) {
+      const body = document.createElement("tbody");
+      for (let rowIndex = 1; rowIndex < this.model.rows.length; rowIndex += 1) {
+        body.append(buildRow(rowIndex, false));
+      }
+      table.append(body);
+    }
+    tableScroll.append(table);
+    wrapper.append(tableScroll);
+    this.applyDocumentSelectedRows(wrapper);
+    let dragAnchor: number | null = null;
+    let finishFrame: number | null = null;
+    const renderedRowAtPoint = (event: MouseEvent) => {
+      const cell = document.elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>("th[data-table-row], td[data-table-row]");
+      if (!cell || !wrapper.contains(cell)) return null;
+      const renderedRow = Number(cell.dataset.tableRow);
+      return Number.isInteger(renderedRow) && renderedRow >= 0 ? renderedRow : null;
+    };
+    const applyDocumentSelection = (renderedRow: number, anchor: number) => {
+      if (anchor > this.tableFrom && anchor < this.tableTo) return;
+      const sourceLineIndex = renderedRow === 0 ? 0 : renderedRow + 1;
+      const firstLine = view.state.doc.lineAt(this.tableFrom);
+      const sourceLineNumber = firstLine.number + sourceLineIndex;
+      if (sourceLineNumber > view.state.doc.lines) return;
+      const sourceLine = view.state.doc.line(sourceLineNumber);
+      const head = anchor <= this.tableFrom ? sourceLine.to : sourceLine.from;
+      const selection = view.state.selection.main;
+      if (selection.anchor !== anchor || selection.head !== head) view.dispatch({ selection: { anchor, head } });
+    };
+    const captureDocumentSelectionAnchor = (event: MouseEvent) => {
+      dragAnchor = null;
+      if (event.button !== 0 || !(event.target instanceof Node) || !view.dom.contains(event.target)) return;
+      dragAnchor = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    };
+    const extendDocumentSelectionThroughRow = (event: MouseEvent) => {
+      if ((event.buttons & 1) === 0 || dragAnchor === null) return;
+      const renderedRow = renderedRowAtPoint(event);
+      if (renderedRow === null) return;
+      const anchor = dragAnchor;
+      queueMicrotask(() => applyDocumentSelection(renderedRow, anchor));
+    };
+    const finishDocumentSelection = (event: MouseEvent) => {
+      if (event.button !== 0 || dragAnchor === null) return;
+      const renderedRow = renderedRowAtPoint(event);
+      const anchor = dragAnchor;
+      dragAnchor = null;
+      if (renderedRow === null) return;
+      if (finishFrame !== null) cancelAnimationFrame(finishFrame);
+      finishFrame = requestAnimationFrame(() => {
+        finishFrame = null;
+        applyDocumentSelection(renderedRow, anchor);
+      });
+    };
+    document.addEventListener("pointerdown", captureDocumentSelectionAnchor, true);
+    document.addEventListener("mousedown", captureDocumentSelectionAnchor, true);
+    document.addEventListener("pointermove", extendDocumentSelectionThroughRow, true);
+    document.addEventListener("mousemove", extendDocumentSelectionThroughRow, true);
+    document.addEventListener("pointerup", finishDocumentSelection, true);
+    document.addEventListener("mouseup", finishDocumentSelection, true);
+    this.cleanups.set(wrapper, () => {
+      document.removeEventListener("pointerdown", captureDocumentSelectionAnchor, true);
+      document.removeEventListener("mousedown", captureDocumentSelectionAnchor, true);
+      document.removeEventListener("pointermove", extendDocumentSelectionThroughRow, true);
+      document.removeEventListener("mousemove", extendDocumentSelectionThroughRow, true);
+      document.removeEventListener("pointerup", finishDocumentSelection, true);
+      document.removeEventListener("mouseup", finishDocumentSelection, true);
+      if (finishFrame !== null) cancelAnimationFrame(finishFrame);
+    });
+    return wrapper;
+  }
+
   toDOM(view: EditorView): HTMLElement {
+    if (!this.editable) return this.createReadonlyDOM(view);
     const wrapper = document.createElement("div");
     wrapper.className = "mk-cm-table-wrapper";
     wrapper.dataset.tableFrom = String(this.tableFrom);

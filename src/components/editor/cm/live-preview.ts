@@ -2,6 +2,7 @@ import { forceParsing, syntaxTree, syntaxTreeAvailable } from "@codemirror/langu
 import { isMermaidLanguage } from "@/lib/mermaid";
 import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink, isMarkdownWikilinkTarget } from "@/lib/document-links";
 import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
+import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
@@ -12,7 +13,7 @@ import {
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
-import { selectedMarkdownTableRows, selectionIntersectsRange, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
+import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
 import {
   applyTableWidthMode,
@@ -24,7 +25,7 @@ import {
   type TableDisplaySettings,
   type TableWidthMode,
 } from "./table-display-settings";
-import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownFrontmatterWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -127,10 +128,9 @@ function sourceSelected(collector: DecorationCollector, from: number, to: number
   return collector.focused && selectionIntersectsRange(collector.state, from, to);
 }
 
-// 双链只有被实际拖选时才还原源码。光标落在边界、悬停或单击旁边都保持渲染态，
-// 避免把普通定位误判为进入编辑状态。
+// 双链被拖选或光标落到源码范围及其边界时还原源码。
 function wikilinkSourceActive(collector: DecorationCollector, from: number, to: number): boolean {
-  return sourceSelected(collector, from, to);
+  return sourceSelected(collector, from, to) || cursorInside(collector, from, to);
 }
 
 // 选区跨行时只在光标（head）所在行展开源码，其他行保持渲染态。
@@ -506,12 +506,12 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
   // `- [ ]` 作为一个整体判断：只有光标靠近这组标记时才一起显示源码，
   // 光标落在正文的其他位置不能单独露出前面的短横线。
   if (taskRange) {
-    if (touchesSameLine(collector, taskRange.from, taskRange.to) || sourceSelected(collector, line.from, line.to)) return;
+    if (touchesSameLine(collector, taskRange.from, taskRange.to) || sourceSelected(collector, taskRange.from, taskRange.to)) return;
     hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
     return;
   }
 
-  if (touchesSameLine(collector, ref.from, ref.to) || sourceSelected(collector, line.from, line.to)) return;
+  if (touchesSameLine(collector, ref.from, ref.to) || sourceSelected(collector, ref.from, listMarkerRangeTo(state, ref.to))) return;
   if (ref.from >= ref.to || ref.to > state.doc.length) return;
   if (state.doc.lineAt(ref.from).number !== state.doc.lineAt(ref.to).number) return;
 
@@ -623,7 +623,12 @@ function handleTaskMarker(collector: DecorationCollector, ref: SyntaxNodeRef): v
 
 function buildDecorations(view: EditorView): { decorations: DecorationSet; atomics: DecorationSet } {
   const state = view.state;
-  const collector: DecorationCollector = { state, focused: view.hasFocus && !state.readOnly, decorations: [], atomics: [] };
+  const collector: DecorationCollector = {
+    state,
+    focused: view.hasFocus && !state.readOnly,
+    decorations: [],
+    atomics: [],
+  };
   const tree = syntaxTree(state);
 
   for (const { from, to } of view.visibleRanges) {
@@ -727,6 +732,8 @@ class LivePreviewPlugin {
   }
 
   update(update: ViewUpdate): void {
+    const readOnlyChanged = update.startState.readOnly !== update.state.readOnly;
+
     // IME 组合期绝对不能重建装饰：重建会替换 contenteditable 里的 DOM 节点，
     // 微软拼音/搜狗的候选框依附在这些节点上，一换就被强制中断，表现为掉字、候选消失。
     // 但位置还是要跟着改动走，否则组合结束时会拿到越界区间直接抛错。
@@ -742,7 +749,7 @@ class LivePreviewPlugin {
     const calloutFoldChanged = update.transactions.some((transaction) => (
       transaction.effects.some((effect) => effect.is(setCalloutCollapsedEffect) || effect.is(resetCalloutCollapsedEffect))
     ));
-    if (this.pendingRebuild || update.docChanged || update.viewportChanged || update.selectionSet || update.focusChanged || calloutFoldChanged) {
+    if (this.pendingRebuild || update.docChanged || update.viewportChanged || update.selectionSet || update.focusChanged || readOnlyChanged || calloutFoldChanged) {
       this.pendingRebuild = false;
       const built = buildDecorations(update.view);
       this.decorations = built.decorations;
@@ -762,6 +769,33 @@ export const livePreviewPlugin: Extension = [
   livePreviewViewPlugin,
 ];
 
+function buildFrontmatterBlock(state: EditorState, editable: boolean): DecorationSet {
+  const frontmatter = parseYamlFrontmatter(state.doc.toString());
+  if (!frontmatter) return Decoration.none;
+  if (editable && selectionOnLines(state, frontmatter.from, frontmatter.contentTo)) return Decoration.none;
+
+  return Decoration.set([
+    Decoration.replace({
+      widget: new MarkdownFrontmatterWidget(frontmatter.entries, editable, frontmatter.from),
+      block: true,
+    }).range(frontmatter.from, frontmatter.to),
+  ]);
+}
+
+/** 顶部 YAML Frontmatter 在实时预览中渲染为 Obsidian 风格的文档属性。 */
+export function frontmatterBlockExtension(editable = true): Extension {
+  const field = StateField.define<DecorationSet>({
+    create: (state) => buildFrontmatterBlock(state, editable),
+    update: (value, transaction) => (
+      transaction.docChanged || transaction.selection
+        ? buildFrontmatterBlock(transaction.state, editable)
+        : value
+    ),
+    provide: (self) => EditorView.decorations.from(self),
+  });
+  return field;
+}
+
 
 /**
  * Mermaid 的块级装饰。
@@ -773,7 +807,7 @@ export const livePreviewPlugin: Extension = [
  * 代价是这里要遍历整篇文档而不是可见区。可以接受：mermaid 块通常一篇文档里
  * 只有几个，远少于内联标记的数量。
  */
-function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: number | null): DecorationSet {
+function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: number | null, editable: boolean): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
   syntaxTree(state).iterate({
@@ -790,7 +824,7 @@ function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: 
       if (sourceBlockFrom !== null && sourceBlockFrom >= first.from && sourceBlockFrom <= last.to) return false;
       // Mermaid 是块级 replace，源码平时不在 DOM 里。非空选区经过该块时先撤销
       // replace，才能和普通 Markdown 一样显示完整源码并继续修改。
-      if (selectionIntersectsRange(state, first.from, last.to)) return false;
+      if (editable && selectionIntersectsRange(state, first.from, last.to)) return false;
 
       const body = extractFenceBody(state, ref.from, ref.to);
       if (!body.trim()) return false;
@@ -798,7 +832,7 @@ function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: 
       builder.add(
         first.from,
         last.to,
-        Decoration.replace({ widget: new MermaidWidget(body, dark, first.from), block: true }),
+        Decoration.replace({ widget: new MermaidWidget(body, dark, first.from, editable), block: true }),
       );
       return false;
     },
@@ -828,19 +862,19 @@ function extractFenceCodeText(state: EditorState, from: number, to: number): str
 
 /// 深浅色作为 field 的一部分：主题切换时要重画图，否则深色模式下
 /// 拿到的还是上次缓存的浅色版本。
-export function mermaidBlockExtension(dark: boolean): Extension {
+export function mermaidBlockExtension(dark: boolean, editable = true): Extension {
   interface MermaidBlockState {
     decorations: DecorationSet;
     sourceBlockFrom: number | null;
   }
 
   const field = StateField.define<MermaidBlockState>({
-    create: (state) => ({ decorations: buildMermaidBlocks(state, dark, null), sourceBlockFrom: null }),
+    create: (state) => ({ decorations: buildMermaidBlocks(state, dark, null, editable), sourceBlockFrom: null }),
     update: (value, tr) => {
       let sourceBlockFrom = value.sourceBlockFrom;
       if (sourceBlockFrom !== null && tr.docChanged) sourceBlockFrom = tr.changes.mapPos(sourceBlockFrom);
       for (const effect of tr.effects) {
-        if (effect.is(editMermaidSourceEffect)) sourceBlockFrom = effect.value;
+        if (editable && effect.is(editMermaidSourceEffect)) sourceBlockFrom = effect.value;
       }
       if (sourceBlockFrom !== null && tr.selection) {
         const headLine = tr.state.doc.lineAt(tr.state.selection.main.head);
@@ -860,7 +894,7 @@ export function mermaidBlockExtension(dark: boolean): Extension {
       }
       // Mermaid 是否需要替换为图形取决于非空选区；选区变化也必须重建块级装饰。
       if (!tr.docChanged && tr.selection === undefined && sourceBlockFrom === value.sourceBlockFrom) return value;
-      return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom), sourceBlockFrom };
+      return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom, editable), sourceBlockFrom };
     },
     provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
   });
@@ -884,7 +918,7 @@ function markdownImageAlt(source: string) {
   return matched?.[1] ?? "";
 }
 
-function buildImageBlocks(state: EditorState, markdownSourcePath?: string): DecorationSet {
+function buildImageBlocks(state: EditorState, markdownSourcePath: string | undefined, editable: boolean): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
   syntaxTree(state).iterate({
@@ -893,7 +927,7 @@ function buildImageBlocks(state: EditorState, markdownSourcePath?: string): Deco
 
       const line = state.doc.lineAt(ref.from);
       const source = state.doc.sliceString(ref.from, ref.to);
-      if (state.doc.sliceString(line.from, line.to).trim() !== source.trim() || imageSelectionIsEditing(state, ref.from, ref.to)) return false;
+      if (state.doc.sliceString(line.from, line.to).trim() !== source.trim() || (editable && imageSelectionIsEditing(state, ref.from, ref.to))) return false;
 
       const url = ref.node.getChild("URL");
       const src = url ? state.doc.sliceString(url.from, url.to) : "";
@@ -902,7 +936,18 @@ function buildImageBlocks(state: EditorState, markdownSourcePath?: string): Deco
       builder.add(
         line.from,
         line.to,
-        Decoration.replace({ widget: new MarkdownImageWidget(src, markdownImageAlt(source), markdownSourcePath, line.from, line.to, imageIsSelected(state, line.from, line.to)), block: true }),
+        Decoration.replace({
+          widget: new MarkdownImageWidget(
+            src,
+            markdownImageAlt(source),
+            markdownSourcePath,
+            line.from,
+            line.to,
+            editable && imageIsSelected(state, line.from, line.to),
+            editable,
+          ),
+          block: true,
+        }),
       );
       return false;
     },
@@ -912,10 +957,10 @@ function buildImageBlocks(state: EditorState, markdownSourcePath?: string): Deco
 }
 
 /** 图片和 Mermaid 一样以块级 decoration 替换，确保在编辑区中独占一行并居中。 */
-export function markdownImageBlockExtension(markdownSourcePath?: string): Extension {
+export function markdownImageBlockExtension(markdownSourcePath?: string, editable = true): Extension {
   const field = StateField.define<DecorationSet>({
-    create: (state) => buildImageBlocks(state, markdownSourcePath),
-    update: (value, tr) => tr.docChanged || tr.selection ? buildImageBlocks(tr.state, markdownSourcePath) : value,
+    create: (state) => buildImageBlocks(state, markdownSourcePath, editable),
+    update: (value, tr) => tr.docChanged || tr.selection ? buildImageBlocks(tr.state, markdownSourcePath, editable) : value,
     provide: (self) => EditorView.decorations.from(self),
   });
   return field;
@@ -927,6 +972,7 @@ function buildTableBlocks(
   displaySettings: TableDisplaySettings,
   documentSelectedTableRows: ReadonlyMap<number, readonly number[]>,
   selectedFromToolbarTableFrom: number | null,
+  editable: boolean,
   tree = syntaxTree(state),
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
@@ -957,7 +1003,8 @@ function buildTableBlocks(
             last.to,
             tableWidthModeFor(displaySettings, first.from),
             documentSelectedTableRows.get(first.from) ?? [],
-            selectedFromToolbarTableFrom === first.from,
+            editable && selectedFromToolbarTableFrom === first.from,
+            editable,
           ),
           block: true,
         }),
@@ -1007,6 +1054,7 @@ interface TableBlockState {
   displaySettings: TableDisplaySettings;
   documentSelectedTableRows: ReadonlyMap<number, readonly number[]>;
   selectedFromToolbarTableFrom: number | null;
+  readOnly: boolean;
 }
 
 function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number): boolean {
@@ -1031,20 +1079,23 @@ function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number)
 export const tableBlockExtension = StateField.define<TableBlockState>({
   create: (state) => {
     const displaySettings = createTableDisplaySettings();
+    const readOnly = state.readOnly;
     const selectedTableRows = documentSelectedTableRows(state);
     const parserTree = syntaxTree(state);
     return {
-      decorations: buildTableBlocks(state, null, displaySettings, selectedTableRows, null, parserTree),
+      decorations: buildTableBlocks(state, null, displaySettings, selectedTableRows, null, !readOnly, parserTree),
       parserTree,
       sourceTableFrom: null,
       displaySettings,
       documentSelectedTableRows: selectedTableRows,
       selectedFromToolbarTableFrom: null,
+      readOnly,
     };
   },
   update: (value, tr) => {
     const parserTree = syntaxTree(tr.state);
     const parserChanged = parserTree !== value.parserTree;
+    const readOnly = tr.state.readOnly;
     let sourceTableFrom = value.sourceTableFrom;
     let displaySettings = tr.docChanged
       ? mapTableDisplaySettings(value.displaySettings, (position) => tr.changes.mapPos(position))
@@ -1053,17 +1104,21 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
     if (sourceTableFrom !== null && tr.docChanged) sourceTableFrom = tr.changes.mapPos(sourceTableFrom);
     let selectedFromToolbar = false;
     for (const effect of tr.effects) {
-      if (effect.is(editTableSourceEffect)) sourceTableFrom = effect.value;
-      if (effect.is(selectWholeTableEffect)) {
+      if (!readOnly && effect.is(editTableSourceEffect)) sourceTableFrom = effect.value;
+      if (!readOnly && effect.is(selectWholeTableEffect)) {
         selectedFromToolbarTableFrom = effect.value;
         selectedFromToolbar = true;
       }
       if (effect.is(resetTableDisplaySettingsEffect)) displaySettings = createTableDisplaySettings(effect.value);
       if (effect.is(setTableWidthModeEffect)) displaySettings = applyTableWidthMode(displaySettings, effect.value);
     }
+    if (readOnly) {
+      sourceTableFrom = null;
+      selectedFromToolbarTableFrom = null;
+    }
     if (tr.docChanged && !selectedFromToolbar) selectedFromToolbarTableFrom = null;
-    if (tr.effects.some((effect) => effect.is(editTableSourceEffect))) selectedFromToolbarTableFrom = null;
-    const selectedTableRows = tr.docChanged || tr.selection || parserChanged
+    if (!readOnly && tr.effects.some((effect) => effect.is(editTableSourceEffect))) selectedFromToolbarTableFrom = null;
+    const selectedTableRows = tr.docChanged || tr.selection || parserChanged || readOnly !== value.readOnly
       ? documentSelectedTableRows(tr.state)
       : value.documentSelectedTableRows;
     const selectionChanged = !sameDocumentTableRows(value.documentSelectedTableRows, selectedTableRows);
@@ -1076,14 +1131,16 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
       && displaySettings === value.displaySettings
       && !parserChanged
       && !selectionChanged
-      && selectedFromToolbarTableFrom === value.selectedFromToolbarTableFrom) return value;
+      && selectedFromToolbarTableFrom === value.selectedFromToolbarTableFrom
+      && readOnly === value.readOnly) return value;
     return {
-      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableRows, selectedFromToolbarTableFrom, parserTree),
+      decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableRows, selectedFromToolbarTableFrom, !readOnly, parserTree),
       parserTree,
       sourceTableFrom,
       displaySettings,
       documentSelectedTableRows: selectedTableRows,
       selectedFromToolbarTableFrom,
+      readOnly,
     };
   },
   provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
@@ -1128,7 +1185,9 @@ export type TableDisplayContext = {
 };
 
 export function getTableDisplayContext(state: EditorState, tableFrom: number | null): TableDisplayContext {
-  const { displaySettings } = state.field(tableBlockExtension);
+  // HMR may briefly retain a state created with the previous field identity.
+  // Treat that transition as the default table context instead of crashing the editor.
+  const displaySettings = state.field(tableBlockExtension, false)?.displaySettings ?? createTableDisplaySettings();
   const hasTableOverride = tableFrom !== null && displaySettings.widthModeOverrides.has(tableFrom);
   return {
     tableFrom,
