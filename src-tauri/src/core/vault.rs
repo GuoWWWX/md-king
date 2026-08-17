@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
+use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -17,6 +18,11 @@ pub const MAX_VAULT_DEPTH: usize = 12;
 /// 单个文件的大小上限。编辑器要把整份内容读成 String 再送进 WebView，
 /// 超过这个量级已经不是「能不能编辑」而是「会不会把渲染进程拖死」的问题。
 pub const MAX_VAULT_FILE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// 全局搜索只读取适合交互式检索的文件，并限制返回量，避免大仓库一次查询占满内存。
+const MAX_SEARCH_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_SEARCH_RESULTS: usize = 200;
+const MAX_SEARCH_MATCHES_PER_FILE: usize = 6;
 
 /// 这些目录里几乎不会有用户想编辑的 Markdown，却常常包含成千上万个文件。
 /// 不跳过的话，一个装了依赖的项目目录会瞬间吃掉全部条目配额。
@@ -59,6 +65,7 @@ pub const CODE_EXISTS: &str = "EXISTS";
 pub const CODE_LOCKED: &str = "LOCKED";
 pub const CODE_NOT_FOUND: &str = "NOT_FOUND";
 pub const CODE_INVALID_NAME: &str = "INVALID_NAME";
+pub const CODE_INVALID_QUERY: &str = "INVALID_QUERY";
 
 pub const EOL_LF: &str = "lf";
 pub const EOL_CRLF: &str = "crlf";
@@ -94,6 +101,44 @@ pub struct VaultFileContent {
     pub has_bom: bool,
     pub modified_ms: u64,
     pub size: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VaultSearchMatchKind {
+    FileName,
+    Content,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSearchMatch {
+    pub path: String,
+    pub name: String,
+    pub kind: VaultSearchMatchKind,
+    pub line: Option<usize>,
+    pub preview: String,
+    pub match_start: Option<usize>,
+    pub match_end: Option<usize>,
+    pub preview_match_start: Option<usize>,
+    pub preview_match_end: Option<usize>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSearchOptions {
+    pub case_sensitive: bool,
+    pub whole_word: bool,
+    pub regexp: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSearchResponse {
+    pub results: Vec<VaultSearchMatch>,
+    pub truncated: bool,
+    pub scanned_files: usize,
+    pub skipped_files: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -660,6 +705,164 @@ fn fill_has_children(root: &Path, entries: &mut [VaultEntry], recursive: bool, t
         let path = root.join(entry.path.replace('/', std::path::MAIN_SEPARATOR_STR));
         entry.has_children = dir_has_visible_children(&path);
     }
+}
+
+fn build_search_regex(query: &str, options: &VaultSearchOptions) -> Result<Regex, String> {
+    let source = if options.regexp {
+        query.to_string()
+    } else {
+        regex::escape(query)
+    };
+    let pattern = if options.whole_word {
+        format!(r"\b(?:{source})\b")
+    } else {
+        source
+    };
+    RegexBuilder::new(&pattern)
+        .case_insensitive(!options.case_sensitive)
+        .build()
+        .map_err(|_| vault_err(CODE_INVALID_QUERY, "正则表达式无效，请检查后重试。"))
+}
+
+fn utf16_offset(text: &str, byte_index: usize) -> usize {
+    text[..byte_index].encode_utf16().count()
+}
+
+fn compact_search_preview(line: &str, start: usize, end: usize) -> (String, usize, usize) {
+    let before = &line[..start];
+    let matched = &line[start..end];
+    let after = &line[end..];
+    let before_chars: Vec<char> = before.chars().rev().take(60).collect();
+    let matched_chars: Vec<char> = matched.chars().take(80).collect();
+    let after_chars: Vec<char> = after.chars().take(80).collect();
+    let mut preview = String::new();
+
+    if before.chars().count() > before_chars.len() {
+        preview.push('…');
+    }
+    preview.extend(before_chars.into_iter().rev());
+    let preview_match_start = preview.encode_utf16().count();
+    preview.extend(matched_chars.iter().copied());
+    let preview_match_end = preview.encode_utf16().count();
+
+    if matched.chars().count() > matched_chars.len() {
+        preview.push('…');
+    } else {
+        preview.extend(after_chars.iter().copied());
+        if after.chars().count() > after_chars.len() {
+            preview.push('…');
+        }
+    }
+    (preview, preview_match_start, preview_match_end)
+}
+
+pub fn search_files(
+    root: &Path,
+    query: &str,
+    options: &VaultSearchOptions,
+) -> Result<VaultSearchResponse, String> {
+    if query.trim().is_empty() {
+        return Ok(VaultSearchResponse {
+            results: Vec::new(),
+            truncated: false,
+            scanned_files: 0,
+            skipped_files: 0,
+        });
+    }
+
+    let matcher = build_search_regex(query, options)?;
+    let listing = list_entries(root, None, true)?;
+    let mut truncated = listing.truncated;
+    let files: Vec<VaultEntry> = listing
+        .entries
+        .into_iter()
+        .filter(|entry| !entry.is_dir && is_editable_file(Path::new(&entry.name)))
+        .collect();
+    let scanned_files = files.len();
+    let mut skipped_files = 0usize;
+    let mut file_name_results = Vec::new();
+    let mut content_results = Vec::new();
+
+    for entry in &files {
+        if let Some(found) = matcher.find(&entry.name) {
+            file_name_results.push(VaultSearchMatch {
+                path: entry.path.clone(),
+                name: entry.name.clone(),
+                kind: VaultSearchMatchKind::FileName,
+                line: None,
+                preview: String::new(),
+                match_start: Some(utf16_offset(&entry.name, found.start())),
+                match_end: Some(utf16_offset(&entry.name, found.end())),
+                preview_match_start: None,
+                preview_match_end: None,
+            });
+            if file_name_results.len() >= MAX_SEARCH_RESULTS {
+                truncated = true;
+                break;
+            }
+        }
+    }
+
+    if file_name_results.len() < MAX_SEARCH_RESULTS {
+        'files: for entry in &files {
+            if entry.size > MAX_SEARCH_FILE_BYTES {
+                skipped_files += 1;
+                continue;
+            }
+
+            let absolute = match resolve_in_vault(root, &entry.path) {
+                Ok(path) => path,
+                Err(_) => {
+                    skipped_files += 1;
+                    continue;
+                }
+            };
+            let text = match fs::read_to_string(absolute) {
+                Ok(text) => text,
+                Err(_) => {
+                    skipped_files += 1;
+                    continue;
+                }
+            };
+
+            let mut matches_in_file = 0usize;
+            for (index, line) in text.lines().enumerate() {
+                let Some(found) = matcher.find(line) else {
+                    continue;
+                };
+                let (preview, preview_match_start, preview_match_end) =
+                    compact_search_preview(line, found.start(), found.end());
+                content_results.push(VaultSearchMatch {
+                    path: entry.path.clone(),
+                    name: entry.name.clone(),
+                    kind: VaultSearchMatchKind::Content,
+                    line: Some(index + 1),
+                    preview,
+                    match_start: Some(utf16_offset(line, found.start())),
+                    match_end: Some(utf16_offset(line, found.end())),
+                    preview_match_start: Some(preview_match_start),
+                    preview_match_end: Some(preview_match_end),
+                });
+                matches_in_file += 1;
+
+                if file_name_results.len() + content_results.len() >= MAX_SEARCH_RESULTS {
+                    truncated = true;
+                    break 'files;
+                }
+                if matches_in_file >= MAX_SEARCH_MATCHES_PER_FILE {
+                    break;
+                }
+            }
+        }
+    }
+
+    file_name_results.extend(content_results);
+    Ok(VaultSearchResponse {
+        results: file_name_results,
+        truncated,
+        scanned_files,
+        skipped_files,
+    })
 }
 
 pub fn read_file(root: &Path, relative: &str) -> Result<VaultFileContent, String> {
@@ -1557,6 +1760,100 @@ mod tests {
         assert!(found.contains(&"root.txt".to_string()));
         assert!(listing.skipped_dirs >= 4);
         assert!(!listing.truncated);
+    }
+
+    #[test]
+    fn searches_file_names_and_markdown_content() {
+        let scratch = Scratch::new("search");
+        scratch.file(
+            "项目/发布计划.md",
+            "# 发布\n\n本周完成全局搜索。\n".as_bytes(),
+        );
+        scratch.file("项目/其他记录.md", "没有命中的正文\n".as_bytes());
+        scratch.file("全局搜索说明.txt", "仅文件名命中\n".as_bytes());
+        scratch.file("图片/全局搜索.png", b"not text");
+
+        let result = search_files(
+            scratch.vault(),
+            "全局搜索",
+            &VaultSearchOptions::default(),
+        )
+        .expect("search should succeed");
+
+        assert!(result.results.iter().any(|item| {
+            item.kind == VaultSearchMatchKind::FileName
+                && item.path == "全局搜索说明.txt"
+                && item.line.is_none()
+        }));
+        assert!(result.results.iter().any(|item| {
+            item.kind == VaultSearchMatchKind::Content
+                && item.path == "项目/发布计划.md"
+                && item.line == Some(3)
+                && item.preview.contains("全局搜索")
+                && item.match_start == Some(4)
+                && item.match_end == Some(8)
+        }));
+        assert!(result
+            .results
+            .iter()
+            .all(|item| item.path != "图片/全局搜索.png"));
+        assert_eq!(result.scanned_files, 3);
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn search_respects_case_word_and_regular_expression_options() {
+        let scratch = Scratch::new("search-options");
+        scratch.file("匹配.md", "Alpha alphabet alpha\nStateField StateEffect\n".as_bytes());
+
+        let case_sensitive = search_files(
+            scratch.vault(),
+            "Alpha",
+            &VaultSearchOptions {
+                case_sensitive: true,
+                ..VaultSearchOptions::default()
+            },
+        )
+        .expect("case-sensitive search should succeed");
+        assert_eq!(case_sensitive.results.len(), 1);
+        assert_eq!(case_sensitive.results[0].match_start, Some(0));
+
+        let whole_word = search_files(
+            scratch.vault(),
+            "alpha",
+            &VaultSearchOptions {
+                whole_word: true,
+                ..VaultSearchOptions::default()
+            },
+        )
+        .expect("whole-word search should succeed");
+        assert_eq!(whole_word.results.len(), 1);
+        assert_eq!(whole_word.results[0].match_start, Some(0));
+        assert_eq!(whole_word.results[0].match_end, Some(5));
+
+        let regexp = search_files(
+            scratch.vault(),
+            r"State(?:Field|Effect)",
+            &VaultSearchOptions {
+                regexp: true,
+                ..VaultSearchOptions::default()
+            },
+        )
+        .expect("regular-expression search should succeed");
+        assert_eq!(regexp.results.len(), 1);
+        assert_eq!(regexp.results[0].match_start, Some(0));
+        assert_eq!(regexp.results[0].match_end, Some(10));
+
+        let invalid = search_files(
+            scratch.vault(),
+            "(",
+            &VaultSearchOptions {
+                regexp: true,
+                ..VaultSearchOptions::default()
+            },
+        )
+        .expect_err("invalid regular expression should fail");
+        assert_eq!(error_code(&invalid), CODE_INVALID_QUERY);
     }
 
     #[test]

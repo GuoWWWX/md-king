@@ -9,6 +9,7 @@ const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
   "LOCKED",
   "NOT_FOUND",
   "INVALID_NAME",
+  "INVALID_QUERY",
 ];
 
 /// Rust 侧 vault 错误统一为 "CODE|中文提示"。冲突要弹窗、非 UTF-8 要切只读模式，

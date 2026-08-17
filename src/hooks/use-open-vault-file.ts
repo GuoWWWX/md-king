@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { readVaultFile } from "@/lib/vault";
+import { useDocumentTabsStore } from "@/stores/document-tabs-store";
 import { useVaultStore } from "@/stores/vault-store";
 import { parseVaultError } from "@/lib/user-facing-errors";
 
@@ -11,7 +12,7 @@ import { parseVaultError } from "@/lib/user-facing-errors";
 ///
 /// absolutePath 是给预览里的图片解析用的：load_preview_image 要拿源文件的
 /// 父目录去解析 `![](.md-king/img/x.png)` 这类相对路径，vault 的相对路径不够用。
-type OpenFileHandler = (file: { path: string; absolutePath: string; content: string; eol: "lf" | "crlf"; hasBom: boolean; modifiedMs: number }) => void;
+type OpenFileHandler = (file: { path: string; absolutePath: string; content: string; eol: "lf" | "crlf"; hasBom: boolean; modifiedMs: number }) => string | undefined;
 
 let contentSink: OpenFileHandler | undefined;
 
@@ -37,6 +38,22 @@ export function useOpenVaultFile() {
       if (!vaultRoot) return;
       const requestVersion = ++requestVersionRef.current;
 
+      // 文件树切回已经打开的标签时直接使用内存正文。除了省去 IPC/读盘，
+      // 也避免用磁盘内容覆盖该标签尚未保存的修改。
+      const tabsState = useDocumentTabsStore.getState();
+      const existing = tabsState.tabs.find((tab) => tab.kind === "vault" && tab.path === relativePath);
+      if (existing && existing.eol !== undefined && existing.hasBom !== undefined && existing.modifiedMs !== undefined) {
+        tabsState.setActiveTab(existing.id);
+        setActiveFile({
+          path: relativePath,
+          eol: existing.eol,
+          hasBom: existing.hasBom,
+          modifiedMs: existing.modifiedMs,
+        });
+        setSaveState(existing.dirty ? "dirty" : "clean");
+        return existing.id;
+      }
+
       try {
         const file = await readVaultFile(vaultRoot, relativePath);
         // 快速连续点击时，较早文件的磁盘读取可能更晚返回；只允许最后一次点击更新编辑区。
@@ -48,7 +65,7 @@ export function useOpenVaultFile() {
           modifiedMs: file.modifiedMs,
         });
         setSaveState("clean");
-        contentSink?.({
+        return contentSink?.({
           path: file.path,
           absolutePath: joinVaultPath(vaultRoot, file.path),
           content: file.content,
@@ -65,6 +82,7 @@ export function useOpenVaultFile() {
           setActiveFile(undefined);
         }
         toast.error(message);
+        return undefined;
       }
     },
     [setActiveFile, setSaveState, vaultRoot],

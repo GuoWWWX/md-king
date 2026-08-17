@@ -1,5 +1,5 @@
 import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
-import { ArrowRight, CircleAlert, CircleCheck, ExternalLink, FileText, FolderOpen, Loader2, Maximize2, Minimize2, Trash2, UploadCloud } from "lucide-react";
+import { ArrowRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, ExternalLink, FileText, FolderOpen, Loader2, Maximize2, Minimize2, Trash2, UploadCloud } from "lucide-react";
 import { type DragEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MdKingLogo } from "@/components/brand/md-king-logo";
 import { toast } from "sonner";
@@ -133,6 +133,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   const [tasks, setTasks] = useState<FloatingTask[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [dockSide, setDockSide] = useState<DockSide | null>(null);
+  const [dockCollapsed, setDockCollapsed] = useState(false);
   const [outputDirectory, setOutputDirectory] = useState(appConfig?.defaultOutputDir ?? "");
   const dockCollapsedRef = useRef(false);
   const dockHoveredRef = useRef(false);
@@ -170,6 +171,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       logicalPosition.y,
     ));
     dockCollapsedRef.current = true;
+    setDockCollapsed(true);
   }
 
   function scheduleDockCollapse(delay = dockCollapseDelay) {
@@ -196,6 +198,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       logicalPosition.y,
     ));
     dockCollapsedRef.current = false;
+    setDockCollapsed(false);
   }
 
   useEffect(() => {
@@ -219,10 +222,12 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       if (cancelled) return;
 
       const nextDockSide: DockSide | null = nearLeft ? "left" : nearRight ? "right" : null;
-      dockCollapsedRef.current = Boolean(nextDockSide) && (
+      const isCollapsed = Boolean(nextDockSide) && (
         logicalPosition.x < bounds.left
         || logicalPosition.x > bounds.left + bounds.width - floatingWindowClosedWidth
       );
+      dockCollapsedRef.current = isCollapsed;
+      setDockCollapsed(isCollapsed);
       setDockSide(nextDockSide);
     }).catch(() => undefined);
 
@@ -270,6 +275,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
 
     await appWindow.setPosition(new LogicalPosition(x, y));
     dockCollapsedRef.current = false;
+    setDockCollapsed(false);
     setDockSide(nextDockSide);
     window.localStorage.setItem(systemPositionStorageKey, JSON.stringify({ x, y }));
   }
@@ -300,6 +306,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
 
     setOpen(true);
     dockCollapsedRef.current = false;
+    setDockCollapsed(false);
     setDockSide(null);
   }
 
@@ -354,6 +361,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       if (!moved && Math.hypot(deltaX, deltaY) < 6) return;
       moved = true;
       setDragging(true);
+      setDockCollapsed(false);
       setDockSide(null);
       if (positionReady) {
         void appWindow.setPosition(new LogicalPosition(startWindowX + deltaX, startWindowY + deltaY));
@@ -624,7 +632,9 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
           : "fixed z-40",
       )}
       style={systemWindow
-        ? { alignItems: dockSide === "left" ? "flex-start" : dockSide === "right" ? "flex-end" : "center" }
+        ? { alignItems: dockCollapsed
+          ? dockSide === "left" ? "flex-end" : dockSide === "right" ? "flex-start" : "center"
+          : dockSide === "left" ? "flex-start" : dockSide === "right" ? "flex-end" : "center" }
         : { right: position.x, bottom: position.y }}
     >
       {open ? (
@@ -843,13 +853,18 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
           <TooltipButton
             type="button"
             className={cn(
-              "relative flex size-11 items-center justify-center overflow-hidden rounded-[13px] p-0 transition-[opacity,transform] duration-200 ease-out hover:scale-[1.03] hover:bg-transparent cursor-grab active:scale-[0.98] active:cursor-grabbing",
-              systemWindow ? "mk-system-floating-ball" : "mk-floating-ball",
+              "relative flex h-11 items-center justify-center overflow-hidden p-0 transition-[width,opacity,transform,background-color,border-color] duration-200 ease-out hover:scale-[1.03] cursor-grab active:scale-[0.98] active:cursor-grabbing",
+              systemWindow && dockCollapsed && dockSide
+                ? "mk-system-floating-dock-handle w-3.5"
+                : "w-11 rounded-[13px] hover:bg-transparent",
+              systemWindow && !dockCollapsed && "mk-system-floating-ball",
+              !systemWindow && "mk-floating-ball",
               panelDragging && "scale-105 ring-2 ring-[var(--app-primary)]",
               !enabled && "opacity-80 ring-2 ring-white/80",
               dragging && "scale-105",
             )}
             data-dragging={panelDragging ? "true" : "false"}
+            data-dock-side={systemWindow && dockCollapsed ? dockSide ?? undefined : undefined}
             onPointerDown={(event) => {
               if (systemWindow) {
                 handleSystemBallPointerDown(event);
@@ -860,8 +875,12 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
             tooltip={systemWindow ? "点击展开；拖动移动；可拖入 .md 文件" : "拖动悬浮球；点击打开转换面板"}
             aria-label="悬浮球转换"
           >
-            <MdKingLogo className="relative z-10 size-11" />
-            {tasks.length > 0 ? (
+            {systemWindow && dockCollapsed && dockSide ? (
+              dockSide === "right" ? <ChevronsLeft className="size-3.5 shrink-0" /> : <ChevronsRight className="size-3.5 shrink-0" />
+            ) : (
+              <MdKingLogo className="relative z-10 size-11" />
+            )}
+            {tasks.length > 0 && !dockCollapsed ? (
               <span className="absolute -right-1 -top-1 z-20 flex min-w-5 items-center justify-center rounded-full border border-white/90 bg-white px-1.5 py-0.5 text-[10px] font-black leading-none text-slate-950 shadow-lg">
                 {tasks.length > 9 ? "9+" : tasks.length}
               </span>

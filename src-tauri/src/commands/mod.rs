@@ -18,6 +18,7 @@ pub use template_commands::{
 pub use vault_commands::{
     copy_external_vault_file, copy_vault_entry, create_vault_entry, delete_vault_entry,
     import_vault_image_data, import_vault_image_from_path, list_vault_entries, move_vault_entry,
-    open_vault, read_clipboard_file_paths, read_vault_file, remove_recent_vault, rename_vault_entry,
-    set_vault_entry_clipboard, show_in_explorer, write_vault_file,
+    open_vault, read_clipboard_file_paths, read_vault_file, remove_recent_vault,
+    rename_vault_entry, search_vault, set_vault_entry_clipboard, show_in_explorer,
+    write_vault_file,
 };

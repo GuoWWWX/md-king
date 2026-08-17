@@ -35,6 +35,27 @@ test("管道前连续反斜杠按奇偶决定转义或分列", () => {
   assert.deepEqual(parseMarkdownTableRow("| a\\\\\\\\|b |"), ["a\\\\\\\\", "b"]);
 });
 
+test("Obsidian 双链别名中的管道不会拆成额外列", () => {
+  const source = [
+    "| 领域 | 入口 | 规范 | 定位 |",
+    "| ---- | ---- | ---- | ---- |",
+    "| 🤖 **AI 应用开发** | [[../10-AI应用开发/00-总览/学习仪表盘|AI 仪表盘]] | [[../10-AI应用开发/README|AI 规范]] | 转型主攻方向 |",
+  ].join("\n");
+  const table = parseMarkdownTable(source);
+
+  assert.ok(table);
+  assert.deepEqual(table.rows, [
+    ["领域", "入口", "规范", "定位"],
+    [
+      "🤖 **AI 应用开发**",
+      "[[../10-AI应用开发/00-总览/学习仪表盘|AI 仪表盘]]",
+      "[[../10-AI应用开发/README|AI 规范]]",
+      "转型主攻方向",
+    ],
+  ]);
+  assert.equal(serializeMarkdownTable(table), source.replace(/ ---- /g, " --- "));
+});
+
 test("解析对齐并按最大列数补齐", () => {
   assert.deepEqual(parseMarkdownTable("A | B\r\n:--- | ---:\r\n1 | 2 | 3"), {
     rows: [["A", "B", ""], ["1", "2", "3"]],

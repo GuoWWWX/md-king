@@ -42,6 +42,46 @@ test("导入到临时标签的初始内容不算用户改动", () => {
   }
 });
 
+test("临时文档另存后转为干净的磁盘标签", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openScratchTab({ title: "粘贴内容", content: "正文", dirty: true });
+
+    useDocumentTabsStore.getState().markTabSavedAs(id, {
+      path: "C:/Users/test/Downloads/粘贴内容.md",
+      absolutePath: "C:/Users/test/Downloads/粘贴内容.md",
+      title: "粘贴内容.md",
+      eol: "lf",
+      hasBom: false,
+      modifiedMs: 10,
+    });
+
+    const tab = useDocumentTabsStore.getState().tabs[0];
+    assert.equal(tab?.kind, "vault");
+    assert.equal(tab?.dirty, false);
+    assert.equal(tab?.absolutePath, "C:/Users/test/Downloads/粘贴内容.md");
+    assert.equal(tab?.modifiedMs, 10);
+  } finally {
+    resetTabs();
+  }
+});
+
+test("临时文档手动修改文件名后不再被正文标题覆盖", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openScratchTab({ title: "原文件名", content: "# 原标题\n" });
+
+    useDocumentTabsStore.getState().renameTab(id, { title: "新文件名" });
+    useDocumentTabsStore.getState().updateTabContent(id, "# 新正文标题\n正文");
+
+    const tab = useDocumentTabsStore.getState().tabs[0];
+    assert.equal(tab?.title, "新文件名");
+    assert.equal(tab?.titleEdited, true);
+  } finally {
+    resetTabs();
+  }
+});
+
 test("重新打开已修改的 Vault 文件不会覆盖本地改动", () => {
   resetTabs();
   try {

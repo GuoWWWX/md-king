@@ -1,6 +1,6 @@
 import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
-import { ClipboardPaste, FileText, UploadCloud, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease } from "lucide-react";
+import { ClipboardPaste, Files, FileText, FileUp, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease } from "lucide-react";
 import { forwardRef, type ChangeEvent, type DragEvent, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
@@ -12,13 +12,17 @@ import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/
 import { imageFileExtension } from "@/lib/image-files";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
+import { setRevealHighlightEffect } from "@/components/editor/cm/reveal-highlight";
 
 const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+const emptyStateActionClass = "w-full rounded-[5px] border-slate-200 bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 dark:hover:text-zinc-100";
 
 export type EditorContentWidthMode = "wide" | "medium" | "compact";
 
 type ConversionInputCardProps = {
   markdown: string;
+  documentTitle?: string;
+  onDocumentTitleChange?: (nextTitle: string) => Promise<boolean>;
   /// 换文档时变化的 key：内容变化不触发编辑器重载，只有它变了才做全量替换。
   documentKey: string;
   documentTabId?: string;
@@ -54,6 +58,8 @@ export type ConversionInputCardHandle = {
 
 export const ConversionInputCard = forwardRef<ConversionInputCardHandle, ConversionInputCardProps>(function ConversionInputCard({
   markdown,
+  documentTitle,
+  onDocumentTitleChange,
   documentKey,
   documentTabId,
   markdownSourcePath,
@@ -71,13 +77,15 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   onRequestSave,
   onImportImage,
   readingMode = false,
-  contentWidthMode = "wide",
+  contentWidthMode = "compact",
   onOpenLink,
   tableDefaultWidthMode = "content",
   onTableContextChange,
 }: ConversionInputCardProps, ref) {
   const inputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<LiveMarkdownEditorHandle>(null);
+  const pendingRevealRef = useRef<MarkdownOutlineRevealTarget | undefined>(undefined);
+  const revealHighlightTimerRef = useRef<number | undefined>(undefined);
   const [isDragging, setIsDragging] = useState(false);
   const [codeIndentContext, setCodeIndentContext] = useState<ReturnType<typeof getCodeBlockIndentContext>>(null);
 
@@ -95,25 +103,70 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
     return { chars, lines: nonEmptyLines };
   }, [hasDocument, markdown]);
 
-  useEffect(() => {
-    if (!documentTabId) return undefined;
+  function revealMarkdownTarget(target: MarkdownOutlineRevealTarget) {
+    const view = editorRef.current?.getView();
+    if (!view) return false;
+    const line = view.state.doc.line(Math.min(Math.max(1, target.line), view.state.doc.lines));
+    const lineLength = line.to - line.from;
+    const startColumn = Math.min(Math.max(0, target.matchStart ?? 0), lineLength);
+    const endColumn = Math.min(Math.max(startColumn, target.matchEnd ?? startColumn), lineLength);
+    const hasMatch = target.matchStart !== undefined && target.matchEnd !== undefined && endColumn > startColumn;
+    const from = hasMatch ? line.from + startColumn : line.from;
+    const to = hasMatch ? line.from + endColumn : line.from;
 
+    if (revealHighlightTimerRef.current !== undefined) window.clearTimeout(revealHighlightTimerRef.current);
+    view.dispatch({
+      selection: { anchor: to },
+      effects: [
+        EditorView.scrollIntoView(from, { y: "center" }),
+        setRevealHighlightEffect.of(hasMatch ? { from, to } : null),
+      ],
+    });
+    view.focus();
+    if (hasMatch) {
+      revealHighlightTimerRef.current = window.setTimeout(() => {
+        if (editorRef.current?.getView() === view) {
+          view.dispatch({ effects: setRevealHighlightEffect.of(null) });
+        }
+        revealHighlightTimerRef.current = undefined;
+      }, 2400);
+    }
+    return true;
+  }
+
+  useEffect(() => () => {
+    if (revealHighlightTimerRef.current !== undefined) window.clearTimeout(revealHighlightTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (revealHighlightTimerRef.current !== undefined) window.clearTimeout(revealHighlightTimerRef.current);
+    revealHighlightTimerRef.current = undefined;
+    editorRef.current?.getView()?.dispatch({ effects: setRevealHighlightEffect.of(null) });
+  }, [documentKey]);
+
+  useEffect(() => {
     const handleHeadingReveal = (event: Event) => {
       const target = (event as CustomEvent<MarkdownOutlineRevealTarget>).detail;
-      if (!target || target.tabId !== documentTabId) return;
-      const view = editorRef.current?.getView();
-      if (!view) return;
-      const line = view.state.doc.line(Math.min(Math.max(1, target.line), view.state.doc.lines));
-      view.dispatch({
-        selection: { anchor: line.from },
-        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+      if (!target) return;
+      pendingRevealRef.current = target;
+      if (target.tabId !== documentTabId) return;
+      requestAnimationFrame(() => {
+        if (revealMarkdownTarget(target)) pendingRevealRef.current = undefined;
       });
-      view.focus();
     };
 
     window.addEventListener(markdownOutlineRevealEvent, handleHeadingReveal);
     return () => window.removeEventListener(markdownOutlineRevealEvent, handleHeadingReveal);
   }, [documentTabId]);
+
+  useEffect(() => {
+    const target = pendingRevealRef.current;
+    if (!target || target.tabId !== documentTabId) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (revealMarkdownTarget(target)) pendingRevealRef.current = undefined;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [documentKey, documentTabId, markdown]);
 
   async function loadMarkdownFile(file: File) {
     try {
@@ -259,6 +312,8 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           ref={editorRef}
           documentKey={documentKey}
           initialContent={markdown}
+          documentTitle={documentTitle}
+          onDocumentTitleChange={onDocumentTitleChange}
           markdownSourcePath={markdownSourcePath}
           readOnly={disabled || readingMode}
           isDark={isDark}
@@ -286,20 +341,20 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           <div className="mk-file-cube mb-5 flex size-20 items-center justify-center rounded-[16px] text-white">
             <FileText className="size-10" />
           </div>
-          <h4 className="text-lg font-black text-blue-700">开始写点什么</h4>
-          <p className="mt-2 max-w-[260px] text-xs leading-5 text-blue-900/55">从左侧文件树打开文档，或用上方的 + 新建；也可以把 Markdown / TXT 文件拖到这里。</p>
+          <h4 className="text-lg font-black text-blue-700">打开文档</h4>
+          <p className="mt-2 max-w-[280px] text-xs leading-5 text-blue-900/55">支持导入或拖放 Markdown、TXT 文件</p>
           <div className="mt-5 flex flex-col gap-2">
-            <Button type="button" onClick={() => onNativeFileSelect ? void Promise.resolve(onNativeFileSelect()) : inputRef.current?.click()} disabled={disabled} className="rounded-[10px] bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">
-              <UploadCloud className="size-4" />
+            <Button type="button" variant="outline" onClick={() => onNativeFileSelect ? void Promise.resolve(onNativeFileSelect()) : inputRef.current?.click()} disabled={disabled} className={emptyStateActionClass}>
+              <FileUp className="size-4" />
               选择文件
             </Button>
             {onBatchSelect ? (
-              <Button type="button" variant="outline" className="border-white/70 bg-white/70 text-blue-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-700" onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
-                <UploadCloud className="size-4" />
+              <Button type="button" variant="outline" className={emptyStateActionClass} onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
+                <Files className="size-4" />
                 批量导入
               </Button>
             ) : null}
-            <Button type="button" variant="ghost" className="text-blue-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:text-white" onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
+            <Button type="button" variant="outline" className={emptyStateActionClass} onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
               <ClipboardPaste className="size-4" />
               粘贴剪贴板
             </Button>

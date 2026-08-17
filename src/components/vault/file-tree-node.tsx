@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { ChevronRight, ClipboardPaste, Copy, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, ImageIcon, MoreHorizontal, Pencil, Scissors, Trash2, FolderOpen as ExternalLink } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,7 @@ function VaultImageThumbnail({ entry }: { entry: VaultEntry }) {
   );
 }
 
-export function FileTreeNode({ entry, depth, expanded, active = false, selected = false, cut = false, renaming = false, onToggle, onSelect, onPreviewImage, onAction, onEntryClick, onPrepareContextMenu, marqueeSelecting = false, canStartDrag, nativeDragEnabled = true, pointerDragging = false, pointerDropPlacement, onRenameSubmit, onRenameCancel, onDropIntoDirectory }: FileTreeNodeProps) {
+export const FileTreeNode = memo(function FileTreeNode({ entry, depth, expanded, active = false, selected = false, cut = false, renaming = false, onToggle, onSelect, onPreviewImage, onAction, onEntryClick, onPrepareContextMenu, marqueeSelecting = false, canStartDrag, nativeDragEnabled = true, pointerDragging = false, pointerDropPlacement, onRenameSubmit, onRenameCancel, onDropIntoDirectory }: FileTreeNodeProps) {
   const [draftName, setDraftName] = useState(entry.name);
   const [isDragging, setIsDragging] = useState(false);
   const [dropPlacement, setDropPlacement] = useState<"before" | "after" | "inside">();
@@ -418,4 +418,4 @@ export function FileTreeNode({ entry, depth, expanded, active = false, selected 
       </ContextMenu.Portal>
     </ContextMenu.Root>
   );
-}
+});

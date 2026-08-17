@@ -1,21 +1,39 @@
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
-import { normalizeBareExternalLink } from "../../../lib/document-links.ts";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { FileText, Globe2 } from "lucide-react";
+import {
+  isExternalDocumentLink,
+  isMarkdownWikilinkTarget,
+  normalizeBareExternalLink,
+} from "../../../lib/document-links.ts";
 import { obsidianWikilinkPlugin } from "../../../lib/obsidian-wikilinks.ts";
+import { relaxedStrongPlugin } from "../../../lib/relaxed-strong.ts";
 
 export type TableInlineNode =
   | { type: "text"; value: string }
   | { type: "code"; value: string }
   | { type: "break" }
   | { type: "image"; src: string; alt: string; title?: string }
-  | { type: "element"; tag: "strong" | "em" | "s" | "a"; href?: string; title?: string; children: TableInlineNode[] };
+  | {
+    type: "element";
+    tag: "strong" | "em" | "s" | "a";
+    href?: string;
+    title?: string;
+    wikilinkTarget?: string;
+    children: TableInlineNode[];
+  };
 
-const parser = new MarkdownIt({ html: false, linkify: true, typographer: false }).use(obsidianWikilinkPlugin);
+const parser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(obsidianWikilinkPlugin)
+  .use(relaxedStrongPlugin);
 
 type PendingInlineElement = {
   tag: "strong" | "em" | "s" | "a";
   href?: string;
   title?: string;
+  wikilinkTarget?: string;
   children: TableInlineNode[];
   autoLink?: boolean;
   trailingText?: string;
@@ -93,14 +111,31 @@ export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
   return root;
 }
 
-function openingElement(token: Token): { tag: "strong" | "em" | "s" | "a"; href?: string; title?: string; autoLink?: boolean } | null {
+function openingElement(token: Token): {
+  tag: "strong" | "em" | "s" | "a";
+  href?: string;
+  title?: string;
+  wikilinkTarget?: string;
+  autoLink?: boolean;
+} | null {
   if (token.type === "strong_open") return { tag: "strong" };
   if (token.type === "em_open") return { tag: "em" };
   if (token.type === "s_open") return { tag: "s" };
   if (token.type === "link_open") {
     const href = token.attrGet("href") ?? "";
     const title = token.attrGet("title") ?? undefined;
-    return parser.validateLink(href) ? { tag: "a", href, ...(title ? { title } : {}), ...(token.markup === "linkify" ? { autoLink: true } : {}) } : null;
+    const wikilinkTarget = typeof token.meta?.mkWikilinkTarget === "string"
+      ? token.meta.mkWikilinkTarget
+      : undefined;
+    return parser.validateLink(href)
+      ? {
+          tag: "a",
+          href,
+          ...(title ? { title } : {}),
+          ...(wikilinkTarget ? { wikilinkTarget } : {}),
+          ...(token.markup === "linkify" ? { autoLink: true } : {}),
+        }
+      : null;
   }
   return null;
 }
@@ -130,6 +165,25 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       image.loading = "lazy";
       if (node.title) image.title = node.title;
       parent.append(image);
+    } else if (node.tag === "a" && node.wikilinkTarget) {
+      const target = node.wikilinkTarget;
+      const kind = isExternalDocumentLink(target) ? "external" : "document";
+      const invalid = kind === "document" && !isMarkdownWikilinkTarget(target);
+      const link = document.createElement("span");
+      link.className = `mk-cm-link mk-cm-link--${kind} mk-cm-link--wikilink${invalid ? " mk-cm-link--invalid" : ""}`;
+      link.dataset.mkLinkTarget = target;
+      if (invalid) link.dataset.mkWikilinkInvalid = "true";
+      link.setAttribute("role", "link");
+      link.setAttribute("aria-label", invalid ? `非 Markdown 文件：${target}` : `打开文档：${target}`);
+      link.title = invalid ? "仅支持 Markdown 文档" : target;
+
+      const icon = document.createElement("span");
+      icon.className = `mk-cm-link-icon mk-cm-link-icon--${kind}${invalid ? " mk-cm-link-icon--invalid" : ""}`;
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = renderToStaticMarkup(createElement(kind === "external" ? Globe2 : FileText, { size: 14, strokeWidth: 2 }));
+      link.append(icon);
+      appendNodes(link, node.children);
+      parent.append(link);
     } else {
       const element = document.createElement(node.tag);
       if (node.tag === "a" && node.href) {

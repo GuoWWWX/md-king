@@ -8,6 +8,7 @@ import "katex/dist/katex.min.css";
 import { AppSurface } from "@/components/ui/app-surface";
 import { MarkdownCalloutIcon } from "@/components/markdown-callout-icon";
 import { codeBlockIndentPtFromInfo } from "@/components/editor/cm/code-block-indent";
+import { parseMarkdownTable } from "@/components/editor/cm/markdown-table";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { MediaPreviewDialog, svgDataUrl } from "@/components/media/image-viewer";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
@@ -19,6 +20,7 @@ import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mer
 import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { parseMarkdownCalloutHeader, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
+import { relaxedStrongPlugin } from "@/lib/relaxed-strong";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -153,6 +155,7 @@ function backslashMathPlugin(md: MarkdownIt) {
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
   .use(obsidianWikilinkPlugin)
+  .use(relaxedStrongPlugin)
   .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
   .use(backslashMathPlugin);
 // 与 Rust 端 is_math_fence_language 保持一致，避免预览与导出对 ```math 的判定不同。
@@ -641,6 +644,10 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
   return mergeTextSegments(segments);
 }
 
+function inlineSegmentsFromMarkdown(source: string): PreviewTextSegment[] {
+  return inlineSegmentsFromToken(markdownParser.parseInline(source, {})[0]);
+}
+
 function markdownTokenAttribute(token: MarkdownInlineToken, name: string) {
   return token.attrs?.find(([key]) => key === name)?.[1];
 }
@@ -1000,6 +1007,7 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
 function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metadata?: MarkdownFrontmatter } {
   const frontmatter = splitYamlFrontmatter(markdown);
   const tokens = markdownParser.parse(frontmatter.markdown, {});
+  const markdownLines = frontmatter.markdown.replace(/\r\n?/g, "\n").split("\n");
   const blocks: PreviewBlock[] = [];
   const headingAnchorCounts = new Map<string, number>();
 
@@ -1073,6 +1081,16 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
     }
 
     if (token.type === "table_open") {
+      const sourceTable = token.map
+        ? parseMarkdownTable(markdownLines.slice(token.map[0], token.map[1]).join("\n"))
+        : null;
+      if (sourceTable) {
+        const [header, ...rows] = sourceTable.rows.map((row) => row.map((cell) => ({ segments: inlineSegmentsFromMarkdown(cell) })));
+        if (header) blocks.push({ type: "table", header, rows });
+        while (index < tokens.length && tokens[index].type !== "table_close") index += 1;
+        continue;
+      }
+
       const rows: PreviewTableCell[][] = [];
       let currentRow: PreviewTableCell[] | undefined;
       index += 1;
@@ -2103,7 +2121,6 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const numberedBlocks = annotateHeadingNumbers(mappedBlocks, previewDrafts);
   const blocksWithTableColumnWidths = numberedBlocks.map((block) => resolveTableBlockColumnWidths(block, table, contentWidth));
   const metadataBlocks: PreviewBlock[] = [
-    ...(markdownPreview?.metadata?.title ? [{ type: "heading" as const, level: 1 as HeadingLevel, text: markdownPreview.metadata.title, isDocumentTitle: true }] : []),
     ...(markdownPreview?.metadata?.author ? [{ type: "paragraph" as const, metadata: "author" as const, segments: textSegments(markdownPreview.metadata.author) }] : []),
     ...(markdownPreview?.metadata?.date ? [{ type: "paragraph" as const, metadata: "date" as const, segments: textSegments(markdownPreview.metadata.date) }] : []),
   ];

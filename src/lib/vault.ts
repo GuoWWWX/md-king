@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment, resolvePreviewImageSource } from "@/lib/tauri";
 import { registerBrowserPreviewImage, remapBrowserPreviewImages } from "@/lib/browser-preview-images";
 import { isSupportedImagePath } from "@/lib/image-files";
-import type { VaultEntry, VaultFileContent, VaultImageImport, VaultListing, VaultWriteParams, VaultWriteResult } from "@/types/vault";
+import type { VaultEntry, VaultFileContent, VaultImageImport, VaultListing, VaultSearchMatch, VaultSearchOptions, VaultSearchResponse, VaultWriteParams, VaultWriteResult } from "@/types/vault";
 
 /// vault 的 7 个 command 单独放这里而不是塞进 tauri.ts：后者已近 400 行，
 /// 且 vault 的浏览器 mock 需要一整套有状态的内存文件系统，混在一起会互相干扰。
@@ -13,6 +13,8 @@ const BROWSER_VAULT_ROOT = "D:/示例仓库";
 /// 故意加的延迟：让保存状态机的 saving → saved 过渡在 pnpm dev 下肉眼可见，
 /// 否则浏览器里瞬时返回，UI 的中间态永远调试不到。
 const MOCK_LATENCY_MS = 200;
+const MAX_SEARCH_RESULTS = 200;
+const MAX_SEARCH_MATCHES_PER_FILE = 6;
 
 type MockFile = {
   content: string;
@@ -180,6 +182,102 @@ export function readVaultFile(root: string, path: string) {
     hasBom: false,
     modifiedMs: file.modifiedMs,
     size: new TextEncoder().encode(file.content).length,
+  });
+}
+
+function createBrowserSearchMatcher(query: string, options: VaultSearchOptions) {
+  const source = options.regexp ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = options.wholeWord ? `\\b(?:${source})\\b` : source;
+  try {
+    return new RegExp(pattern, options.caseSensitive ? "u" : "iu");
+  } catch {
+    throw new Error("INVALID_QUERY|正则表达式无效，请检查后重试。");
+  }
+}
+
+function browserSearchPreview(line: string, start: number, end: number) {
+  const before = line.slice(0, start);
+  const matched = line.slice(start, end);
+  const after = line.slice(end);
+  const shownBefore = before.slice(-60);
+  const shownMatch = matched.slice(0, 80);
+  let preview = `${before.length > shownBefore.length ? "…" : ""}${shownBefore}`;
+  const previewMatchStart = preview.length;
+  preview += shownMatch;
+  const previewMatchEnd = preview.length;
+  if (shownMatch.length < matched.length) preview += "…";
+  else preview += `${after.slice(0, 80)}${after.length > 80 ? "…" : ""}`;
+  return { preview, previewMatchStart, previewMatchEnd };
+}
+
+export function searchVault(root: string, query: string, options: VaultSearchOptions) {
+  if (isTauriEnvironment()) {
+    return invoke<VaultSearchResponse>("search_vault", { root, query, options });
+  }
+
+  if (!query.trim()) {
+    return delay<VaultSearchResponse>({ results: [], truncated: false, scannedFiles: 0, skippedFiles: 0 });
+  }
+  let matcher: RegExp;
+  try {
+    matcher = createBrowserSearchMatcher(query, options);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  const files = [...mockFiles.entries()].filter(([path]) => /\.(?:md|markdown|txt)$/i.test(path));
+  const fileNameResults: VaultSearchMatch[] = [];
+  const contentResults: VaultSearchMatch[] = [];
+
+  for (const [path] of files) {
+    const name = baseNameOf(path);
+    const match = matcher.exec(name);
+    if (match) {
+      fileNameResults.push({
+        path,
+        name,
+        kind: "fileName",
+        line: null,
+        preview: "",
+        matchStart: match.index,
+        matchEnd: match.index + match[0].length,
+        previewMatchStart: null,
+        previewMatchEnd: null,
+      });
+    }
+  }
+
+  for (const [path, file] of files) {
+    const name = baseNameOf(path);
+    let matchesInFile = 0;
+    for (const [index, line] of file.content.split(/\r?\n/).entries()) {
+      const match = matcher.exec(line);
+      if (!match) continue;
+      const matchStart = match.index;
+      const matchEnd = match.index + match[0].length;
+      const preview = browserSearchPreview(line, matchStart, matchEnd);
+      contentResults.push({
+        path,
+        name,
+        kind: "content",
+        line: index + 1,
+        preview: preview.preview,
+        matchStart,
+        matchEnd,
+        previewMatchStart: preview.previewMatchStart,
+        previewMatchEnd: preview.previewMatchEnd,
+      });
+      matchesInFile += 1;
+      if (matchesInFile >= MAX_SEARCH_MATCHES_PER_FILE) break;
+    }
+  }
+
+  const allResults = [...fileNameResults, ...contentResults];
+  return delay<VaultSearchResponse>({
+    results: allResults.slice(0, MAX_SEARCH_RESULTS),
+    truncated: allResults.length > MAX_SEARCH_RESULTS,
+    scannedFiles: files.length,
+    skippedFiles: 0,
   });
 }
 

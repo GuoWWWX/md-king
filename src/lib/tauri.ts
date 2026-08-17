@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { resolveBrowserPreviewImage } from "@/lib/browser-preview-images";
-import { open } from "@tauri-apps/plugin-dialog";
+import { downloadDir, join } from "@tauri-apps/api/path";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { limitHistory } from "@/lib/conversion-history";
 import type { AppConfig, AppStatus, ConvertRequest, ConvertResult, HistoryItem, ImportTemplateRequest, PandocStatus, Template, TemplateStyleConfig } from "@/types";
 
@@ -135,12 +136,49 @@ function normalizeDialogSelections(selected: string | string[] | null) {
   return Array.isArray(selected) ? selected : [selected];
 }
 
+function markdownSaveFileName(title: string) {
+  const baseName = title
+    .trim()
+    .replace(/\.(?:md|markdown|txt)$/i, "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/[ .]+$/g, "")
+    .slice(0, 120)
+    .trim();
+  return `${baseName || "未命名"}.md`;
+}
+
+function ensureMarkdownSaveExtension(path: string) {
+  if (/\.md$/i.test(path)) return path;
+  return path.replace(/\.(?:markdown|txt)$/i, "") + ".md";
+}
+
 export async function selectDirectory(title = "选择默认输出目录") {
   if (!isTauriEnvironment()) {
     throw new Error("浏览器预览无法打开目录选择器，请在 Tauri 桌面端使用");
   }
 
   return normalizeDialogSelection(await open({ directory: true, multiple: false, title }));
+}
+
+export async function selectMarkdownSavePath(title: string) {
+  if (!isTauriEnvironment()) {
+    throw new Error("浏览器预览无法保存到本机路径，请在 Tauri 桌面端使用");
+  }
+
+  const fileName = markdownSaveFileName(title);
+  let defaultPath = fileName;
+  try {
+    defaultPath = await join(await downloadDir(), fileName);
+  } catch {
+    // 系统下载目录不可用时，仍让原生保存框使用建议文件名。
+  }
+
+  const selected = normalizeDialogSelection(await saveDialog({
+    title: "保存 Markdown 文档",
+    defaultPath,
+    filters: [{ name: "Markdown 文档", extensions: ["md"] }],
+  }));
+  return selected ? ensureMarkdownSaveExtension(selected) : undefined;
 }
 
 export async function selectDocxFile() {

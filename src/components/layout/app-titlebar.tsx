@@ -1,4 +1,4 @@
-import { Columns2, Copy, Minus, PanelLeft, PanelRight, Square, X } from "lucide-react";
+import { Columns2, Copy, Minus, PanelLeft, PanelRight, Search, Square, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { TooltipAnchor } from "@/components/ui/tooltip";
@@ -26,10 +26,11 @@ type AppTitlebarProps = {
   showDocumentDrawerControl?: boolean;
   documentDrawerOpen?: boolean;
   onToggleDocumentDrawer?: () => void;
+  onOpenGlobalSearch?: () => void;
   documentTabsOffset?: number;
 };
 
-export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, documentTabsOffset = 0 }: AppTitlebarProps) {
+export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, onOpenGlobalSearch, documentTabsOffset = 0 }: AppTitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const canControlWindow = isTauriEnvironment();
 
@@ -109,6 +110,11 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
       />
 
       <div className="flex h-full shrink-0 items-center">
+        {onOpenGlobalSearch ? (
+          <TitlebarButton label="全局搜索" onClick={onOpenGlobalSearch}>
+            <Search className="size-4" />
+          </TitlebarButton>
+        ) : null}
         {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <>
             <TitlebarButton
@@ -117,8 +123,10 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
             >
               {documentDrawerOpen ? <PanelStateIcon side="right" /> : <PanelRight className="size-4" />}
             </TitlebarButton>
-            <span className="mx-1 h-4 w-px bg-slate-200 dark:bg-zinc-700" aria-hidden />
           </>
+        ) : null}
+        {onOpenGlobalSearch || (showDocumentDrawerControl && onToggleDocumentDrawer) ? (
+          <span className="mx-1 h-4 w-px bg-slate-200 dark:bg-zinc-700" aria-hidden />
         ) : null}
         <TitlebarButton disabled={!canControlWindow} label="最小化" onClick={() => handleWindowAction("minimize")}>
           <Minus className="size-3.5" />

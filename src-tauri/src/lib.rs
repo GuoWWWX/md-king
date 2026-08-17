@@ -12,13 +12,13 @@ pub use core::template::{
 use commands::{
     append_history, check_pandoc, clear_history, convert_markdown, copy_external_vault_file,
     copy_vault_entry, create_vault_entry, delete_vault_entry, get_app_config, get_app_status,
-    get_template_style_config, get_template_style_configs, import_template, list_history,
-    import_vault_image_data, import_vault_image_from_path, list_templates, list_vault_entries,
-    load_preview_image, move_vault_entry, open_output_path,
-    open_vault, read_clipboard_file_paths, read_markdown_file, read_vault_file, remove_recent_vault, rename_vault_entry,
-    reset_template_style_config, reveal_output_path, save_app_config, save_history,
-    save_template_style_config, save_templates, set_vault_entry_clipboard, show_in_explorer,
-    write_temp_image, write_vault_file,
+    get_template_style_config, get_template_style_configs, import_template,
+    import_vault_image_data, import_vault_image_from_path, list_history, list_templates,
+    list_vault_entries, load_preview_image, move_vault_entry, open_output_path, open_vault,
+    read_clipboard_file_paths, read_markdown_file, read_vault_file, remove_recent_vault,
+    rename_vault_entry, reset_template_style_config, reveal_output_path, save_app_config,
+    save_history, save_template_style_config, save_templates, search_vault,
+    set_vault_entry_clipboard, show_in_explorer, write_temp_image, write_vault_file,
 };
 use core::config::load_config;
 use tauri::Manager;
@@ -36,6 +36,9 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(system::startup_files::PendingOpenFiles::default())
         .setup(|app| {
+            if let Err(error) = system::file_association::release_legacy_file_associations() {
+                eprintln!("Failed to release legacy file associations: {error}");
+            }
             if let Some(icon) = app.default_window_icon().cloned() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_icon(icon);
@@ -103,6 +106,7 @@ pub fn run() {
             remove_recent_vault,
             list_vault_entries,
             read_vault_file,
+            search_vault,
             write_vault_file,
             create_vault_entry,
             rename_vault_entry,

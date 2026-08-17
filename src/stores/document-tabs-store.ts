@@ -14,6 +14,8 @@ export type DocumentTab = {
   /// 图片相对路径解析要用，scratch 标签没有。
   absolutePath?: string;
   title: string;
+  /// 临时文档的标题由用户手动修改后，不再跟随正文首个标题自动变化。
+  titleEdited?: boolean;
   content: string;
   /// 内容与磁盘（或最后一次同步点）不一致。
   dirty: boolean;
@@ -43,10 +45,11 @@ type DocumentTabsState = {
   /// 外部替换内容（重新载入、冲突后重载），递增 revision 让编辑器全量刷新。
   replaceTabContent: (id: string, content: string) => void;
   markTabClean: (id: string, modifiedMs?: number) => void;
+  markTabSavedAs: (id: string, file: { path: string; absolutePath: string; title: string; eol: VaultEol; hasBom: boolean; modifiedMs: number }) => void;
   closeTab: (id: string) => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
-  renameTab: (id: string, next: { path: string; absolutePath: string; title: string }) => void;
+  renameTab: (id: string, next: { title: string; path?: string; absolutePath?: string }) => void;
 };
 
 let tabSeq = 0;
@@ -146,7 +149,7 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
       if (tab.content === content) return tab;
       // scratch 标签的标题跟着正文首个标题走，边写边更新，
       // 这样标签上就不会长期挂着一个「未命名」。
-      const title = tab.kind === "scratch" ? deriveScratchTitle(content, tab.title) : tab.title;
+      const title = tab.kind === "scratch" && !tab.titleEdited ? deriveScratchTitle(content, tab.title) : tab.title;
       return { ...tab, content, title, dirty: true };
     }),
   })),
@@ -163,6 +166,12 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
       : tab)),
   })),
 
+  markTabSavedAs: (id, file) => set((state) => ({
+    tabs: state.tabs.map((tab) => (tab.id === id
+      ? { ...tab, ...file, kind: "vault", dirty: false, titleEdited: false }
+      : tab)),
+  })),
+
   closeTab: (id) => set((state) => {
     const nextActive = state.activeTabId === id ? neighborTabId(state.tabs, id) : state.activeTabId;
     return { tabs: state.tabs.filter((tab) => tab.id !== id), activeTabId: nextActive };
@@ -176,6 +185,12 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
   closeAllTabs: () => set({ tabs: [], activeTabId: undefined }),
 
   renameTab: (id, next) => set((state) => ({
-    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, ...next } : tab)),
+    tabs: state.tabs.map((tab) => (tab.id === id
+      ? {
+          ...tab,
+          ...next,
+          titleEdited: tab.kind === "scratch" && next.path === undefined ? true : tab.titleEdited,
+        }
+      : tab)),
   })),
 }));

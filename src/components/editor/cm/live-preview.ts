@@ -3,6 +3,7 @@ import { isMermaidLanguage } from "@/lib/mermaid";
 import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink, isMarkdownWikilinkTarget } from "@/lib/document-links";
 import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
+import { findRelaxedStrongRanges } from "@/lib/relaxed-strong";
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
@@ -53,6 +54,8 @@ type CalloutCollapseChange = {
 export const setCalloutCollapsedEffect = StateEffect.define<CalloutCollapseChange>();
 /** 文档切换时不能把上一个文件的展开状态带到新文件。 */
 export const resetCalloutCollapsedEffect = StateEffect.define<void>();
+/** 焦点离开编辑区时，即使选区仍停在 Frontmatter，也恢复属性卡片。 */
+export const renderFrontmatterEffect = StateEffect.define<void>();
 
 const calloutCollapseState = StateField.define<ReadonlyMap<number, boolean>>({
   create: () => new Map(),
@@ -263,6 +266,31 @@ function isInsideObsidianWikilink(state: EditorState, from: number, to: number):
     const wikilinkTo = line.from + wikilink.to;
     return from >= wikilinkFrom && to <= wikilinkTo;
   });
+}
+
+function hasSyntaxAncestor(node: SyntaxNode, names: ReadonlySet<string>): boolean {
+  for (let current: SyntaxNode | null = node; current; current = current.parent) {
+    if (names.has(current.name)) return true;
+  }
+  return false;
+}
+
+const relaxedStrongExcludedNodes = new Set(["StrongEmphasis", "InlineCode", "FencedCode", "CodeBlock"]);
+
+function addRelaxedStrong(collector: DecorationCollector, lineFrom: number, tree: ReturnType<typeof syntaxTree>): void {
+  const line = collector.state.doc.lineAt(lineFrom);
+  for (const range of findRelaxedStrongRanges(line.text)) {
+    const from = line.from + range.from;
+    const to = line.from + range.to;
+    const contentFrom = line.from + range.contentFrom;
+    const contentNode = tree.resolveInner(contentFrom, 1);
+    if (hasSyntaxAncestor(contentNode, relaxedStrongExcludedNodes)) continue;
+
+    addMark(collector, from, to, "mk-cm-strong");
+    if (touchesSameLine(collector, from, to) || sourceSelected(collector, from, to)) continue;
+    hide(collector, from, contentFrom);
+    hide(collector, line.from + range.contentTo, to);
+  }
 }
 
 /**
@@ -639,6 +667,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
       addRenderedSourceIndent(collector, lineFrom);
       addFallbackSourceList(collector, lineFrom);
       addObsidianAndBareLinks(collector, lineFrom);
+      addRelaxedStrong(collector, lineFrom, tree);
     }
     tree.iterate({
       from,
@@ -769,10 +798,10 @@ export const livePreviewPlugin: Extension = [
   livePreviewViewPlugin,
 ];
 
-function buildFrontmatterBlock(state: EditorState, editable: boolean): DecorationSet {
+function buildFrontmatterBlock(state: EditorState, editable: boolean, forceRender = false): DecorationSet {
   const frontmatter = parseYamlFrontmatter(state.doc.toString());
   if (!frontmatter) return Decoration.none;
-  if (editable && selectionOnLines(state, frontmatter.from, frontmatter.contentTo)) return Decoration.none;
+  if (editable && !forceRender && selectionOnLines(state, frontmatter.from, frontmatter.contentTo)) return Decoration.none;
 
   return Decoration.set([
     Decoration.replace({
@@ -786,11 +815,14 @@ function buildFrontmatterBlock(state: EditorState, editable: boolean): Decoratio
 export function frontmatterBlockExtension(editable = true): Extension {
   const field = StateField.define<DecorationSet>({
     create: (state) => buildFrontmatterBlock(state, editable),
-    update: (value, transaction) => (
-      transaction.docChanged || transaction.selection
+    update: (value, transaction) => {
+      if (transaction.effects.some((effect) => effect.is(renderFrontmatterEffect))) {
+        return buildFrontmatterBlock(transaction.state, editable, true);
+      }
+      return transaction.docChanged || transaction.selection
         ? buildFrontmatterBlock(transaction.state, editable)
-        : value
-    ),
+        : value;
+    },
     provide: (self) => EditorView.decorations.from(self),
   });
   return field;
@@ -865,12 +897,18 @@ function extractFenceCodeText(state: EditorState, from: number, to: number): str
 export function mermaidBlockExtension(dark: boolean, editable = true): Extension {
   interface MermaidBlockState {
     decorations: DecorationSet;
+    parserTree: ReturnType<typeof syntaxTree>;
     sourceBlockFrom: number | null;
   }
 
   const field = StateField.define<MermaidBlockState>({
-    create: (state) => ({ decorations: buildMermaidBlocks(state, dark, null, editable), sourceBlockFrom: null }),
+    create: (state) => {
+      const parserTree = syntaxTree(state);
+      return { decorations: buildMermaidBlocks(state, dark, null, editable), parserTree, sourceBlockFrom: null };
+    },
     update: (value, tr) => {
+      const parserTree = syntaxTree(tr.state);
+      const parserChanged = parserTree !== value.parserTree;
       let sourceBlockFrom = value.sourceBlockFrom;
       if (sourceBlockFrom !== null && tr.docChanged) sourceBlockFrom = tr.changes.mapPos(sourceBlockFrom);
       for (const effect of tr.effects) {
@@ -893,8 +931,10 @@ export function mermaidBlockExtension(dark: boolean, editable = true): Extension
         if (!inSourceBlock) sourceBlockFrom = null;
       }
       // Mermaid 是否需要替换为图形取决于非空选区；选区变化也必须重建块级装饰。
-      if (!tr.docChanged && tr.selection === undefined && sourceBlockFrom === value.sourceBlockFrom) return value;
-      return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom, editable), sourceBlockFrom };
+      // 大段粘贴后语法树可能在后台才补齐；解析树变化时也必须重建，否则要等
+      // 用户再点击一次产生选区事务后才会把源码替换成图表。
+      if (!tr.docChanged && tr.selection === undefined && !parserChanged && sourceBlockFrom === value.sourceBlockFrom) return value;
+      return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom, editable), parserTree, sourceBlockFrom };
     },
     provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
   });

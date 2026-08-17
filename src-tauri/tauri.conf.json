@@ -39,15 +39,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "fileAssociations": [
-      {
-        "ext": ["md", "markdown"],
-        "name": "Markdown 文档",
-        "description": "Markdown 文档",
-        "role": "Editor",
-        "mimeType": "text/markdown"
-      }
-    ],
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",

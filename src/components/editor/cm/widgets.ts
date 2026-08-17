@@ -210,6 +210,13 @@ export class TaskCheckboxWidget extends WidgetType {
   }
 }
 
+function measuredBlockWidget(content: HTMLElement, spacing: "frontmatter" | "media" | "table"): HTMLElement {
+  const container = document.createElement("div");
+  container.className = `mk-cm-block-widget-spacing mk-cm-block-widget-spacing--${spacing}`;
+  container.append(content);
+  return container;
+}
+
 /**
  * Mermaid 图表。
  *
@@ -239,6 +246,7 @@ export class MermaidWidget extends WidgetType {
     const host = document.createElement("div");
     host.className = "mk-cm-mermaid";
     host.dataset.codeLanguage = "mermaid";
+    const container = measuredBlockWidget(host, "media");
 
     const previewButton = document.createElement("button");
     previewButton.type = "button";
@@ -283,7 +291,7 @@ export class MermaidWidget extends WidgetType {
     const cached = getCachedMermaidSvg(this.source, this.dark);
     if (cached) {
       canvas.innerHTML = cached.svg;
-      return host;
+      return container;
     }
 
     host.dataset.state = "loading";
@@ -304,7 +312,7 @@ export class MermaidWidget extends WidgetType {
         canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
       });
 
-    return host;
+    return container;
   }
 
   /**
@@ -339,7 +347,11 @@ export class MarkdownImageWidget extends WidgetType {
     if (!this.hasSameImage(previous)) return false;
     // 选中或取消选中时只切换外框。重建大图片会先回退到加载占位高度，
     // 随后 load/requestMeasure 再撑开，表现为整个编辑页跳动闪烁。
-    dom.dataset.selected = String(this.selected);
+    const host = dom.classList.contains("mk-cm-image")
+      ? dom
+      : dom.querySelector<HTMLElement>(".mk-cm-image");
+    if (!host) return false;
+    host.dataset.selected = String(this.selected);
     return true;
   }
 
@@ -357,6 +369,7 @@ export class MarkdownImageWidget extends WidgetType {
     host.className = "mk-cm-image";
     host.dataset.state = "loading";
     host.dataset.selected = String(this.selected);
+    const container = measuredBlockWidget(host, "media");
     host.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -490,7 +503,7 @@ export class MarkdownImageWidget extends WidgetType {
         view.requestMeasure();
       });
 
-    return host;
+    return container;
   }
 
   ignoreEvent(): boolean {
@@ -718,7 +731,7 @@ export class MarkdownFrontmatterWidget extends WidgetType {
       properties.append(row);
     }
     host.append(properties);
-    return host;
+    return measuredBlockWidget(host, "frontmatter");
   }
 
   ignoreEvent(): boolean {
@@ -781,6 +794,7 @@ export class TableWidget extends WidgetType {
     wrapper.className = "mk-cm-table-wrapper mk-cm-table-wrapper--readonly";
     wrapper.dataset.tableFrom = String(this.tableFrom);
     wrapper.classList.toggle("is-wrap", this.widthMode === "content");
+    const container = measuredBlockWidget(wrapper, "table");
 
     const tableScroll = document.createElement("div");
     tableScroll.className = "mk-cm-table-scroll";
@@ -865,7 +879,7 @@ export class TableWidget extends WidgetType {
     document.addEventListener("mousemove", extendDocumentSelectionThroughRow, true);
     document.addEventListener("pointerup", finishDocumentSelection, true);
     document.addEventListener("mouseup", finishDocumentSelection, true);
-    this.cleanups.set(wrapper, () => {
+    this.cleanups.set(container, () => {
       document.removeEventListener("pointerdown", captureDocumentSelectionAnchor, true);
       document.removeEventListener("mousedown", captureDocumentSelectionAnchor, true);
       document.removeEventListener("pointermove", extendDocumentSelectionThroughRow, true);
@@ -874,7 +888,7 @@ export class TableWidget extends WidgetType {
       document.removeEventListener("mouseup", finishDocumentSelection, true);
       if (finishFrame !== null) cancelAnimationFrame(finishFrame);
     });
-    return wrapper;
+    return container;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -883,6 +897,7 @@ export class TableWidget extends WidgetType {
     wrapper.className = "mk-cm-table-wrapper";
     wrapper.dataset.tableFrom = String(this.tableFrom);
     wrapper.tabIndex = 0;
+    const container = measuredBlockWidget(wrapper, "table");
     wrapper.addEventListener("pointerdown", (event) => event.stopPropagation());
     const announceTableContext = () => {
       (view.dom.parentElement ?? view.dom).dispatchEvent(new CustomEvent(tableContextChangeEvent, {
@@ -1661,7 +1676,7 @@ export class TableWidget extends WidgetType {
     document.addEventListener("pointercancel", cancelReorderDrag, true);
     window.addEventListener("scroll", closeOnScroll, true);
     wrapper.addEventListener("pointerover", revealColumnDragHandle);
-    this.cleanups.set(wrapper, () => {
+    this.cleanups.set(container, () => {
       closeContextMenu();
       clearDragPreview();
       animationFrameIds.forEach((id) => cancelAnimationFrame(id));
@@ -1883,7 +1898,7 @@ export class TableWidget extends WidgetType {
     } else if (this.documentSelectedRows.length > 0) {
       this.applyDocumentSelectedRows(wrapper);
     }
-    return wrapper;
+    return container;
   }
 
   destroy(dom: HTMLElement): void {

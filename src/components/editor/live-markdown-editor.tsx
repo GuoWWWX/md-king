@@ -11,10 +11,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { isSupportedImagePath } from "@/lib/image-files";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { cn } from "@/lib/utils";
-import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
+import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, renderFrontmatterEffect, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
+import { documentTitleExtension } from "./cm/document-title";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
+import { revealHighlightExtension } from "./cm/reveal-highlight";
 import { resetTableDisplaySettingsEffect, setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./cm/table-display-settings";
 import { tableBlockPasteExtension } from "./cm/table-block-paste";
 import { markdownEditorTheme } from "./cm/theme";
@@ -26,6 +28,10 @@ export type LiveMarkdownEditorProps = {
   /** 受控换文件的判据：只有它变了才做全量替换，内容变化不触发（否则每次自己的输入都会把光标打回去）。 */
   documentKey: string;
   initialContent: string;
+  /** 只读显示在文档属性之前，不写入 Markdown 源码。 */
+  documentTitle?: string;
+  /** 确认标题编辑后重命名磁盘文件；返回 false 时恢复原文件名。 */
+  onDocumentTitleChange?: (nextTitle: string) => Promise<boolean>;
   /** 用于解析 Markdown 图片的相对路径。 */
   markdownSourcePath?: string;
   readOnly?: boolean;
@@ -257,13 +263,14 @@ function initialEditorSelection(content: string) {
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
-  { documentKey, initialContent, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
+  { documentKey, initialContent, documentTitle, onDocumentTitleChange, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
+  const documentTitleCompartment = useRef(new Compartment()).current;
   const livePreviewCompartment = useRef(new Compartment()).current;
   const linkInteractionCompartment = useRef(new Compartment()).current;
   // mermaid 的块级装饰带着深浅色：主题变了图要重画，
@@ -279,6 +286,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const onRequestSaveRef = useRef(onRequestSave);
   const onImportImageRef = useRef(onImportImage);
   const onOpenLinkRef = useRef(onOpenLink);
+  const onDocumentTitleChangeRef = useRef(onDocumentTitleChange);
   const openLinksOnClickRef = useRef(openLinksOnClick);
   const onTableContextChangeRef = useRef(onTableContextChange);
   const tableDefaultWidthModeRef = useRef(tableDefaultWidthMode);
@@ -289,9 +297,11 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   onRequestSaveRef.current = onRequestSave;
   onImportImageRef.current = onImportImage;
   onOpenLinkRef.current = onOpenLink;
+  onDocumentTitleChangeRef.current = onDocumentTitleChange;
   openLinksOnClickRef.current = openLinksOnClick;
   onTableContextChangeRef.current = onTableContextChange;
   tableDefaultWidthModeRef.current = tableDefaultWidthMode;
+  const documentTitleEditable = !readOnly && Boolean(onDocumentTitleChange);
 
   const debounceRef = useRef<number | null>(null);
   // 首个 documentKey 已经由 initialContent 建进 state，不能在 mount 后再替换一次。
@@ -396,6 +406,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 面板挂到顶部，配合 theme 里的绝对定位浮在右上角，不挤压正文布局。
       search({ top: true }),
       highlightSelectionMatches(),
+      revealHighlightExtension,
       keymap.of([
         {
           key: "Mod-s",
@@ -451,6 +462,12 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
       markdown({ base: livePreviewMarkdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
       livePreviewCompartment.of(livePreviewPlugin),
+      documentTitleCompartment.of(documentTitleExtension(
+        documentTitle,
+        documentTitleEditable,
+        (nextTitle) => onDocumentTitleChangeRef.current?.(nextTitle) ?? Promise.resolve(false),
+        () => viewRef.current?.dispatch({ effects: renderFrontmatterEffect.of() }),
+      )),
       frontmatterCompartment.of(frontmatterBlockExtension(!readOnly)),
       mermaidCompartment.of(mermaidBlockExtension(isDark, !readOnly)),
       imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
@@ -553,6 +570,17 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   useEffect(() => {
     viewRef.current?.dispatch({ effects: linkInteractionCompartment.reconfigure(createLinkInteractionExtension()) });
   }, [createLinkInteractionExtension, linkInteractionCompartment]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: documentTitleCompartment.reconfigure(documentTitleExtension(
+        documentTitle,
+        documentTitleEditable,
+        (nextTitle) => onDocumentTitleChangeRef.current?.(nextTitle) ?? Promise.resolve(false),
+        () => viewRef.current?.dispatch({ effects: renderFrontmatterEffect.of() }),
+      )),
+    });
+  }, [documentTitle, documentTitleCompartment, documentTitleEditable]);
 
   // 主题热替换：只换 compartment 内容，view 保持不变，所以光标和 undo 历史都在。
   useEffect(() => {

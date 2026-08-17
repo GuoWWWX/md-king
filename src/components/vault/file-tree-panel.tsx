@@ -29,6 +29,12 @@ type FileTreePanelProps = {
   className?: string;
 };
 
+function useStableCallback<Args extends unknown[], Result>(callback: (...args: Args) => Result) {
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+  return useCallback((...args: Args) => callbackRef.current(...args), []);
+}
+
 type VisibleRow = {
   entry: VaultEntry;
   depth: number;
@@ -1103,6 +1109,21 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     return { rows: result, matchCount: matches };
   }, [entries, expandedDirs, keyword, manualOrder, sortMode]);
 
+  // 节点只在自己的可见状态变化时重渲染；回调始终转发到父组件本轮的最新逻辑。
+  const nodeToggle = useStableCallback(handleToggle);
+  const nodeSelect = useStableCallback(onOpenFile);
+  const nodePreviewImage = useStableCallback((entry: VaultEntry) => onOpenImage?.(entry));
+  const nodeAction = useStableCallback((action: FileTreeNodeAction, entry: VaultEntry) => { void handleNodeAction(action, entry); });
+  const nodeEntryClick = useStableCallback(handleEntryClick);
+  const nodePrepareContextMenu = useStableCallback(handlePrepareContextMenu);
+  const nodeCanStartDrag = useCallback(() => !marqueeCandidateRef.current?.active, []);
+  const nodeRenameSubmit = useStableCallback((entry: VaultEntry, nextName: string) => { void handleRenameSubmit(entry, nextName); });
+  const nodeRenameCancel = useCallback(() => setRenamingPath(undefined), []);
+  const nodeDropIntoDirectory = useStableCallback((sourcePath: string, target: VaultEntry, placement: Exclude<FileTreeDropPlacement, "root">) => {
+    const source = entries.find((entry) => entry.path === sourcePath);
+    if (source) void handleMoveEntry(source, target, placement);
+  });
+
   const body = (
     <div className={cn("mk-file-tree-panel mk-sidebar-panel flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-[8px]", className)}>
       <div className="shrink-0 space-y-1.5 border-b border-slate-200/80 p-1.5 dark:border-zinc-700">
@@ -1375,23 +1396,20 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
               selected={selectedEntryPaths.has(entry.path)}
               cut={clipboardEntry?.operation === "cut" && clipboardEntry.entries.some((clipboardItem) => clipboardItem.path === entry.path)}
               renaming={entry.path === renamingPath}
-              onToggle={handleToggle}
-              onSelect={onOpenFile}
-              onPreviewImage={onOpenImage}
-              onAction={handleNodeAction}
-              onEntryClick={handleEntryClick}
-              onPrepareContextMenu={handlePrepareContextMenu}
+              onToggle={nodeToggle}
+              onSelect={nodeSelect}
+              onPreviewImage={nodePreviewImage}
+              onAction={nodeAction}
+              onEntryClick={nodeEntryClick}
+              onPrepareContextMenu={nodePrepareContextMenu}
               marqueeSelecting={Boolean(marqueeRect)}
-              canStartDrag={() => !marqueeCandidateRef.current?.active}
+              canStartDrag={nodeCanStartDrag}
               nativeDragEnabled={!usePointerFileDrag}
               pointerDragging={pointerFileDrag?.sourcePath === entry.path}
               pointerDropPlacement={pointerFileDrag?.targetPath === entry.path && pointerFileDrag.placement !== "root" ? pointerFileDrag.placement : undefined}
-              onRenameSubmit={(target, nextName) => void handleRenameSubmit(target, nextName)}
-              onRenameCancel={() => setRenamingPath(undefined)}
-              onDropIntoDirectory={(sourcePath, target, placement) => {
-                const source = entries.find((entry) => entry.path === sourcePath);
-                if (source) void handleMoveEntry(source, target, placement);
-              }}
+              onRenameSubmit={nodeRenameSubmit}
+              onRenameCancel={nodeRenameCancel}
+              onDropIntoDirectory={nodeDropIntoDirectory}
             />
           ))
         )}

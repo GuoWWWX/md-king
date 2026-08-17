@@ -2,8 +2,8 @@ use crate::core::config::{load_config, save_config, MAX_RECENT_VAULTS};
 use crate::core::vault::{
     canonical_root, copy_entry, copy_external_file, create_entry, delete_entry, display_path,
     entry_absolute_path, import_image_data, import_image_from_path, list_entries, move_entry,
-    read_file, rename_entry, write_file, VaultEntry, VaultFileContent, VaultImageImport,
-    VaultListing, VaultWriteResult,
+    read_file, rename_entry, search_files, write_file, VaultEntry, VaultFileContent,
+    VaultImageImport, VaultListing, VaultSearchOptions, VaultSearchResponse, VaultWriteResult,
 };
 
 #[cfg(windows)]
@@ -51,6 +51,20 @@ pub async fn read_vault_file(root: String, path: String) -> Result<VaultFileCont
     })
     .await
     .map_err(|error| format!("LOCKED|读取文件任务失败：{error}"))?
+}
+
+#[tauri::command]
+pub async fn search_vault(
+    root: String,
+    query: String,
+    options: VaultSearchOptions,
+) -> Result<VaultSearchResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = resolve_root(&root)?;
+        search_files(&root, &query, &options)
+    })
+    .await
+    .map_err(|error| format!("LOCKED|搜索文件任务失败：{error}"))?
 }
 
 #[tauri::command]

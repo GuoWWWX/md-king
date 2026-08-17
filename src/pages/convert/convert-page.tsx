@@ -1,6 +1,7 @@
 import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Trash2 } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
+import { basename, dirname } from "@tauri-apps/api/path";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { ConversionInputCard, type ConversionInputCardHandle, type EditorContentWidthMode } from "@/components/convert/conversion-input-card";
@@ -22,7 +23,7 @@ import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { actionableConversionWarnings, buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles } from "@/lib/tauri";
+import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles, selectMarkdownSavePath } from "@/lib/tauri";
 import { parseVaultError, userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -30,9 +31,11 @@ import { registerVaultContentSink } from "@/hooks/use-open-vault-file";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { isImageDropPath, useTauriFileDrop } from "@/hooks/use-tauri-file-drop";
 import { imageFileExtension, markdownImageReference } from "@/lib/image-files";
+import { markdownFileAccept, preserveSupportedTextExtension, readMarkdownFile, stripSupportedTextExtension } from "@/lib/markdown-files";
 import { inlineMermaidImages } from "@/lib/mermaid-export";
+import { vaultAbsolutePath } from "@/lib/vault-clipboard";
 import { useVaultStore } from "@/stores/vault-store";
-import { importVaultImageData, importVaultImageFromPath, readVaultFile, resolveVaultImageSource, writeVaultFile } from "@/lib/vault";
+import { importVaultImageData, importVaultImageFromPath, readVaultFile, renameVaultEntry, resolveVaultImageSource, showInExplorer, writeVaultFile } from "@/lib/vault";
 import { DocumentTabBar, type DocumentPageTab } from "@/components/editor/document-tab-bar";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -92,7 +95,7 @@ function clampPreviewZoom(value: number) {
 }
 
 function stripMarkdownExtension(value: string) {
-  return value.replace(/\.(?:md|markdown)$/i, "");
+  return stripSupportedTextExtension(value);
 }
 
 function isAbsoluteFilePath(path: string) {
@@ -116,11 +119,30 @@ type SaveableVaultTab = DocumentTab & {
   modifiedMs: number;
 };
 
+type SaveableExternalTab = DocumentTab & {
+  kind: "vault";
+  absolutePath: string;
+  eol: VaultEol;
+  hasBom: boolean;
+  modifiedMs: number;
+};
+
 function canSaveVaultTab(tab: DocumentTab | undefined, vaultRoot: string | undefined): tab is SaveableVaultTab {
   return Boolean(
     tab?.kind === "vault"
     && vaultRoot
     && tab.path
+    && !isAbsoluteFilePath(tab.path)
+    && tab.eol
+    && tab.hasBom !== undefined
+    && tab.modifiedMs !== undefined,
+  );
+}
+
+function canSaveExternalTab(tab: DocumentTab | undefined): tab is SaveableExternalTab {
+  return Boolean(
+    tab?.kind === "vault"
+    && tab.absolutePath
     && tab.eol
     && tab.hasBom !== undefined
     && tab.modifiedMs !== undefined,
@@ -310,6 +332,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const openScratchTab = useDocumentTabsStore((state) => state.openScratchTab);
   const updateTabContent = useDocumentTabsStore((state) => state.updateTabContent);
   const markTabClean = useDocumentTabsStore((state) => state.markTabClean);
+  const markTabSavedAs = useDocumentTabsStore((state) => state.markTabSavedAs);
   const openVaultTab = useDocumentTabsStore((state) => state.openVaultTab);
   const previewVisible = useVaultStore((state) => state.previewVisible);
   const setPreviewVisible = useVaultStore((state) => state.setPreviewVisible);
@@ -326,6 +349,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   // 正文的唯一来源是活动标签。revision 只在外部灌入内容时递增，
   // 用户逐字输入不动它——每次内容变化都让编辑器全量替换会打断输入、丢光标。
   const markdown = isImageTab ? "" : activeTab?.content ?? "";
+  const documentTitle = isImageTab ? undefined : activeTab?.title;
   // 预览会完整解析并分页，长文档输入时允许它在编辑器更新后追赶；
   // 保存、导出、文件名推导仍必须使用 markdown，不能因此拿到旧内容。
   const deferredPreviewMarkdown = useDeferredValue(markdown);
@@ -333,7 +357,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const showPreviewPanel = isDocumentWorkspace && !isImageTab && previewVisible && !isNarrow && !previewPausedForLongDocument;
   const markdownSourcePath = isImageTab ? undefined : activeTab?.absolutePath;
   const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
-  const canSaveActiveDocument = canSaveVaultTab(activeTab, vaultRoot);
+  const canSaveActiveDocument = Boolean(activeTab && activeTab.kind !== "image");
+  const canAutoSaveActiveDocument = canSaveVaultTab(activeTab, vaultRoot) || canSaveExternalTab(activeTab);
   const [activeImageSource, setActiveImageSource] = useState<string>();
   const [readingMode, setReadingMode] = useState(false);
   const [contentWidthMode, setContentWidthMode] = useState<EditorContentWidthMode>(() => {
@@ -341,12 +366,16 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       const savedMode = window.localStorage.getItem(editorContentWidthModeStorageKey);
       if (savedMode === "compact") return "compact";
       // 旧版只保存 true/false：原紧凑模式就是现在的中等宽度。
-      return savedMode === "medium" || savedMode === "true" ? "medium" : "wide";
+      if (savedMode === "medium" || savedMode === "true") return "medium";
+      if (savedMode === "wide" || savedMode === "false") return "wide";
+      return "compact";
     } catch {
-      return "wide";
+      return "compact";
     }
   });
   const conversionInputRef = useRef<ConversionInputCardHandle>(null);
+  const browserFileInputRef = useRef<HTMLInputElement>(null);
+  const browserBatchInputRef = useRef<HTMLInputElement>(null);
   const [globalTableWidthMode, setGlobalTableWidthMode] = useState<TableWidthMode>("content");
   const [tableDisplayContext, setTableDisplayContext] = useState<TableDisplayContext>({
     tableFrom: null,
@@ -539,16 +568,122 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     }
   }
 
+  async function writeTabToAbsolutePath(tab: DocumentTab, absolutePath: string, saveAs: boolean, silent = false) {
+    if (saveInFlightRef.current) return false;
+    saveInFlightRef.current = true;
+    const isCurrentTab = () => useDocumentTabsStore.getState().activeTabId === tab.id;
+    if (isCurrentTab()) setSaveState("saving");
+    try {
+      const root = await dirname(absolutePath);
+      const fileName = await basename(absolutePath);
+      const eol = tab.eol ?? "lf";
+      const hasBom = tab.hasBom ?? false;
+      const saved = await writeVaultFile({
+        root,
+        path: fileName,
+        content: tab.content,
+        eol,
+        hasBom,
+        expectedModifiedMs: saveAs ? undefined : tab.modifiedMs,
+        allowEmpty: true,
+      });
+      if (saveAs) {
+        markTabSavedAs(tab.id, {
+          path: absolutePath,
+          absolutePath,
+          title: fileName,
+          eol,
+          hasBom,
+          modifiedMs: saved.modifiedMs,
+        });
+        setOutputNameEdited(false);
+      } else {
+        markTabClean(tab.id, saved.modifiedMs);
+      }
+      if (isCurrentTab()) setSaveState("saved");
+      if (!silent) toast.success(`文档已保存：${fileName}`);
+      return true;
+    } catch (error) {
+      const { code, message } = parseVaultError(error, "保存文档失败");
+      if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
+      toast.error(message);
+      return false;
+    } finally {
+      saveInFlightRef.current = false;
+    }
+  }
+
+  async function saveDocumentTab(tab: DocumentTab, silent = false) {
+    if (canSaveVaultTab(tab, vaultRoot)) return saveVaultTab(tab, silent);
+    if (canSaveExternalTab(tab)) {
+      return writeTabToAbsolutePath(tab, tab.absolutePath, false, silent);
+    }
+
+    try {
+      const selectedPath = await selectMarkdownSavePath(tab.title);
+      if (!selectedPath) return false;
+      return writeTabToAbsolutePath(tab, selectedPath, true, silent);
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "选择保存路径失败"));
+      return false;
+    }
+  }
+
   async function saveActiveDocument(silent = false) {
-    return activeTab ? saveVaultTab(activeTab, silent) : false;
+    return activeTab ? saveDocumentTab(activeTab, silent) : false;
+  }
+
+  async function renameActiveDocument(nextTitle: string) {
+    const root = useVaultStore.getState().vaultRoot;
+    const currentTabId = useDocumentTabsStore.getState().activeTabId;
+    const tab = useDocumentTabsStore.getState().tabs.find((item) => item.id === currentTabId);
+    if (!tab || tab.kind === "image") return false;
+
+    const nextBaseName = stripSupportedTextExtension(nextTitle.trim());
+    if (!nextBaseName) return false;
+    if (nextBaseName === stripSupportedTextExtension(tab.title)) return true;
+    const nextName = preserveSupportedTextExtension(tab.title, nextBaseName);
+    if (tab.kind === "scratch") {
+      useDocumentTabsStore.getState().renameTab(tab.id, { title: nextName });
+      setOutputNameEdited(false);
+      return true;
+    }
+    if (!root || !tab.path) return false;
+    if (saveInFlightRef.current) {
+      toast.info("文档正在保存，请稍后再重命名");
+      return false;
+    }
+
+    saveInFlightRef.current = true;
+    try {
+      const previousPath = tab.path;
+      const renamed = await renameVaultEntry(root, previousPath, nextName);
+      const absolutePath = vaultAbsolutePath(root, renamed.path);
+      useDocumentTabsStore.getState().renameTab(tab.id, {
+        path: renamed.path,
+        absolutePath,
+        title: renamed.name,
+      });
+      useVaultStore.setState((state) => state.vaultRoot === root ? {
+        entries: state.entries.map((entry) => entry.path === previousPath ? renamed : entry),
+        activeFilePath: state.activeFilePath === previousPath ? renamed.path : state.activeFilePath,
+      } : {});
+      toast.success(`已重命名为 ${renamed.name}`);
+      return true;
+    } catch (error) {
+      toast.error(parseVaultError(error, "重命名失败").message);
+      return false;
+    } finally {
+      saveInFlightRef.current = false;
+    }
   }
 
   useEffect(() => {
-    if (!appConfig?.autoSave || !activeTab?.dirty || !canSaveActiveDocument) return undefined;
+    if (!appConfig?.autoSave || !activeTab?.dirty || !canAutoSaveActiveDocument) return undefined;
     const delay = Math.min(10_000, Math.max(300, appConfig.autoSaveDelayMs || 1000));
     const timer = window.setTimeout(() => void saveActiveDocument(true), delay);
     return () => window.clearTimeout(timer);
-  }, [activeTab?.dirty, activeTab?.id, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canSaveActiveDocument, markdown]);
+  }, [activeTab?.dirty, activeTab?.id, activeTab?.path, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canAutoSaveActiveDocument, markdown]);
 
   async function copyActiveDocumentPath(path: string | undefined) {
     if (!path) return;
@@ -560,9 +695,12 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   }
 
   async function revealActiveDocument() {
-    if (!activeTab?.absolutePath) return;
+    const path = activeTab?.path && !isAbsoluteFilePath(activeTab.path) && vaultRoot
+      ? vaultAbsolutePath(vaultRoot, activeTab.path)
+      : activeTab?.absolutePath;
+    if (!path) return;
     try {
-      await revealOutputPath(activeTab.absolutePath);
+      await showInExplorer(path);
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "无法通过资源管理器打开文档"));
     }
@@ -576,7 +714,12 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     setPreviewPaperThemeOverride(previewPaperTheme === "dark" ? "light" : "dark");
   }
 
-  const autoOutputName = useMemo(() => buildDocxOutputName(markdown), [markdown]);
+  const autoOutputName = useMemo(
+    () => activeTab
+      ? buildDocxOutputNameFromPath(activeTab.path ?? activeTab.title)
+      : buildDocxOutputName(markdown),
+    [activeTab, markdown],
+  );
   const [outputNameDraft, setOutputNameDraft] = useState(() => buildDocxOutputName(""));
   const [outputNameEdited, setOutputNameEdited] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
@@ -704,6 +847,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       const id = openVaultTab({ path, absolutePath, title: path.split("/").pop() ?? path, content, eol, hasBom, modifiedMs });
       if (useDocumentTabsStore.getState().tabs.find((tab) => tab.id === id)?.dirty) setSaveState("dirty");
       setOutputNameEdited(false);
+      return id;
     });
     return () => registerVaultContentSink(undefined);
   }, [openVaultTab, setSaveState]);
@@ -711,6 +855,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   useEffect(() => {
     if (!outputNameEdited) setOutputNameDraft(autoOutputName);
   }, [autoOutputName, outputNameEdited]);
+
+  useEffect(() => {
+    setOutputNameEdited(false);
+  }, [activeTabId]);
 
   useEffect(() => {
     if (!isNarrow && previewExpanded && previewExpandedFromNarrowRef.current) {
@@ -787,15 +935,15 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   async function prepareCloseDocument(tab: DocumentTab) {
     if (!tab.dirty) return true;
-    if (appConfig?.autoSave && canSaveVaultTab(tab, vaultRoot)) {
-      return saveVaultTab(tab, true);
+    if (appConfig?.autoSave && (canSaveVaultTab(tab, vaultRoot) || canSaveExternalTab(tab))) {
+      return saveDocumentTab(tab, true);
     }
     return confirmCloseDocument(tab);
   }
 
   async function saveAndCloseDocument() {
     if (!closingDocumentTab) return;
-    if (await saveVaultTab(closingDocumentTab)) resolveCloseDocument(true);
+    if (await saveDocumentTab(closingDocumentTab)) resolveCloseDocument(true);
   }
 
   /// 从磁盘路径载入的文档。若这个路径已经在某个标签里开着就复用它，
@@ -951,7 +1099,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   function handleFileTextLoad(text: string, file: File) {
     // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
-    openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text });
+    openScratchTab({ title: file.name, content: text });
     setOutputNameEdited(false);
     toast.success(`已载入文件：${file.name}`);
   }
@@ -968,6 +1116,32 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     }
   }
 
+  async function handleBrowserFileLoad(files: File[]) {
+    const importedNames: string[] = [];
+    for (const file of files) {
+      try {
+        const { text } = await readMarkdownFile(file);
+        openScratchTab({ title: file.name, content: text });
+        importedNames.push(file.name);
+      } catch (error) {
+        toast.error(userFacingErrorMessage(error, `无法读取 ${file.name}`));
+      }
+    }
+    if (importedNames.length === 0) return;
+    setOutputNameEdited(false);
+    toast.success(importedNames.length === 1 ? `已载入文件：${importedNames[0]}` : `已载入 ${importedNames.length} 个文件`);
+  }
+
+  function handleImportFileRequest() {
+    if (isTauriEnvironment()) return handleNativeMarkdownFileLoad();
+    browserFileInputRef.current?.click();
+  }
+
+  function handleBatchImportRequest() {
+    if (isTauriEnvironment()) return runBatchImport();
+    browserBatchInputRef.current?.click();
+  }
+
   async function handleReadClipboard() {
     if (!navigator.clipboard?.readText) {
       toast.error("当前环境不支持读取剪贴板，请手动粘贴 Markdown 内容");
@@ -976,7 +1150,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       const text = await navigator.clipboard.readText();
       // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
-      openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text });
+      openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text, dirty: true });
       setOutputNameEdited(false);
     } catch (error) {
       toast.error(clipboardReadErrorMessage(error));
@@ -1193,22 +1367,47 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   }
 
   const documentTabs = (
-    <DocumentTabBar
-      className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78"
-      onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
-      onImportFile={isTauriEnvironment() ? handleNativeMarkdownFileLoad : undefined}
-      onBatchImport={isTauriEnvironment() ? runBatchImport : undefined}
-      onPasteClipboard={handleReadClipboard}
-      onBeforeClose={prepareCloseDocument}
-      showDirtyIndicator={appConfig?.autoSave === false}
-      pageTabs={openWorkspaceTabs}
-      activePage={activePage}
-      onSelectDocument={() => setActivePage("convert")}
-      onSelectPage={setActivePage}
-      onClosePage={closePageTab}
-      onCloseOtherPageTabs={closeOtherPageTabs}
-      onCloseAllPageTabs={closeAllPageTabs}
-    />
+    <>
+      <input
+        ref={browserFileInputRef}
+        type="file"
+        accept={markdownFileAccept}
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          void handleBrowserFileLoad(files);
+        }}
+      />
+      <input
+        ref={browserBatchInputRef}
+        type="file"
+        accept={markdownFileAccept}
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          void handleBrowserFileLoad(files);
+        }}
+      />
+      <DocumentTabBar
+        className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78"
+        onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
+        onImportFile={handleImportFileRequest}
+        onBatchImport={handleBatchImportRequest}
+        onPasteClipboard={handleReadClipboard}
+        onBeforeClose={prepareCloseDocument}
+        showDirtyIndicator={appConfig?.autoSave === false}
+        pageTabs={openWorkspaceTabs}
+        activePage={activePage}
+        onSelectDocument={() => setActivePage("convert")}
+        onSelectPage={setActivePage}
+        onClosePage={closePageTab}
+        onCloseOtherPageTabs={closeOtherPageTabs}
+        onCloseAllPageTabs={closeAllPageTabs}
+      />
+    </>
   );
   const documentTabsPortal = titlebarTabHost ? createPortal(documentTabs, titlebarTabHost) : null;
 
@@ -1348,15 +1547,21 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           <DialogHeader>
             <DialogTitle>关闭未保存的文档</DialogTitle>
             <DialogDescription className="mt-1 text-xs leading-5">
-              {canSaveVaultTab(closingDocumentTab, vaultRoot)
+              {canSaveVaultTab(closingDocumentTab, vaultRoot) || canSaveExternalTab(closingDocumentTab)
                 ? `「${closingDocumentTab?.title}」有未保存的改动，是否在关闭前保存？`
                 : `「${closingDocumentTab?.title}」还没有保存到磁盘，关闭后内容会丢失。`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => resolveCloseDocument(false)}>取消</Button>
+            {closingDocumentTab?.kind === "scratch" ? (
+              <Button variant="outline" onClick={() => void saveAndCloseDocument()}>
+                <Save className="size-4" />保存
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => resolveCloseDocument(false)}>取消</Button>
+            )}
             <Button variant="destructive" onClick={() => resolveCloseDocument(true)}>不保存并关闭</Button>
-            {canSaveVaultTab(closingDocumentTab, vaultRoot) ? (
+            {canSaveVaultTab(closingDocumentTab, vaultRoot) || canSaveExternalTab(closingDocumentTab) ? (
               <PrimaryActionButton onClick={() => void saveAndCloseDocument()}>
                 <Save className="size-4" />保存并关闭
               </PrimaryActionButton>
@@ -1382,6 +1587,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 documentInfo={<DocumentInfoBar tab={activeTab} previewVisible={showPreviewPanel} previewPaused={previewPausedForLongDocument} onTogglePreview={handleTogglePreview} canSave={canSaveActiveDocument} onSave={() => void saveActiveDocument(false)} onCopyRelativePath={() => void copyActiveDocumentPath(activeTab?.path && !isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined)} onCopyAbsolutePath={() => void copyActiveDocumentPath(activeTab?.absolutePath ?? (activeTab?.path && isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined))} onRevealPath={() => void revealActiveDocument()} onLocatePath={(path) => useVaultStore.getState().requestLocatePath(path)} readingMode={readingMode} onToggleReadingMode={() => setReadingMode((value) => !value)} contentWidthMode={contentWidthMode} onCycleContentWidthMode={cycleContentWidthMode} tableDisplayContext={tableDisplayContext} onTableWidthModeChange={handleTableWidthModeChange} />}
                 hasDocument={Boolean(activeTab)}
                 markdown={markdown}
+                documentTitle={documentTitle}
+                onDocumentTitleChange={activeTab && activeTab.kind !== "image" ? renameActiveDocument : undefined}
                 documentKey={documentKey}
                 documentTabId={activeTabId}
                 markdownSourcePath={markdownSourcePath}

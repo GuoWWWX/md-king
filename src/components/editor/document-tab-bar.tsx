@@ -1,7 +1,9 @@
-import { ChevronRight, FileText, FileType2, ImageIcon, X, Copy, type LucideIcon } from "lucide-react";
+import { ChevronRight, ClipboardPaste, Files, FileText, FileType2, FileUp, ImageIcon, Plus, X, Copy, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ContextMenu } from "radix-ui";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { isTauriEnvironment } from "@/lib/tauri";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { cn } from "@/lib/utils";
@@ -34,7 +36,7 @@ type DocumentTabBarProps = {
   className?: string;
 };
 
-export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageTabs = [], activePage = "convert", onSelectDocument, onSelectPage, onClosePage, onCloseOtherPageTabs, onCloseAllPageTabs, trailing, className }: DocumentTabBarProps) {
+export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, onBeforeClose, showDirtyIndicator = true, pageTabs = [], activePage = "convert", onSelectDocument, onSelectPage, onClosePage, onCloseOtherPageTabs, onCloseAllPageTabs, trailing, className }: DocumentTabBarProps) {
   const tabs = useDocumentTabsStore((state) => state.tabs);
   const activeTabId = useDocumentTabsStore((state) => state.activeTabId);
   const setActiveTab = useDocumentTabsStore((state) => state.setActiveTab);
@@ -253,6 +255,7 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
 
   return (
     <div className={cn("mk-document-tab-bar flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
+      <span className="mx-1 h-4 w-px shrink-0 bg-slate-200 dark:bg-zinc-700" aria-hidden />
       <div
         ref={listRef}
         className="scrollbar-none flex min-w-0 flex-1 cursor-default select-none items-center gap-1 overflow-x-auto overflow-y-hidden"
@@ -266,7 +269,7 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
         onDoubleClick={handleTabListDoubleClick}
       >
         {tabs.length === 0 && pageTabs.length === 0 ? (
-          <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或新建一个</span>
+          <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或通过 + 导入</span>
         ) : (
           <>
             {tabs.map((tab) => (
@@ -303,6 +306,40 @@ export function DocumentTabBar({ onBeforeClose, showDirtyIndicator = true, pageT
         )}
         <span className="min-w-0 flex-1 self-stretch" aria-hidden />
       </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-8 shrink-0 rounded-none border-0 bg-transparent shadow-none text-slate-500 hover:bg-transparent hover:text-slate-950 active:bg-transparent aria-expanded:bg-transparent data-[state=open]:bg-transparent focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
+            title="导入文档"
+            tooltipSide="bottom"
+            aria-label="导入文档"
+          >
+            <Plus className="size-4" strokeWidth={2.5} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-36 p-1.5">
+          {onImportFile ? (
+            <DropdownMenuItem onSelect={() => void Promise.resolve(onImportFile())}>
+              <FileUp className="size-4 text-[var(--app-primary)]" />
+              选择文件
+            </DropdownMenuItem>
+          ) : null}
+          {onBatchImport ? (
+            <DropdownMenuItem onSelect={() => void Promise.resolve(onBatchImport())}>
+              <Files className="size-4 text-[var(--app-primary)]" />
+              批量导入
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem onSelect={() => void Promise.resolve(onPasteClipboard())}>
+            <ClipboardPaste className="size-4 text-[var(--app-primary)]" />
+            粘贴剪贴板
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {trailing}
 
@@ -417,7 +454,9 @@ function DocumentTabItem({ tab, active, tabCount, showDirtyIndicator, onSelect, 
   const absolutePath = tab.absolutePath ?? (tab.path && isAbsoluteFilePath(tab.path) ? tab.path : undefined);
   // 脏标记平时是个圆点，鼠标移到它上面才变成关闭叉——VS Code 的做法，
   // 既能一眼看出未保存，又不必为关闭按钮单独留位置。
-  const hasManualUnsavedChanges = showDirtyIndicator && tab.dirty;
+  // 临时文档没有可供自动保存的磁盘路径，因此即使全局启用了自动保存，
+  // 仍必须显示未保存圆点，直到用户主动选择路径保存。
+  const hasManualUnsavedChanges = tab.dirty && (showDirtyIndicator || tab.kind === "scratch");
   const showDot = hasManualUnsavedChanges && !hoveringClose;
 
   // 标题栏里的 Portal 菜单在部分桌面 WebView 中只会留下 click 或 select 其中一个

@@ -16,6 +16,13 @@ test("解析表格单元格的粗体、斜体、删除线、行内代码和链�
   ]);
 });
 
+test("解析闭合星号后紧邻正文的宽松加粗", () => {
+  assert.deepEqual(parseTableInlineMarkdown("**实施单元：**集控"), [
+    { type: "element", tag: "strong", children: [{ type: "text", value: "实施单元：" }] },
+    { type: "text", value: "集控" },
+  ]);
+});
+
 test("HTML 与危险链接不会成为可执行节点", () => {
   const nodes = parseTableInlineMarkdown("<img src=x onerror=alert(1)> [危险](javascript:alert(1))");
   assert.equal(JSON.stringify(nodes).includes("img"), true);
@@ -45,9 +52,49 @@ test("支持粗斜体嵌套、自动链接和安全图片", () => {
 
 test("支持 Obsidian 文档引用和直接粘贴的外链", () => {
   assert.deepEqual(parseTableInlineMarkdown("[[笔记/说明.md|技术说明]] https://example.com/docs"), [
-    { type: "element", tag: "a", href: "笔记/说明.md", children: [{ type: "text", value: "技术说明" }] },
+    {
+      type: "element",
+      tag: "a",
+      href: "笔记/说明.md",
+      wikilinkTarget: "笔记/说明.md",
+      children: [{ type: "text", value: "技术说明" }],
+    },
     { type: "text", value: " " },
     { type: "element", tag: "a", href: "https://example.com/docs", children: [{ type: "text", value: "https://example.com/docs" }] },
+  ]);
+});
+
+test("无别名的 Obsidian 文档引用只显示最后的文件名", () => {
+  assert.deepEqual(
+    parseTableInlineMarkdown("[[../10-AI应用开发/08-项目实战/07-项目-业务Agent系统]]"),
+    [{
+      type: "element",
+      tag: "a",
+      href: "../10-AI应用开发/08-项目实战/07-项目-业务Agent系统",
+      wikilinkTarget: "../10-AI应用开发/08-项目实战/07-项目-业务Agent系统",
+      children: [{ type: "text", value: "07-项目-业务Agent系统" }],
+    }],
+  );
+});
+
+test("显式别名即使等于完整路径也保持用户写法", () => {
+  assert.deepEqual(parseTableInlineMarkdown("[[笔记/说明.md|笔记/说明.md]]"), [{
+    type: "element",
+    tag: "a",
+    href: "笔记/说明.md",
+    wikilinkTarget: "笔记/说明.md",
+    children: [{ type: "text", value: "笔记/说明.md" }],
+  }]);
+});
+
+test("普通 Markdown 链接不会被标记为 Obsidian 文档引用", () => {
+  assert.deepEqual(parseTableInlineMarkdown("[说明](笔记/说明.md)"), [
+    {
+      type: "element",
+      tag: "a",
+      href: "%E7%AC%94%E8%AE%B0/%E8%AF%B4%E6%98%8E.md",
+      children: [{ type: "text", value: "说明" }],
+    },
   ]);
 });
 

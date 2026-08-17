@@ -1,5 +1,5 @@
 import type MarkdownIt from "markdown-it";
-import { parseObsidianWikilink } from "./document-links.ts";
+import { defaultObsidianWikilinkLabel, parseObsidianWikilink } from "./document-links.ts";
 
 /** 为 markdown-it 补上 Obsidian 的 `[[目标|显示名]]` 行内链接语法。 */
 export function obsidianWikilinkPlugin(markdown: MarkdownIt) {
@@ -20,7 +20,9 @@ export function obsidianWikilinkPlugin(markdown: MarkdownIt) {
       // 显示真实地址，而编辑器仍可使用显示名。
       open.meta = { mkWikilinkTarget: link.target };
       const text = state.push("text", "", 0);
-      text.content = link.label;
+      text.content = source.slice(2, -2).includes("|")
+        ? link.label
+        : defaultObsidianWikilinkLabel(link.target);
       state.push("link_close", "a", -1);
     }
     state.pos = close + 2;

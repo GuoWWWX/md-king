@@ -102,6 +102,7 @@ struct PageSettingsConfig {
 #[derive(Clone)]
 struct TableStyleConfig {
     width_twips: u32,
+    fit_to_page_width: bool,
     layout: String,
     horizontal_align: String,
     column_width_percentages: Option<[f64; 3]>,
@@ -1314,6 +1315,7 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
 
     Some(TableStyleConfig {
         width_twips,
+        fit_to_page_width: fit_to_page,
         horizontal_align: read_style_string(table, "tableHorizontalAlign", "center"),
         column_width_percentages,
         layout: read_style_string(table, "tableLayout", "auto"),
@@ -2505,6 +2507,36 @@ fn normalize_docx(
             .by_index(index)
             .map_err(|error| format!("读取 DOCX 条目失败：{error}"))?;
         let name = file.name().to_string();
+
+        if name == "word/numbering.xml" {
+            has_numbering_xml = true;
+        } else if name == "[Content_Types].xml" {
+            has_content_types_xml = true;
+        } else if name == "word/_rels/document.xml.rels" {
+            has_document_rels_xml = true;
+        } else if name == "word/header-mdking.xml" {
+            has_header_xml = true;
+        } else if name == "word/footer-mdking.xml" {
+            has_footer_xml = true;
+        }
+
+        let rewrite = match name.as_str() {
+            "word/document.xml" => true,
+            "word/styles.xml" => apply_default_template_style || document_style.is_some(),
+            "word/numbering.xml" => heading_numbering.is_some(),
+            "word/settings.xml" => page_settings.is_some_and(|settings| settings.toc_enabled),
+            "[Content_Types].xml" | "word/_rels/document.xml.rels" => header_footer.is_some(),
+            "word/header-mdking.xml" => header_footer.is_some_and(page_settings_has_header),
+            "word/footer-mdking.xml" => header_footer.is_some_and(page_settings_has_footer),
+            _ => false,
+        };
+        if !rewrite {
+            writer
+                .raw_copy_file(file)
+                .map_err(|error| format!("复制 DOCX 条目失败：{error}"))?;
+            continue;
+        }
+
         let options = SimpleFileOptions::default().compression_method(file.compression());
         writer
             .start_file(&name, options)
@@ -2552,7 +2584,6 @@ fn normalize_docx(
             )
             .into_bytes();
         } else if name == "word/numbering.xml" {
-            has_numbering_xml = true;
             if let Some(heading_numbering) = heading_numbering {
                 let xml = String::from_utf8(data)
                     .map_err(|error| format!("解析 numbering.xml 失败：{error}"))?;
@@ -2564,28 +2595,24 @@ fn normalize_docx(
             data = ensure_toc_fields_update_on_open(&xml, page_settings).into_bytes();
         }
         if name == "[Content_Types].xml" {
-            has_content_types_xml = true;
             if let Some(settings) = header_footer {
                 let xml = String::from_utf8(data)
                     .map_err(|error| format!("解析 [Content_Types].xml 失败：{error}"))?;
                 data = ensure_header_footer_content_types_xml(&xml, settings).into_bytes();
             }
         } else if name == "word/_rels/document.xml.rels" {
-            has_document_rels_xml = true;
             if let Some(settings) = header_footer {
                 let xml = String::from_utf8(data)
                     .map_err(|error| format!("解析 document.xml.rels 失败：{error}"))?;
                 data = ensure_header_footer_relationships_xml(&xml, settings).into_bytes();
             }
         } else if name == "word/header-mdking.xml" {
-            has_header_xml = true;
             if let Some(settings) =
                 header_footer.filter(|settings| page_settings_has_header(settings))
             {
                 data = create_header_xml(settings).into_bytes();
             }
         } else if name == "word/footer-mdking.xml" {
-            has_footer_xml = true;
             if let Some(settings) =
                 header_footer.filter(|settings| page_settings_has_footer(settings))
             {
@@ -3208,7 +3235,91 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
         })
         .to_string();
 
+    let xml = localize_toc_heading(&xml);
+    let xml = populate_empty_toc_result(&xml, page_settings);
+
     ensure_page_break_after_toc(&xml)
+}
+
+fn localize_toc_heading(xml: &str) -> String {
+    let heading = Regex::new(
+        r#"(?s)(<w:pStyle\b[^>]*w:val="TOCHeading"[^>]*/>.*?<w:t(?:\s+[^>]*)?>).*?(</w:t>)"#,
+    )
+    .expect("valid TOC heading regex");
+    heading.replace(xml, "${1}目录${2}").to_string()
+}
+
+fn populate_empty_toc_result(xml: &str, page_settings: &PageSettingsConfig) -> String {
+    let depth = parse_toc_depth(&page_settings.toc_depth).unwrap_or(3);
+    let entries = toc_cached_entries_xml(xml, usize::from(depth));
+    if entries.is_empty() {
+        return xml.to_string();
+    }
+
+    // Pandoc writes a valid TOC field but leaves its cached result empty. Word usually
+    // refreshes that field; WPS and some Word settings do not, so keep a visible result
+    // between the field separators without replacing an existing generated TOC.
+    let empty_toc = Regex::new(
+        r#"(?s)(<w:p(?:\s[^>]*)?>(?:<w:pPr(?:\s[^>]*)?>.*?</w:pPr>)?<w:r(?:\s[^>]*)?>)(.*?<w:fldChar\b[^>]*w:fldCharType="begin"[^>]*/>.*?<w:instrText\b[^>]*>\s*TOC\b.*?</w:instrText>.*?<w:fldChar\b[^>]*w:fldCharType="separate"[^>]*/>)\s*(<w:fldChar\b[^>]*w:fldCharType="end"[^>]*/>)(</w:r></w:p>)"#,
+    )
+    .expect("valid empty TOC field regex");
+    if !empty_toc.is_match(xml) {
+        return xml.to_string();
+    }
+
+    empty_toc
+        .replace(xml, |captures: &Captures| {
+            format!(
+                "{}{}{}{}{}",
+                captures.get(1).map(|value| value.as_str()).unwrap_or(""),
+                captures.get(2).map(|value| value.as_str()).unwrap_or(""),
+                "</w:r></w:p>",
+                entries,
+                format!(
+                    "<w:p><w:r>{}{}",
+                    captures.get(3).map(|value| value.as_str()).unwrap_or(""),
+                    captures.get(4).map(|value| value.as_str()).unwrap_or("")
+                )
+            )
+        })
+        .to_string()
+}
+
+fn toc_cached_entries_xml(xml: &str, depth: usize) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#).expect("valid paragraph regex");
+    let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading([1-6])"[^>]*/>"#)
+        .expect("valid heading style regex");
+
+    paragraph
+        .find_iter(xml)
+        .filter_map(|paragraph_match| {
+            let paragraph_xml = paragraph_match.as_str();
+            let level = heading_style
+                .captures(paragraph_xml)?
+                .get(1)?
+                .as_str()
+                .parse::<usize>()
+                .ok()?;
+            if level > depth {
+                return None;
+            }
+            let text = paragraph_plain_text(paragraph_xml);
+            if text.trim().is_empty() {
+                return None;
+            }
+            let indent = (level.saturating_sub(1) * 420) as u32;
+            let indent_xml = if indent == 0 {
+                String::new()
+            } else {
+                format!(r#"<w:ind w:left="{indent}" />"#)
+            };
+            Some(format!(
+                r#"<w:p><w:pPr><w:spacing w:after="80" />{indent_xml}</w:pPr><w:r><w:rPr><w:sz w:val="21" /><w:szCs w:val="21" /></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+                escape_xml_text(text.trim())
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn ensure_toc_fields_update_on_open(
@@ -5306,10 +5417,32 @@ fn capture_paragraph_style_id(paragraph_xml: &str) -> Option<String> {
 }
 
 fn strip_manual_heading_number(paragraph_xml: &str) -> String {
+    let full_text = paragraph_plain_text(paragraph_xml);
+    let stripped_text = strip_heading_number_prefix(&full_text);
+    if stripped_text == full_text {
+        return paragraph_xml.to_string();
+    }
+
+    let mut prefix_chars = full_text
+        .chars()
+        .count()
+        .saturating_sub(stripped_text.chars().count());
     let text = Regex::new(r#"(<w:t(?:\s+[^>]*)?>)([^<]*)(</w:t>)"#).expect("valid text regex");
-    text.replace(paragraph_xml, |captures: &Captures| {
-        let stripped = strip_heading_number_prefix(&captures[2]);
-        format!("{}{}{}", &captures[1], stripped, &captures[3])
+    text.replace_all(paragraph_xml, |captures: &Captures| {
+        if prefix_chars == 0 {
+            return captures[0].to_string();
+        }
+        let decoded = decode_basic_xml_entities(&captures[2]);
+        let text_chars = decoded.chars().count();
+        let remove = prefix_chars.min(text_chars);
+        prefix_chars -= remove;
+        let remaining = decoded.chars().skip(remove).collect::<String>();
+        format!(
+            "{}{}{}",
+            &captures[1],
+            escape_xml_text(&remaining),
+            &captures[3]
+        )
     })
     .to_string()
 }
@@ -5354,6 +5487,7 @@ fn force_table_width_percent(xml: &str) -> String {
 fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleConfig {
     TableStyleConfig {
         width_twips: content_width_twips.unwrap_or(8640),
+        fit_to_page_width: true,
         layout: "auto".to_string(),
         horizontal_align: "center".to_string(),
         column_width_percentages: None,
@@ -5373,7 +5507,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
         cell_wrap: true,
         repeat_header_on_each_page: true,
         header: TableCellStyleConfig {
-            chinese_font: "微软雅黑".to_string(),
+            chinese_font: "宋体".to_string(),
             latin_font: "Times New Roman".to_string(),
             font_size: 10.5,
             bold: true,
@@ -5386,7 +5520,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
             border_width: 1.0,
         },
         body: TableCellStyleConfig {
-            chinese_font: "微软雅黑".to_string(),
+            chinese_font: "宋体".to_string(),
             latin_font: "Times New Roman".to_string(),
             font_size: 10.5,
             bold: false,
@@ -5461,9 +5595,13 @@ fn normalize_table_properties(
                 Regex::new(r#"(?s)<w:tblBorders>.*?</w:tblBorders>|<w:(?:tblStyle|tblW|tblLayout|tblLook|jc)\b[^>]*/>"#)
                 .expect("valid table layout cleanup regex");
             let inner = removable.replace_all(&captures[1], "");
+            let preferred_width = if style.fit_to_page_width {
+                r#"<w:tblW w:type="pct" w:w="5000" />"#.to_string()
+            } else {
+                format!(r#"<w:tblW w:type="dxa" w:w="{}" />"#, style.width_twips)
+            };
             format!(
-                r#"<w:tblPr>{inner}<w:tblW w:type="dxa" w:w="{}" /><w:tblLayout w:type="{layout}" />{}{}</w:tblPr>"#,
-                style.width_twips,
+                r#"<w:tblPr>{inner}{preferred_width}<w:tblLayout w:type="{layout}" />{}{}</w:tblPr>"#,
                 table_alignment_xml(&style.horizontal_align),
                 table_borders_xml(style)
             )
@@ -6032,8 +6170,9 @@ mod tests {
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
-        normalize_template_style_xml, normalize_template_styles_xml, page_content_width_twips,
-        page_settings_config_from_value, pandoc_document_options_from_value, paragraph_shading_xml,
+        normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
+        page_content_width_twips, page_settings_config_from_value,
+        pandoc_document_options_from_value, paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
         read_style_fill, strip_heading_number_prefix, table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
@@ -6104,7 +6243,7 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(r#"<w:tblW w:type="dxa" w:w="8640" />"#));
+        assert!(output.contains(r#"<w:tblW w:type="pct" w:w="5000" />"#));
         assert!(output.contains(r#"<w:tblLayout w:type="autofit" />"#));
         assert!(output.contains("<w:tblBorders>"));
         assert!(!output.contains("<w:tblStyle"));
@@ -6121,6 +6260,12 @@ mod tests {
         );
         assert!(output.contains(r#"<w:jc w:val="left" />"#));
         assert!(output.contains(r#"<w:vAlign w:val="center" />"#));
+        assert_eq!(
+            output
+                .matches(r#"<w:rFonts w:ascii="Times New Roman" w:eastAsia="宋体" w:hAnsi="Times New Roman" />"#)
+                .count(),
+            2
+        );
         assert!(output.contains(r#"<w:b /><w:bCs /><w:sz w:val="21" /><w:szCs w:val="21" />"#));
         assert!(output.contains(
             r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:sz w:val="21" /><w:szCs w:val="21" />"#
@@ -6248,7 +6393,7 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(r#"<w:tblW w:type="dxa" w:w="13958" />"#));
+        assert!(output.contains(r#"<w:tblW w:type="pct" w:w="5000" />"#));
         assert!(output.contains(r#"<w:gridCol w:w="13958" />"#));
     }
 
@@ -6533,13 +6678,14 @@ mod tests {
 
     #[test]
     fn normalizes_default_body_style_to_songti_zero_spacing() {
-        let input = r#"<w:styles><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal" /><w:pPr><w:spacing w:after="120" w:line="420" w:lineRule="auto" /><w:ind w:firstLine="480" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:sz w:val="24" /></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Compact"><w:name w:val="Compact" /><w:pPr><w:spacing w:after="120" w:line="420" w:lineRule="auto" /></w:pPr></w:style></w:styles>"#;
+        let input = r#"<w:styles><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal" /><w:pPr><w:spacing w:after="120" w:line="420" w:lineRule="auto" /><w:ind w:firstLine="480" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:sz w:val="20" /></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Compact"><w:name w:val="Compact" /><w:pPr><w:spacing w:after="120" w:line="420" w:lineRule="auto" /></w:pPr></w:style></w:styles>"#;
 
         let output = normalize_default_report_styles_xml(input, &default_markdown_feature_config());
 
         assert!(output.contains(
             r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#
         ));
+        assert!(output.contains(r#"<w:sz w:val="24" /><w:szCs w:val="24" />"#));
         assert!(output
             .contains(r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" />"#));
         assert!(output.contains(r#"<w:ind w:firstLine="480" />"#));
@@ -7036,6 +7182,38 @@ mod tests {
     }
 
     #[test]
+    fn fills_empty_toc_result_with_visible_heading_entries() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": { "tocEnabled": true, "tocDepth": "1-2" }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true" /><w:instrText xml:space="preserve">TOC \o &quot;1-3&quot; \h \z \u</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>1. 项目 &amp; 范围</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1.1 目标</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading3" /></w:pPr><w:r><w:t>1.1.1 细节</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_toc_fields(input, &settings);
+
+        assert!(output.contains("<w:t>目录</w:t>"));
+        assert!(output.contains("1. 项目 &amp; 范围"));
+        assert!(output.contains("1.1 目标"));
+        assert!(!output.contains("<w:t xml:space=\"preserve\">1.1.1 细节</w:t>"));
+        assert_eq!(output.matches(r#"w:fldCharType="begin""#).count(), 1);
+        assert_eq!(output.matches(r#"w:fldCharType="end""#).count(), 1);
+    }
+
+    #[test]
+    fn keeps_existing_toc_result_content() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": { "tocEnabled": true, "tocDepth": "1-3" }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC \o &quot;1-3&quot;</w:instrText><w:fldChar w:fldCharType="separate" /><w:t>已有目录</w:t><w:fldChar w:fldCharType="end" /></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>新章节</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_toc_fields(input, &settings);
+
+        assert!(output.contains("<w:t>已有目录</w:t>"));
+        assert!(!output.contains("<w:t xml:space=\"preserve\">新章节</w:t>"));
+    }
+
+    #[test]
     fn preserves_standalone_manual_heading_number() {
         assert_eq!(strip_heading_number_prefix("第一章"), "第一章");
         assert_eq!(strip_heading_number_prefix("第一章 项目概览"), "项目概览");
@@ -7305,6 +7483,26 @@ mod tests {
         assert!(output.contains("<w:t>细节</w:t>"));
         assert!(!output.contains("<w:t>1. 背景</w:t>"));
         assert!(!output.contains("<w:t>1.1.1 细节</w:t>"));
+    }
+
+    #[test]
+    fn removes_heading_number_split_across_pandoc_runs() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t xml:space="preserve">1. </w:t></w:r><w:r><w:rPr><w:rFonts w:hint="eastAsia" /></w:rPr><w:t>项目 &amp; 范围</w:t></w:r></w:p></w:body></w:document>"#;
+        let mut config = default_report_heading_numbering_config();
+        config.mappings = default_heading_mappings();
+        let output = normalize_document_xml(
+            input,
+            true,
+            Some(&config),
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(!output.contains(">1. </w:t>"));
+        assert!(output.contains("<w:t xml:space=\"preserve\"></w:t>"));
+        assert!(output.contains("项目 &amp; 范围"));
     }
 
     #[test]

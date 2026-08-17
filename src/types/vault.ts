@@ -32,6 +32,31 @@ export type VaultFileContent = {
   size: number;
 };
 
+export type VaultSearchMatch = {
+  path: string;
+  name: string;
+  kind: "fileName" | "content";
+  line: number | null;
+  preview: string;
+  matchStart: number | null;
+  matchEnd: number | null;
+  previewMatchStart: number | null;
+  previewMatchEnd: number | null;
+};
+
+export type VaultSearchOptions = {
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  regexp: boolean;
+};
+
+export type VaultSearchResponse = {
+  results: VaultSearchMatch[];
+  truncated: boolean;
+  scannedFiles: number;
+  skippedFiles: number;
+};
+
 export type VaultWriteResult = {
   path: string;
   modifiedMs: number;
@@ -66,7 +91,8 @@ export type VaultErrorCode =
   | "EXISTS"
   | "LOCKED"
   | "NOT_FOUND"
-  | "INVALID_NAME";
+  | "INVALID_NAME"
+  | "INVALID_QUERY";
 
 export type VaultSaveState = "clean" | "dirty" | "saving" | "saved" | "error" | "conflict";
 

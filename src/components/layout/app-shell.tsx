@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAppStore } from "@/stores/app-store";
 import { useVaultStore } from "@/stores/vault-store";
@@ -16,6 +16,9 @@ import { useOpenVaultFile } from "@/hooks/use-open-vault-file";
 import { FILE_TREE_WIDTH_RANGE } from "@/stores/vault-store";
 import { useDocumentTabsStore } from "@/stores/document-tabs-store";
 import type { ThemeMode } from "@/types";
+import type { VaultSearchMatch } from "@/types/vault";
+import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
+import { markdownOutlineRevealEvent } from "@/lib/document-outline";
 
 type AppShellProps = {
   navigation: NavigationItem[];
@@ -28,6 +31,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   const fileTreeVisible = useVaultStore((state) => state.fileTreeVisible);
   const fileTreeWidth = useVaultStore((state) => state.fileTreeWidth);
   const previewVisible = useVaultStore((state) => state.previewVisible);
+  const vaultRoot = useVaultStore((state) => state.vaultRoot);
   const setFileTreeVisible = useVaultStore((state) => state.setFileTreeVisible);
   const setFileTreeWidth = useVaultStore((state) => state.setFileTreeWidth);
   const openVaultFile = useOpenVaultFile();
@@ -35,6 +39,18 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   const [documentDrawerOpen, setDocumentDrawerOpen] = useState(false);
   const [documentDrawerView, setDocumentDrawerView] = useState<DocumentDrawerView>("outline");
   const [documentDrawerWidth, setDocumentDrawerWidth] = useState(340);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const openGlobalSearch = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setGlobalSearchOpen(true);
+    };
+    window.addEventListener("keydown", openGlobalSearch, true);
+    return () => window.removeEventListener("keydown", openGlobalSearch, true);
+  }, []);
 
   // 页面标签和 Markdown 文档共用同一个工作台，文件树始终保持原位置。
   const showFileTree = fileTreeVisible;
@@ -79,6 +95,24 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
     await handleSetThemeMode(order[(currentIndex + 1) % order.length]);
   }
 
+  async function handleGlobalSearchSelect(result: VaultSearchMatch) {
+    setGlobalSearchOpen(false);
+    setActivePage("convert");
+    const tabId = await openVaultFile(result.path);
+    if (!tabId) return;
+
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, {
+        detail: {
+          tabId,
+          line: result.line ?? 1,
+          matchStart: result.kind === "content" ? result.matchStart ?? undefined : undefined,
+          matchEnd: result.kind === "content" ? result.matchEnd ?? undefined : undefined,
+        },
+      }));
+    });
+  }
+
   return (
     <div className="mk-app-bg flex h-screen overflow-hidden text-slate-950">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -88,7 +122,14 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           showDocumentDrawerControl
           documentDrawerOpen={documentDrawerOpen}
           onToggleDocumentDrawer={() => setDocumentDrawerOpen((open) => !open)}
-          documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 110) : 0}
+          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
+          documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 126) : 0}
+        />
+        <GlobalSearchDialog
+          open={globalSearchOpen}
+          root={vaultRoot}
+          onOpenChange={setGlobalSearchOpen}
+          onSelect={handleGlobalSearchSelect}
         />
         <div className="flex min-h-0 min-w-0 flex-1 gap-1 p-1">
           <ActivityBar

@@ -1,3 +1,5 @@
+import { findObsidianWikilinks } from "../../../lib/document-links.ts";
+
 export type TableAlignment = "none" | "left" | "center" | "right";
 
 export interface MarkdownTable {
@@ -37,9 +39,20 @@ function backslashRunLength(value: string, start: number): number {
   return end - start;
 }
 
+function obsidianWikilinkPipePositions(value: string): Set<number> {
+  const positions = new Set<number>();
+  for (const link of findObsidianWikilinks(value)) {
+    for (let index = link.from + 2; index < link.to - 2; index++) {
+      if (value[index] === "|") positions.add(index);
+    }
+  }
+  return positions;
+}
+
 /** 按 GFM 表格规则拆行：管道前连续反斜杠为奇数时转义，为偶数时仍是列边界。 */
 export function parseMarkdownTableRow(line: string): string[] {
   const cells: string[] = [];
+  const wikilinkPipes = obsidianWikilinkPipePositions(line);
   let cell = "";
   let sawDelimiter = false;
 
@@ -48,6 +61,11 @@ export function parseMarkdownTableRow(line: string): string[] {
     if (char === "\\") {
       const run = backslashRunLength(line, index);
       if (line[index + run] === "|") {
+        if (wikilinkPipes.has(index + run)) {
+          cell += `${"\\".repeat(run)}|`;
+          index += run + 1;
+          continue;
+        }
         if (run % 2 === 1) {
           cell += `${"\\".repeat(run - 1)}|`;
           index += run + 1;
@@ -65,6 +83,11 @@ export function parseMarkdownTableRow(line: string): string[] {
       continue;
     }
     if (char === "|") {
+      if (wikilinkPipes.has(index)) {
+        cell += char;
+        index++;
+        continue;
+      }
       cells.push(cell.trim());
       cell = "";
       sawDelimiter = true;
@@ -120,14 +143,15 @@ function normalizeCell(value: string): string {
   return value.replace(/\r\n?|\n/g, " ").trim();
 }
 
-/** GFM 表格的管道即使位于代码 span 内也必须转义，否则会被识别成列边界。 */
+/** 普通管道写回表格时需要转义；Obsidian 双链中的别名分隔符保持原样。 */
 export function serializeMarkdownTableCell(value: string): string {
   const normalized = normalizeCell(value);
+  const wikilinkPipes = obsidianWikilinkPipePositions(normalized);
   let result = "";
 
   for (let index = 0; index < normalized.length;) {
     const char = normalized[index];
-    if (char === "|") result += "\\|";
+    if (char === "|" && !wikilinkPipes.has(index)) result += "\\|";
     else result += char;
     index++;
   }

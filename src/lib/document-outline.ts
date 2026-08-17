@@ -11,6 +11,9 @@ export type MarkdownOutlineNode = MarkdownOutlineItem & {
 export type MarkdownOutlineRevealTarget = {
   tabId: string;
   line: number;
+  /** 全局正文搜索命中的 UTF-16 列范围；目录跳转不传。 */
+  matchStart?: number;
+  matchEnd?: number;
 };
 
 export const markdownOutlineRevealEvent = "md-king:reveal-markdown-heading";

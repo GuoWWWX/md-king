@@ -466,6 +466,43 @@
   background: transparent !important;
 }
 
+.mk-system-floating-dock-handle {
+  box-sizing: border-box;
+  border: 1px solid rgba(203, 213, 225, 0.9) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #475569 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18) !important;
+}
+
+.mk-system-floating-dock-handle[data-dock-side="left"] {
+  border-left: 0 !important;
+  border-radius: 0 5px 5px 0 !important;
+}
+
+.mk-system-floating-dock-handle[data-dock-side="right"] {
+  border-right: 0 !important;
+  border-radius: 5px 0 0 5px !important;
+}
+
+.mk-system-floating-dock-handle:hover,
+.mk-system-floating-dock-handle:active {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.dark .mk-system-floating-dock-handle {
+  border-color: #3f3f46 !important;
+  background: rgba(39, 39, 42, 0.96) !important;
+  color: #e4e4e7 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32) !important;
+}
+
+.dark .mk-system-floating-dock-handle:hover,
+.dark .mk-system-floating-dock-handle:active {
+  background: #27272a !important;
+  color: #ffffff !important;
+}
+
 .mk-floating-panel::before {
   content: none;
 }
@@ -804,7 +841,7 @@
 }
 
 /* Standard interactive surfaces use the same 5px corner radius across the app. */
-[data-slot="button"]:not(.rounded-full):not(.mk-floating-ball):not(.mk-system-floating-ball),
+[data-slot="button"]:not(.rounded-full):not(.mk-floating-ball):not(.mk-system-floating-ball):not(.mk-system-floating-dock-handle),
 [data-slot="input"],
 [data-slot="textarea"],
 [data-slot="select-trigger"],
@@ -870,6 +907,36 @@
 
 .dark :is(input, textarea):disabled::placeholder {
   color: #71717a !important;
+}
+
+.mk-global-search-input {
+  font-size: 12px !important;
+}
+
+.dark .mk-global-search-input:not(:disabled) {
+  background-color: transparent !important;
+}
+
+.mk-global-search-option {
+  border: 0 !important;
+  border-radius: 3px !important;
+  background-color: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px !important;
+}
+
+.mk-global-search-option:hover:not(:disabled) {
+  background-color: var(--app-control-hover);
+  color: var(--foreground);
+}
+
+.mk-global-search-option[aria-pressed="true"] {
+  background-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+}
+
+.mk-global-search-option[aria-pressed="true"]:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--primary) 22%, transparent);
 }
 
 .dark [data-slot="select-trigger"][data-disabled] {
@@ -1310,6 +1377,8 @@ select {
     color: #334155;
     -webkit-user-select: none;
     user-select: none;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 28px;
     /* 行高只有 28px，用 transition 会让快速滚动时留下拖影 */
     transition: background-color 120ms ease, opacity 120ms ease;
   }
@@ -1357,6 +1426,22 @@ select {
       box-shadow: inset 0 0 0 1px rgba(202, 138, 4, 0.45);
     }
     100% {
+      box-shadow: inset 0 0 0 1px transparent;
+    }
+  }
+
+  .mk-cm-reveal-highlight {
+    border-radius: 2px;
+    animation: mk-editor-search-locate 2.4s ease-out forwards;
+  }
+
+  @keyframes mk-editor-search-locate {
+    0%, 68% {
+      background: rgba(250, 204, 21, 0.42);
+      box-shadow: inset 0 0 0 1px rgba(202, 138, 4, 0.45);
+    }
+    100% {
+      background: transparent;
       box-shadow: inset 0 0 0 1px transparent;
     }
   }
@@ -1586,6 +1671,68 @@ select {
     cursor: pointer;
   }
 
+  .mk-cm-document-title {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.08em 0 0.78em;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1.45em;
+    font-weight: 700;
+    line-height: 1.4;
+    user-select: text;
+  }
+
+  .mk-cm-document-title .mk-cm-document-title-input {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 0 3px;
+    border: 0 !important;
+    border-radius: 0;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    color: inherit !important;
+    font: inherit;
+    line-height: inherit;
+  }
+
+  .mk-cm-document-title .mk-cm-document-title-input:not([readonly]) {
+    cursor: text;
+  }
+
+  .mk-cm-document-title .mk-cm-document-title-input:not([readonly]):hover,
+  .mk-cm-document-title .mk-cm-document-title-input:not([readonly]):focus,
+  .mk-cm-document-title .mk-cm-document-title-input:not([readonly]):focus-visible {
+    border: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /* CodeMirror 的块级 widget 不能使用垂直 margin，否则高度图会漏掉外边距，
+     后续行的鼠标坐标会逐块累积偏移。透明 padding 保留原有视觉间距并参与测量。 */
+  .mk-cm-block-widget-spacing {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .mk-cm-block-widget-spacing--frontmatter {
+    padding: 4px 0 8px;
+  }
+
+  .mk-cm-block-widget-spacing--media {
+    padding: 8px 0;
+  }
+
+  .mk-cm-block-widget-spacing--table {
+    padding: 4px 0;
+  }
+
   .mk-cm-link--document {
     color: #0f766e;
   }
@@ -1768,13 +1915,13 @@ select {
   /* 文首 YAML Frontmatter 在阅读态显示为文档属性，编辑时落光标即可回到源码。 */
   .mk-cm-frontmatter {
     overflow: hidden;
-    margin: 4px 0 8px;
+    margin: 0;
     border: 1px solid #e2e8f0;
     border-radius: 5px;
     background: #f8fafc;
     color: #334155;
     font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1.45;
   }
 
@@ -1783,10 +1930,10 @@ select {
   }
 
   .mk-cm-frontmatter-heading {
-    padding: 5px 9px;
+    padding: 6px 10px;
     border-bottom: 1px solid #e2e8f0;
     color: #475569;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
   }
 
@@ -1798,8 +1945,8 @@ select {
     display: grid;
     grid-template-columns: minmax(88px, 0.35fr) minmax(0, 1fr);
     align-items: center;
-    min-height: 28px;
-    padding: 0 9px;
+    min-height: 32px;
+    padding: 0 10px;
     border-top: 1px solid #eef2f7;
   }
 
@@ -1827,12 +1974,12 @@ select {
   .mk-cm-frontmatter-tag {
     display: inline-flex;
     align-items: center;
-    min-height: 18px;
-    padding: 0 6px;
+    min-height: 22px;
+    padding: 0 7px;
     border-radius: 4px;
     background: #e2e8f0;
     color: #334155;
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1;
   }
 
@@ -2020,7 +2167,7 @@ select {
     flex-direction: column;
     align-items: center;
     min-height: 44px;
-    margin: 8px 0;
+    margin: 0;
     justify-content: center;
   }
 
@@ -2145,11 +2292,11 @@ select {
   /* Mermaid 图容器。图本身由 mermaid 生成的 SVG 负责，这里只管外框和状态。 */
   .mk-cm-mermaid {
     position: relative;
-    margin: 8px 0;
+    margin: 0;
     /* 顶部多留出一行给左上角的 MERMAID 标签，和代码块的观感对齐。 */
     padding: 24px 12px 12px;
     border: 1px solid rgba(226, 232, 240, 0.95);
-    border-radius: 8px;
+    border-radius: 4px;
     /* 同上，与预览侧的图表外框同色，不带透明度。 */
     background: #f8fafc;
   }
@@ -2279,11 +2426,11 @@ select {
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    margin: 4px 0;
+    margin: 0;
     box-sizing: border-box;
     cursor: default;
     border: 1px solid #e2e8f0;
-    border-radius: 6px;
+    border-radius: 4px;
     background: #ffffff;
   }
 
@@ -3067,6 +3214,21 @@ select {
       box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.42);
     }
     100% {
+      box-shadow: inset 0 0 0 1px transparent;
+    }
+  }
+
+  .dark .mk-cm-reveal-highlight {
+    animation-name: mk-editor-search-locate-dark;
+  }
+
+  @keyframes mk-editor-search-locate-dark {
+    0%, 68% {
+      background: rgba(250, 204, 21, 0.3);
+      box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.48);
+    }
+    100% {
+      background: transparent;
       box-shadow: inset 0 0 0 1px transparent;
     }
   }

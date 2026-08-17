@@ -772,10 +772,16 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     };
     styles.table = {
       ...styles.table,
+      chineseFont: "宋体",
+      latinFont: "Times New Roman",
+      tableLayout: "auto",
+      fitToPageWidth: true,
+      tableWidthPercent: 100,
       borderColor: "#CBD5E1",
       headerBorderColor: "#CBD5E1",
       bodyBorderColor: "#CBD5E1",
       headerBackgroundColor: "#FFFFFF",
+      headerBold: true,
       headerFontSize: 10.5,
       bodyFontSize: 10.5,
       headerAlign: "center",

@@ -18,7 +18,12 @@ function clampZoom(value: number) {
 }
 
 export function svgDataUrl(svg: string) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  // Mermaid 在编辑区中以 HTML 解析，outerHTML 会把 XHTML 的 <br /> 序列化成
+  // <br>。内联 SVG 能显示，但放进 img 后会按 XML 解码并直接失败。
+  const imageSafeSvg = svg.replace(/<br\b([^>]*)>/gi, (tag, attributes: string) => (
+    /\/\s*$/.test(attributes) ? tag : `<br${attributes} />`
+  ));
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(imageSafeSvg)}`;
 }
 
 export function requestMediaPreview(request: MediaPreviewRequest) {
@@ -53,7 +58,7 @@ export function ImageViewer({ src, alt, className, paper = false }: { src: strin
   }
 
   const fitScale = naturalSize && viewport.width > 0 && viewport.height > 0
-    ? Math.min(1, Math.max(1, viewport.width - 32) / naturalSize.width, Math.max(1, viewport.height - 32) / naturalSize.height)
+    ? Math.min(Math.max(1, viewport.width - 32) / naturalSize.width, Math.max(1, viewport.height - 32) / naturalSize.height)
     : 1;
   const imageWidth = naturalSize ? Math.max(1, naturalSize.width * fitScale * zoom) : undefined;
   const imageHeight = naturalSize ? Math.max(1, naturalSize.height * fitScale * zoom) : undefined;
