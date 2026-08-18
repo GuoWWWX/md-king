@@ -15,6 +15,15 @@ test("行内 Markdown 标记的命中容差不跨越换行", () => {
   assert.equal(selectionTouchesOnSameLine(stateWithCursor(source, inlineTo + 1), 0, inlineTo), false);
 });
 
+test("行内格式只在光标紧贴边界或进入内容时显示源码", () => {
+  const source = "**加粗**，后续";
+  const inlineTo = source.indexOf("，");
+
+  assert.equal(selectionTouchesOnSameLine(stateWithCursor(source, 2), 0, inlineTo, 0), true);
+  assert.equal(selectionTouchesOnSameLine(stateWithCursor(source, inlineTo), 0, inlineTo, 0), true);
+  assert.equal(selectionTouchesOnSameLine(stateWithCursor(source, inlineTo + 1), 0, inlineTo, 0), false);
+});
+
 test("块级行范围的右边界不会吞掉下一行", () => {
   const source = "前一行\n后一行";
   const nextLineFrom = source.indexOf("后一行");

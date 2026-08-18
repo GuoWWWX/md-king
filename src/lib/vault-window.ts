@@ -49,6 +49,16 @@ function waitForWindowCreation(projectWindow: WebviewWindow) {
   });
 }
 
+async function focusProjectWindow(projectWindow: WebviewWindow) {
+  // 窗口创建/显示成功后，Windows 有时会在窗口尚未完成激活时拒绝 setFocus。
+  // 这不代表打开失败，避免让调用方把已成功打开的项目窗口误报成失败。
+  try {
+    await projectWindow.setFocus();
+  } catch {
+    // 聚焦失败不影响项目窗口已创建。
+  }
+}
+
 export async function openVaultProjectWindow(root: string) {
   const targetRoot = root.trim();
   if (!targetRoot) throw new Error("目录路径不能为空");
@@ -59,7 +69,7 @@ export async function openVaultProjectWindow(root: string) {
   const existing = await WebviewWindow.getByLabel(label);
   if (existing) {
     await existing.show();
-    await existing.setFocus();
+    await focusProjectWindow(existing);
     return;
   }
 
@@ -70,9 +80,10 @@ export async function openVaultProjectWindow(root: string) {
     height: 760,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: "#111111",
+    backgroundColor: "#f4f6f8",
     decorations: false,
+    shadow: false,
   });
   await waitForWindowCreation(projectWindow);
-  await projectWindow.setFocus();
+  await focusProjectWindow(projectWindow);
 }

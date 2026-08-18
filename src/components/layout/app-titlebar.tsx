@@ -1,8 +1,9 @@
-import { Columns2, Copy, Minus, PanelLeft, PanelRight, Search, Square, X } from "lucide-react";
+import { Columns2, Copy, Minus, PanelLeft, PanelRight, Search, Square, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { PAGE_ZOOM_MAX_PERCENT, PAGE_ZOOM_MIN_PERCENT, PAGE_ZOOM_STEP_PERCENT } from "@/lib/page-zoom";
 
 function getAppWindow(): TauriWindow | undefined {
   if (!isTauriEnvironment()) return undefined;
@@ -27,10 +28,12 @@ type AppTitlebarProps = {
   documentDrawerOpen?: boolean;
   onToggleDocumentDrawer?: () => void;
   onOpenGlobalSearch?: () => void;
+  pageZoomPercent?: number;
+  onPageZoomChange?: (percent: number) => void;
   documentTabsOffset?: number;
 };
 
-export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, onOpenGlobalSearch, documentTabsOffset = 0 }: AppTitlebarProps) {
+export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, onOpenGlobalSearch, pageZoomPercent = 100, onPageZoomChange, documentTabsOffset = 0 }: AppTitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const canControlWindow = isTauriEnvironment();
 
@@ -110,6 +113,7 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
       />
 
       <div className="flex h-full shrink-0 items-center">
+        {onPageZoomChange ? <PageZoomControls percent={pageZoomPercent} onChange={onPageZoomChange} /> : null}
         {onOpenGlobalSearch ? (
           <TitlebarButton label="全局搜索" onClick={onOpenGlobalSearch}>
             <Search className="size-4" />
@@ -139,6 +143,74 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         </TitlebarButton>
       </div>
     </div>
+  );
+}
+
+function PageZoomControls({ percent, onChange }: { percent: number; onChange: (percent: number) => void }) {
+  const [draft, setDraft] = useState(String(percent));
+
+  useEffect(() => {
+    setDraft(String(percent));
+  }, [percent]);
+
+  function commit() {
+    const next = Number.parseInt(draft, 10);
+    if (!Number.isFinite(next)) {
+      setDraft(String(percent));
+      return;
+    }
+    onChange(next);
+  }
+
+  return (
+    <div className="flex h-9 items-center gap-0.5 px-0.5" aria-label="页面缩放">
+      <ZoomButton label="缩小页面" disabled={percent <= PAGE_ZOOM_MIN_PERCENT} onClick={() => onChange(percent - PAGE_ZOOM_STEP_PERCENT)}>
+        <ZoomOut className="size-3.5" />
+      </ZoomButton>
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={draft}
+        aria-label="页面缩放百分比"
+        className="h-6 w-9 rounded-[4px] border border-transparent bg-transparent px-1 text-center tabular-nums text-slate-600 outline-none transition focus:border-transparent focus:ring-0 dark:border-transparent dark:bg-transparent dark:text-zinc-300"
+        style={{ fontSize: "11px", lineHeight: 1 }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <span className="w-3 text-[10px] leading-none text-slate-400 dark:text-zinc-500">%</span>
+      <ZoomButton label="放大页面" disabled={percent >= PAGE_ZOOM_MAX_PERCENT} onClick={() => onChange(percent + PAGE_ZOOM_STEP_PERCENT)}>
+        <ZoomIn className="size-3.5" />
+      </ZoomButton>
+    </div>
+  );
+}
+
+function ZoomButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <TooltipAnchor content={label} tooltipSide="bottom">
+      <button
+        type="button"
+        aria-label={label}
+        disabled={disabled}
+        className="flex h-7 w-7 items-center justify-center rounded-[4px] text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500 dark:text-zinc-400 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!disabled) onClick();
+        }}
+      >
+        {children}
+      </button>
+    </TooltipAnchor>
   );
 }
 

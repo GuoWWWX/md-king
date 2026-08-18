@@ -27,10 +27,10 @@ test("解析 Obsidian 常用文档属性和数组值", () => {
   assert.equal(markdown.slice(frontmatter.from, frontmatter.to), "---\ntitle: 项目周报\ntags: [项目, 周报]\naliases:\n  - 进度汇总\n  - weekly\n状态: 草稿\n...\n");
   assert.equal(frontmatter.markdown, "# 正文");
   assert.deepEqual(frontmatter.entries, [
-    { key: "title", value: "项目周报" },
-    { key: "tags", value: ["项目", "周报"] },
-    { key: "aliases", value: ["进度汇总", "weekly"] },
-    { key: "状态", value: "草稿" },
+    { key: "title", value: "项目周报", sourceFrom: markdown.indexOf("title:") },
+    { key: "tags", value: ["项目", "周报"], sourceFrom: markdown.indexOf("tags:") },
+    { key: "aliases", value: ["进度汇总", "weekly"], sourceFrom: markdown.indexOf("aliases:") },
+    { key: "状态", value: "草稿", sourceFrom: markdown.indexOf("状态:") },
   ]);
 });
 
@@ -40,6 +40,6 @@ test("解析 Windows 换行的属性区范围", () => {
   assert.ok(frontmatter);
   assert.equal(markdown.slice(frontmatter.from, frontmatter.to), "---\r\ntags:\r\n  - 版本一\r\n---\r\n");
   assert.deepEqual(frontmatter.entries, [
-    { key: "tags", value: ["版本一"] },
+    { key: "tags", value: ["版本一"], sourceFrom: markdown.indexOf("tags:") },
   ]);
 });

@@ -160,7 +160,7 @@ export function SettingsPage() {
             </div>
           </div>
           <SettingRow label="完成后自动打开文件" description="转换成功后使用默认应用打开生成的 DOCX。" checked={draft.openAfterConvert} onCheckedChange={(checked) => updateDraft("openAfterConvert", checked)} />
-          <SettingRow label="自动保存 Markdown" description="编辑从文件树打开的 Markdown 文件后自动写回原文件，默认开启；新建、粘贴或拖入的临时文档不会自动保存。" checked={draft.autoSave} badge="默认开启" onCheckedChange={(checked) => updateDraft("autoSave", checked)} />
+          <SettingRow label="自动保存 Markdown" description="编辑从文件树或外部路径打开的 Markdown 文件后自动写回原文件，默认开启；新建、粘贴等尚未保存的临时文档不会自动保存。" checked={draft.autoSave} badge="默认开启" onCheckedChange={(checked) => updateDraft("autoSave", checked)} />
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500 dark:text-zinc-400">同名文件处理</Label>
             <Select value={draft.defaultConflictStrategy ?? "overwrite"} onValueChange={(value) => updateDraft("defaultConflictStrategy", value as AppConfig["defaultConflictStrategy"])}>

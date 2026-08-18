@@ -16,6 +16,8 @@ type ResizableDividerProps = {
   /// 收起态仍保留命中区。拖过最小尺寸一小段才收起，反向拖过同样距离才恢复，
   /// 既避免误触，也让一次连续拖拽能直接来回切换。
   collapsed?: boolean;
+  /// 某些侧栏首次展开必须通过显式按钮；关闭后的边缘命中区不再启动拖拽。
+  allowCollapsedDrag?: boolean;
   collapseThreshold?: number;
   onCollapsedChange?: (collapsed: boolean) => void;
   className?: string;
@@ -35,14 +37,17 @@ export function ResizableDivider({
   ariaLabel,
   from = "start",
   collapsed = false,
+  allowCollapsedDrag = true,
   collapseThreshold = RESIZABLE_PANEL_COLLAPSE_THRESHOLD,
   onCollapsedChange,
   className,
 }: ResizableDividerProps) {
   const isDraggingRef = useRef(false);
+  const dragDisabled = collapsed && !allowCollapsedDrag;
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
+    if (dragDisabled) return;
     event.preventDefault();
 
     const divider = event.currentTarget;
@@ -124,8 +129,10 @@ export function ResizableDivider({
           orientation === "vertical"
             ? "inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize"
             : "inset-x-0 top-1/2 h-4 -translate-y-1/2 cursor-row-resize",
+          dragDisabled && "pointer-events-none cursor-default",
         )}
-        onPointerDown={handlePointerDown}
+        onPointerDown={dragDisabled ? undefined : handlePointerDown}
+        aria-disabled={dragDisabled || undefined}
       >
         <span
           className={cn(

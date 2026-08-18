@@ -19,6 +19,7 @@ import type { ThemeMode } from "@/types";
 import type { VaultSearchMatch } from "@/types/vault";
 import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
 import { markdownOutlineRevealEvent } from "@/lib/document-outline";
+import { clampPageZoomPercent, PAGE_ZOOM_DEFAULT_PERCENT, pageZoomViewportPercent } from "@/lib/page-zoom";
 
 type AppShellProps = {
   navigation: NavigationItem[];
@@ -40,6 +41,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   const [documentDrawerView, setDocumentDrawerView] = useState<DocumentDrawerView>("outline");
   const [documentDrawerWidth, setDocumentDrawerWidth] = useState(340);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const pageZoomPercent = clampPageZoomPercent(appConfig?.pageZoomPercent ?? PAGE_ZOOM_DEFAULT_PERCENT);
+  const viewportPercent = pageZoomViewportPercent(pageZoomPercent);
 
   useEffect(() => {
     const openGlobalSearch = (event: KeyboardEvent) => {
@@ -95,6 +98,22 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
     await handleSetThemeMode(order[(currentIndex + 1) % order.length]);
   }
 
+  async function handlePageZoomChange(value: number) {
+    if (!appConfig) return;
+    const nextPercent = clampPageZoomPercent(value);
+    if (nextPercent === pageZoomPercent) return;
+    const previousConfig = appConfig;
+    const nextConfig = { ...appConfig, pageZoomPercent: nextPercent };
+    setAppConfig(nextConfig);
+    try {
+      const savedConfig = await saveAppConfig(nextConfig);
+      setAppConfig(savedConfig);
+    } catch (error) {
+      setAppConfig(previousConfig);
+      toast.error(userFacingErrorMessage(error, "保存页面缩放失败"));
+    }
+  }
+
   async function handleGlobalSearchSelect(result: VaultSearchMatch) {
     setGlobalSearchOpen(false);
     setActivePage("convert");
@@ -114,8 +133,16 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   }
 
   return (
-    <div className="mk-app-bg flex h-screen overflow-hidden text-slate-950">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="mk-app-bg h-screen w-screen overflow-hidden">
+      <div
+        className="flex overflow-hidden text-slate-950"
+        style={{
+          zoom: `${pageZoomPercent}%`,
+          width: `${viewportPercent}vw`,
+          height: `${viewportPercent}vh`,
+        }}
+      >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AppTitlebar
           fileTreeVisible={fileTreeVisible}
           onToggleFileTree={() => setFileTreeVisible(!fileTreeVisible)}
@@ -123,6 +150,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           documentDrawerOpen={documentDrawerOpen}
           onToggleDocumentDrawer={() => setDocumentDrawerOpen((open) => !open)}
           onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
+          pageZoomPercent={pageZoomPercent}
+          onPageZoomChange={handlePageZoomChange}
           documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 126) : 0}
         />
         <GlobalSearchDialog
@@ -195,6 +224,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
               from="end"
               onResize={setDocumentDrawerWidth}
               collapsed={!documentDrawerOpen}
+              allowCollapsedDrag={false}
               // 同上：collapsed=true 表示刚收起，对应 open=false。
               onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
               ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
@@ -209,6 +239,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
               />
             ) : null}
           </>
+        </div>
         </div>
       </div>
     </div>

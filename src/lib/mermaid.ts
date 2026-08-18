@@ -1,3 +1,5 @@
+import { calculateRasterSize, svgDataUrl } from "@/lib/svg-image";
+
 /**
  * Mermaid 渲染服务。
  *
@@ -130,27 +132,49 @@ function svgToPng(svg: string, width: number, height: number, scale: number): Pr
   return new Promise((resolve, reject) => {
     // 走 data URL 而不是 blob URL：blob URL 会让 canvas 被标记成
     // tainted，随后 toDataURL 抛 SecurityError。
-    const encoded = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(withExplicitSize(svg, width, height))}`;
     const image = new Image();
+    let settled = false;
+    let timeout: number | undefined;
 
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(width * scale));
-      canvas.height = Math.max(1, Math.round(height * scale));
-      const context = canvas.getContext("2d");
-      if (!context) {
-        reject(new Error("无法创建画布上下文"));
-        return;
-      }
-      // 白底：PNG 默认透明，插进 Word 后在深色页面上会看不清线条。
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/png"));
+    const fail = (cause: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      reject(cause instanceof Error ? cause : new Error("图表转图片失败"));
     };
 
-    image.onerror = () => reject(new Error("图表栅格化失败"));
-    image.src = encoded;
+    timeout = window.setTimeout(() => fail(new Error("图表转图片超时")), 10_000);
+
+    image.onload = () => {
+      if (settled) return;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      try {
+        const rasterSize = calculateRasterSize(width, height, scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = rasterSize.width;
+        canvas.height = rasterSize.height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("无法创建画布上下文");
+
+        // 白底：PNG 默认透明，插进 Word 后在深色页面上会看不清线条。
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/png");
+        if (!dataUrl.startsWith("data:image/png")) throw new Error("浏览器未能生成 PNG 图片");
+        settled = true;
+        resolve(dataUrl);
+      } catch (cause) {
+        fail(cause);
+      }
+    };
+
+    image.onerror = () => fail(new Error("图表 SVG 无法载入"));
+    try {
+      image.src = svgDataUrl(withExplicitSize(svg, width, height));
+    } catch (cause) {
+      fail(cause);
+    }
   });
 }
 

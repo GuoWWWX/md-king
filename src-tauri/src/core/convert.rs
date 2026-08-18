@@ -97,6 +97,16 @@ struct PageSettingsConfig {
     toc_depth: String,
     toc_leader: String,
     toc_show_page_numbers: bool,
+    toc_title: String,
+    toc_title_chinese_font: String,
+    toc_title_latin_font: String,
+    toc_title_font_size: f64,
+    toc_title_font_weight: String,
+    toc_title_color: String,
+    toc_title_line_height: f64,
+    toc_title_align: String,
+    toc_title_before_spacing: f64,
+    toc_title_after_spacing: f64,
 }
 
 #[derive(Clone)]
@@ -1082,6 +1092,16 @@ fn default_page_settings_config() -> PageSettingsConfig {
         toc_depth: "1-3".to_string(),
         toc_leader: "dot".to_string(),
         toc_show_page_numbers: true,
+        toc_title: "目录".to_string(),
+        toc_title_chinese_font: "宋体".to_string(),
+        toc_title_latin_font: "Times New Roman".to_string(),
+        toc_title_font_size: 18.0,
+        toc_title_font_weight: "400".to_string(),
+        toc_title_color: "111827".to_string(),
+        toc_title_line_height: 1.35,
+        toc_title_align: "center".to_string(),
+        toc_title_before_spacing: 0.0,
+        toc_title_after_spacing: 18.0,
     }
 }
 
@@ -1094,7 +1114,20 @@ fn table_style_config(request: &ConvertRequest) -> Option<TableStyleConfig> {
     get_template_style_config(template_id.to_string())
         .ok()
         .flatten()
-        .and_then(|config| table_style_config_from_value(&config))
+        .and_then(|config| {
+            let mut style = table_style_config_from_value(&config)?;
+            // 兼容旧版默认报告模板的浅灰/蓝灰边框；用户自定义颜色保持不变。
+            if template_id == "default-report"
+                && style.border_color.eq_ignore_ascii_case("CBD5E1")
+                && style.header.border_color.eq_ignore_ascii_case("A5B4FC")
+                && style.body.border_color.eq_ignore_ascii_case("CBD5E1")
+            {
+                style.border_color = "000000".to_string();
+                style.header.border_color = "000000".to_string();
+                style.body.border_color = "000000".to_string();
+            }
+            Some(style)
+        })
 }
 
 fn image_style_config(request: &ConvertRequest) -> Option<ImageStyleConfig> {
@@ -1254,6 +1287,45 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
             .get("tocShowPageNumbers")
             .and_then(Value::as_bool)
             .unwrap_or(true),
+        toc_title: settings
+            .get("tocTitle")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("目录")
+            .to_string(),
+        toc_title_chinese_font: settings
+            .get("tocTitleChineseFont")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("宋体")
+            .to_string(),
+        toc_title_latin_font: settings
+            .get("tocTitleLatinFont")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("Times New Roman")
+            .to_string(),
+        toc_title_font_size: read_number("tocTitleFontSize", 18.0).clamp(6.0, 72.0),
+        toc_title_font_weight: settings
+            .get("tocTitleFontWeight")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("400")
+            .to_string(),
+        toc_title_color: read_style_color(settings, "tocTitleColor", "111827"),
+        toc_title_line_height: read_line_height_key(settings, "tocTitleLineHeight", 1.35).clamp(0.8, 3.0),
+        toc_title_align: settings
+            .get("tocTitleAlign")
+            .and_then(Value::as_str)
+            .filter(|value| matches!(*value, "left" | "center" | "right"))
+            .unwrap_or("center")
+            .to_string(),
+        toc_title_before_spacing: read_non_negative_number(settings, "tocTitleBeforeSpacing", 0.0).clamp(0.0, 72.0),
+        toc_title_after_spacing: read_non_negative_number(settings, "tocTitleAfterSpacing", 18.0).clamp(0.0, 72.0),
     })
 }
 
@@ -1798,6 +1870,14 @@ fn read_style_number(style: &Value, key: &str, default_value: f64) -> f64 {
         .get(key)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(default_value)
+}
+
+fn read_non_negative_number(style: &Value, key: &str, default_value: f64) -> f64 {
+    style
+        .get(key)
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value >= 0.0)
         .unwrap_or(default_value)
 }
 
@@ -2428,17 +2508,28 @@ fn is_fence_end(line: &str, marker: char, opening_length: usize) -> bool {
 fn read_task_list_markers_from_docx(
     archive: &mut ZipArchive<Cursor<Vec<u8>>>,
 ) -> HashMap<String, TaskListMarker> {
-    let Ok(mut numbering_file) = archive.by_name("word/numbering.xml") else {
-        return HashMap::new();
-    };
-    let mut data = Vec::new();
-    if numbering_file.read_to_end(&mut data).is_err() {
-        return HashMap::new();
-    }
-    let Ok(xml) = String::from_utf8(data) else {
+    let Some(xml) = read_numbering_xml_from_docx(archive) else {
         return HashMap::new();
     };
     task_list_markers_from_numbering_xml(&xml)
+}
+
+fn read_ordered_list_num_ids_from_docx(
+    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+) -> HashMap<String, String> {
+    let Some(xml) = read_numbering_xml_from_docx(archive) else {
+        return HashMap::new();
+    };
+    ordered_list_num_ids_from_numbering_xml(&xml)
+}
+
+fn read_numbering_xml_from_docx(
+    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+) -> Option<String> {
+    let mut numbering_file = archive.by_name("word/numbering.xml").ok()?;
+    let mut data = Vec::new();
+    numbering_file.read_to_end(&mut data).ok()?;
+    String::from_utf8(data).ok()
 }
 
 fn task_list_markers_from_numbering_xml(xml: &str) -> HashMap<String, TaskListMarker> {
@@ -2477,6 +2568,61 @@ fn task_list_markers_from_numbering_xml(xml: &str) -> HashMap<String, TaskListMa
     markers
 }
 
+fn ordered_list_num_ids_from_numbering_xml(xml: &str) -> HashMap<String, String> {
+    let abstract_num = Regex::new(
+        r#"(?s)<w:abstractNum\s+w:abstractNumId="([^"]+)">.*?</w:abstractNum>"#,
+    )
+    .expect("valid abstract numbering regex");
+    let ordered_format = Regex::new(
+        r#"<w:numFmt\b[^>]*\bw:val="(?:decimal|lowerLetter|upperLetter|lowerRoman|upperRoman|chineseCounting|chineseCountingThousand|hebrew2)"[^>]*/>"#,
+    )
+    .expect("valid ordered numbering format regex");
+    let mut ordered_abstract_ids = HashMap::new();
+    for captures in abstract_num.captures_iter(xml) {
+        let Some(id) = captures.get(1).map(|value| value.as_str().to_string()) else {
+            continue;
+        };
+        let block = captures.get(0).map(|value| value.as_str()).unwrap_or("");
+        ordered_abstract_ids.insert(id, ordered_format.is_match(block));
+    }
+
+    let num = Regex::new(
+        r#"(?s)<w:num\s+w:numId="([^"]+)">.*?<w:abstractNumId\s+w:val="([^"]+)"\s*/>.*?</w:num>"#,
+    )
+    .expect("valid numbering instance regex");
+    let mut replacements = HashMap::new();
+    let mut replacement_id = 10_000usize;
+    for captures in num.captures_iter(xml) {
+        let Some(num_id) = captures.get(1).map(|value| value.as_str().to_string()) else {
+            continue;
+        };
+        let Some(abstract_id) = captures.get(2).map(|value| value.as_str()) else {
+            continue;
+        };
+        if ordered_abstract_ids.get(abstract_id).copied().unwrap_or(false) {
+            replacements.insert(num_id, replacement_id.to_string());
+            replacement_id += 1;
+        }
+    }
+    replacements
+}
+
+fn mark_ordered_list_num_ids(xml: &str, replacements: &HashMap<String, String>) -> String {
+    if replacements.is_empty() {
+        return xml.to_string();
+    }
+    let num_id = Regex::new(r#"<w:numId\s+w:val="([^"]+)"\s*/>"#)
+        .expect("valid numbering id regex");
+    num_id
+        .replace_all(xml, |captures: &Captures| {
+            let Some(target) = replacements.get(&captures[1]) else {
+                return captures[0].to_string();
+            };
+            format!(r#"<w:numId w:val="{target}" />"#)
+        })
+        .to_string()
+}
+
 fn normalize_docx(
     path: &Path,
     apply_default_template_style: bool,
@@ -2501,6 +2647,7 @@ fn normalize_docx(
     let mut has_footer_xml = false;
     let header_footer = page_settings.filter(|settings| page_settings_has_header_footer(settings));
     let task_list_markers = read_task_list_markers_from_docx(&mut archive);
+    let ordered_list_num_ids = read_ordered_list_num_ids_from_docx(&mut archive);
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -2549,6 +2696,7 @@ fn normalize_docx(
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 document.xml 失败：{error}"))?;
             let xml = mark_task_list_paragraphs(&xml, &task_list_markers);
+            let xml = mark_ordered_list_num_ids(&xml, &ordered_list_num_ids);
             let xml = normalize_document_xml(
                 &xml,
                 apply_default_template_style,
@@ -2742,12 +2890,138 @@ fn normalize_document_xml(
     } else {
         xml
     };
+    let xml = normalize_explicit_line_indent(&xml, apply_default_table_style, document_style);
 
     if let Some(heading_numbering) = heading_numbering {
         normalize_heading_numbering(&xml, heading_numbering)
     } else {
         xml
     }
+}
+
+/// Word 的 `firstLine` 只作用于段落的第一条物理行。预览会把 Markdown
+/// 的显式换行逐行保留并缩进，因此导出时在同一段落的后续显式换行处补一个
+/// 与首行缩进相同位置的制表位；自动换行不会经过这里。
+fn normalize_explicit_line_indent(
+    xml: &str,
+    apply_default_template_style: bool,
+    document_style: Option<&DocumentStyleConfig>,
+) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
+    paragraph
+        .replace_all(xml, |captures: &Captures| {
+            normalize_explicit_line_indent_paragraph(
+                &captures[0],
+                apply_default_template_style,
+                document_style,
+            )
+        })
+        .to_string()
+}
+
+fn normalize_explicit_line_indent_paragraph(
+    paragraph_xml: &str,
+    apply_default_template_style: bool,
+    document_style: Option<&DocumentStyleConfig>,
+) -> String {
+    if paragraph_xml.contains("<w:numPr>") {
+        return paragraph_xml.to_string();
+    }
+
+    let style_id = capture_paragraph_style_id(paragraph_xml);
+    let first_line_indent = paragraph_first_line_indent_twips(
+        style_id.as_deref(),
+        apply_default_template_style,
+        document_style,
+    );
+    if first_line_indent == 0 {
+        return paragraph_xml.to_string();
+    }
+
+    let line_break = Regex::new(r#"(?s)<w:r\b[^>]*>\s*(?:<w:rPr>.*?</w:rPr>\s*)?<w:br\b[^>]*/>\s*</w:r>"#)
+        .expect("valid line break run regex");
+    let has_text_line_break = line_break.find_iter(paragraph_xml).any(|matched| {
+        let run = matched.as_str();
+        !run.contains(r#"w:type=\"page\""#) && !run.contains(r#"w:type=\"column\""#)
+    });
+    if !has_text_line_break {
+        return paragraph_xml.to_string();
+    }
+
+    let paragraph_xml = ensure_paragraph_tab_stop(paragraph_xml, first_line_indent);
+    line_break
+        .replace_all(&paragraph_xml, |captures: &Captures| {
+            let run = &captures[0];
+            if run.contains(r#"w:type=\"page\""#) || run.contains(r#"w:type=\"column\""#) {
+                run.to_string()
+            } else {
+                format!("{run}<w:r><w:tab /></w:r>")
+            }
+        })
+        .to_string()
+}
+
+fn paragraph_first_line_indent_twips(
+    style_id: Option<&str>,
+    apply_default_template_style: bool,
+    document_style: Option<&DocumentStyleConfig>,
+) -> u32 {
+    let template_style_id = match style_id {
+        Some(style_id) => {
+            let Some(template_style_id) = template_style_id_for_word_style(style_id) else {
+                return 0;
+            };
+            template_style_id
+        }
+        None => "normal",
+    };
+    if let Some(style) = document_style.and_then(|config| config.styles.get(template_style_id)) {
+        return (style.first_line_indent * 240.0).round().clamp(0.0, 2000.0) as u32;
+    }
+    if !apply_default_template_style {
+        return 0;
+    }
+    match style_id {
+        None | Some("Normal") | Some("FirstParagraph") | Some("BodyText") => 480,
+        _ => 0,
+    }
+}
+
+fn ensure_paragraph_tab_stop(paragraph_xml: &str, position: u32) -> String {
+    let tab = format!(r#"<w:tab w:val="left" w:pos="{position}" />"#);
+    let tabs = Regex::new(r#"(?s)<w:tabs>(.*?)</w:tabs>"#).expect("valid paragraph tabs regex");
+    if tabs.is_match(paragraph_xml) {
+        return tabs
+            .replace(paragraph_xml, |captures: &Captures| {
+                format!("<w:tabs>{}{}</w:tabs>", &captures[1], tab)
+            })
+            .to_string();
+    }
+
+    let paragraph_properties = Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#)
+        .expect("valid paragraph properties regex");
+    if paragraph_properties.is_match(paragraph_xml) {
+        return paragraph_properties
+            .replace(paragraph_xml, |captures: &Captures| {
+                let properties = &captures[0];
+                for anchor in ["<w:spacing", "<w:ind", "<w:jc", "<w:rPr"] {
+                    if let Some(index) = properties.find(anchor) {
+                        return format!(
+                            "{}<w:tabs>{tab}</w:tabs>{}",
+                            &properties[..index],
+                            &properties[index..]
+                        );
+                    }
+                }
+                properties.replace("</w:pPr>", &format!("<w:tabs>{tab}</w:tabs></w:pPr>"))
+            })
+            .to_string();
+    }
+
+    paragraph_xml.replace(
+        "<w:p>",
+        &format!("<w:p><w:pPr><w:tabs>{tab}</w:tabs></w:pPr>"),
+    )
 }
 
 fn normalize_document_captions(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
@@ -3235,18 +3509,45 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
         })
         .to_string();
 
-    let xml = localize_toc_heading(&xml);
+    let xml = normalize_toc_heading(&xml, page_settings);
     let xml = populate_empty_toc_result(&xml, page_settings);
 
     ensure_page_break_after_toc(&xml)
 }
 
-fn localize_toc_heading(xml: &str) -> String {
-    let heading = Regex::new(
-        r#"(?s)(<w:pStyle\b[^>]*w:val="TOCHeading"[^>]*/>.*?<w:t(?:\s+[^>]*)?>).*?(</w:t>)"#,
+fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> String {
+    let paragraph = Regex::new(
+        r#"(?s)<w:p(?:\s[^>]*)?>.*?<w:pStyle\b[^>]*w:val="TOCHeading"[^>]*/>.*?</w:p>"#,
     )
-    .expect("valid TOC heading regex");
-    heading.replace(xml, "${1}目录${2}").to_string()
+    .expect("valid TOC heading paragraph regex");
+    let title = escape_xml_text(&page_settings.toc_title);
+    let size = font_size_half_points(page_settings.toc_title_font_size);
+    let bold = page_settings
+        .toc_title_font_weight
+        .trim()
+        .parse::<u16>()
+        .map(|weight| weight >= 600)
+        .unwrap_or(false);
+    let before = points_to_twentieths(page_settings.toc_title_before_spacing);
+    let after = points_to_twentieths(page_settings.toc_title_after_spacing);
+    let line = line_height_twips(
+        page_settings.toc_title_font_size,
+        page_settings.toc_title_line_height,
+    );
+    let align = word_alignment_value(&page_settings.toc_title_align);
+    let run_properties = format!(
+        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:b w:val="{}" /><w:bCs w:val="{}" />"#,
+        escape_xml_text(&page_settings.toc_title_latin_font),
+        escape_xml_text(&page_settings.toc_title_latin_font),
+        escape_xml_text(&page_settings.toc_title_chinese_font),
+        page_settings.toc_title_color,
+        bool_val(bold),
+        bool_val(bold),
+    );
+    let replacement = format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading" /><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" /></w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{title}</w:t></w:r></w:p>"#,
+    );
+    paragraph.replace(xml, replacement).to_string()
 }
 
 fn populate_empty_toc_result(xml: &str, page_settings: &PageSettingsConfig) -> String {
@@ -5113,7 +5414,10 @@ fn normalize_list_paragraph(
     let with_marker = prefix_first_text_run(&with_indent, &format!("{marker} "));
     list_style
         .map(|style| apply_list_level_run_style(&with_marker, style, level))
-        .unwrap_or(with_marker)
+        // 内置默认模板没有保存样式配置时，Pandoc 的列表段落没有 pStyle，
+        // 不能继续继承 reference.docx 的主题字体。预览使用宋体/Times New Roman 12pt，
+        // 这里显式写入同一组正文属性，避免 Word 的字体回退改变可用行宽和换行位置。
+        .unwrap_or_else(|| apply_default_list_run_style(&with_marker))
 }
 
 fn list_level_index(level: usize) -> usize {
@@ -5315,6 +5619,30 @@ fn apply_list_level_run_style(
     .to_string()
 }
 
+fn apply_default_list_run_style(paragraph_xml: &str) -> String {
+    let run = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("valid default list run regex");
+    run.replace_all(paragraph_xml, |captures: &Captures| {
+        let run_xml = &captures[0];
+        let run_properties = Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#)
+            .expect("valid default list run properties regex");
+        if run_properties.is_match(run_xml) {
+            return run_properties
+                .replace(run_xml, |properties: &Captures| {
+                    let removable = Regex::new(
+                        r#"<w:(?:rFonts|color|sz|szCs)\b[^>]*/>"#,
+                    )
+                    .expect("valid default list run cleanup regex");
+                    let inner = removable.replace_all(&properties[1], "");
+                    format!("<w:rPr>{}{inner}</w:rPr>", body_run_properties_xml())
+                })
+                .to_string();
+        }
+
+        insert_run_properties(run_xml, body_run_properties_xml())
+    })
+    .to_string()
+}
+
 fn ensure_run_properties_xml(run_xml: &str, properties: &str) -> String {
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#).expect("valid run properties regex");
@@ -5387,7 +5715,7 @@ fn normalize_heading_paragraph(
         return paragraph_xml;
     }
 
-    let paragraph_xml = strip_manual_heading_number(&paragraph_xml);
+    // 手写编号属于标题正文，不能在添加 Word 自动编号时丢弃。
     ensure_paragraph_numbering(&paragraph_xml, level)
 }
 
@@ -5414,50 +5742,6 @@ fn capture_paragraph_style_id(paragraph_xml: &str) -> Option<String> {
         .captures(paragraph_xml)
         .and_then(|captures| captures.get(1))
         .map(|value| value.as_str().to_string())
-}
-
-fn strip_manual_heading_number(paragraph_xml: &str) -> String {
-    let full_text = paragraph_plain_text(paragraph_xml);
-    let stripped_text = strip_heading_number_prefix(&full_text);
-    if stripped_text == full_text {
-        return paragraph_xml.to_string();
-    }
-
-    let mut prefix_chars = full_text
-        .chars()
-        .count()
-        .saturating_sub(stripped_text.chars().count());
-    let text = Regex::new(r#"(<w:t(?:\s+[^>]*)?>)([^<]*)(</w:t>)"#).expect("valid text regex");
-    text.replace_all(paragraph_xml, |captures: &Captures| {
-        if prefix_chars == 0 {
-            return captures[0].to_string();
-        }
-        let decoded = decode_basic_xml_entities(&captures[2]);
-        let text_chars = decoded.chars().count();
-        let remove = prefix_chars.min(text_chars);
-        prefix_chars -= remove;
-        let remaining = decoded.chars().skip(remove).collect::<String>();
-        format!(
-            "{}{}{}",
-            &captures[1],
-            escape_xml_text(&remaining),
-            &captures[3]
-        )
-    })
-    .to_string()
-}
-
-fn strip_heading_number_prefix(text: &str) -> String {
-    let prefix = Regex::new(
-        r#"^\s*(?:\d+(?:\.\d+)*[\.、．]?\s+|[一二三四五六七八九十百千万]+[、.．]\s*|第[一二三四五六七八九十百千万]+[章节篇]\s*)"#,
-    )
-    .expect("valid heading number prefix regex");
-    let stripped = prefix.replace(text, "").to_string();
-    if stripped.trim().is_empty() {
-        text.to_string()
-    } else {
-        stripped
-    }
 }
 
 fn ensure_paragraph_numbering(paragraph_xml: &str, level: usize) -> String {
@@ -5492,7 +5776,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
         horizontal_align: "center".to_string(),
         column_width_percentages: None,
         border_style: "solid".to_string(),
-        border_color: "CBD5E1".to_string(),
+        border_color: "000000".to_string(),
         border_width: 1.0,
         border_top_width: 1.5,
         border_right_width: 1.5,
@@ -5516,7 +5800,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
             horizontal_align: "center".to_string(),
             vertical_align: "middle".to_string(),
             line_height: 1.4,
-            border_color: "CBD5E1".to_string(),
+            border_color: "000000".to_string(),
             border_width: 1.0,
         },
         body: TableCellStyleConfig {
@@ -5529,7 +5813,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
             horizontal_align: "left".to_string(),
             vertical_align: "middle".to_string(),
             line_height: 1.5,
-            border_color: "CBD5E1".to_string(),
+            border_color: "000000".to_string(),
             border_width: 1.0,
         },
     }
@@ -6143,11 +6427,7 @@ fn decimal_heading_level_text(level: usize, configured_format: &str) -> String {
         .collect::<Vec<_>>()
         .join(".");
 
-    if depth == 1 {
-        format!("{text}.")
-    } else {
-        text
-    }
+    text
 }
 
 fn elapsed_ms(started_at: Instant) -> u64 {
@@ -6171,10 +6451,11 @@ mod tests {
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
         normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
+        mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
         page_content_width_twips, page_settings_config_from_value,
         pandoc_document_options_from_value, paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
-        read_style_fill, strip_heading_number_prefix, table_column_widths,
+        read_style_fill, table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         HeadingTarget, MarkdownFeatureConfig,
@@ -6246,6 +6527,7 @@ mod tests {
         assert!(output.contains(r#"<w:tblW w:type="pct" w:w="5000" />"#));
         assert!(output.contains(r#"<w:tblLayout w:type="autofit" />"#));
         assert!(output.contains("<w:tblBorders>"));
+        assert!(output.contains(r#"w:color="000000""#));
         assert!(!output.contains("<w:tblStyle"));
         assert!(!output.contains("<w:tblLook"));
         assert!(output.contains(r#"<w:gridCol w:w="8640" />"#));
@@ -6696,6 +6978,39 @@ mod tests {
     }
 
     #[test]
+    fn exports_each_explicit_text_line_with_the_paragraph_indent() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr><w:r><w:t>版本</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>日期</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>范围</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let default_output = normalize_document_xml(
+            input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+        assert!(default_output.contains(r#"<w:tabs><w:tab w:val="left" w:pos="480" /></w:tabs>"#));
+        assert_eq!(default_output.matches("<w:r><w:tab /></w:r>").count(), 2);
+
+        let style = document_style_config_from_value(&json!({
+            "styles": { "normal": { "firstLineIndent": 1.5 } }
+        }))
+        .expect("normal style should parse");
+        let custom_output = normalize_document_xml(
+            input,
+            false,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            Some(&style),
+            None,
+        );
+        assert!(custom_output.contains(r#"<w:tabs><w:tab w:val="left" w:pos="360" /></w:tabs>"#));
+        assert_eq!(custom_output.matches("<w:r><w:tab /></w:r>").count(), 2);
+    }
+
+    #[test]
     fn applies_saved_text_styles_to_word_style_definitions() {
         let input = r#"<w:styles><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal" /><w:pPr><w:spacing w:after="120" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:sz w:val="24" /></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2" /><w:pPr /><w:rPr /></w:style><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption" /><w:pPr /><w:rPr /></w:style></w:styles>"#;
         let style = document_style_config_from_value(&json!({
@@ -6831,7 +7146,28 @@ mod tests {
         assert!(output.contains(r#"<w:ind w:left="360" w:right="240" w:firstLine="0" />"#));
         assert!(output.contains(r#"<w:ind w:left="540" w:right="240" w:firstLine="0" />"#));
         assert!(output.contains(r#"<w:color w:val="475569" />"#));
+        assert!(output.contains(
+            r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#
+        ));
         assert!(output.contains("<w:t>• 引用列表</w:t>"));
+    }
+
+    #[test]
+    fn default_list_font_keeps_inline_emphasis() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:rPr><w:b /></w:rPr><w:t>加粗项目</w:t></w:r></w:p></w:body></w:document>"#;
+        let output = normalize_document_xml(
+            input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#));
+        assert!(output.contains("<w:b />"));
+        assert!(output.contains("<w:t>1. 加粗项目</w:t>"));
     }
 
     #[test]
@@ -7200,6 +7536,35 @@ mod tests {
     }
 
     #[test]
+    fn applies_custom_toc_title_text_and_style() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "tocEnabled": true,
+                "tocTitle": "内容提要",
+                "tocTitleChineseFont": "黑体",
+                "tocTitleLatinFont": "Arial",
+                "tocTitleFontSize": 16,
+                "tocTitleFontWeight": "700",
+                "tocTitleColor": "1D4ED8",
+                "tocTitleLineHeight": "1.5",
+                "tocTitleAlign": "right",
+                "tocTitleBeforeSpacing": 6,
+                "tocTitleAfterSpacing": 12
+            }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#;
+
+        let output = normalize_toc_fields(input, &settings);
+
+        assert!(output.contains(r#"<w:t>内容提要</w:t>"#));
+        assert!(output.contains(r#"<w:jc w:val="right" />"#));
+        assert!(output.contains(r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="黑体" />"#));
+        assert!(output.contains(r#"<w:color w:val="1D4ED8" /><w:sz w:val="32" /><w:szCs w:val="32" /><w:b w:val="1" /><w:bCs w:val="1" />"#));
+        assert!(output.contains(r#"<w:spacing w:before="120" w:after="240" w:line="480" w:lineRule="auto" />"#));
+    }
+
+    #[test]
     fn keeps_existing_toc_result_content() {
         let settings = page_settings_config_from_value(&json!({
             "pageSettings": { "tocEnabled": true, "tocDepth": "1-3" }
@@ -7211,13 +7576,6 @@ mod tests {
 
         assert!(output.contains("<w:t>已有目录</w:t>"));
         assert!(!output.contains("<w:t xml:space=\"preserve\">新章节</w:t>"));
-    }
-
-    #[test]
-    fn preserves_standalone_manual_heading_number() {
-        assert_eq!(strip_heading_number_prefix("第一章"), "第一章");
-        assert_eq!(strip_heading_number_prefix("第一章 项目概览"), "项目概览");
-        assert_eq!(strip_heading_number_prefix("2. 范围"), "范围");
     }
 
     #[test]
@@ -7458,7 +7816,7 @@ mod tests {
     }
 
     #[test]
-    fn adds_word_heading_numbering_and_removes_typed_prefixes() {
+    fn adds_word_heading_numbering_and_preserves_typed_prefixes() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>总述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1. 背景</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading3" /></w:pPr><w:r><w:t>1.1.1 细节</w:t></w:r></w:p></w:body></w:document>"#;
 
         let mut config = default_report_heading_numbering_config();
@@ -7479,14 +7837,12 @@ mod tests {
         assert!(output.contains(r#"<w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
         assert!(output.contains(r#"<w:ilvl w:val="2" /><w:numId w:val="9100" />"#));
-        assert!(output.contains("<w:t>背景</w:t>"));
-        assert!(output.contains("<w:t>细节</w:t>"));
-        assert!(!output.contains("<w:t>1. 背景</w:t>"));
-        assert!(!output.contains("<w:t>1.1.1 细节</w:t>"));
+        assert!(output.contains("<w:t>1. 背景</w:t>"));
+        assert!(output.contains("<w:t>1.1.1 细节</w:t>"));
     }
 
     #[test]
-    fn removes_heading_number_split_across_pandoc_runs() {
+    fn preserves_heading_number_split_across_pandoc_runs() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t xml:space="preserve">1. </w:t></w:r><w:r><w:rPr><w:rFonts w:hint="eastAsia" /></w:rPr><w:t>项目 &amp; 范围</w:t></w:r></w:p></w:body></w:document>"#;
         let mut config = default_report_heading_numbering_config();
         config.mappings = default_heading_mappings();
@@ -7500,8 +7856,7 @@ mod tests {
             None,
         );
 
-        assert!(!output.contains(">1. </w:t>"));
-        assert!(output.contains("<w:t xml:space=\"preserve\"></w:t>"));
+        assert!(output.contains(">1. </w:t>"));
         assert!(output.contains("项目 &amp; 范围"));
     }
 
@@ -7548,6 +7903,7 @@ mod tests {
         assert!(output.contains("<w:t>☐ 未完成</w:t>"));
         assert!(!output.contains("MD_KING_TASK_LIST"));
         assert!(!output.contains("<w:numPr>"));
+        assert!(!output.contains("<w:sdt"));
     }
 
     #[test]
@@ -7592,6 +7948,28 @@ mod tests {
         assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
         assert!(output.contains(r#"<w:ind w:left="240" w:firstLine="0" />"#));
         assert!(!output.contains("<w:numPr>"));
+    }
+
+    #[test]
+    fn classifies_ordered_lists_from_numbering_format_instead_of_num_id_threshold() {
+        let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="99411"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /></w:lvl></w:abstractNum><w:num w:numId="1001"><w:abstractNumId w:val="99411" /></w:num></w:numbering>"#;
+        let replacements = ordered_list_num_ids_from_numbering_xml(numbering);
+        assert_eq!(replacements.get("1001").map(String::as_str), Some("10000"));
+
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr></w:pPr><w:r><w:t>第一项</w:t></w:r></w:p></w:body></w:document>"#;
+        let marked = mark_ordered_list_num_ids(input, &replacements);
+        let output = normalize_document_xml(
+            &marked,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains("<w:t>1. 第一项</w:t>"));
+        assert!(!output.contains("• 第一项"));
     }
 
     #[test]
@@ -7769,7 +8147,7 @@ mod tests {
 
         assert!(numbering.contains(r#"<w:abstractNum w:abstractNumId="9100">"#));
         assert!(numbering.contains(r#"<w:num w:numId="9100">"#));
-        assert!(numbering.contains(r#"<w:lvlText w:val="%1." />"#));
+        assert!(numbering.contains(r#"<w:lvlText w:val="%1" />"#));
         assert!(numbering.contains(r#"<w:suff w:val="space" />"#));
         assert!(numbering.contains(r#"<w:lvlText w:val="%1.%2.%3" />"#));
     }
@@ -7851,10 +8229,8 @@ mod tests {
         assert!(output.contains(
             r#"<w:pStyle w:val="Heading2" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="9100" />"#
         ));
-        assert!(output.contains("<w:t>项目概览</w:t>"));
-        assert!(output.contains("<w:t>核心结论</w:t>"));
-        assert!(!output.contains("<w:t>1. 项目概览</w:t>"));
-        assert!(!output.contains("<w:t>1.1 核心结论</w:t>"));
+        assert!(output.contains("<w:t>1. 项目概览</w:t>"));
+        assert!(output.contains("<w:t>1.1 核心结论</w:t>"));
     }
 
     #[test]
@@ -7911,7 +8287,7 @@ mod tests {
             .unwrap();
 
         assert!(document.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
-        assert!(document.contains("<w:t>背景</w:t>"));
+        assert!(document.contains("<w:t>1. 背景</w:t>"));
         assert!(numbering.contains(r#"<w:lvlText w:val="%1.%2" />"#));
 
         let _ = fs::remove_file(path);

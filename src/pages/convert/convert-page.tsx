@@ -33,6 +33,7 @@ import { isImageDropPath, useTauriFileDrop } from "@/hooks/use-tauri-file-drop";
 import { imageFileExtension, markdownImageReference } from "@/lib/image-files";
 import { markdownFileAccept, preserveSupportedTextExtension, readMarkdownFile, stripSupportedTextExtension } from "@/lib/markdown-files";
 import { inlineMermaidImages } from "@/lib/mermaid-export";
+import { clampPageZoomPercent, PAGE_ZOOM_DEFAULT_PERCENT } from "@/lib/page-zoom";
 import { vaultAbsolutePath } from "@/lib/vault-clipboard";
 import { useVaultStore } from "@/stores/vault-store";
 import { importVaultImageData, importVaultImageFromPath, readVaultFile, renameVaultEntry, resolveVaultImageSource, showInExplorer, writeVaultFile } from "@/lib/vault";
@@ -51,8 +52,10 @@ const previewZoomMax = 200;
 const previewZoomStep = 10;
 const previewMinWidth = 460;
 const editorMinWidth = 360;
-const inlinePreviewControlsMinWidth = 740;
-const inlinePreviewSidebarMinWidth = 720;
+const inlinePreviewSidebarDividerWidth = 5;
+// 预览页低于这个宽度时，底部操作区会被挤压；此时收起缩略图栏，
+// 把空间留给 Word 页面和上下排列的转换控件。
+const inlinePreviewPageMinWidth = 760;
 // Word 预览会把整篇文档分页后全部挂进 DOM。超过该体量时保留编辑与导出，
 // 避免长文档在每次内容变化后占满渲染线程。
 const inlinePreviewCharacterLimit = 250_000;
@@ -122,9 +125,6 @@ type SaveableVaultTab = DocumentTab & {
 type SaveableExternalTab = DocumentTab & {
   kind: "vault";
   absolutePath: string;
-  eol: VaultEol;
-  hasBom: boolean;
-  modifiedMs: number;
 };
 
 function canSaveVaultTab(tab: DocumentTab | undefined, vaultRoot: string | undefined): tab is SaveableVaultTab {
@@ -140,12 +140,11 @@ function canSaveVaultTab(tab: DocumentTab | undefined, vaultRoot: string | undef
 }
 
 function canSaveExternalTab(tab: DocumentTab | undefined): tab is SaveableExternalTab {
+  // 外部路径打开的文件没有文件树读取时的编码元数据；写回函数会使用
+  // LF/无 BOM 默认值，并在后续保存后记录新的修改时间。
   return Boolean(
     tab?.kind === "vault"
-    && tab.absolutePath
-    && tab.eol
-    && tab.hasBom !== undefined
-    && tab.modifiedMs !== undefined,
+    && tab.absolutePath,
   );
 }
 
@@ -341,6 +340,11 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const setSaveState = useVaultStore((state) => state.setSaveState);
   // 窄屏下三栏挤不开，直接不渲染预览——不是藏起来而是不跑那条解析+分页管线。
   const isNarrow = useMediaQuery("(max-width: 1100px)");
+  const splitPaneRef = useRef<HTMLDivElement>(null);
+  const [splitPaneWidth, setSplitPaneWidth] = useState(0);
+  const pageZoomScale = clampPageZoomPercent(appConfig?.pageZoomPercent ?? PAGE_ZOOM_DEFAULT_PERCENT) / 100;
+  const splitPaneTooNarrow = splitPaneWidth / pageZoomScale < editorMinWidth + previewMinWidth + 5;
+  const layoutTooNarrow = isNarrow || splitPaneTooNarrow;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const isImageTab = activeTab?.kind === "image";
   const openWorkspaceTabs = workspacePageTabs.filter((tab) => pageTabs.includes(tab.id));
@@ -354,7 +358,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   // 保存、导出、文件名推导仍必须使用 markdown，不能因此拿到旧内容。
   const deferredPreviewMarkdown = useDeferredValue(markdown);
   const previewPausedForLongDocument = markdown.length > inlinePreviewCharacterLimit;
-  const showPreviewPanel = isDocumentWorkspace && !isImageTab && previewVisible && !isNarrow && !previewPausedForLongDocument;
+  const showPreviewPanel = isDocumentWorkspace && !isImageTab && previewVisible && !layoutTooNarrow && !previewPausedForLongDocument;
   const markdownSourcePath = isImageTab ? undefined : activeTab?.absolutePath;
   const documentKey = activeTab ? `${activeTab.id}#${activeTab.revision}` : "empty";
   const canSaveActiveDocument = Boolean(activeTab && activeTab.kind !== "image");
@@ -420,7 +424,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       toast.info(`文档超过 ${inlinePreviewCharacterLimit.toLocaleString()} 字符，已暂停 Word 预览`);
       return;
     }
-    if (isNarrow) {
+    if (layoutTooNarrow) {
       previewExpandedFromNarrowRef.current = true;
       setPreviewExpanded(true);
       return;
@@ -737,22 +741,34 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const [previewZoom, setPreviewZoom] = useState(40);
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const previewExpandedFromNarrowRef = useRef(false);
-  const showInlinePreviewSidebar = showPreviewPanel && previewWidth >= inlinePreviewSidebarMinWidth;
-  const stackInlinePreviewFooter = previewWidth < inlinePreviewControlsMinWidth;
   const [expandedStyleEditorOpen, setExpandedStyleEditorOpen] = useState(false);
   const [previewPageCount, setPreviewPageCount] = useState(1);
   const [previewSidebarView, setPreviewSidebarView] = useState<PreviewSidebarView>("pages");
   const [previewSidebarWidth, setPreviewSidebarWidth] = useState(208);
+  // 缩略图栏若把 Word 页面压得过窄，就直接不渲染。底部控件沿用同一紧凑
+  // 布局，避免左边还在、下方却横向溢出的临界状态。
+  const useCompactInlinePreviewLayout = previewWidth <= previewSidebarWidth + inlinePreviewSidebarDividerWidth + inlinePreviewPageMinWidth;
+  const showInlinePreviewSidebar = showPreviewPanel && !useCompactInlinePreviewLayout;
   const [previewOutline, setPreviewOutline] = useState<PreviewOutlineItem[]>([]);
   const [previewThumbnailContainer, setPreviewThumbnailContainer] = useState<HTMLDivElement | null>(null);
   const [titlebarTabHost, setTitlebarTabHost] = useState<HTMLElement | null>(null);
-  const splitPaneRef = useRef<HTMLDivElement>(null);
   const expandedPreviewRef = useRef<HTMLDivElement>(null);
   const conversionVersionRef = useRef(0);
   // 预览样式的读取是异步的，切模板与关闭样式编辑器都会触发。用递增版本号
   // 而不是 effect 局部的 cancelled 标志：后者管不到 closeExpandedStyleEditor
   // 这种在 effect 之外发起的读取，晚回来的旧结果会把新模板的样式覆盖掉。
   const previewStyleVersionRef = useRef(0);
+
+  useEffect(() => {
+    const element = splitPaneRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return undefined;
+
+    const updateWidth = () => setSplitPaneWidth(element.getBoundingClientRect().width);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [activePage, expandedStyleEditorOpen, previewExpanded]);
 
   useEffect(() => {
     setTitlebarTabHost(document.getElementById("mk-titlebar-document-tabs"));
@@ -861,12 +877,12 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   }, [activeTabId]);
 
   useEffect(() => {
-    if (!isNarrow && previewExpanded && previewExpandedFromNarrowRef.current) {
+    if (!layoutTooNarrow && previewExpanded && previewExpandedFromNarrowRef.current) {
       previewExpandedFromNarrowRef.current = false;
       setPreviewVisible(true);
       setPreviewExpanded(false);
     }
-  }, [isNarrow, previewExpanded, setPreviewVisible]);
+  }, [layoutTooNarrow, previewExpanded, setPreviewVisible]);
 
   useEffect(() => {
     if (!previewExpanded && !showInlinePreviewSidebar) return undefined;
@@ -899,7 +915,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   /// 从窗口拖入的文件。刻意不经过 vault 命令——那套会拒绝目录外的路径，
   /// 而拖进来的文件本来就多半不在当前打开的目录里。read_markdown_file
-  /// 可以读任意路径，代价是这些标签没有 vault 的乐观锁与自动保存基准。
+  /// 可以读任意路径，后续编辑仍通过绝对路径自动写回原文件。
   async function openDroppedPaths(paths: string[]) {
     let lastId: string | undefined;
     let failed = 0;
@@ -987,9 +1003,11 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       // mermaid 块要先栅格化成 PNG 落盘再引用：DOCX 不支持 SVG，
       // Pandoc 遇到 SVG 会把那张图整个跳过。
-      const { markdown: preparedInput, failed: mermaidFailed } = await inlineMermaidImages(input);
+      const { markdown: preparedInput, failed: mermaidFailed, errors: mermaidErrors } = await inlineMermaidImages(input);
       if (mermaidFailed > 0) {
-        toast.warning(`${mermaidFailed} 张图表未能导出，已保留原始代码块`);
+        toast.warning(`${mermaidFailed} 张图表未能导出，已保留原始代码块`, {
+          description: mermaidErrors[0],
+        });
       }
 
       const result = await convertMarkdown({
@@ -1192,11 +1210,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const rect = container.getBoundingClientRect();
+    // CSS zoom 会让 getBoundingClientRect 与受控 grid 宽度处于不同坐标系，
+    // 统一换算到未缩放的布局坐标，拖动时才不会出现移动但宽度不变。
+    const layoutScale = rect.width / Math.max(container.offsetWidth, 1);
     let origin = event.clientX;
     let baseWidth = collapsed ? previewMinWidth : previewWidth;
     let collapsedDuringDrag = collapsed;
     const move = (moveEvent: PointerEvent) => {
-      const nextWidth = baseWidth - (moveEvent.clientX - origin);
+      const nextWidth = baseWidth - (moveEvent.clientX - origin) / layoutScale;
 
       if (!collapsedDuringDrag && nextWidth >= rect.width - editorMinWidth) {
         previewExpandedFromNarrowRef.current = false;
@@ -1223,7 +1244,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
       if (collapsedDuringDrag) return;
 
-      const maxWidth = Math.max(previewMinWidth, rect.width - editorMinWidth - 5);
+      const maxWidth = Math.max(previewMinWidth, rect.width / layoutScale - editorMinWidth - 5);
       setPreviewWidth(Math.min(maxWidth, Math.max(previewMinWidth, Math.round(nextWidth))));
     };
     const stop = () => {
@@ -1294,11 +1315,21 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       });
   }
 
-  function renderConvertFooter(className?: string, stacked = false) {
+  type ConvertFooterLayout = "wide" | "responsive" | "expanded" | "two-column" | "one-column";
+
+  function renderConvertFooter(className?: string, layout: ConvertFooterLayout = "wide") {
     const canRevealOutput = Boolean(convertResult?.ok && !convertResult.simulated && convertResult.output);
+    const stacked = layout !== "wide";
+    const controlsClass = layout === "responsive" || layout === "expanded"
+      ? "grid-cols-3"
+      : layout === "two-column"
+      ? "grid-cols-2"
+      : layout === "one-column"
+        ? "grid-cols-1"
+        : "grid-cols-[180px_minmax(150px,0.8fr)_minmax(180px,1fr)_150px] max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1";
 
     return (
-      <section className={cn("mk-convert-footer flex min-h-0 flex-col justify-center gap-2 rounded-[5px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", className)}>
+      <section className={cn("mk-preview-footer mk-convert-footer flex min-h-0 min-w-0 flex-col justify-center gap-2 rounded-[5px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", `mk-convert-footer-${layout}`, className)}>
         <div className={cn("flex min-w-0 gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-center" : "items-center")}>
           <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
             <CheckCircle2 className="size-3.5" />
@@ -1316,7 +1347,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           ) : null}
         </div>
 
-        <div className={cn("grid min-w-0 items-center gap-2", stacked ? "grid-cols-1" : "grid-cols-[180px_minmax(150px,0.8fr)_minmax(180px,1fr)_150px] max-[1100px]:grid-cols-[minmax(126px,0.72fr)_minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(116px,auto)] max-[760px]:grid-cols-1")}>
+        <div className={cn("mk-convert-controls grid min-w-0 items-center gap-2", controlsClass)}>
           <Select value={templateId} onValueChange={(value) => {
             setTemplateId(value);
             setCurrentTemplateId(value);
@@ -1357,7 +1388,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
               />
             </div>
           </TooltipAnchor>
-          <PrimaryActionButton className="h-10 text-sm font-black max-[760px]:min-w-[116px] max-[640px]:min-w-[104px]" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
+          <PrimaryActionButton className="mk-convert-submit h-10 text-sm font-black max-[760px]:min-w-[116px] max-[640px]:min-w-[104px]" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
             {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
             {isConverting ? "转换中" : "开始转换"}
           </PrimaryActionButton>
@@ -1437,7 +1468,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div
             ref={expandedPreviewRef}
-            className="grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)] gap-0 max-[900px]:!grid-cols-1"
+            className="mk-preview-layout grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)] gap-0 max-[900px]:!grid-cols-1"
             style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
           >
             <WordPreviewSidebar
@@ -1478,7 +1509,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
               previewClassName="h-full"
             />
           </div>
-          {renderConvertFooter("mt-1 shrink-0")}
+          {renderConvertFooter("mt-1 shrink-0", "responsive")}
         </div>
       </>
     );
@@ -1574,7 +1605,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       <div
         ref={splitPaneRef}
         className="grid min-h-0 min-w-0 gap-0 overflow-hidden"
-        style={{ gridTemplateColumns: isNarrow || !isDocumentWorkspace ? "minmax(0,1fr)" : showPreviewPanel ? `minmax(${editorMinWidth}px,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` : "minmax(0,1fr) 5px" }}
+        style={{ gridTemplateColumns: layoutTooNarrow || !isDocumentWorkspace ? "minmax(0,1fr)" : showPreviewPanel ? `minmax(${editorMinWidth}px,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` : "minmax(0,1fr) 5px" }}
         >
           <div className="min-h-0 min-w-0 overflow-hidden">
             {isWorkspacePage ? (
@@ -1614,17 +1645,20 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
         {showPreviewPanel ? (
           <>
-            <div
-              className="group flex min-h-0 cursor-col-resize items-center justify-center"
-              onPointerDown={(event) => handlePreviewResizeStart(event, false)}
-              role="separator"
-              aria-label="调整 Word 预览宽度"
-            >
-              <span className="h-16 w-1 rounded-full bg-transparent" />
+            <div className="relative z-20 min-h-0 w-0">
+              <div
+                className="group absolute inset-y-0 left-1/2 flex w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center"
+                onPointerDown={(event) => handlePreviewResizeStart(event, false)}
+                style={{ touchAction: "none" }}
+                role="separator"
+                aria-label="调整 Word 预览宽度"
+              >
+                <span className="pointer-events-none h-16 w-1 rounded-full bg-transparent transition group-hover:bg-slate-300/70 dark:group-hover:bg-zinc-700" />
+              </div>
             </div>
 
             <div
-              className={cn("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-x-0 gap-y-1 overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)]" : "grid-cols-1")}
+              className={cn("mk-preview-layout grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-x-0 gap-y-1 overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)]" : "grid-cols-1")}
               style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
             >
               {showInlinePreviewSidebar ? (
@@ -1665,16 +1699,19 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 onOpenLink={(target) => void handleOpenLink(target)}
                 className="min-h-0 min-w-0"
               />
-              {renderConvertFooter("col-span-full shrink-0", stackInlinePreviewFooter)}
+              {renderConvertFooter("col-span-full shrink-0", "responsive")}
             </div>
           </>
-        ) : isDocumentWorkspace && !isNarrow ? (
-          <div
-            className="group min-h-0 cursor-col-resize"
-            onPointerDown={(event) => handlePreviewResizeStart(event, true)}
-            role="separator"
-            aria-label="拖动展开 Word 预览"
-          />
+        ) : isDocumentWorkspace && !layoutTooNarrow ? (
+          <div className="relative z-20 min-h-0 w-0">
+            <div
+              className="group absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 cursor-col-resize touch-none"
+              onPointerDown={(event) => handlePreviewResizeStart(event, true)}
+              style={{ touchAction: "none" }}
+              role="separator"
+              aria-label="拖动展开 Word 预览"
+            />
+          </div>
         ) : null}
       </div>
 
@@ -1760,13 +1797,14 @@ function ConvertPreviewPanel({
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
-        <AppSurface as="aside" padding="none" radius="md" data-mk-context-menu className={cn("flex min-h-0 flex-col overflow-hidden p-3", className)}>
-      <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
-        <div className="min-w-0">
+        <AppSurface as="aside" padding="none" radius="md" data-mk-context-menu className={cn("mk-preview-panel flex min-h-0 flex-col overflow-hidden p-3", className)}>
+      <div className="mk-preview-header mb-2.5 flex min-w-0 shrink-0 items-center justify-between gap-2">
+        <div className="mk-preview-title min-w-0 flex-1">
           <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
           <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
         </div>
         <WordPreviewToolbar
+          className="mk-preview-toolbar"
           zoom={zoom}
           canZoomOut={zoom > previewZoomMin}
           canZoomIn={zoom < previewZoomMax}

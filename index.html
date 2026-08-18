@@ -31,14 +31,16 @@
         root.dataset.accentColor = accentColor;
         root.dataset.bootTheme = isDark ? "dark" : "light";
         root.dataset.floatingWindow = isFloatingWindow ? "true" : "false";
-        root.style.backgroundColor = isFloatingWindow ? "transparent" : isDark ? "#111111" : "#f6f8fb";
+        // The app shell paints the window surface. Keep the document root transparent
+        // so a border-radius on the shell can expose the native window corners.
+        root.style.backgroundColor = "transparent";
         root.style.colorScheme = isDark ? "dark" : "light";
       })();
     </script>
     <style>
       :root {
         color-scheme: light dark;
-        background: #111111;
+        background: #f4f6f8;
       }
 
       html,

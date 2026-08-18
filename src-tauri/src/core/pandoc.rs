@@ -10,6 +10,8 @@ use tauri::{AppHandle, Manager};
 use crate::core::config::load_config;
 
 const BUNDLED_PANDOC_RESOURCE_PATH: &str = "pandoc/windows/pandoc.exe";
+const PANDOC_MARKDOWN_INPUT_FORMAT: &str =
+    "markdown+hard_line_breaks+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe";
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -182,7 +184,7 @@ fn run_resolved_pandoc_to_docx(
     command
         .arg(input_arg)
         .arg("--from")
-        .arg("markdown+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe")
+        .arg(PANDOC_MARKDOWN_INPUT_FORMAT)
         .arg("--highlight-style=tango")
         .arg("-o")
         .arg(output_arg);
@@ -392,6 +394,7 @@ impl PandocSource {
 mod tests {
     use super::{
         pandoc_document_option_args, strip_windows_extended_path_prefix, PandocDocumentOptions,
+        PANDOC_MARKDOWN_INPUT_FORMAT,
     };
     use std::path::Path;
 
@@ -411,6 +414,11 @@ mod tests {
             pandoc_document_option_args(&PandocDocumentOptions::default()),
             vec!["--metadata=title:"]
         );
+    }
+
+    #[test]
+    fn preserves_explicit_markdown_line_breaks() {
+        assert!(PANDOC_MARKDOWN_INPUT_FORMAT.contains("+hard_line_breaks"));
     }
 
     #[test]

@@ -54,6 +54,8 @@ pub struct AppConfig {
     pub auto_save: bool,
     #[serde(default = "default_auto_save_delay_ms")]
     pub auto_save_delay_ms: u64,
+    #[serde(default = "default_page_zoom_percent")]
+    pub page_zoom_percent: u32,
     #[serde(default)]
     pub file_tree_width: Option<u32>,
     #[serde(default)]
@@ -67,6 +69,10 @@ pub const MAX_RECENT_VAULTS: usize = 10;
 /// 太长则失去「自动」的意义，用户切走时改动还没落盘。
 const MIN_AUTO_SAVE_DELAY_MS: u64 = 300;
 const MAX_AUTO_SAVE_DELAY_MS: u64 = 10_000;
+
+/// 页面缩放范围：避免过小影响可读性，也避免过大导致工作区横向溢出。
+const MIN_PAGE_ZOOM_PERCENT: u32 = 80;
+const MAX_PAGE_ZOOM_PERCENT: u32 = 120;
 
 /// 文件树面板宽度的上下限，和前端拖拽分隔条的约束保持一致。
 const MIN_FILE_TREE_WIDTH: u32 = 180;
@@ -96,6 +102,7 @@ pub fn default_config() -> AppConfig {
         recent_vaults: Vec::new(),
         auto_save: default_auto_save(),
         auto_save_delay_ms: default_auto_save_delay_ms(),
+        page_zoom_percent: default_page_zoom_percent(),
         file_tree_width: None,
         last_opened_file: None,
     }
@@ -151,6 +158,10 @@ fn default_auto_save() -> bool {
 
 fn default_auto_save_delay_ms() -> u64 {
     1000
+}
+
+fn default_page_zoom_percent() -> u32 {
+    100
 }
 
 pub fn load_config() -> AppConfig {
@@ -272,6 +283,10 @@ fn normalize_vault_fields(config: &mut AppConfig) {
         .auto_save_delay_ms
         .clamp(MIN_AUTO_SAVE_DELAY_MS, MAX_AUTO_SAVE_DELAY_MS);
 
+    config.page_zoom_percent = config
+        .page_zoom_percent
+        .clamp(MIN_PAGE_ZOOM_PERCENT, MAX_PAGE_ZOOM_PERCENT);
+
     config.file_tree_width = config
         .file_tree_width
         .map(|width| width.clamp(MIN_FILE_TREE_WIDTH, MAX_FILE_TREE_WIDTH));
@@ -330,6 +345,18 @@ mod tests {
         assert_eq!(config.recent_vaults.len(), MAX_RECENT_VAULTS);
         assert_eq!(config.recent_vaults[0], r"D:\Notes");
         assert_eq!(config.recent_vaults[1], r"D:\v0");
+    }
+
+    #[test]
+    fn normalizes_page_zoom_to_supported_range() {
+        let minimum = config_with(|config| config.page_zoom_percent = 1);
+        assert_eq!(minimum.page_zoom_percent, 80);
+
+        let maximum = config_with(|config| config.page_zoom_percent = 999);
+        assert_eq!(maximum.page_zoom_percent, 120);
+
+        let unchanged = config_with(|config| config.page_zoom_percent = 115);
+        assert_eq!(unchanged.page_zoom_percent, 115);
     }
 
     #[test]
@@ -403,6 +430,7 @@ mod tests {
         assert_eq!(config.default_template_id, "official-document");
         assert!(config.auto_save);
         assert_eq!(config.auto_save_delay_ms, 1000);
+        assert_eq!(config.page_zoom_percent, 100);
         assert!(config.recent_vaults.is_empty());
         assert!(config.vault_root.is_none());
     }

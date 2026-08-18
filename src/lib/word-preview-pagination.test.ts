@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows } from "./word-preview-pagination.ts";
 
-test("Mermaid 分页使用 SVG 实际高度而不是固定最大高度", () => {
+test("Mermaid 分页使用 SVG 实际高度且不预留语言标签空间", () => {
   const height = estimateMermaidBlockHeight({
     size: { width: 517.3, height: 177.65 },
     contentWidth: 554,
     horizontalPadding: 28,
-    verticalPadding: 46,
+    verticalPadding: 24,
     marginHeight: 18,
   });
 
-  assert.ok(height > 242 && height < 245);
+  assert.ok(height > 221 && height < 223);
 });
 
 test("Mermaid 尺寸未知时保留加载阶段的最大高度兜底", () => {
@@ -21,6 +21,21 @@ test("Mermaid 尺寸未知时保留加载阶段的最大高度兜底", () => {
     verticalPadding: 46,
     marginHeight: 18,
   }), 498);
+});
+
+test("纵向 Mermaid 按页面可用高度等比缩放而不是裁剪", () => {
+  const pageContentHeight = 760;
+  const marginHeight = 18;
+  const height = estimateMermaidBlockHeight({
+    size: { width: 420, height: 2400 },
+    contentWidth: 554,
+    horizontalPadding: 28,
+    verticalPadding: 24,
+    marginHeight,
+    maxBlockHeight: pageContentHeight - marginHeight,
+  });
+
+  assert.equal(height, pageContentHeight);
 });
 
 test("分页会把可拆块的一部分放进当前页剩余空间", () => {
@@ -121,6 +136,20 @@ test("表格按可用高度拆分数据行并在续页重复表头", () => {
     tail: { header: "header", rows: ["row-3", "row-4"] },
     rowsInHead: 2,
   });
+});
+
+test("页尾放不下首条数据行时不会单独留下表头", () => {
+  const split = splitTableRows({
+    header: "header",
+    rows: ["row-1", "row-2"],
+    availableHeight: 50,
+    fixedHeight: 15,
+    repeatHeader: true,
+    estimateHeaderHeight: () => 30,
+    estimateRowHeight: () => 30,
+  });
+
+  assert.equal(split, undefined);
 });
 
 test("模板关闭跨页重复表头时续页只保留数据行", () => {

@@ -41,6 +41,30 @@ const calloutPresets: Record<string, CalloutPreset> = {
   cite: { tone: "slate", title: "引用" },
 };
 
+/**
+ * Obsidian treats every `[!type]` line as a new Callout, even when a quoted
+ * blank line would make CommonMark keep it inside the preceding blockquote.
+ * Normalize that boundary before handing Markdown to a generic parser.
+ */
+export function separateMarkdownCallouts(markdown: string): string {
+  const output: string[] = [];
+  let inQuote = false;
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const trimmed = line.trimStart();
+    const quoteContent = trimmed.startsWith(">")
+      ? trimmed.slice(1).trimStart()
+      : undefined;
+    const isCallout = quoteContent !== undefined && /^\[![a-z][\w-]*\](?:[+-])?(?:[ \t]+|$)/i.test(quoteContent);
+
+    if (isCallout && inQuote) output.push("");
+    output.push(line);
+    inQuote = quoteContent !== undefined;
+  }
+
+  return output.join("\n");
+}
+
 /** 解析 Obsidian 兼容的 `> [!type] 标题` 首行。 */
 export function parseMarkdownCalloutHeader(text: string): MarkdownCalloutHeader | undefined {
   const match = text.match(/^(\s*)\[!([a-z][\w-]*)\]([+-])?(?:[ \t]+|$)/i);

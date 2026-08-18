@@ -641,7 +641,9 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
-  --radius: 0.3125rem;
+  /* 所有常规卡片、控件和面板的统一圆角。圆形按钮仍由 rounded-full 单独控制。 */
+  --mk-radius: 5px;
+  --radius: var(--mk-radius);
   --font-emoji: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
   --app-control-hover: #edf0f5;
   --background: #f8f9ff;
@@ -845,8 +847,19 @@
 [data-slot="input"],
 [data-slot="textarea"],
 [data-slot="select-trigger"],
-[data-slot="card"] {
-  border-radius: var(--radius);
+[data-slot="card"],
+.mk-app-window,
+.mk-card,
+.mk-card-solid,
+.mk-workspace-panel,
+.mk-sidebar-panel,
+.mk-editor-surface,
+.mk-doc-preview,
+.mk-drop-zone,
+.mk-output-strip,
+.mk-preview-panel,
+.mk-preview-footer {
+  border-radius: var(--mk-radius) !important;
 }
 
 .mk-convert-control,
@@ -861,8 +874,9 @@
 [data-mk-tab-context-menu-content],
 .mk-file-tree-row,
 .mk-file-tree-search,
-.mk-file-tree-switcher {
-  border-radius: var(--radius) !important;
+.mk-file-tree-switcher,
+.mk-template-preview-viewport {
+  border-radius: var(--mk-radius) !important;
 }
 
 /* Tooltip 通过 Portal 挂到 body，不能依赖上下文容器的深色类。统一使用略亮的
@@ -999,18 +1013,25 @@ body,
 }
 
 html {
-  background: var(--background);
+  background: transparent;
 }
 
 body {
   margin: 0;
   min-width: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 10% 8%, rgba(125, 211, 252, 0.68), transparent 28rem),
-    radial-gradient(circle at 88% 16%, rgba(37, 99, 235, 0.26), transparent 32rem),
-    radial-gradient(circle at 80% 86%, rgba(14, 165, 233, 0.22), transparent 28rem),
-    linear-gradient(135deg, #f8fcff 0%, #e5f3ff 44%, #d7ebff 100%);
+  background: transparent;
+}
+
+/* 无边框桌面窗口的四角透出系统背景；工作区本身负责绘制完整底色。 */
+#root,
+.mk-app-bg {
+  overflow: hidden;
+  border-radius: var(--mk-radius);
+}
+
+#root {
+  background: transparent !important;
 }
 
 html[data-floating-window="true"],
@@ -1683,6 +1704,10 @@ select {
     user-select: text;
   }
 
+  .mk-cm-has-frontmatter .mk-cm-document-title {
+    padding-bottom: 0.2em;
+  }
+
   .mk-cm-document-title .mk-cm-document-title-input {
     display: block;
     box-sizing: border-box;
@@ -1722,7 +1747,11 @@ select {
   }
 
   .mk-cm-block-widget-spacing--frontmatter {
-    padding: 4px 0 8px;
+    padding: 4px 0 18px;
+  }
+
+  .mk-cm-frontmatter-source-end {
+    padding-bottom: 18px;
   }
 
   .mk-cm-block-widget-spacing--media {
@@ -2293,8 +2322,7 @@ select {
   .mk-cm-mermaid {
     position: relative;
     margin: 0;
-    /* 顶部多留出一行给左上角的 MERMAID 标签，和代码块的观感对齐。 */
-    padding: 24px 12px 12px;
+    padding: 12px;
     border: 1px solid rgba(226, 232, 240, 0.95);
     border-radius: 4px;
     /* 同上，与预览侧的图表外框同色，不带透明度。 */
@@ -2364,8 +2392,7 @@ select {
 
   /* 语言名画在代码块左上角。用伪元素而不是插 widget：widget 会占据文档流，
      把首行代码顶下去，而且每次重建都要比对 eq。 */
-  .cm-line[data-code-language]::before,
-  .mk-cm-mermaid[data-code-language]::before {
+  .cm-line[data-code-language]::before {
     content: attr(data-code-language);
     position: absolute;
     left: 12px;
@@ -3757,8 +3784,7 @@ select {
     background: rgba(59, 130, 246, 0.12);
   }
 
-  .dark .cm-line[data-code-language]::before,
-  .dark .mk-cm-mermaid[data-code-language]::before {
+  .dark .cm-line[data-code-language]::before {
     color: rgba(161, 161, 170, 0.85);
   }
 
@@ -4185,6 +4211,110 @@ select {
     .mk-about-guide-grid {
       flex: none !important;
       grid-auto-rows: auto !important;
+    }
+  }
+
+  .mk-preview-layout {
+    container-type: inline-size;
+    container-name: mk-preview-layout;
+  }
+
+  .mk-convert-footer {
+    container-type: inline-size;
+    container-name: mk-convert-footer;
+  }
+
+  @container mk-convert-footer (min-width: 1050px) {
+    .mk-convert-footer-responsive .mk-convert-controls,
+    .mk-convert-footer-expanded .mk-convert-controls,
+    .mk-convert-footer-two-column .mk-convert-controls {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+  }
+
+  @container mk-convert-footer (max-width: 850px) {
+    .mk-convert-footer-responsive .mk-convert-controls,
+    .mk-convert-footer-expanded .mk-convert-controls {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+  }
+
+  @container mk-convert-footer (max-width: 480px) {
+    .mk-convert-footer-responsive .mk-convert-controls,
+    .mk-convert-footer-expanded .mk-convert-controls {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .mk-convert-footer-two-column .mk-convert-controls {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+  }
+
+  .mk-preview-toolbar {
+    max-width: 100%;
+  }
+
+  @container mk-preview-layout (max-width: 600px) {
+    .mk-preview-header {
+      justify-content: flex-start;
+      gap: 4px;
+    }
+
+    .mk-preview-title {
+      flex-basis: 120px;
+    }
+
+    .mk-preview-toolbar {
+      margin-left: 0;
+      gap: 2px !important;
+      padding: 2px !important;
+    }
+
+    .mk-preview-toolbar > [data-slot="button"] {
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+    }
+
+    .mk-preview-toolbar > [data-slot="button"] svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .mk-preview-toolbar > span {
+      width: 32px;
+      font-size: 11px;
+    }
+
+    .mk-preview-footer {
+      gap: 6px !important;
+      padding: 8px !important;
+    }
+
+    .mk-preview-footer > div:first-child {
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    .mk-preview-footer > div:first-child > div:first-child {
+      width: 22px;
+      height: 22px;
+    }
+
+    .mk-preview-footer .mk-convert-control,
+    .mk-preview-footer [data-slot="select-trigger"] {
+      height: 34px !important;
+      padding-inline: 8px !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+    }
+
+    .mk-preview-footer .mk-convert-submit {
+      min-width: 0 !important;
+      height: 36px !important;
+      padding-inline: 10px !important;
+      border-radius: 4px !important;
+      font-size: 12px !important;
     }
   }
 }

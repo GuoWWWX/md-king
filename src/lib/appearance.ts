@@ -1,6 +1,24 @@
 import type { AccentColor, ThemeMode } from "@/types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const APPEARANCE_STORAGE_KEY = "md-king-appearance";
+
+function syncNativeWindowBackground(isDark: boolean) {
+  if (document.documentElement.dataset.floatingWindow === "true") return;
+  const tauriWindow = window as Window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };
+  if (!tauriWindow.__TAURI_INTERNALS__ && !tauriWindow.__TAURI__) return;
+  try {
+    const currentWindow = getCurrentWindow();
+    void currentWindow.setBackgroundColor(isDark ? "#2e2e2e" : "#f4f6f8").catch(() => {
+      // 原生窗口不可用时，页面主题仍然正常生效。
+    });
+    void currentWindow.setShadow(false).catch(() => {
+      // 当前平台不支持窗口阴影设置时，页面主题仍然正常生效。
+    });
+  } catch {
+    // 浏览器开发环境没有原生窗口，页面主题仍然正常生效。
+  }
+}
 
 export const accentThemes: Record<AccentColor, { primary: string; hover: string; ring: string; accent: string; accentForeground: string; muted: string; backgroundGlow: string }> = {
   indigo: { primary: "#4f46e5", hover: "#4338ca", ring: "#4f46e5", accent: "#eef2ff", accentForeground: "#312e81", muted: "#eef2ff", backgroundGlow: "rgba(79, 70, 229, 0.12)" },
@@ -42,6 +60,7 @@ export function applyAppearance(themeMode: ThemeMode, accentColor: AccentColor) 
   root.style.setProperty("--mk-blue-soft", isDark ? `color-mix(in srgb, ${theme.primary} 22%, #111827)` : theme.accent);
   root.style.setProperty("--mk-blue-faint", isDark ? `color-mix(in srgb, ${theme.primary} 12%, #0f172a)` : theme.muted);
   root.style.setProperty("--mk-blue-border", isDark ? `color-mix(in srgb, ${theme.primary} 28%, transparent)` : `color-mix(in srgb, ${theme.primary} 28%, white)`);
+  syncNativeWindowBackground(isDark);
 
   try {
     window.localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ themeMode, accentColor }));

@@ -475,6 +475,16 @@ export const defaultPageSettings: PageSettingsDraft = {
   tocDepth: "1-3",
   tocLeader: "dot",
   tocShowPageNumbers: true,
+  tocTitle: "目录",
+  tocTitleChineseFont: "宋体",
+  tocTitleLatinFont: "Times New Roman",
+  tocTitleFontSize: 18,
+  tocTitleFontWeight: "400",
+  tocTitleColor: "#111827",
+  tocTitleLineHeight: "1.35",
+  tocTitleAlign: "center",
+  tocTitleBeforeSpacing: 0,
+  tocTitleAfterSpacing: 18,
 };
 
 export const defaultMarkdownFeatures: MarkdownFeatureSettings = {
@@ -777,9 +787,9 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       tableLayout: "auto",
       fitToPageWidth: true,
       tableWidthPercent: 100,
-      borderColor: "#CBD5E1",
-      headerBorderColor: "#CBD5E1",
-      bodyBorderColor: "#CBD5E1",
+      borderColor: "#000000",
+      headerBorderColor: "#000000",
+      bodyBorderColor: "#000000",
       headerBackgroundColor: "#FFFFFF",
       headerBold: true,
       headerFontSize: 10.5,
@@ -949,6 +959,20 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
       if (current?.chineseFont === legacy.chineseFont && current.fontSize === legacy.fontSize) {
         styles[styleId] = defaults.styles[styleId];
       }
+    }
+
+    // 旧版本默认报告模板使用浅灰/蓝灰边框；仅迁移这组精确的旧默认值，
+    // 不覆盖用户后来主动设置的其他颜色。
+    const table = styles.table;
+    if (table?.borderColor?.toUpperCase() === "#CBD5E1"
+      && table.headerBorderColor?.toUpperCase() === "#A5B4FC"
+      && table.bodyBorderColor?.toUpperCase() === "#CBD5E1") {
+      styles.table = {
+        ...table,
+        borderColor: "#000000",
+        headerBorderColor: "#000000",
+        bodyBorderColor: "#000000",
+      };
     }
   }
   const legacyDefaultHeadingOneDrafts = [

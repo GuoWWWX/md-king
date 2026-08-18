@@ -195,6 +195,16 @@ export type PageSettingsDraft = {
   tocDepth: string;
   tocLeader: TocLeaderStyle;
   tocShowPageNumbers: boolean;
+  tocTitle: string;
+  tocTitleChineseFont: string;
+  tocTitleLatinFont: string;
+  tocTitleFontSize: number;
+  tocTitleFontWeight: string;
+  tocTitleColor: string;
+  tocTitleLineHeight: string;
+  tocTitleAlign: Exclude<HorizontalAlign, "justify">;
+  tocTitleBeforeSpacing: number;
+  tocTitleAfterSpacing: number;
 };
 
 export type MarkdownFeatureSettings = {

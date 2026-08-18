@@ -35,7 +35,7 @@ $replacement = @'
     ${EndIf}
 '@
 
-if ($content -notlike "*Keep the maintenance page visible*") {
+if ($content -notlike "*Keep the maintenance page visible*" -and $content -notlike "*For upgrades, keep the current installation*") {
   if ($content -notmatch $defaultSelectionPattern) {
     throw "Could not find the NSIS maintenance page default-selection block."
   }

@@ -2,6 +2,9 @@ import { ImageIcon, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState, type WheelEvent } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { svgDataUrl } from "@/lib/svg-image";
+
+export { svgDataUrl };
 
 const minZoom = 0.25;
 const maxZoom = 4;
@@ -15,15 +18,6 @@ type MediaPreviewRequest = {
 
 function clampZoom(value: number) {
   return Math.min(maxZoom, Math.max(minZoom, value));
-}
-
-export function svgDataUrl(svg: string) {
-  // Mermaid 在编辑区中以 HTML 解析，outerHTML 会把 XHTML 的 <br /> 序列化成
-  // <br>。内联 SVG 能显示，但放进 img 后会按 XML 解码并直接失败。
-  const imageSafeSvg = svg.replace(/<br\b([^>]*)>/gi, (tag, attributes: string) => (
-    /\/\s*$/.test(attributes) ? tag : `<br${attributes} />`
-  ));
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(imageSafeSvg)}`;
 }
 
 export function requestMediaPreview(request: MediaPreviewRequest) {

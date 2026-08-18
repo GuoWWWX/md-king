@@ -9,6 +9,8 @@ export type MarkdownFrontmatterValue = string | string[];
 export type MarkdownFrontmatterEntry = {
   key: string;
   value: MarkdownFrontmatterValue;
+  /** 该属性键所在源码行的起点。 */
+  sourceFrom: number;
 };
 
 export type ParsedYamlFrontmatter = {
@@ -70,9 +72,18 @@ export function parseYamlFrontmatter(markdown: string): ParsedYamlFrontmatter | 
   const closingLine = lines.findIndex((line, index) => index > 0 && /^(?:---|\.\.\.)\s*$/.test(line));
   if (closingLine < 0) return undefined;
 
+  const lineStarts: number[] = [];
+  let lineOffset = 0;
+  for (const line of lines) {
+    lineStarts.push(lineOffset);
+    lineOffset += line.length;
+    lineOffset += source.startsWith("\r\n", lineOffset) ? 2 : source[lineOffset] === "\n" ? 1 : 0;
+  }
+
   const entries: MarkdownFrontmatterEntry[] = [];
   let listEntry: MarkdownFrontmatterEntry | undefined;
-  for (const line of lines.slice(1, closingLine)) {
+  for (let lineIndex = 1; lineIndex < closingLine; lineIndex += 1) {
+    const line = lines[lineIndex];
     const property = line.match(/^\s*([^:\s][^:]*?)\s*:\s*(.*?)\s*$/);
     if (property) {
       const value = property[2];
@@ -80,6 +91,7 @@ export function parseYamlFrontmatter(markdown: string): ParsedYamlFrontmatter | 
       const entry: MarkdownFrontmatterEntry = {
         key: property[1],
         value: inlineList ?? (value ? unquoteYamlValue(value) : []),
+        sourceFrom: bomLength + lineStarts[lineIndex],
       };
       entries.push(entry);
       listEntry = Array.isArray(entry.value) ? entry : undefined;

@@ -25,6 +25,7 @@ export type AppConfig = {
   recentVaults: string[];
   autoSave: boolean;
   autoSaveDelayMs: number;
+  pageZoomPercent: number;
   fileTreeWidth?: number;
   /** 相对 vaultRoot 的路径，始终使用 `/` 分隔。 */
   lastOpenedFile?: string;

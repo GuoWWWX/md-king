@@ -241,11 +241,9 @@ export class MermaidWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    // 分两层：外层挂语言标签和边框，内层专门放 SVG。
-    // 不分层的话 innerHTML 会把标签一起冲掉。
+    // 分两层：外层负责边框，内层专门放 SVG。
     const host = document.createElement("div");
     host.className = "mk-cm-mermaid";
-    host.dataset.codeLanguage = "mermaid";
     const container = measuredBlockWidget(host, "media");
 
     const previewButton = document.createElement("button");
@@ -692,7 +690,10 @@ export class MarkdownFrontmatterWidget extends WidgetType {
       host.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        view.dispatch({ selection: { anchor: this.sourceFrom }, scrollIntoView: true });
+        const row = (event.target as Element | null)?.closest<HTMLElement>(".mk-cm-frontmatter-row");
+        const lineFrom = row ? Number(row.dataset.sourceFrom) : this.sourceFrom;
+        const anchor = view.state.doc.lineAt(lineFrom).to;
+        view.dispatch({ selection: { anchor }, scrollIntoView: true });
         view.focus();
       });
     }
@@ -707,6 +708,7 @@ export class MarkdownFrontmatterWidget extends WidgetType {
     for (const entry of this.entries) {
       const row = document.createElement("div");
       row.className = "mk-cm-frontmatter-row";
+      row.dataset.sourceFrom = String(entry.sourceFrom);
 
       const key = document.createElement("span");
       key.className = "mk-cm-frontmatter-key";

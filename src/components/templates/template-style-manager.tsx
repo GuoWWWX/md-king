@@ -1952,6 +1952,21 @@ function TableOfContentsSettingsPanel({ pageSettings, patchPageSettings }: { pag
       <PropertyCard title="目录">
         <SettingSwitch label="生成目录" checked={pageSettings.tocEnabled} onCheckedChange={(checked) => patchPageSettings({ tocEnabled: checked })} />
         <div className="grid gap-4 md:grid-cols-2">
+          <Field label="目录标题"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={pageSettings.tocTitle} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitle: event.target.value })} /></Field>
+          <Field label="标题对齐"><SimpleAlignSelect value={pageSettings.tocTitleAlign} onChange={(value) => patchPageSettings({ tocTitleAlign: value })} /></Field>
+          <Field label="中文字体"><WordFontPicker value={pageSettings.tocTitleChineseFont} options={wordFontOptions} onValueChange={(value) => patchPageSettings({ tocTitleChineseFont: value })} /></Field>
+          <Field label="英文字体"><WordFontPicker value={pageSettings.tocTitleLatinFont} options={wordFontOptions} onValueChange={(value) => patchPageSettings({ tocTitleLatinFont: value })} /></Field>
+          <Field label="字号"><WordFontSizeSelect value={pageSettings.tocTitleFontSize} onChange={(value) => patchPageSettings({ tocTitleFontSize: value })} /></Field>
+          <Field label="文字颜色"><WordColorPicker value={pageSettings.tocTitleColor} onChange={(value) => patchPageSettings({ tocTitleColor: value })} autoColor="#111827" /></Field>
+          <Field label="字重">
+            <Select value={pageSettings.tocTitleFontWeight} onValueChange={(value) => patchPageSettings({ tocTitleFontWeight: value })}>
+              <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
+              <SelectContent>{fontWeightOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          <Field label="段后间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleAfterSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleAfterSpacing: Number(event.target.value) })} /></Field>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
           <Field label="目录深度">
             <Select value={pageSettings.tocDepth} onValueChange={(value) => patchPageSettings({ tocDepth: value })} disabled={!pageSettings.tocEnabled}>
               <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>

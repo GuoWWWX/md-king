@@ -252,7 +252,7 @@ function handleInlineWrapper(
   className: string,
 ): void {
   addMark(collector, ref.from, ref.to, className);
-  if (touchesSameLine(collector, ref.from, ref.to) || sourceSelected(collector, ref.from, ref.to)) return;
+  if (cursorInside(collector, ref.from, ref.to) || sourceSelected(collector, ref.from, ref.to)) return;
   for (const mark of childrenOfType(ref.node, markType)) {
     hide(collector, mark.from, mark.to);
   }
@@ -287,7 +287,7 @@ function addRelaxedStrong(collector: DecorationCollector, lineFrom: number, tree
     if (hasSyntaxAncestor(contentNode, relaxedStrongExcludedNodes)) continue;
 
     addMark(collector, from, to, "mk-cm-strong");
-    if (touchesSameLine(collector, from, to) || sourceSelected(collector, from, to)) continue;
+    if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
     hide(collector, from, contentFrom);
     hide(collector, line.from + range.contentTo, to);
   }
@@ -801,7 +801,12 @@ export const livePreviewPlugin: Extension = [
 function buildFrontmatterBlock(state: EditorState, editable: boolean, forceRender = false): DecorationSet {
   const frontmatter = parseYamlFrontmatter(state.doc.toString());
   if (!frontmatter) return Decoration.none;
-  if (editable && !forceRender && selectionOnLines(state, frontmatter.from, frontmatter.contentTo)) return Decoration.none;
+  if (editable && !forceRender && selectionOnLines(state, frontmatter.from, frontmatter.contentTo)) {
+    const closingLine = state.doc.lineAt(frontmatter.contentTo);
+    return Decoration.set([
+      Decoration.line({ class: "mk-cm-frontmatter-source-end" }).range(closingLine.from),
+    ]);
+  }
 
   return Decoration.set([
     Decoration.replace({
@@ -825,7 +830,10 @@ export function frontmatterBlockExtension(editable = true): Extension {
     },
     provide: (self) => EditorView.decorations.from(self),
   });
-  return field;
+  const frontmatterDocumentClass = EditorView.editorAttributes.compute(["doc"], (state) => (
+    { class: parseYamlFrontmatter(state.doc.toString()) ? "mk-cm-has-frontmatter" : "" }
+  ));
+  return [field, frontmatterDocumentClass];
 }
 
 

@@ -46,6 +46,7 @@ const browserAppConfig: AppConfig = {
   recentVaults: [],
   autoSave: true,
   autoSaveDelayMs: 1000,
+  pageZoomPercent: 100,
   fileTreeWidth: undefined,
   lastOpenedFile: undefined,
 };
