@@ -38,6 +38,7 @@ type PreviewPaperTheme = "light" | "dark";
 const templatePreviewZoomMin = 20;
 const templatePreviewZoomMax = 200;
 const templatePreviewZoomStep = 10;
+const templatePreviewWheelZoomStep = 5;
 const templatePreviewMinWidth = 320;
 const templatePreviewMaxWidth = 560;
 
@@ -347,7 +348,7 @@ export function TemplatesPage() {
     if (!event.ctrlKey) return;
     event.preventDefault();
     const direction = event.deltaY > 0 ? -1 : 1;
-    setTemplatePreviewZoom((value) => clampTemplatePreviewZoom(value + direction * templatePreviewZoomStep));
+    setTemplatePreviewZoom((value) => clampTemplatePreviewZoom(value + direction * templatePreviewWheelZoomStep));
   }
 
   async function handleImport(request: ImportTemplateRequest) {

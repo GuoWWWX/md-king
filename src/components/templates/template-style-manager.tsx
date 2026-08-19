@@ -1527,6 +1527,7 @@ function MarkdownFeatureStyleSwitch({
 const previewZoomMin = 20;
 const previewZoomMax = 200;
 const previewZoomStep = 10;
+const previewWheelZoomStep = 5;
 
 function clampPreviewZoom(value: number) {
   return Math.min(previewZoomMax, Math.max(previewZoomMin, value));
@@ -1592,7 +1593,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWi
     event.preventDefault();
     event.stopPropagation();
     const direction = event.deltaY > 0 ? -1 : 1;
-    setZoom((value) => clampPreviewZoom(value + direction * previewZoomStep));
+    setZoom((value) => clampPreviewZoom(value + direction * previewWheelZoomStep));
   }
 
   return (

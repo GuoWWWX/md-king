@@ -17,7 +17,7 @@ import { isExternalDocumentLink, nextMarkdownHeadingAnchor, normalizeBareExterna
 import { obsidianWikilinkPlugin } from "@/lib/obsidian-wikilinks";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
+import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, resolveWordExactLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { svgDataUrl } from "@/lib/svg-image";
 import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
@@ -63,7 +63,7 @@ type PreviewBlock =
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
   | { type: "paragraph"; segments: PreviewTextSegment[]; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
-  | { type: "code"; text: string; language?: string; indentPt: number }
+  | { type: "code"; text: string; language?: string; indentPt: number; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "math"; text: string }
   | { type: "hr" }
   | { type: "list"; items: PreviewListItem[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
@@ -163,6 +163,8 @@ const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer:
 const mathFenceLanguages = new Set(["math", "latex", "tex", "formula", "equation", "公式"]);
 const PT_TO_PX = 4 / 3;
 const CSS_DPI = 96;
+const WORD_TEXT_CHARACTER_SPACING_PT = 0.2;
+const WORD_CJK_LATIN_GAP_PT = 2.8;
 const PAPER_SIZE_PX = {
   A3: { width: 1123, height: 1587 },
   A4: { width: 794, height: 1123 },
@@ -211,7 +213,7 @@ function resolveLineHeightValue(value: string | number | undefined, fallback = 1
 }
 
 function resolveLineHeightPx(draft: StyleDraft) {
-  return ptToPx(draft.fontSize) * resolveLineHeightValue(draft.lineHeight);
+  return resolveWordAutoLineHeightPx(draft.fontSize, draft.lineHeight);
 }
 
 function isSelected(selectedStyle: StyleNode | undefined, id: string) {
@@ -278,8 +280,11 @@ function codeBlockBorder(draft: StyleDraft) {
 
 const emojiFontFallback = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"';
 
-function previewFontFamily(primary: string, secondary: string, generic = "sans-serif") {
-  return `"${primary}", "${secondary}", ${emojiFontFallback}, ${generic}`;
+function previewFontFamily(chineseFont: string, latinFont: string, generic = "sans-serif") {
+  // Match Word's run fallback: ASCII uses the Latin font and East Asian text
+  // uses the configured Chinese font. This keeps mixed-text line breaks close
+  // to the generated DOCX instead of letting the Chinese font shape numbers.
+  return `"${latinFont}", "${chineseFont}", ${emojiFontFallback}, ${generic}`;
 }
 
 function textStyle(draft: StyleDraft): CSSProperties {
@@ -288,7 +293,8 @@ function textStyle(draft: StyleDraft): CSSProperties {
     fontFamily: previewFontFamily(draft.chineseFont, draft.latinFont),
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
-    lineHeight: draft.lineHeight,
+    letterSpacing: `${WORD_TEXT_CHARACTER_SPACING_PT}pt`,
+    lineHeight: `${resolveLineHeightPx(draft)}px`,
     marginTop: `${draft.beforeSpacing}pt`,
     marginBottom: `${draft.afterSpacing}pt`,
     textAlign: resolveTextAlign(draft.align),
@@ -300,10 +306,11 @@ function textStyle(draft: StyleDraft): CSSProperties {
 function inlineCodeStyle(draft: StyleDraft): CSSProperties {
   return {
     color: draft.color,
-    fontFamily: previewFontFamily(draft.latinFont, draft.chineseFont, "monospace"),
+    fontFamily: previewFontFamily(draft.chineseFont, draft.latinFont, "monospace"),
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
-    lineHeight: 1.35,
+    letterSpacing: 0,
+    lineHeight: `${resolveWordAutoLineHeightPx(draft.fontSize, 1.35)}px`,
     backgroundColor: draft.backgroundColor === "transparent" ? "#F1F5F9" : draft.backgroundColor,
   };
 }
@@ -379,7 +386,7 @@ function normalizeCodeLanguage(info?: string) {
 
 function codeLanguageLabel(language?: string) {
   if (!language) return undefined;
-  return languageLabels[language] ?? language;
+  return (languageLabels[language] ?? language).toUpperCase();
 }
 
 function hexToLuminance(value: string) {
@@ -554,6 +561,13 @@ function MermaidBlock({ source, dark, maxHeight, style, className, onSize }: { s
   );
 }
 
+function headingTextStyle(draft: StyleDraft): CSSProperties {
+  return {
+    ...textStyle(draft),
+    lineHeight: `${resolveWordExactLineHeightPx(draft.fontSize, draft.lineHeight)}px`,
+  };
+}
+
 function textSegments(text: string): PreviewTextSegment[] {
   return text ? [{ text }] : [];
 }
@@ -713,7 +727,56 @@ function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined
   return Object.keys(style).length > 0 ? style : undefined;
 }
 
-function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void) {
+function isWordCjkCharacter(character: string) {
+  return /^[\u3400-\u9fff]$/.test(character);
+}
+
+function isWordLatinCharacter(character: string) {
+  return /^[A-Za-z0-9]$/.test(character);
+}
+
+function isWordCjkLatinBoundary(left: string | undefined, right: string) {
+  if (!left) return false;
+  return (isWordCjkCharacter(left) && isWordLatinCharacter(right))
+    || (isWordLatinCharacter(left) && isWordCjkCharacter(right));
+}
+
+function renderWordCompatibleText(
+  text: string,
+  keyPrefix: string,
+  style?: CSSProperties,
+  previousCharacter?: string,
+  includeBoundaryGap = true,
+) {
+  const pieces: Array<{ text: string; gapBefore: boolean }> = [];
+  let current = "";
+  let previous = previousCharacter;
+
+  for (const character of Array.from(text)) {
+    const gapBefore = includeBoundaryGap && isWordCjkLatinBoundary(previous, character);
+    if (gapBefore && current) {
+      pieces.push({ text: current, gapBefore: false });
+      current = "";
+    }
+    current += character;
+    if (gapBefore) pieces.push({ text: current, gapBefore: true });
+    previous = character;
+    if (gapBefore) current = "";
+  }
+  if (current) pieces.push({ text: current, gapBefore: false });
+
+  if (pieces.length <= 1) return style ? <span style={style}>{text}</span> : text;
+  return pieces.map((piece, index) => (
+    <span
+      key={`${keyPrefix}-mixed-${index}`}
+      style={{ ...style, ...(piece.gapBefore ? { marginLeft: `${WORD_CJK_LATIN_GAP_PT}pt` } : undefined) }}
+    >
+      {piece.text}
+    </span>
+  ));
+}
+
+function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void, includeBoundaryGap = true) {
   return segments.map((segment, index) => {
     if (segment.math) return <MathInline key={`${keyPrefix}-math-${index}`} text={segment.text} />;
 
@@ -729,7 +792,8 @@ function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: S
         </code>
       );
     } else {
-      content = markStyle ? <span style={markStyle}>{segment.text}</span> : segment.text;
+      const previousCharacter = index > 0 ? segments[index - 1].text.slice(-1) : undefined;
+      content = renderWordCompatibleText(segment.text, `${keyPrefix}-${index}`, markStyle, previousCharacter, includeBoundaryGap);
     }
 
     if (segment.link === undefined) return <span key={`${keyPrefix}-${index}`}>{content}</span>;
@@ -873,6 +937,20 @@ function resolveListBaseDraft(drafts: Record<string, StyleDraft>, item: PreviewL
   return item.ordered ? drafts["numbered-list"] : drafts["bullet-list"];
 }
 
+function listMarkerWidthPt(marker: string) {
+  // Keep the preview aligned with convert.rs::list_marker_and_gap_twips:
+  // Word reserves 6pt per ASCII marker character and 12pt per non-ASCII one.
+  return Array.from(marker).reduce((width, character) => width + (/^[\x00-\x7F]$/.test(character) ? 6 : 12), 0);
+}
+
+function resolveListTextOffsetPx(draft: StyleDraft, item: PreviewListItem) {
+  const markerType = listMarkerTypeFromStyle(draft, item);
+  const marker = markerTextFromStyle(draft, item, markerType);
+  const markerLeftPt = resolveListIndent(draft, item) * draft.fontSize;
+  const markerGapPt = Math.max(0, draft.listTextIndent) * 6;
+  return ptToPx(markerLeftPt + listMarkerWidthPt(marker) + markerGapPt);
+}
+
 function applyHeadingMappings(blocks: PreviewBlock[], mappings: MarkdownRulesSettings["headingMappings"]) {
   return blocks.map((block) => {
     if (block.type !== "heading") return block;
@@ -913,7 +991,7 @@ function estimateTocHeight(entries: Extract<PreviewBlock, { type: "toc" }>['entr
   const titleHeight = ptToPx(titleDraft.beforeSpacing + titleDraft.afterSpacing)
     + resolveLineHeightPx(titleDraft);
   const entriesHeight = entries.reduce((total, entry) => {
-    const indent = (entry.level - 1) * ptToPx(bodyDraft.fontSize) * 1.25;
+    const indent = (entry.level - 1) * ptToPx(bodyDraft.fontSize) * 2;
     const text = `${entry.number ? `${entry.number} ` : ""}${entry.text}`;
     return total
       + estimateTextLines(text, estimateCharsPerLine(Math.max(80, contentWidth - indent), bodyDraft)) * resolveLineHeightPx(bodyDraft)
@@ -934,9 +1012,9 @@ function estimateTocHeightWithSettings(entries: Extract<PreviewBlock, { type: "t
   if (!titleSettings) return estimateTocHeight(entries, drafts, contentWidth);
   const bodyDraft = drafts.normal;
   const titleHeight = ptToPx(titleSettings.beforeSpacing + titleSettings.afterSpacing)
-    + ptToPx(titleSettings.fontSize) * resolveLineHeightValue(titleSettings.lineHeight);
+      + resolveWordAutoLineHeightPx(titleSettings.fontSize, titleSettings.lineHeight);
   const entriesHeight = entries.reduce((total, entry) => {
-    const indent = (entry.level - 1) * ptToPx(bodyDraft.fontSize) * 1.25;
+    const indent = (entry.level - 1) * ptToPx(bodyDraft.fontSize) * 2;
     const text = `${entry.number ? `${entry.number} ` : ""}${entry.text}`;
     return total
       + estimateTextLines(text, estimateCharsPerLine(Math.max(80, contentWidth - indent), bodyDraft)) * resolveLineHeightPx(bodyDraft)
@@ -1125,10 +1203,13 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
 }
 
 function estimatedTextUnits(text: string) {
-  return Array.from(text).reduce((total, character) => {
+  return Array.from(text).reduce((total, character, index, characters) => {
+    const boundaryGap = isWordCjkLatinBoundary(characters[index - 1], character)
+      ? WORD_CJK_LATIN_GAP_PT / 12
+      : 0;
     if (/\s/.test(character)) return total + 0.35;
-    if (/^[\x00-\x7F]$/.test(character)) return total + 0.58;
-    return total + 1;
+    if (/^[\x00-\x7F]$/.test(character)) return total + 0.58 + boundaryGap;
+    return total + 1 + boundaryGap;
   }, 0);
 }
 
@@ -1141,7 +1222,9 @@ function estimateTextLines(text: string, charsPerLine = 26, proportionalText = t
 }
 
 function estimateCharsPerLine(contentWidth: number, draft: StyleDraft, ratio = 1) {
-  return Math.max(8, Math.floor(contentWidth / Math.max(1, ptToPx(draft.fontSize) * ratio)));
+  const glyphWidth = ptToPx(draft.fontSize) * ratio;
+  const characterSpacing = ptToPx(WORD_TEXT_CHARACTER_SPACING_PT);
+  return Math.max(8, Math.floor(contentWidth / Math.max(1, glyphWidth + characterSpacing)));
 }
 
 function splitTextSegmentsAt(segments: PreviewTextSegment[], offset: number): [PreviewTextSegment[], PreviewTextSegment[]] {
@@ -1222,13 +1305,13 @@ function splitTextSegmentsByLine(segments: PreviewTextSegment[]) {
   return lines;
 }
 
-function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void, indentEachLine = false, lineIndent = "0em") {
+function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void, indentEachLine = false, lineIndent = "0em", includeBoundaryGap = true) {
   if (!indentEachLine || !segments.some((segment) => segment.text.includes("\n"))) {
-    return renderInlineTextLine(segments, inlineCodeDraft, inlineCodeEnabled, keyPrefix, selectedStyle, onOpenLink);
+    return renderInlineTextLine(segments, inlineCodeDraft, inlineCodeEnabled, keyPrefix, selectedStyle, onOpenLink, includeBoundaryGap);
   }
   return splitTextSegmentsByLine(segments).map((line, lineIndex) => (
     <span key={`${keyPrefix}-line-${lineIndex}`} className="block" style={{ textIndent: lineIndent }}>
-      {renderInlineTextLine(line, inlineCodeDraft, inlineCodeEnabled, `${keyPrefix}-line-${lineIndex}`, selectedStyle, onOpenLink)}
+      {renderInlineTextLine(line, inlineCodeDraft, inlineCodeEnabled, `${keyPrefix}-line-${lineIndex}`, selectedStyle, onOpenLink, includeBoundaryGap)}
     </span>
   ));
 }
@@ -1280,7 +1363,10 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
     };
   }
   if (block.type === "quote") return { before: ptToPx(drafts.quote.beforeSpacing), after: ptToPx(drafts.quote.afterSpacing) };
-  if (block.type === "code") return { before: ptToPx(drafts.code.beforeSpacing), after: ptToPx(drafts.code.afterSpacing) };
+  if (block.type === "code") return {
+    before: block.continuedFromPrevious ? 0 : ptToPx(drafts.code.beforeSpacing),
+    after: block.continuesNext ? 0 : ptToPx(drafts.code.afterSpacing),
+  };
   if (block.type === "math") return { before: ptToPx(drafts.normal.beforeSpacing), after: ptToPx(drafts.normal.afterSpacing) };
   if (block.type === "hr") {
     const draft = drafts["horizontal-rule"];
@@ -1302,7 +1388,8 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
 function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
-    return ptToPx(draft.beforeSpacing + draft.afterSpacing) + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * resolveLineHeightPx(draft);
+    const lineHeight = block.isDocumentTitle ? resolveLineHeightPx(draft) : resolveWordExactLineHeightPx(draft.fontSize, draft.lineHeight);
+    return ptToPx(draft.beforeSpacing + draft.afterSpacing) + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * lineHeight;
   }
 
   if (block.type === "toc") {
@@ -1335,9 +1422,12 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
         maxBlockHeight: pageContentHeight === undefined ? undefined : Math.max(1, pageContentHeight - marginHeight),
       });
     }
-    // 有语言标签时渲染顶部多 22px（语言标签行）+ 原来的 18px 底部padding，共需多加 22px。
-    const languageExtra = block.language ? 22 : 0;
-    return ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24 - ptToPx(block.indentPt), drafts.code, 0.62), false) * resolveLineHeightPx(drafts.code);
+    // 语言标签是绝对定位，只需要一小段顶部留白；预览估高必须和实际
+    // padding 保持一致，否则代码块尾行会被错误推到下一页。
+    const languageExtra = block.language && !block.continuedFromPrevious ? 10 : 0;
+    const beforeSpacing = block.continuedFromPrevious ? 0 : drafts.code.beforeSpacing;
+    const afterSpacing = block.continuesNext ? 0 : drafts.code.afterSpacing;
+    return ptToPx(beforeSpacing + afterSpacing) + 18 + languageExtra + estimateTextLines(block.text, estimateCharsPerLine(contentWidth - 24 - ptToPx(block.indentPt), drafts.code, 0.62), false) * resolveLineHeightPx(drafts.code);
   }
 
   if (block.type === "math") {
@@ -1355,7 +1445,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   if (block.type === "list") {
     const contentHeight = block.items.reduce((total, item) => {
       const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
-      const listOffset = resolveListIndent(draft, item) * ptToPx(draft.fontSize);
+      const listOffset = resolveListTextOffsetPx(draft, item);
       return total + estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
     }, 0);
     const firstItem = block.items[0];
@@ -1375,9 +1465,10 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
-  return estimateTableCaptionHeight(block, drafts)
+  const estimatedHeight = estimateTableCaptionHeight(block, drafts)
     + (block.header ? estimateTableRowHeight(block.header, true, tableDraft, drafts, columnContentWidths) : 0)
     + block.rows.reduce((height, row) => height + estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths), 0);
+  return estimatedHeight;
 }
 
 function splitTextByLength(text: string, maxChars: number) {
@@ -1408,10 +1499,10 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
     }
 
     if (block.type === "code") {
-      // Mermaid 块不可切分：切开后每段都丢失了 mermaid 语言标识，
-      // 渲染时变成普通文本而不是图，内容直接消失。整块保留，允许溢出一页。
-      if (isMermaidLanguage(block.language)) return [block];
-      return splitTextByLength(block.text, estimateCharsPerLine(contentWidth - 24, drafts.code, 0.62) * 24).map((text) => ({ ...block, text }));
+      // Mermaid 以及普通代码块都交给 paginateBlocks 按实际剩余高度拆分。
+      // 这里按固定“字符数 x 24”预切会把最后一行提前切到下一页，
+      // 而且无法反映代码字体和当前纸张宽度的真实行高。
+      return [block];
     }
 
     if (block.type === "hr") return [block];
@@ -1425,7 +1516,7 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
 
       block.items.forEach((item) => {
         const draft = resolveListLevelDraft(resolveListBaseDraft(drafts, item), item);
-        const listOffset = resolveListIndent(draft, item) * ptToPx(draft.fontSize);
+        const listOffset = resolveListTextOffsetPx(draft, item);
         const itemHeight = estimateTextLines(plainText(item.segments), estimateCharsPerLine(contentWidth - listOffset, draft)) * resolveLineHeightPx(draft);
         if (currentItems.length > 0 && usedHeight + itemHeight > pageContentHeight) {
           pages.push({ ...block, items: currentItems });
@@ -1502,6 +1593,28 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
           return {
             head: { ...block, segments: headSegments, continuesNext: true },
             tail: { ...block, segments: tailSegments, continuedFromPrevious: true },
+          };
+        }
+      }
+    }
+
+    if (block.type === "code" && !isMermaidLanguage(block.language)) {
+      const lines = block.text.split("\n");
+      if (lines.length > 1) {
+        let splitIndex = 0;
+        for (let index = 1; index < lines.length; index += 1) {
+          const candidate: PreviewBlock = {
+            ...block,
+            text: lines.slice(0, index).join("\n"),
+            continuesNext: true,
+          };
+          if (estimateHeight(candidate) > availableHeight) break;
+          splitIndex = index;
+        }
+        if (splitIndex > 0) {
+          return {
+            head: { ...block, text: lines.slice(0, splitIndex).join("\n"), continuesNext: true },
+            tail: { ...block, text: lines.slice(splitIndex).join("\n"), continuedFromPrevious: true },
           };
         }
       }
@@ -1717,7 +1830,9 @@ function renderMarkdownBlocks({
     if (block.type === "heading") {
       const styleId = block.isDocumentTitle ? "title" : `heading-${block.level}`;
       rendered.push(
-        <div key={index} data-preview-heading-id={renderAsThumbnail ? undefined : block.anchorId} data-markdown-heading-id={renderAsThumbnail ? undefined : block.anchorId} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={textStyle(drafts[styleId])}>
+        <div key={index} data-preview-heading-id={renderAsThumbnail ? undefined : block.anchorId} data-markdown-heading-id={renderAsThumbnail ? undefined : block.anchorId} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={{
+          ...(block.isDocumentTitle ? textStyle(drafts[styleId]) : headingTextStyle(drafts[styleId])),
+        }}>
           {block.number ? <span>{block.number} </span> : null}
           {block.text}
         </div>,
@@ -1735,7 +1850,7 @@ function renderMarkdownBlocks({
               fontFamily: previewFontFamily(tableStyle.tocTitleChineseFont, tableStyle.tocTitleLatinFont),
               fontSize: `${tableStyle.tocTitleFontSize}pt`,
               fontWeight: tableStyle.tocTitleFontWeight,
-              lineHeight: tableStyle.tocTitleLineHeight,
+              lineHeight: `${resolveWordAutoLineHeightPx(tableStyle.tocTitleFontSize, tableStyle.tocTitleLineHeight)}px`,
               marginTop: `${tableStyle.tocTitleBeforeSpacing}pt`,
               marginBottom: `${tableStyle.tocTitleAfterSpacing}pt`,
               textAlign: resolveTextAlign(tableStyle.tocTitleAlign),
@@ -1753,9 +1868,9 @@ function renderMarkdownBlocks({
                   color: bodyDraft.color,
                   fontFamily: previewFontFamily(bodyDraft.chineseFont, bodyDraft.latinFont),
                   fontSize: `${bodyDraft.fontSize}pt`,
-                  lineHeight: bodyDraft.lineHeight,
+                  lineHeight: `${resolveWordAutoLineHeightPx(bodyDraft.fontSize, bodyDraft.lineHeight)}px`,
                   marginBottom: `${bodyDraft.afterSpacing}pt`,
-                  paddingLeft: `${(entry.level - 1) * 1.25}em`,
+                  paddingLeft: `${(entry.level - 1) * 2}em`,
                 }}
               >
                 <span className="shrink-0">{entry.number ? `${entry.number} ` : ""}{entry.text}</span>
@@ -1800,7 +1915,7 @@ function renderMarkdownBlocks({
           <blockquote
             key={index}
             className={cn("mk-word-callout", `mk-word-callout--${block.callout.tone}`, selectedRing(selectedStyle, "quote"))}
-            style={{ ...textStyle(drafts.quote), textIndent: 0, padding: "9px 12px", border: 0 }}
+            style={{ ...textStyle(drafts.quote), fontStyle: "normal", textIndent: 0, padding: "9px 12px", border: 0 }}
           >
             <div className="mk-word-callout-title">
               <MarkdownCalloutIcon type={block.callout.type} tone={block.callout.tone} className="size-[1.05em] shrink-0" />
@@ -1818,9 +1933,10 @@ function renderMarkdownBlocks({
       rendered.push(
         <blockquote
           key={index}
-          className={cn("italic", selectedRing(selectedStyle, "quote"))}
+          className={cn(selectedRing(selectedStyle, "quote"))}
           style={{
             ...textStyle(drafts.quote),
+            fontStyle: "normal",
             textIndent: 0,
             borderLeft: `${Math.max(1, drafts.quote.quoteBorderWidth || 4)}px solid ${drafts.quote.quoteBorderColor || "#94A3B8"}`,
             backgroundColor: drafts.quote.backgroundColor === "transparent" ? "#F8FAFC" : drafts.quote.backgroundColor,
@@ -1834,7 +1950,7 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "code") {
-      const languageLabel = codeLanguageLabel(block.language);
+      const languageLabel = block.continuedFromPrevious ? undefined : codeLanguageLabel(block.language);
       const backgroundColor = drafts.code.backgroundColor === "transparent" ? undefined : drafts.code.backgroundColor;
 
       // mermaid 块渲染成图而不是代码。外框沿用代码块的背景与边框，
@@ -1858,10 +1974,13 @@ function renderMarkdownBlocks({
               backgroundColor: mermaidBackgroundColor,
               border: codeBlockBorder(drafts.code),
               borderRadius: 0,
+              boxSizing: "border-box",
+              width: block.indentPt ? `calc(100% - ${block.indentPt}pt)` : "100%",
               padding: `${Math.max(0, drafts.code.codePaddingY)}px ${Math.max(0, drafts.code.codePaddingX)}px`,
               marginTop: `${drafts.code.beforeSpacing}pt`,
               marginBottom: `${drafts.code.afterSpacing}pt`,
               marginLeft: block.indentPt ? `${block.indentPt}pt` : undefined,
+              marginRight: 0,
             }}
           >
             <MermaidBlock source={block.text} dark={mermaidDark} maxHeight={mermaidImageMaxHeight} onSize={onMermaidSize} />
@@ -1876,11 +1995,17 @@ function renderMarkdownBlocks({
           style={{
             ...textStyle(drafts.code),
             textIndent: 0,
+            letterSpacing: 0,
             backgroundColor,
             border: codeBlockBorder(drafts.code),
             borderRadius: 0,
-            padding: `${Math.max(0, drafts.code.codePaddingY) + (languageLabel ? 22 : 0)}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
+            boxSizing: "border-box",
+            width: block.indentPt ? `calc(100% - ${block.indentPt}pt)` : "100%",
+            padding: `${Math.max(0, drafts.code.codePaddingY) + (languageLabel ? 10 : 0)}px ${Math.max(0, drafts.code.codePaddingX)}px ${Math.max(0, drafts.code.codePaddingY)}px`,
+            marginTop: block.continuedFromPrevious ? 0 : `${drafts.code.beforeSpacing}pt`,
+            marginBottom: block.continuesNext ? 0 : `${drafts.code.afterSpacing}pt`,
             marginLeft: block.indentPt ? `${block.indentPt}pt` : undefined,
+            marginRight: 0,
           }}
         >
           {languageLabel ? <CodeLanguageLabel label={languageLabel} backgroundColor={backgroundColor} /> : null}
@@ -1924,7 +2049,7 @@ function renderMarkdownBlocks({
 
     if (block.type === "list") {
       rendered.push(
-        <div key={index} className="space-y-1.5">
+        <div key={index}>
           {block.items.map((item, itemIndex) => {
             const listStyleId = item.level > 0 ? "nested-list" : item.ordered ? "numbered-list" : "bullet-list";
             const listBaseDraft = resolveListBaseDraft(drafts, item) ?? drafts.normal;
@@ -1934,7 +2059,8 @@ function renderMarkdownBlocks({
             const displayIndex = isNumbered && item.level === 0 && listDraft.listNumberingMode === "continue" ? continuedOrderedListIndex + 1 : item.index;
             if (isNumbered && item.level === 0 && listDraft.listNumberingMode === "continue") continuedOrderedListIndex = displayIndex;
             const marker = markerTextFromStyle(listDraft, item, markerType, displayIndex);
-            const markerGap = `${Math.max(0.5, listDraft.listTextIndent)}ch`;
+            const markerWidth = `${listMarkerWidthPt(marker)}pt`;
+            const markerGap = `${Math.max(0, listDraft.listTextIndent) * 6}pt`;
             const itemStyle = {
               ...textStyle(listDraft),
               marginLeft: `${resolveListIndent(listDraft, item)}em`,
@@ -1947,7 +2073,7 @@ function renderMarkdownBlocks({
             if (listDraft.listWrapMode === "flat") {
               return (
                 <div key={itemIndex} className={cn("break-words", selectedRing(selectedStyle, listStyleId))} style={itemStyle}>
-                  <span aria-hidden="true" style={{ marginRight: markerGap }}>{marker}</span>
+                  <span aria-hidden="true" className="inline-block" style={{ width: markerWidth, marginRight: markerGap }}>{marker}</span>
                   {renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle, onOpenLink)}
                 </div>
               );
@@ -1957,7 +2083,7 @@ function renderMarkdownBlocks({
               <div
                 key={itemIndex}
                 className={cn("grid break-words", selectedRing(selectedStyle, listStyleId))}
-                style={{ ...itemStyle, gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: markerGap }}
+                style={{ ...itemStyle, gridTemplateColumns: `${markerWidth} minmax(0, 1fr)`, columnGap: markerGap }}
               >
                 <span aria-hidden="true" className="whitespace-nowrap">{marker}</span>
                 <span className="min-w-0">{renderInlineText(item.segments, inlineCodeDraft, inlineCodeEnabled, `li-${index}-${itemIndex}`, selectedStyle, onOpenLink)}</span>
@@ -1994,11 +2120,12 @@ function renderMarkdownBlocks({
       rendered.push(
         <div key={index}>
           {tableStyle.captionPosition === "above" ? caption : null}
-        <table className={cn("border-collapse text-[10px]", selectedRing(selectedStyle, "table"))} style={{ width: tableStyle.tableWidth, margin: tableStyle.tableMargin, tableLayout: tableStyle.tableLayout, ...tableStyle.borderStyle }}>
+        <table className={cn("border-collapse text-[10px]", selectedRing(selectedStyle, "table"))} style={{ width: tableStyle.tableWidth, margin: tableStyle.tableMargin, tableLayout: tableStyle.tableLayout === "auto" ? "fixed" : tableStyle.tableLayout, ...tableStyle.borderStyle }}>
           {columnWidths.length > 0 ? <colgroup>{columnWidths.map((width, widthIndex) => <col key={widthIndex} style={{ width }} />)}</colgroup> : null}
           {header ? (
             <thead>
-              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle, onOpenLink)}</th>)}</tr>
+              {/* DOCX table runs do not carry the paragraph-level CJK/Latin boundary gap used by body text. */}
+              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}</th>)}</tr>
             </thead>
           ) : null}
           <tbody>
@@ -2013,7 +2140,7 @@ function renderMarkdownBlocks({
                       backgroundColor: tableStyle.rowStripe && ((block.bodyRowOffset ?? 0) + rowIndex) % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
                     }}
                   >
-                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle, onOpenLink)}
+                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}
                   </td>
                 ))}
               </tr>
@@ -2108,7 +2235,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     fontFamily: previewFontFamily(tableCaption.chineseFont, tableCaption.latinFont),
     fontSize: `${tableCaption.fontSize}pt`,
     fontWeight: tableCaption.fontWeight,
-    lineHeight: tableCaption.lineHeight,
+    lineHeight: `${resolveWordAutoLineHeightPx(tableCaption.fontSize, tableCaption.lineHeight)}px`,
     textAlign: resolveTextAlign(tableCaption.captionAlign),
     marginTop: `${tableCaption.beforeSpacing}pt`,
     marginBottom: `${tableCaption.afterSpacing}pt`,
@@ -2118,7 +2245,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     fontFamily: previewFontFamily(caption.chineseFont, caption.latinFont),
     fontSize: `${caption.fontSize}pt`,
     fontWeight: caption.fontWeight,
-    lineHeight: caption.lineHeight,
+    lineHeight: `${resolveWordAutoLineHeightPx(caption.fontSize, caption.lineHeight)}px`,
     textAlign: resolveTextAlign(caption.captionAlign),
     marginTop: `${caption.beforeSpacing}pt`,
     marginBottom: `${caption.afterSpacing}pt`,
@@ -2219,7 +2346,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const previewHeaderSubtitle = headerSubtitle;
   const previewBadgeText = badgeText ?? `当前：${selectedStyle?.name ?? "Heading 2"}`;
   const pageScaleStyle: CSSProperties = { position: "relative", width: paperWidth * scale, height: paperHeight * scale };
-  const pageStyle: CSSProperties = { position: "absolute", inset: 0, width: paperWidth, height: paperHeight, padding: `${pageMargins.top}px ${pageMargins.right}px ${pageMargins.bottom}px ${pageMargins.left}px`, transform: `scale(${scale})`, transformOrigin: "top left" };
+  const pageStyle: CSSProperties = { position: "absolute", inset: 0, width: paperWidth, height: paperHeight, boxSizing: "border-box", padding: `${pageMargins.top}px ${pageMargins.right}px ${pageMargins.bottom}px ${pageMargins.left}px`, transform: `scale(${scale})`, transformOrigin: "top left" };
   const thumbnailScale = Math.min(0.16, 112 / paperWidth);
   const thumbnailPageScaleStyle: CSSProperties = { position: "relative", width: paperWidth * thumbnailScale, height: paperHeight * thumbnailScale };
   const thumbnailPageStyle: CSSProperties = { ...pageStyle, transform: `scale(${thumbnailScale})` };

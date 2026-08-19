@@ -115,6 +115,7 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
         open_after_convert: Some(false),
         overwrite: Some(true),
         conflict_strategy: Some("overwrite".to_string()),
+        toc_page_numbers: None,
     };
     let convert_result = convert_markdown(app, request);
     let _ = fs::remove_file(&input_path);

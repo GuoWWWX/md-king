@@ -24,7 +24,7 @@ use crate::system::open_file::open_path;
 const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
 const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
-
+const WORD_TEXT_CHARACTER_SPACING_TWIPS: u32 = 4;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +39,15 @@ pub struct ConvertRequest {
     pub open_after_convert: Option<bool>,
     pub overwrite: Option<bool>,
     pub conflict_strategy: Option<String>,
+    #[serde(default)]
+    pub toc_page_numbers: Option<Vec<TocPageNumber>>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TocPageNumber {
+    pub anchor_id: String,
+    pub page: u32,
 }
 
 #[derive(Serialize)]
@@ -454,6 +463,7 @@ fn convert_existing_file(
                 image_style_config(&request).as_ref(),
                 document_style_config(&request).as_ref(),
                 block_style_config(&request).as_ref(),
+                request.toc_page_numbers.as_deref(),
             ) {
                 let _ = fs::remove_file(&staged_output_path);
                 return failure_result(
@@ -665,6 +675,7 @@ fn convert_text_input(
                 image_style_config(&request).as_ref(),
                 document_style_config(&request).as_ref(),
                 block_style_config(&request).as_ref(),
+                request.toc_page_numbers.as_deref(),
             ) {
                 let _ = fs::remove_file(&staged_output_path);
                 return failure_result(
@@ -1375,7 +1386,7 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
     let outer_border_strong = table
         .get("outerBorderStrong")
         .and_then(Value::as_bool)
-        .unwrap_or(true);
+        .unwrap_or(false);
     let outer_border_width = |key: &str| {
         let width = read_table_number(key, border_width);
         if outer_border_strong && width > 0.0 {
@@ -1998,13 +2009,34 @@ fn heading_numbering_config_from_value(config: &Value) -> Option<HeadingNumberin
             .map(str::trim)
             .filter(|value| !value.is_empty() && *value != "无编号");
 
-        if auto_numbering {
-            formats[level - 1] = number_format.map(str::to_string);
+        // 旧版本的二级及更深标题会保存 `numberFormat: 1.1`，但
+        // `autoNumbering` 仍为 false。前端会在读取时迁移，导出端也必须
+        // 直接识别这组旧值，否则预览有编号、DOCX 却没有编号。
+        let legacy_default = number_format.is_some_and(|value| {
+            (level == 1 && value == "一、") || (level > 1 && value == "1.1")
+        });
+        if auto_numbering || legacy_default {
+            formats[level - 1] = if legacy_default {
+                Some(default_heading_number_format(level).to_string())
+            } else {
+                number_format.map(str::to_string)
+            };
         }
     }
 
     (formats.iter().any(Option::is_some) || mappings != default_heading_mappings())
         .then_some(HeadingNumberingConfig { formats, mappings })
+}
+
+fn default_heading_number_format(level: usize) -> &'static str {
+    match level.clamp(1, 6) {
+        1 => "1",
+        2 => "1.1",
+        3 => "1.1.1",
+        4 => "1.1.1.1",
+        5 => "1.1.1.1.1",
+        _ => "1.1.1.1.1.1",
+    }
 }
 
 fn default_heading_mappings() -> [HeadingTarget; 6] {
@@ -2633,6 +2665,7 @@ fn normalize_docx(
     image_style: Option<&ImageStyleConfig>,
     document_style: Option<&DocumentStyleConfig>,
     block_style: Option<&BlockStyleConfig>,
+    toc_page_numbers: Option<&[TocPageNumber]>,
 ) -> Result<(), String> {
     let original = fs::read(path).map_err(|error| format!("读取 DOCX 失败：{error}"))?;
     let reader = Cursor::new(original);
@@ -2713,7 +2746,12 @@ fn normalize_docx(
             } else {
                 xml
             };
-            let xml = apply_page_settings_to_document_xml(&xml, page_settings);
+            let xml = apply_page_settings_to_document_xml_with_heading_numbering(
+                &xml,
+                page_settings,
+                heading_numbering,
+                toc_page_numbers,
+            );
             data = if xml.contains("<w:drawing") {
                 normalize_document_images(&xml, page_settings, image_style).into_bytes()
             } else {
@@ -2892,11 +2930,161 @@ fn normalize_document_xml(
     };
     let xml = normalize_explicit_line_indent(&xml, apply_default_table_style, document_style);
 
-    if let Some(heading_numbering) = heading_numbering {
+    let xml = if let Some(heading_numbering) = heading_numbering {
         normalize_heading_numbering(&xml, heading_numbering)
     } else {
         xml
+    };
+
+    normalize_emoji_runs(&xml)
+}
+
+fn normalize_emoji_runs(xml: &str) -> String {
+    let run = Regex::new(r#"(?s)<w:r\b[^>]*>.*?</w:r>"#).expect("valid run regex");
+    run.replace_all(xml, |captures: &Captures| {
+        let run_xml = &captures[0];
+        let text = paragraph_plain_text(run_xml);
+        if !text.chars().any(is_emoji_character) {
+            return run_xml.to_string();
+        }
+
+        split_emoji_run(run_xml).unwrap_or_else(|| ensure_emoji_run_font(run_xml))
+    })
+    .to_string()
+}
+
+const EMOJI_FONT_XML: &str =
+    r#"<w:rFonts w:ascii="Segoe UI Emoji" w:hAnsi="Segoe UI Emoji" w:eastAsia="Segoe UI Emoji" w:cs="Segoe UI Emoji" w:hint="default" />"#;
+
+fn split_emoji_run(run_xml: &str) -> Option<String> {
+    let run_start = Regex::new(r#"<w:r\b[^>]*>"#).expect("valid emoji run start regex");
+    let run_start = run_start.find(run_xml)?.as_str();
+    let run_attributes = &run_start[2..run_start.len() - 1];
+    let run_properties = Regex::new(r#"(?s)<w:rPr>.*?</w:rPr>"#)
+        .expect("valid emoji run properties regex")
+        .find(run_xml)
+        .map(|value| value.as_str().to_string());
+    let inner_start = run_xml.find('>')? + 1;
+    let inner_end = run_xml.rfind("</w:r>")?;
+    let inner = if let Some(properties) = run_properties.as_deref() {
+        let properties_start = run_xml.find(properties)?;
+        let properties_end = properties_start + properties.len();
+        format!("{}{}", &run_xml[inner_start..properties_start], &run_xml[properties_end..inner_end])
+    } else {
+        run_xml[inner_start..inner_end].to_string()
+    };
+    let properties_inner = run_properties
+        .as_deref()
+        .and_then(|value| value.strip_prefix("<w:rPr>")?.strip_suffix("</w:rPr>"))
+        .unwrap_or("");
+    let token = Regex::new(r#"(?s)<w:t(?:\s+[^>]*)?>.*?</w:t>|<w:tab\b[^>]*/>|<w:br\b[^>]*/>"#)
+        .expect("valid emoji run token regex");
+    let mut cursor = 0;
+    let mut output = String::new();
+    let mut token_count = 0;
+    for matched in token.find_iter(&inner) {
+        if !inner[cursor..matched.start()].trim().is_empty() {
+            return None;
+        }
+        let token_xml = matched.as_str();
+        if token_xml.starts_with("<w:t") {
+            let text_match = Regex::new(r#"(?s)(<w:t(?:\s+[^>]*)?>)(.*?)(</w:t>)"#)
+                .expect("valid emoji text token regex")
+                .captures(token_xml)?;
+            let tag_start = text_match.get(1)?.as_str();
+            let content = decode_basic_xml_entities(text_match.get(2)?.as_str());
+            let tag_end = text_match.get(3)?.as_str();
+            for (segment, emoji) in split_text_by_emoji(&content) {
+                output.push_str(&emoji_run_xml(
+                    run_attributes,
+                    properties_inner,
+                    &format!("{tag_start}{}{tag_end}", escape_xml_text(&segment)),
+                    emoji,
+                ));
+            }
+        } else {
+            output.push_str(&emoji_run_xml(run_attributes, properties_inner, token_xml, false));
+        }
+        token_count += 1;
+        cursor = matched.end();
     }
+    if token_count == 0 || !inner[cursor..].trim().is_empty() {
+        return None;
+    }
+    Some(output)
+}
+
+fn split_text_by_emoji(text: &str) -> Vec<(String, bool)> {
+    let mut segments: Vec<(String, bool)> = Vec::new();
+    for character in text.chars() {
+        let emoji = is_emoji_character(character) || matches!(character as u32, 0x200D | 0xFE0E | 0xFE0F);
+        if let Some((current, current_emoji)) = segments.last_mut() {
+            if *current_emoji == emoji {
+                current.push(character);
+                continue;
+            }
+        }
+        segments.push((character.to_string(), emoji));
+    }
+    segments
+}
+
+fn emoji_run_xml(run_attributes: &str, properties_inner: &str, content: &str, emoji: bool) -> String {
+    let properties = if emoji {
+        let properties_inner = strip_emoji_run_overrides(properties_inner);
+        format!("<w:rPr>{EMOJI_FONT_XML}{properties_inner}</w:rPr>")
+    } else if properties_inner.is_empty() {
+        String::new()
+    } else {
+        format!("<w:rPr>{properties_inner}</w:rPr>")
+    };
+    format!("<w{run_attributes}>{properties}{content}</w:r>")
+}
+
+fn strip_emoji_run_overrides(properties_inner: &str) -> String {
+    let overrides = Regex::new(r#"<w:(?:rFonts|color|b|bCs|i|iCs)\b[^>]*/>"#)
+        .expect("valid emoji run override regex");
+    overrides.replace_all(properties_inner, "").to_string()
+}
+
+fn is_emoji_character(value: char) -> bool {
+    matches!(
+        value as u32,
+        0x1F000..=0x1FAFF
+            | 0x2600..=0x27BF
+            | 0x2300..=0x23FF
+            | 0x2B00..=0x2BFF
+            | 0x00A9
+            | 0x00AE
+            | 0x203C
+            | 0x2049
+            | 0x2122
+            | 0x2139
+            | 0x3030
+            | 0x303D
+            | 0x3297
+            | 0x3299
+    )
+}
+
+fn ensure_emoji_run_font(run_xml: &str) -> String {
+    let run_properties =
+        Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
+    if run_properties.is_match(run_xml) {
+        return run_properties
+            .replace(run_xml, |captures: &Captures| {
+                let inner = strip_emoji_run_overrides(&captures[1]);
+                format!("<w:rPr>{EMOJI_FONT_XML}{inner}</w:rPr>")
+            })
+            .to_string();
+    }
+
+    let run_start = Regex::new(r#"<w:r\b[^>]*>"#).expect("valid run start regex");
+    run_start
+        .replace(run_xml, |captures: &Captures| {
+            format!("{}<w:rPr>{EMOJI_FONT_XML}</w:rPr>", &captures[0])
+        })
+        .to_string()
 }
 
 /// Word 的 `firstLine` 只作用于段落的第一条物理行。预览会把 Markdown
@@ -3336,7 +3524,10 @@ fn ensure_image_paragraph_aligned(paragraph: &str, align: &str) -> String {
     let paragraph_start_re = Regex::new(r#"<w:p\b[^>]*>"#).expect("valid paragraph start regex");
     paragraph_start_re
         .replace(paragraph, |captures: &Captures| {
-            format!("{}<w:pPr><w:jc w:val=\"{align}\" /></w:pPr>", &captures[0])
+            format!(
+                "{}<w:pPr><w:ind w:left=\"0\" w:right=\"0\" w:firstLine=\"0\" /><w:jc w:val=\"{align}\" /></w:pPr>",
+                &captures[0]
+            )
         })
         .to_string()
 }
@@ -3346,15 +3537,24 @@ fn align_paragraph_properties(properties: &str, align: &str) -> String {
         .expect("valid self closing paragraph properties regex");
     if let Some(captures) = self_closing_re.captures(properties) {
         let attrs = captures.get(1).map(|value| value.as_str()).unwrap_or("");
-        return format!(r#"<w:pPr{attrs}><w:jc w:val="{align}" /></w:pPr>"#);
+        return format!(
+            r#"<w:pPr{attrs}><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{align}" /></w:pPr>"#
+        );
     }
 
     let jc_re = Regex::new(r#"(?s)<w:jc\b[^>]*/>"#).expect("valid paragraph alignment regex");
+    let ind_re = Regex::new(r#"(?s)<w:ind\b[^>]*/>"#).expect("valid paragraph indentation regex");
     let without_alignment = jc_re.replace_all(properties, "");
-    without_alignment
+    // Pandoc image styles inherit Normal, which carries the body first-line
+    // indent. Clear it explicitly so image width is based on the full content
+    // area and not shifted by the body paragraph style.
+    let without_indentation = ind_re.replace_all(&without_alignment, "");
+    without_indentation
         .replacen(
             "</w:pPr>",
-            &format!(r#"<w:jc w:val="{align}" /></w:pPr>"#),
+            &format!(
+                r#"<w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{align}" /></w:pPr>"#
+            ),
             1,
         )
         .to_string()
@@ -3436,9 +3636,19 @@ fn replace_numeric_attr(attrs: &str, name: &str, value: u64) -> String {
     }
 }
 
+#[cfg(test)]
 fn apply_page_settings_to_document_xml(
     xml: &str,
     page_settings: Option<&PageSettingsConfig>,
+) -> String {
+    apply_page_settings_to_document_xml_with_heading_numbering(xml, page_settings, None, None)
+}
+
+fn apply_page_settings_to_document_xml_with_heading_numbering(
+    xml: &str,
+    page_settings: Option<&PageSettingsConfig>,
+    heading_numbering: Option<&HeadingNumberingConfig>,
+    toc_page_numbers: Option<&[TocPageNumber]>,
 ) -> String {
     let Some(page_settings) = page_settings else {
         return xml.to_string();
@@ -3448,7 +3658,12 @@ fn apply_page_settings_to_document_xml(
     } else {
         xml.to_string()
     };
-    let xml = normalize_toc_fields(&xml, page_settings);
+    let xml = normalize_toc_fields(
+        &xml,
+        page_settings,
+        heading_numbering,
+        toc_page_numbers,
+    );
 
     let section = Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#).expect("valid sectPr regex");
     if section.is_match(&xml) {
@@ -3478,7 +3693,12 @@ fn ensure_word_relationship_namespace(xml: &str) -> String {
     )
 }
 
-fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String {
+fn normalize_toc_fields(
+    xml: &str,
+    page_settings: &PageSettingsConfig,
+    heading_numbering: Option<&HeadingNumberingConfig>,
+    toc_page_numbers: Option<&[TocPageNumber]>,
+) -> String {
     if !page_settings.toc_enabled {
         return xml.to_string();
     }
@@ -3510,7 +3730,13 @@ fn normalize_toc_fields(xml: &str, page_settings: &PageSettingsConfig) -> String
         .to_string();
 
     let xml = normalize_toc_heading(&xml, page_settings);
-    let xml = populate_empty_toc_result(&xml, page_settings);
+    let xml = populate_empty_toc_result(
+        &xml,
+        page_settings,
+        heading_numbering,
+        toc_page_numbers,
+    );
+    let xml = normalize_toc_cached_hyperlinks(&xml);
 
     ensure_page_break_after_toc(&xml)
 }
@@ -3550,9 +3776,20 @@ fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> Strin
     paragraph.replace(xml, replacement).to_string()
 }
 
-fn populate_empty_toc_result(xml: &str, page_settings: &PageSettingsConfig) -> String {
+fn populate_empty_toc_result(
+    xml: &str,
+    page_settings: &PageSettingsConfig,
+    heading_numbering: Option<&HeadingNumberingConfig>,
+    toc_page_numbers: Option<&[TocPageNumber]>,
+) -> String {
     let depth = parse_toc_depth(&page_settings.toc_depth).unwrap_or(3);
-    let entries = toc_cached_entries_xml(xml, usize::from(depth));
+    let entries = toc_cached_entries_xml(
+        xml,
+        usize::from(depth),
+        page_settings,
+        heading_numbering,
+        toc_page_numbers,
+    );
     if entries.is_empty() {
         return xml.to_string();
     }
@@ -3586,11 +3823,20 @@ fn populate_empty_toc_result(xml: &str, page_settings: &PageSettingsConfig) -> S
         .to_string()
 }
 
-fn toc_cached_entries_xml(xml: &str, depth: usize) -> String {
+fn toc_cached_entries_xml(
+    xml: &str,
+    depth: usize,
+    page_settings: &PageSettingsConfig,
+    heading_numbering: Option<&HeadingNumberingConfig>,
+    toc_page_numbers: Option<&[TocPageNumber]>,
+) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#).expect("valid paragraph regex");
     let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading([1-6])"[^>]*/>"#)
         .expect("valid heading style regex");
+    let tab_position = page_content_width_twips(page_settings);
+    let tab_leader = toc_tab_leader(page_settings.toc_leader.trim());
 
+    let mut counters = [0usize; 6];
     paragraph
         .find_iter(xml)
         .filter_map(|paragraph_match| {
@@ -3608,19 +3854,209 @@ fn toc_cached_entries_xml(xml: &str, depth: usize) -> String {
             if text.trim().is_empty() {
                 return None;
             }
-            let indent = (level.saturating_sub(1) * 420) as u32;
-            let indent_xml = if indent == 0 {
-                String::new()
+            let has_numbering = has_list_numbering(paragraph_xml);
+            let number = toc_heading_number(
+                level,
+                &mut counters,
+                heading_numbering,
+                has_numbering,
+            );
+            // 手写在标题正文里的数字属于标题内容，不能代替模板配置的
+            // 多级章节编号。例如二级标题 `1. 命名规范` 应显示为
+            // `4.1 1. 命名规范`，与正文中的 Word 自动编号保持一致。
+            let visible_text = number
+                .map(|number| format!("{number} {}", text.trim()))
+                .unwrap_or_else(|| text.trim().to_string());
+            // 目录层级每深入一级缩进两个中文字符（12pt 正文即 480 twips）。
+            // 一级目录保持顶格，二/三/四级分别缩进 2/4/6 字符。
+            let indent = (level.saturating_sub(1) * 480) as u32;
+            // 即使一级缩进为 0 也必须显式写入，避免目录段落从 Normal
+            // 样式继承正文的首行缩进。
+            let indent_xml =
+                format!(r#"<w:ind w:left="{indent}" w:firstLine="0" w:hanging="0" />"#);
+            let tabs = if page_settings.toc_show_page_numbers {
+                format!(
+                    r#"<w:tabs><w:tab w:val="right" w:leader="{tab_leader}" w:pos="{tab_position}" /></w:tabs>"#
+                )
             } else {
-                format!(r#"<w:ind w:left="{indent}" />"#)
+                String::new()
             };
+            let bookmark = toc_heading_bookmark_name(xml, paragraph_match.start(), paragraph_xml);
+            let page_field = if page_settings.toc_show_page_numbers {
+                bookmark.as_ref()
+                    .map(|name| {
+                        let page = toc_page_numbers
+                            .and_then(|numbers| {
+                                numbers.iter().find(|number| number.anchor_id == *name)
+                            })
+                            .map(|number| number.page.max(1))
+                            .unwrap_or_else(|| {
+                                toc_cached_page_number(
+                                    xml,
+                                    paragraph_match.start(),
+                                    page_settings,
+                                )
+                            });
+                        toc_page_reference_xml(name, page)
+                    })
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let visible_run = format!(
+                r#"<w:r><w:rPr><w:sz w:val="21" /><w:szCs w:val="21" /></w:rPr><w:t xml:space="preserve">{}</w:t></w:r>"#,
+                escape_xml_text(&visible_text),
+            );
+            // The TOC field itself contains \h, but its cached result is plain
+            // text until Word refreshes the field. Keep the cached result
+            // clickable as well so Ctrl+click works immediately after export.
+            let visible_entry = bookmark
+                .as_deref()
+                .map(|name| {
+                    format!(
+                        r#"<w:hyperlink w:anchor="{}" w:history="1">{visible_run}</w:hyperlink>"#,
+                        escape_xml_text(name),
+                    )
+                })
+                .unwrap_or(visible_run);
             Some(format!(
-                r#"<w:p><w:pPr><w:spacing w:after="80" />{indent_xml}</w:pPr><w:r><w:rPr><w:sz w:val="21" /><w:szCs w:val="21" /></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
-                escape_xml_text(text.trim())
+                r#"<w:p><w:pPr><w:spacing w:after="80" />{indent_xml}{tabs}</w:pPr>{visible_entry}{}{}</w:p>"#,
+                if page_settings.toc_show_page_numbers {
+                    r#"<w:r><w:tab /></w:r>"#
+                } else {
+                    ""
+                },
+                page_field,
             ))
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+fn toc_heading_number(
+    level: usize,
+    counters: &mut [usize; 6],
+    heading_numbering: Option<&HeadingNumberingConfig>,
+    has_numbering: bool,
+) -> Option<String> {
+    let configured_format = heading_numbering
+        .and_then(|config| config.formats.get(level - 1).and_then(Option::as_deref));
+    if !has_numbering && configured_format.is_none() {
+        return None;
+    }
+
+    counters[level - 1] += 1;
+    for counter in counters.iter_mut().skip(level) {
+        *counter = 0;
+    }
+
+    let format = configured_format.unwrap_or("1");
+    if format == "无编号" || format.trim().is_empty() {
+        return None;
+    }
+
+    let number = match format {
+        "一、" => format!("{}、", chinese_number(counters[level - 1].max(1))),
+        "第一章" => format!("第{}章", chinese_number(counters[level - 1].max(1))),
+        format if format.starts_with('1') => {
+            let requested_depth = format.split('.').count().clamp(1, 6);
+            let depth = level.min(requested_depth);
+            counters[..depth]
+                .iter()
+                .map(|value| (*value).max(1).to_string())
+                .collect::<Vec<_>>()
+                .join(".")
+        }
+        _ => counters[..level]
+            .iter()
+            .map(|value| (*value).max(1).to_string())
+            .collect::<Vec<_>>()
+            .join("."),
+    };
+
+    Some(number)
+}
+
+fn toc_cached_page_number(xml: &str, paragraph_start: usize, page_settings: &PageSettingsConfig) -> u32 {
+    let content_start = page_settings.footer_start_page.max(1).saturating_add(1);
+    let page_breaks = Regex::new(r#"<w:br\b[^>]*w:type=\"page\"[^>]*/>"#)
+        .expect("valid page break regex")
+        .find_iter(&xml[..paragraph_start])
+        .count() as u32;
+    content_start.saturating_add(page_breaks)
+}
+
+fn toc_tab_leader(value: &str) -> &'static str {
+    match value {
+        "dash" => "hyphen",
+        "line" => "underscore",
+        "dot" | "cjk-dot" | "dot-spaced" => "dot",
+        _ => "none",
+    }
+}
+
+fn toc_heading_bookmark_name(
+    xml: &str,
+    paragraph_start: usize,
+    paragraph_xml: &str,
+) -> Option<String> {
+    let bookmark_start = Regex::new(r#"<w:bookmarkStart\b[^>]*w:name="([^"]+)"[^>]*/>"#)
+        .expect("valid TOC heading bookmark regex");
+
+    // Pandoc normally places the bookmark around the heading paragraph, while
+    // some generated documents place it inside the paragraph itself.
+    bookmark_start
+        .captures(paragraph_xml)
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str().to_string())
+        .or_else(|| {
+            bookmark_start
+                .find_iter(&xml[..paragraph_start])
+                .last()
+                .and_then(|bookmark| bookmark_start.captures(bookmark.as_str()))
+                .and_then(|captures| captures.get(1))
+                .map(|value| value.as_str().to_string())
+        })
+}
+
+fn toc_page_reference_xml(bookmark: &str, cached_page: u32) -> String {
+    let bookmark = escape_xml_text(bookmark);
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin" w:dirty="true" /></w:r><w:r><w:instrText xml:space="preserve"> PAGEREF &quot;{bookmark}&quot; \h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate" /></w:r><w:r><w:t>{cached_page}</w:t></w:r><w:r><w:fldChar w:fldCharType="end" /></w:r>"#
+    )
+}
+
+fn normalize_toc_cached_hyperlinks(xml: &str) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
+        .expect("valid TOC cached paragraph regex");
+    let page_reference = Regex::new(r#"PAGEREF\s+(?:&quot;|")(.+?)(?:&quot;|")\s+\\h"#)
+        .expect("valid TOC page reference regex");
+    let run = Regex::new(r#"(?s)<w:r\b[^>]*>.*?<w:t\b[^>]*>.*?</w:t>.*?</w:r>"#)
+        .expect("valid TOC cached text run regex");
+
+    paragraph
+        .replace_all(xml, |captures: &Captures| {
+            let paragraph_xml = captures.get(0).map(|value| value.as_str()).unwrap_or("");
+            if paragraph_xml.contains("<w:hyperlink") {
+                return paragraph_xml.to_string();
+            }
+            let Some(bookmark) = page_reference
+                .captures(paragraph_xml)
+                .and_then(|value| value.get(1))
+                .map(|value| value.as_str())
+            else {
+                return paragraph_xml.to_string();
+            };
+            let escaped_bookmark = escape_xml_text(&decode_basic_xml_entities(bookmark));
+            run.replace(
+                paragraph_xml,
+                format!(
+                    r#"<w:hyperlink w:anchor="{escaped_bookmark}" w:history="1">$0</w:hyperlink>"#
+                ),
+            )
+            .to_string()
+        })
+        .to_string()
 }
 
 fn ensure_toc_fields_update_on_open(
@@ -4257,7 +4693,7 @@ fn ensure_style_run_properties(style_xml: &str, properties: &str) -> String {
 }
 
 fn body_run_properties_xml() -> &'static str {
-    r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" /><w:color w:val="111827" /><w:sz w:val="24" /><w:szCs w:val="24" /><w:b w:val="0" /><w:bCs w:val="0" />"#
+    r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" /><w:color w:val="111827" /><w:sz w:val="24" /><w:szCs w:val="24" /><w:spacing w:val="4" /><w:b w:val="0" /><w:bCs w:val="0" />"#
 }
 
 fn text_style_paragraph_properties_xml(style: &TextStyleConfig) -> String {
@@ -4306,7 +4742,9 @@ fn list_indent_xml_for_marker(style: &TextStyleConfig, level: usize, marker: &st
     } else {
         let hanging = list_marker_and_gap_twips(marker, level_style.text_indent);
         let text_left = marker_left.saturating_add(hanging).min(6000);
-        format!(r#"<w:ind w:left="{text_left}" w:hanging="{hanging}" />"#)
+        format!(
+            r#"<w:tabs><w:tab w:val="left" w:pos="{text_left}" /></w:tabs><w:ind w:left="{text_left}" w:hanging="{hanging}" />"#
+        )
     }
 }
 
@@ -4327,8 +4765,8 @@ fn text_style_run_properties_xml(style: &TextStyleConfig) -> String {
     let size = font_size_half_points(style.font_size);
     let bold = bool_val(style.bold);
     format!(
-        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" />"#,
-        style.latin_font, style.latin_font, style.chinese_font, style.color
+        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:spacing w:val="{character_spacing}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" />"#,
+        style.latin_font, style.latin_font, style.chinese_font, style.color, character_spacing = WORD_TEXT_CHARACTER_SPACING_TWIPS
     )
 }
 
@@ -4337,8 +4775,8 @@ fn list_level_run_properties_xml(style: &TextStyleConfig, level: usize) -> Strin
     let size = font_size_half_points(level_style.font_size);
     let bold = bool_val(level_style.bold);
     format!(
-        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" />"#,
-        level_style.latin_font, level_style.latin_font, level_style.chinese_font, level_style.color
+        r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:spacing w:val="{character_spacing}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" />"#,
+        level_style.latin_font, level_style.latin_font, level_style.chinese_font, level_style.color, character_spacing = WORD_TEXT_CHARACTER_SPACING_TWIPS
     )
 }
 
@@ -4616,7 +5054,7 @@ fn code_language_label_paragraph(
 }
 
 fn code_language_display_name(language: &str) -> String {
-    match language.trim().to_ascii_lowercase().as_str() {
+    let display_name = match language.trim().to_ascii_lowercase().as_str() {
         "js" | "javascript" => "JavaScript".to_string(),
         "ts" | "typescript" => "TypeScript".to_string(),
         "tsx" => "TSX".to_string(),
@@ -4635,8 +5073,9 @@ fn code_language_display_name(language: &str) -> String {
         "java" => "Java".to_string(),
         "go" | "golang" => "Go".to_string(),
         value if value.is_empty() => "Code".to_string(),
-        _ => language.to_string(),
-    }
+        _ => language.trim().to_string(),
+    };
+    display_name.to_uppercase()
 }
 
 fn code_language_label_paragraph_properties_xml(
@@ -4649,17 +5088,24 @@ fn code_language_label_paragraph_properties_xml(
     let border_color = style
         .map(|value| value.border_color.as_str())
         .unwrap_or("E2E8F0");
+    let horizontal_border_space = style
+        .map(|value| value.padding_x)
+        .unwrap_or(18.0)
+        .max(0.0)
+        .round() as u32;
     let horizontal_padding =
         points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
     let left_indent = horizontal_padding.saturating_add(indent_pt.saturating_mul(20));
     let border_space = (style.map(|value| value.padding_y).unwrap_or(10.0) / 2.0)
         .round()
         .clamp(0.0, 24.0) as u32;
-    let border = border_xml_with_space("solid", 0.75, border_color, border_space);
+    let vertical_border = border_xml_with_space("solid", 0.75, border_color, border_space);
+    let horizontal_border =
+        border_xml_with_space("solid", 0.75, border_color, horizontal_border_space);
 
     let shading = paragraph_shading_xml(background);
     format!(
-        r#"<w:spacing w:before="120" w:after="0" w:line="220" w:lineRule="auto" /><w:jc w:val="right" /><w:ind w:left="{left_indent}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr><w:top {border} /><w:left {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:keepNext /><w:spacing w:before="0" w:after="0" w:line="160" w:lineRule="exact" /><w:jc w:val="left" /><w:ind w:left="{left_indent}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr><w:top {vertical_border} /><w:left {horizontal_border} /><w:right {horizontal_border} /></w:pBdr>"#
     )
 }
 
@@ -4917,8 +5363,47 @@ fn syntax_token_run_style(run_xml: &str) -> Option<String> {
 }
 
 fn normalize_quote_paragraph(paragraph_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
+    if let Some(callout_type) = capture_callout_type(paragraph_xml) {
+        let (accent, background, text) = callout_colors(&callout_type);
+        let paragraph_xml = replace_callout_marker(paragraph_xml);
+        let paragraph_xml = ensure_quote_paragraph_properties_with_colors(
+            &paragraph_xml,
+            style,
+            Some((background, accent)),
+        );
+        return normalize_quote_runs_with_color(&paragraph_xml, style, Some(text));
+    }
     let paragraph_xml = ensure_quote_paragraph_properties(paragraph_xml, style);
     normalize_quote_runs(&paragraph_xml, style)
+}
+
+fn capture_callout_type(paragraph_xml: &str) -> Option<String> {
+    let text = paragraph_plain_text(paragraph_xml);
+    Regex::new(r#"^\[!([a-z][\w-]*)\](?:[+-])?(?:[ \t]+|$)"#)
+        .expect("valid callout marker regex")
+        .captures(text.trim_start())
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str().to_ascii_lowercase())
+}
+
+fn replace_callout_marker(paragraph_xml: &str) -> String {
+    let text = Regex::new(
+        r#"(?s)(<w:t(?:\s+[^>]*)?>)\[![a-z][\w-]*\](?:[+-])?(?:[ \t]+|$)(</w:t>)"#,
+    )
+    .expect("valid callout text marker regex");
+    text.replace(paragraph_xml, "$1ⓘ $2").to_string()
+}
+
+fn callout_colors(callout_type: &str) -> (&'static str, &'static str, &'static str) {
+    match callout_type {
+        "abstract" | "summary" | "tldr" => ("0891B2", "ECFEFF", "155E75"),
+        "note" | "info" | "todo" => ("2563EB", "EFF6FF", "1E40AF"),
+        "tip" | "hint" | "success" | "check" => ("16A34A", "F0FDF4", "166534"),
+        "question" | "help" | "warning" | "caution" => ("D97706", "FFFBEB", "92400E"),
+        "failure" | "fail" | "danger" | "error" | "bug" => ("DC2626", "FEF2F2", "991B1B"),
+        "example" => ("7C3AED", "F5F3FF", "5B21B6"),
+        _ => ("64748B", "F8FAFC", "475569"),
+    }
 }
 
 fn normalize_quote_list_paragraph(
@@ -4974,15 +5459,27 @@ fn ensure_quote_list_paragraph_properties(
 }
 
 fn normalize_quote_runs(paragraph_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
+    normalize_quote_runs_with_color(paragraph_xml, style, None)
+}
+
+fn normalize_quote_runs_with_color(
+    paragraph_xml: &str,
+    style: Option<&QuoteBlockStyleConfig>,
+    color: Option<&str>,
+) -> String {
     let run = Regex::new(r#"(?s)<w:r(?:\s[^>]*)?>.*?</w:r>"#).expect("valid run regex");
     run.replace_all(paragraph_xml, |captures: &Captures| {
-        normalize_quote_run_xml(&captures[0], style)
+        normalize_quote_run_xml_with_color(&captures[0], style, color)
     })
     .to_string()
 }
 
-fn normalize_quote_run_xml(run_xml: &str, style: Option<&QuoteBlockStyleConfig>) -> String {
-    let properties = quote_run_properties_xml(style);
+fn normalize_quote_run_xml_with_color(
+    run_xml: &str,
+    style: Option<&QuoteBlockStyleConfig>,
+    color: Option<&str>,
+) -> String {
+    let properties = quote_run_properties_xml_with_color(style, color);
     let run_properties =
         Regex::new(r#"(?s)<w:rPr>(.*?)</w:rPr>"#).expect("valid run property regex");
 
@@ -5020,22 +5517,29 @@ fn code_paragraph_properties_xml(
         0
     };
     let after = points_to_twentieths(style.map(|value| value.after_spacing).unwrap_or(6.0));
+    let horizontal_border_space = style
+        .map(|value| value.padding_x)
+        .unwrap_or(18.0)
+        .max(0.0)
+        .round() as u32;
     let horizontal_padding =
         points_to_twentieths(style.map(|value| value.padding_x).unwrap_or(18.0));
     let left_indent = horizontal_padding.saturating_add(indent_pt.saturating_mul(20));
     let border_space = (style.map(|value| value.padding_y).unwrap_or(10.0) / 2.0)
         .round()
         .clamp(0.0, 24.0) as u32;
-    let border = border_xml_with_space("solid", 0.75, border_color, border_space);
+    let vertical_border = border_xml_with_space("solid", 0.75, border_color, border_space);
+    let horizontal_border =
+        border_xml_with_space("solid", 0.75, border_color, horizontal_border_space);
     let top_border = if include_top_border {
-        format!(r#"<w:top {border} />"#)
+        format!(r#"<w:top {vertical_border} />"#)
     } else {
         String::new()
     };
 
     let shading = paragraph_shading_xml(background);
     format!(
-        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{left_indent}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr>{top_border}<w:left {border} /><w:bottom {border} /><w:right {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{left_indent}" w:right="{horizontal_padding}" w:firstLine="0" />{shading}<w:pBdr>{top_border}<w:left {horizontal_border} /><w:bottom {vertical_border} /><w:right {horizontal_border} /></w:pBdr>"#
     )
 }
 
@@ -5152,12 +5656,44 @@ fn is_dark_hex_color(value: &str) -> bool {
 }
 
 fn quote_paragraph_properties_xml(style: Option<&QuoteBlockStyleConfig>, is_list: bool) -> String {
+    quote_paragraph_properties_xml_with_colors(style, is_list, None)
+}
+
+fn ensure_quote_paragraph_properties_with_colors(
+    paragraph_xml: &str,
+    style: Option<&QuoteBlockStyleConfig>,
+    colors: Option<(&str, &str)>,
+) -> String {
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
+    let properties = quote_paragraph_properties_xml_with_colors(style, false, colors);
+    if paragraph_properties.is_match(paragraph_xml) {
+        return paragraph_properties
+            .replace(paragraph_xml, |captures: &Captures| {
+                let removable =
+                    Regex::new(r#"(?s)<w:pBdr>.*?</w:pBdr>|<w:(?:shd|spacing|ind|jc)\b[^>]*/>"#)
+                        .expect("valid callout paragraph cleanup regex");
+                let inner = removable.replace_all(&captures[1], "");
+                format!(r#"<w:pPr>{inner}{properties}</w:pPr>"#)
+            })
+            .to_string();
+    }
+    insert_paragraph_properties(paragraph_xml, &properties)
+}
+
+fn quote_paragraph_properties_xml_with_colors(
+    style: Option<&QuoteBlockStyleConfig>,
+    is_list: bool,
+    colors: Option<(&str, &str)>,
+) -> String {
     let background = style
         .map(|value| value.background_color.as_str())
         .unwrap_or("F8FAFC");
     let border_color = style
         .map(|value| value.border_color.as_str())
         .unwrap_or("94A3B8");
+    let background = colors.map(|value| value.0).unwrap_or(background);
+    let border_color = colors.map(|value| value.1).unwrap_or(border_color);
     let font_size = style.map(|value| value.font_size).unwrap_or(10.5);
     let line_height =
         style
@@ -5174,28 +5710,36 @@ fn quote_paragraph_properties_xml(style: Option<&QuoteBlockStyleConfig>, is_list
             .map(|value| value.after_spacing)
             .unwrap_or(if is_list { 2.0 } else { 4.0 }),
     );
-    let left = if is_list { 540 } else { 360 };
+    // Quote blocks are visual callouts, not body paragraphs. Do not inherit
+    // the document's first-line/body indentation on export.
+    let left = 0;
     let border_width = style.map(|value| value.border_width).unwrap_or(4.5);
     let border = border_xml_with_space("solid", border_width / 2.0, border_color, 6);
 
     format!(
-        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{left}" w:right="240" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:left {border} /></w:pBdr>"#
+        r#"<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="{left}" w:right="0" w:firstLine="0" /><w:shd w:val="clear" w:color="auto" w:fill="{background}" /><w:pBdr><w:left {border} /></w:pBdr>"#
     )
 }
 
-fn quote_run_properties_xml(style: Option<&QuoteBlockStyleConfig>) -> String {
+fn quote_run_properties_xml_with_color(
+    style: Option<&QuoteBlockStyleConfig>,
+    color_override: Option<&str>,
+) -> String {
     let latin_font = style
         .map(|value| value.latin_font.as_str())
         .unwrap_or("Times New Roman");
     let chinese_font = style
         .map(|value| value.chinese_font.as_str())
         .unwrap_or("微软雅黑");
-    let color = style.map(|value| value.color.as_str()).unwrap_or("475569");
+    let color = color_override
+        .or_else(|| style.map(|value| value.color.as_str()))
+        .unwrap_or("475569");
     let size = font_size_half_points(style.map(|value| value.font_size).unwrap_or(10.5));
     let bold = bool_val(style.is_some_and(|value| value.bold));
 
     format!(
-        r#"<w:rFonts w:ascii="{latin_font}" w:eastAsia="{chinese_font}" w:hAnsi="{latin_font}" /><w:color w:val="{color}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" /><w:i /><w:iCs /><w:sz w:val="{size}" /><w:szCs w:val="{size}" />"#
+        r#"<w:rFonts w:ascii="{latin_font}" w:eastAsia="{chinese_font}" w:hAnsi="{latin_font}" /><w:color w:val="{color}" /><w:b w:val="{bold}" /><w:bCs w:val="{bold}" /><w:i w:val="0" /><w:iCs w:val="0" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:spacing w:val="{character_spacing}" />"#,
+        character_spacing = WORD_TEXT_CHARACTER_SPACING_TWIPS
     )
 }
 
@@ -5411,7 +5955,16 @@ fn normalize_list_paragraph(
     } else {
         apply_default_list_paragraph_properties(&without_numbering, level, &marker)
     };
-    let with_marker = prefix_first_text_run(&with_indent, &format!("{marker} "));
+    let uses_hanging_wrap = list_style
+        .map(|style| list_level_style(style, level).wrap_mode != "flat")
+        // 引用列表保留引用块自己的缩进和边框；没有对应的列表 tab stop
+        // 时继续使用普通前缀，避免落到 Word 的默认 tab 位置。
+        .unwrap_or(!with_indent.contains("<w:pBdr>"));
+    let with_marker = if uses_hanging_wrap {
+        prefix_first_text_run_with_tab(&with_indent, &marker)
+    } else {
+        prefix_first_text_run(&with_indent, &format!("{marker} "))
+    };
     list_style
         .map(|style| apply_list_level_run_style(&with_marker, style, level))
         // 内置默认模板没有保存样式配置时，Pandoc 的列表段落没有 pStyle，
@@ -5574,7 +6127,7 @@ fn apply_default_list_paragraph_properties(
     let hanging = list_marker_and_gap_twips(marker, 1.0);
     let text_left = marker_left.saturating_add(hanging);
     let properties = format!(
-        r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" /><w:ind w:left="{}" w:hanging="{hanging}" />"#,
+        r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" /><w:tabs><w:tab w:val="left" w:pos="{text_left}" /></w:tabs><w:ind w:left="{}" w:hanging="{hanging}" />"#,
         text_left
     );
     let existing_properties =
@@ -5677,6 +6230,23 @@ fn prefix_first_text_run(paragraph_xml: &str, prefix: &str) -> String {
     .to_string()
 }
 
+fn prefix_first_text_run_with_tab(paragraph_xml: &str, prefix: &str) -> String {
+    let text = Regex::new(r#"(<w:t(?:\s+[^>]*)?>)([^<]*)(</w:t>)"#)
+        .expect("valid text regex");
+    text.replace(paragraph_xml, |captures: &Captures| {
+        format!(
+            "{}{}{}<w:tab />{}{}{}",
+            &captures[1],
+            prefix,
+            &captures[3],
+            &captures[1],
+            &captures[2],
+            &captures[3]
+        )
+    })
+    .to_string()
+}
+
 fn normalize_heading_numbering(xml: &str, heading_numbering: &HeadingNumberingConfig) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
     paragraph
@@ -5770,7 +6340,9 @@ fn force_table_width_percent(xml: &str) -> String {
 
 fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleConfig {
     TableStyleConfig {
-        width_twips: content_width_twips.unwrap_or(8640),
+        // A4 with the built-in 3.18 cm side margins is 8300 twips wide.
+        // Keep this fallback aligned with the preview instead of the old 8640 twips default.
+        width_twips: content_width_twips.unwrap_or_else(default_content_width_twips),
         fit_to_page_width: true,
         layout: "auto".to_string(),
         horizontal_align: "center".to_string(),
@@ -5778,10 +6350,10 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
         border_style: "solid".to_string(),
         border_color: "000000".to_string(),
         border_width: 1.0,
-        border_top_width: 1.5,
-        border_right_width: 1.5,
-        border_bottom_width: 1.5,
-        border_left_width: 1.5,
+        border_top_width: 1.0,
+        border_right_width: 1.0,
+        border_bottom_width: 1.0,
+        border_left_width: 1.0,
         show_inner_vertical_border: true,
         show_inner_horizontal_border: true,
         cell_padding_x: 10.0,
@@ -5863,11 +6435,10 @@ fn normalize_table_properties(
     style: &TableStyleConfig,
 ) -> String {
     let grid = build_table_grid_xml(column_widths);
-    let layout = if style.layout.trim().eq_ignore_ascii_case("auto") {
-        "autofit"
-    } else {
-        "fixed"
-    };
+    // Auto mode is resolved into deterministic column widths before this point.
+    // Keep Word from running a second, font-dependent autofit pass, otherwise the
+    // DOCX columns and line wraps drift from the preview's calculated grid.
+    let layout = "fixed";
 
     let table_properties =
         Regex::new(r#"(?s)<w:tblPr>(.*?)</w:tblPr>"#).expect("valid table property regex");
@@ -6393,7 +6964,6 @@ fn heading_numbering_xml_body(heading_numbering: &HeadingNumberingConfig) -> Str
                 level,
                 heading_numbering.formats[level].as_deref(),
             );
-
             format!(
                 r#"<w:lvl w:ilvl="{level}"><w:start w:val="1" /><w:numFmt w:val="{format}" /><w:lvlText w:val="{text}" /><w:suff w:val="space" /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="0" w:hanging="0" /></w:pPr></w:lvl>"#
             )
@@ -6449,7 +7019,7 @@ mod tests {
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         normalize_default_report_styles_xml, normalize_document_captions,
-        normalize_document_images, normalize_document_xml, normalize_docx,
+        normalize_document_images, normalize_document_xml, normalize_docx, normalize_emoji_runs,
         normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
         mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
         page_content_width_twips, page_settings_config_from_value,
@@ -6458,7 +7028,7 @@ mod tests {
         read_style_fill, table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        HeadingTarget, MarkdownFeatureConfig,
+        HeadingTarget, MarkdownFeatureConfig, TocPageNumber,
     };
     use regex::Regex;
     use serde_json::json;
@@ -6525,13 +7095,13 @@ mod tests {
         );
 
         assert!(output.contains(r#"<w:tblW w:type="pct" w:w="5000" />"#));
-        assert!(output.contains(r#"<w:tblLayout w:type="autofit" />"#));
+        assert!(output.contains(r#"<w:tblLayout w:type="fixed" />"#));
         assert!(output.contains("<w:tblBorders>"));
         assert!(output.contains(r#"w:color="000000""#));
         assert!(!output.contains("<w:tblStyle"));
         assert!(!output.contains("<w:tblLook"));
-        assert!(output.contains(r#"<w:gridCol w:w="8640" />"#));
-        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="8640" />"#));
+        assert!(output.contains(r#"<w:gridCol w:w="8300" />"#));
+        assert!(output.contains(r#"<w:tcW w:type="dxa" w:w="8300" />"#));
         assert!(output.contains(r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#));
         assert!(!output.contains(r#"w:fill="EEF2FF""#));
         assert_eq!(
@@ -6697,6 +7267,9 @@ mod tests {
         let output = normalize_document_images(input, Some(&page_settings), None);
 
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
+        assert!(output.contains(
+            r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#
+        ));
         assert!(!output.contains(r#"<w:jc w:val="left" />"#));
         assert!(output.contains(&format!(
             r#"<wp:extent cx="{target_width}" cy="{target_height}"/>"#
@@ -6704,6 +7277,42 @@ mod tests {
         assert!(output.contains(&format!(
             r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
         )));
+    }
+
+    #[test]
+    fn assigns_segoe_ui_emoji_only_to_runs_that_contain_emoji() {
+        let input = r#"<w:document><w:body><w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="宋体" /><w:color w:val="111827" /><w:b /><w:i /><w:sz w:val="24" /></w:rPr><w:t>状态 ✅ 正常</w:t></w:r><w:r><w:t>普通正文</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_emoji_runs(input);
+        let emoji_run = Regex::new(r#"(?s)<w:r><w:rPr><w:rFonts w:ascii="Segoe UI Emoji".*?</w:r>"#)
+            .expect("valid emoji run assertion regex")
+            .find(&output)
+            .expect("emoji run")
+            .as_str();
+
+        assert_eq!(output.matches("Segoe UI Emoji").count(), 4);
+        assert!(emoji_run.contains(r#"w:hint="default""#));
+        assert!(!emoji_run.contains("Times New Roman"));
+        assert!(!emoji_run.contains(r#"<w:color"#));
+        assert!(!emoji_run.contains(r#"<w:b"#));
+        assert!(!emoji_run.contains(r#"<w:i"#));
+        assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman""#));
+        assert!(output.contains(r#"<w:sz w:val="24" />"#));
+        assert!(output.contains(r#"<w:r><w:t>普通正文</w:t></w:r>"#));
+    }
+
+    #[test]
+    fn normalizes_obsidian_info_callout_to_blue_callout_without_marker_or_indent() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="BlockText" /></w:pPr><w:r><w:t xml:space="preserve">[!info] </w:t></w:r><w:r><w:t>这是什么</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>正文内容</w:t></w:r></w:p></w:body></w:document>"#;
+        let output = normalize_document_xml(input, true, None, &default_markdown_feature_config(), None, None, None);
+        assert!(!output.contains("[!info]"));
+        assert!(output.contains("ⓘ "));
+        assert!(output.contains(r#"w:fill="EFF6FF""#));
+        assert!(output.contains(r#"w:color="2563EB""#));
+        assert!(output.contains(r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#));
+        assert!(output.contains(r#"<w:color w:val="1E40AF" />"#));
+        assert!(output.contains(r#"<w:i w:val="0" />"#));
+        assert!(output.contains(r#"<w:iCs w:val="0" />"#));
     }
 
     #[test]
@@ -6831,10 +7440,10 @@ mod tests {
         assert!(output.contains(r#"<w:tblLayout w:type="fixed" /><w:jc w:val="right" />"#));
         assert!(output.contains(r#"w:val="dashed" w:sz="12" w:space="0" w:color="94A3B8""#));
         assert!(
-            output.contains(r#"<w:top w:val="dashed" w:sz="28" w:space="0" w:color="94A3B8" />"#)
+            output.contains(r#"<w:top w:val="dashed" w:sz="24" w:space="0" w:color="94A3B8" />"#)
         );
         assert!(
-            output.contains(r#"<w:left w:val="dashed" w:sz="36" w:space="0" w:color="94A3B8" />"#)
+            output.contains(r#"<w:left w:val="dashed" w:sz="32" w:space="0" w:color="94A3B8" />"#)
         );
         assert!(output.contains(r#"<w:vAlign w:val="top" />"#));
         assert!(output.contains(r#"<w:vAlign w:val="bottom" />"#));
@@ -7136,6 +7745,9 @@ mod tests {
         assert!(output.contains(r#"<w:pStyle w:val="SourceCode" />"#));
         assert!(output.contains(r#"<w:shd w:val="clear" w:color="auto" w:fill="F8FAFC" />"#));
         assert!(output.contains(r#"<w:ind w:left="360" w:right="360" w:firstLine="0" />"#));
+        assert!(
+            output.contains(r#"<w:left w:val="single" w:sz="6" w:space="18" w:color="E2E8F0" />"#)
+        );
         assert!(output.contains(r#"<w:rFonts w:ascii="Consolas""#));
         assert!(output.contains("<w:noProof />"));
         assert!(output.contains(r#"<w:i w:val="0" />"#));
@@ -7143,9 +7755,10 @@ mod tests {
         assert!(
             output.contains(r#"<w:left w:val="single" w:sz="18" w:space="6" w:color="94A3B8" />"#)
         );
-        assert!(output.contains(r#"<w:ind w:left="360" w:right="240" w:firstLine="0" />"#));
-        assert!(output.contains(r#"<w:ind w:left="540" w:right="240" w:firstLine="0" />"#));
+        assert!(output.contains(r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#));
         assert!(output.contains(r#"<w:color w:val="475569" />"#));
+        assert!(output.contains(r#"<w:i w:val="0" />"#));
+        assert!(output.contains(r#"<w:iCs w:val="0" />"#));
         assert!(output.contains(
             r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#
         ));
@@ -7167,7 +7780,9 @@ mod tests {
 
         assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#));
         assert!(output.contains("<w:b />"));
-        assert!(output.contains("<w:t>1. 加粗项目</w:t>"));
+        assert!(output.contains("<w:t>1.</w:t>"));
+        assert!(output.contains("<w:t>加粗项目</w:t>"));
+        assert!(output.contains("<w:tab />"));
     }
 
     #[test]
@@ -7232,6 +7847,9 @@ mod tests {
             r#"<w:spacing w:before="240" w:after="280" w:line="396" w:lineRule="auto" />"#
         ));
         assert!(output.contains(r#"<w:ind w:left="360" w:right="360" w:firstLine="0" />"#));
+        assert!(
+            output.contains(r#"<w:left w:val="single" w:sz="6" w:space="18" w:color="38BDF8" />"#)
+        );
         assert!(output.contains(r#"w:fill="FFEDD5""#));
         assert!(output.contains(r#"w:color="F97316""#));
         assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman" w:eastAsia="仿宋""#));
@@ -7297,7 +7915,7 @@ mod tests {
 
     #[test]
     fn renders_code_language_marker_as_label_paragraph() {
-        let input = r#"<w:document><w:body><w:p><w:r><w:t>MD_KING_CODE_LANG:python</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:t>print("ok")</w:t></w:r></w:p></w:body></w:document>"#;
+        let input = r#"<w:document><w:body><w:p><w:r><w:t>MD_KING_CODE_LANG:text</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:t>print("ok")</w:t></w:r></w:p></w:body></w:document>"#;
         let output = normalize_document_xml(
             input,
             true,
@@ -7308,9 +7926,14 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>Python</w:t>"));
+        assert!(output.contains("<w:t>TEXT</w:t>"));
         assert!(!output.contains("MD_KING_CODE_LANG"));
-        assert!(output.contains(r#"<w:jc w:val="right" />"#));
+        assert!(output.contains(r#"<w:keepNext />"#));
+        assert!(output.contains(
+            r#"<w:spacing w:before="0" w:after="0" w:line="160" w:lineRule="exact" />"#
+        ));
+        assert!(output.contains(r#"<w:jc w:val="left" />"#));
+        assert!(!output.contains(r#"<w:jc w:val="right" />"#));
         assert!(output.contains(r#"<w:pStyle w:val="SourceCode" />"#));
     }
 
@@ -7525,7 +8148,7 @@ mod tests {
         .unwrap();
         let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true" /><w:instrText xml:space="preserve">TOC \o &quot;1-3&quot; \h \z \u</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>1. 项目 &amp; 范围</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1.1 目标</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading3" /></w:pPr><w:r><w:t>1.1.1 细节</w:t></w:r></w:p></w:body></w:document>"#;
 
-        let output = normalize_toc_fields(input, &settings);
+        let output = normalize_toc_fields(input, &settings, None, None);
 
         assert!(output.contains("<w:t>目录</w:t>"));
         assert!(output.contains("1. 项目 &amp; 范围"));
@@ -7533,6 +8156,72 @@ mod tests {
         assert!(!output.contains("<w:t xml:space=\"preserve\">1.1.1 细节</w:t>"));
         assert_eq!(output.matches(r#"w:fldCharType="begin""#).count(), 1);
         assert_eq!(output.matches(r#"w:fldCharType="end""#).count(), 1);
+    }
+
+    #[test]
+    fn cached_toc_entries_use_dot_tabs_and_page_reference_fields() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "tocEnabled": true,
+                "tocDepth": "1-3",
+                "tocLeader": "dot",
+                "tocShowPageNumbers": true
+            }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC \o &quot;1-3&quot;</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:bookmarkStart w:id="1" w:name="项目范围" /><w:r><w:t>1 项目范围</w:t></w:r><w:bookmarkEnd w:id="1" /></w:p></w:body></w:document>"#;
+
+        let page_numbers = [TocPageNumber {
+            anchor_id: "项目范围".to_string(),
+            page: 7,
+        }];
+        let output = normalize_toc_fields(input, &settings, None, Some(&page_numbers));
+
+        assert!(output.contains(r#"<w:tab w:val="right" w:leader="dot""#));
+        assert!(output.contains(r#"<w:hyperlink w:anchor="项目范围" w:history="1">"#));
+        assert!(output.contains(r#"<w:r><w:tab /></w:r>"#));
+        assert!(output.contains(r#"PAGEREF &quot;项目范围&quot; \h"#));
+        assert!(output.contains(r#"<w:t>7</w:t>"#));
+        assert_eq!(output.matches(r#"w:fldCharType="begin""#).count(), 2);
+        assert_eq!(output.matches(r#"w:fldCharType="end""#).count(), 2);
+    }
+
+    #[test]
+    fn cached_toc_entries_keep_configured_numbering_and_clear_inherited_indent() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "tocEnabled": true,
+                "tocDepth": "1-3",
+                "tocShowPageNumbers": false
+            }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:sdt><w:sdtContent><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr></w:pPr><w:r><w:t>概览</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1. 已有编号</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let heading_numbering = default_report_heading_numbering_config();
+        let output = normalize_toc_fields(input, &settings, Some(&heading_numbering), None);
+
+        assert!(output.contains(r#"<w:t xml:space="preserve">1 概览</w:t>"#), "{output}");
+        assert!(output.contains(r#"<w:t xml:space="preserve">1.1 1. 已有编号</w:t>"#));
+        assert!(output.contains(r#"<w:ind w:left="0" w:firstLine="0" w:hanging="0" />"#));
+        assert!(output.contains(r#"<w:ind w:left="480" w:firstLine="0" w:hanging="0" />"#));
+    }
+
+    #[test]
+    fn adds_hyperlinks_to_existing_toc_cache_entries() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "tocEnabled": true,
+                "tocDepth": "1-3",
+                "tocShowPageNumbers": true
+            }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:sdt><w:sdtContent><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /></w:r></w:p><w:p><w:r><w:t>1 概览</w:t></w:r><w:r><w:tab /></w:r><w:r><w:instrText>PAGEREF &quot;概览&quot; \h</w:instrText></w:r><w:r><w:fldChar w:fldCharType="end" /></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:bookmarkStart w:id="1" w:name="概览" /><w:r><w:t>概览</w:t></w:r><w:bookmarkEnd w:id="1" /></w:p></w:body></w:document>"#;
+
+        let output = normalize_toc_fields(input, &settings, None, None);
+
+        assert!(output.contains(r#"<w:hyperlink w:anchor="概览" w:history="1"><w:r>"#));
     }
 
     #[test]
@@ -7555,7 +8244,7 @@ mod tests {
         .unwrap();
         let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#;
 
-        let output = normalize_toc_fields(input, &settings);
+        let output = normalize_toc_fields(input, &settings, None, None);
 
         assert!(output.contains(r#"<w:t>内容提要</w:t>"#));
         assert!(output.contains(r#"<w:jc w:val="right" />"#));
@@ -7572,7 +8261,7 @@ mod tests {
         .unwrap();
         let input = r#"<w:document><w:body><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC \o &quot;1-3&quot;</w:instrText><w:fldChar w:fldCharType="separate" /><w:t>已有目录</w:t><w:fldChar w:fldCharType="end" /></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>新章节</w:t></w:r></w:p></w:body></w:document>"#;
 
-        let output = normalize_toc_fields(input, &settings);
+        let output = normalize_toc_fields(input, &settings, None, None);
 
         assert!(output.contains("<w:t>已有目录</w:t>"));
         assert!(!output.contains("<w:t xml:space=\"preserve\">新章节</w:t>"));
@@ -7698,6 +8387,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -7795,7 +8485,7 @@ mod tests {
         );
 
         assert!(!output.contains("MD_KING_CODE_INDENT_PT"));
-        assert!(output.contains("TypeScript"));
+        assert!(output.contains("TYPESCRIPT"));
         assert_eq!(
             output
                 .matches(r#"<w:ind w:left="840" w:right="360" w:firstLine="0" />"#)
@@ -7875,9 +8565,16 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>• 无序列表 A</w:t>"));
-        assert!(output.contains("<w:t>◦ 嵌套列表 B.1</w:t>"));
-        assert!(output.contains("<w:t>1. 有序列表第一项</w:t>"));
+        assert!(output.contains("<w:t>•</w:t>"));
+        assert!(output.contains("<w:t>无序列表 A</w:t>"));
+        assert!(output.contains("<w:t>◦</w:t>"));
+        assert!(output.contains("<w:t>嵌套列表 B.1</w:t>"));
+        assert!(output.contains("<w:t>1.</w:t>"));
+        assert!(output.contains("<w:t>有序列表第一项</w:t>"));
+        assert!(output.matches("<w:tab />").count() >= 3);
+        assert!(output.contains(
+            r#"<w:tabs><w:tab w:val="left" w:pos="840" /></w:tabs><w:ind w:left="840" w:hanging="360" />"#
+        ));
         assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
         assert!(output.contains(r#"<w:ind w:left="1320" w:hanging="360" />"#));
         assert!(!output.contains("<w:numPr>"));
@@ -7899,8 +8596,11 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>☑ 已完成</w:t>"));
-        assert!(output.contains("<w:t>☐ 未完成</w:t>"));
+        assert!(output.contains("<w:t>☑</w:t>"));
+        assert!(output.contains("<w:t>已完成</w:t>"));
+        assert!(output.contains("<w:t>☐</w:t>"));
+        assert!(output.contains("<w:t>未完成</w:t>"));
+        assert!(output.matches("<w:tab />").count() >= 2);
         assert!(!output.contains("MD_KING_TASK_LIST"));
         assert!(!output.contains("<w:numPr>"));
         assert!(!output.contains("<w:sdt"));
@@ -7943,8 +8643,10 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>▸ 无序列表 A</w:t>"));
+        assert!(output.contains("<w:t>▸</w:t>"));
+        assert!(output.contains("<w:t>无序列表 A</w:t>"));
         assert!(output.contains("<w:t>（一） 有序列表第一项</w:t>"));
+        assert!(output.contains("<w:tab />"));
         assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
         assert!(output.contains(r#"<w:ind w:left="240" w:firstLine="0" />"#));
         assert!(!output.contains("<w:numPr>"));
@@ -7968,7 +8670,9 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>1. 第一项</w:t>"));
+        assert!(output.contains("<w:t>1.</w:t>"));
+        assert!(output.contains("<w:t>第一项</w:t>"));
+        assert!(output.contains("<w:tab />"));
         assert!(!output.contains("• 第一项"));
     }
 
@@ -8001,10 +8705,15 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>▸ 二级无序</w:t>"));
-        assert!(output.contains("<w:t>✓ 三级无序</w:t>"));
-        assert!(output.contains("<w:t>1) 二级有序</w:t>"));
-        assert!(output.contains("<w:t>(1) 三级有序</w:t>"));
+        assert!(output.contains("<w:t>▸</w:t>"));
+        assert!(output.contains("<w:t>二级无序</w:t>"));
+        assert!(output.contains("<w:t>✓</w:t>"));
+        assert!(output.contains("<w:t>三级无序</w:t>"));
+        assert!(output.contains("<w:t>1)</w:t>"));
+        assert!(output.contains("<w:t>二级有序</w:t>"));
+        assert!(output.contains("<w:t>(1)</w:t>"));
+        assert!(output.contains("<w:t>三级有序</w:t>"));
+        assert!(output.matches("<w:tab />").count() >= 4);
         assert!(output.contains(r#"<w:ind w:left="1380" w:hanging="420" />"#));
         assert!(output.contains(r#"<w:ind w:left="1860" w:hanging="420" />"#));
     }
@@ -8042,10 +8751,14 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>A. 一级原始无序</w:t>"));
-        assert!(output.contains("<w:t>||| 二级原始无序</w:t>"));
-        assert!(output.contains("<w:t>i) 三级原始有序</w:t>"));
-        assert!(output.contains("<w:t>✓ 四级原始有序</w:t>"));
+        assert!(output.contains("<w:t>A.</w:t>"));
+        assert!(output.contains("<w:t>一级原始无序</w:t>"));
+        assert!(output.contains("<w:t>|||</w:t>"));
+        assert!(output.contains("<w:t>二级原始无序</w:t>"));
+        assert!(output.contains("<w:t>i)</w:t>"));
+        assert!(output.contains("<w:t>三级原始有序</w:t>"));
+        assert!(output.contains("<w:t>✓</w:t>"));
+        assert!(output.contains("<w:t>四级原始有序</w:t>"));
     }
 
     #[test]
@@ -8093,6 +8806,7 @@ mod tests {
         assert!(output.contains(r#"<w:sz w:val="28" />"#));
         assert!(output.contains(r#"<w:b w:val="1" />"#));
         assert!(output.contains("<w:t>○ 二级列表文字</w:t>"));
+        assert!(!output.contains("<w:tab />"));
     }
 
     #[test]
@@ -8109,9 +8823,10 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>1. 第一组第一项</w:t>"));
-        assert!(output.contains("<w:t>1. 第二组第一项</w:t>"));
-        assert!(!output.contains("<w:t>2. 第二组第一项</w:t>"));
+        assert!(output.contains("<w:t>1.</w:t>"));
+        assert!(output.contains("<w:t>第一组第一项</w:t>"));
+        assert!(output.contains("<w:t>第二组第一项</w:t>"));
+        assert!(!output.contains("<w:t>2.</w:t>"));
     }
 
     #[test]
@@ -8137,8 +8852,10 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>1. 第一组第一项</w:t>"));
-        assert!(output.contains("<w:t>2. 第二组第一项</w:t>"));
+        assert!(output.contains("<w:t>1.</w:t>"));
+        assert!(output.contains("<w:t>2.</w:t>"));
+        assert!(output.contains("<w:t>第一组第一项</w:t>"));
+        assert!(output.contains("<w:t>第二组第一项</w:t>"));
     }
 
     #[test]
@@ -8150,6 +8867,8 @@ mod tests {
         assert!(numbering.contains(r#"<w:lvlText w:val="%1" />"#));
         assert!(numbering.contains(r#"<w:suff w:val="space" />"#));
         assert!(numbering.contains(r#"<w:lvlText w:val="%1.%2.%3" />"#));
+        assert!(numbering.contains(r#"<w:lvl w:ilvl="0"><w:start w:val="1" /><w:numFmt w:val="decimal" /><w:lvlText w:val="%1" /><w:suff w:val="space" /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="0" w:hanging="0" /></w:pPr></w:lvl>"#));
+        assert!(numbering.contains(r#"<w:lvl w:ilvl="1"><w:start w:val="1" /><w:numFmt w:val="decimal" /><w:lvlText w:val="%1.%2" /><w:suff w:val="space" /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="0" w:hanging="0" /></w:pPr></w:lvl>"#));
     }
 
     #[test]
@@ -8197,6 +8916,25 @@ mod tests {
         assert_eq!(config.mappings[0], HeadingTarget::Title);
         assert_eq!(config.mappings[1], HeadingTarget::Heading(1));
         assert_eq!(config.mappings[2], HeadingTarget::Heading(4));
+    }
+
+    #[test]
+    fn migrates_legacy_heading_number_formats_for_all_levels() {
+        let value = json!({
+            "styles": {
+                "heading-1": { "autoNumbering": true, "numberFormat": "1" },
+                "heading-2": { "autoNumbering": false, "numberFormat": "1.1" },
+                "heading-3": { "autoNumbering": false, "numberFormat": "1.1" },
+                "heading-4": { "autoNumbering": false, "numberFormat": "1.1" }
+            }
+        });
+
+        let config = heading_numbering_config_from_value(&value).unwrap();
+
+        assert_eq!(config.formats[0].as_deref(), Some("1"));
+        assert_eq!(config.formats[1].as_deref(), Some("1.1"));
+        assert_eq!(config.formats[2].as_deref(), Some("1.1.1"));
+        assert_eq!(config.formats[3].as_deref(), Some("1.1.1.1"));
     }
 
     #[test]
@@ -8268,6 +9006,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -8332,6 +9071,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -8377,6 +9117,7 @@ mod tests {
             open_after_convert: Some(false),
             overwrite: None,
             conflict_strategy: Some("rename".to_string()),
+            toc_page_numbers: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
@@ -8423,6 +9164,7 @@ mod tests {
             open_after_convert: Some(false),
             overwrite: None,
             conflict_strategy: Some("ask".to_string()),
+            toc_page_numbers: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();

@@ -8,6 +8,35 @@ export type PreviewBlockSplit<T> = {
   tail: T;
 };
 
+// Word's `w:lineRule="auto"` applies the multiplier to the font's single-line
+// box, not directly to the CSS font size. For the Chinese/Latin mixed text
+// used by the built-in templates, the single-line box is about 1.3x the font
+// size (for example, 12pt Songti at 1.25x is about 19.5pt in Word).
+export const WORD_AUTO_LINE_HEIGHT_FACTOR = 1.3;
+
+export function resolveWordAutoLineHeightPx(
+  fontSize: number,
+  lineHeight: string | number | undefined,
+  fallback = 1.5,
+) {
+  const multiplier = Number(lineHeight);
+  const resolvedMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : fallback;
+  return fontSize * (4 / 3) * resolvedMultiplier * WORD_AUTO_LINE_HEIGHT_FACTOR;
+}
+
+// Word Heading 1-6 styles are normalized with w:lineRule="exact" by the
+// converter. Their line box is the configured font size multiplied directly
+// by the line-height value, without the automatic line-box factor above.
+export function resolveWordExactLineHeightPx(
+  fontSize: number,
+  lineHeight: string | number | undefined,
+  fallback = 1.5,
+) {
+  const multiplier = Number(lineHeight);
+  const resolvedMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : fallback;
+  return fontSize * (4 / 3) * resolvedMultiplier;
+}
+
 type EstimateTableColumnContentWidthsOptions = {
   rows: ReadonlyArray<ReadonlyArray<string>>;
   tableWidth: number;
@@ -30,6 +59,18 @@ export function estimateTableColumnContentWidths({
   const availableWidth = Math.max(columnCount * (minimumContentWidth + horizontalCellPadding), tableWidth);
   const minimumColumnWidth = minimumContentWidth + horizontalCellPadding;
   const distributableWidth = Math.max(0, availableWidth - minimumColumnWidth * columnCount);
+
+  // Explicit percentages already describe the rendered outer column widths.
+  // Re-running the minimum-width distribution here makes the columns narrower
+  // than the actual <colgroup>, which overestimates table row wrapping during
+  // pagination. Keep the estimator on the same grid as the rendered table.
+  if (columnWidthWeights) {
+    const totalWeight = columnWidthWeights.reduce((sum, weight) => sum + Math.max(0, weight), 0) || columnCount;
+    return columnWidthWeights.map((weight) => Math.max(
+      minimumContentWidth,
+      availableWidth * Math.max(0, weight) / totalWeight - horizontalCellPadding,
+    ));
+  }
 
   const contentWeights = Array.from({ length: columnCount }, (_, columnIndex) => {
     if (columnWidthWeights) return Math.max(0, columnWidthWeights[columnIndex] ?? 0);

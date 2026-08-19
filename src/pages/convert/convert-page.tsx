@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Trash2 } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { basename, dirname } from "@tauri-apps/api/path";
@@ -50,6 +50,7 @@ type PreviewPaperTheme = "light" | "dark";
 const previewZoomMin = 20;
 const previewZoomMax = 200;
 const previewZoomStep = 10;
+const previewWheelZoomStep = 5;
 const previewMinWidth = 460;
 const editorMinWidth = 360;
 const inlinePreviewSidebarDividerWidth = 5;
@@ -72,6 +73,20 @@ const editorContentWidthIconBars: Record<EditorContentWidthMode, readonly string
   medium: ["100%", "64%", "100%"],
   compact: ["100%", "78%", "58%"],
 };
+
+/** Keep exported code badges consistent with the preview's uppercase labels. */
+function normalizeCodeFenceLabels(markdown: string) {
+  return markdown.replace(/^(\s*)(`{3,}|~{3,})([^\r\n]*)$/gm, (_line, indent: string, marker: string, info: string) => {
+    const trimmed = info.trim();
+    if (!trimmed) return `${indent}${marker}${info}`;
+    const leading = info.slice(0, info.length - info.trimStart().length);
+    const tokens = trimmed.split(/(\s+)/);
+    const first = tokens.findIndex((token) => token.trim().length > 0);
+    if (first < 0) return `${indent}${marker}${info}`;
+    tokens[first] = tokens[first].toUpperCase();
+    return `${indent}${marker}${leading}${tokens.join("")}`;
+  });
+}
 
 function nextEditorContentWidthMode(mode: EditorContentWidthMode) {
   return editorContentWidthModes[(editorContentWidthModes.indexOf(mode) + 1) % editorContentWidthModes.length];
@@ -1003,7 +1018,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       // mermaid 块要先栅格化成 PNG 落盘再引用：DOCX 不支持 SVG，
       // Pandoc 遇到 SVG 会把那张图整个跳过。
-      const { markdown: preparedInput, failed: mermaidFailed, errors: mermaidErrors } = await inlineMermaidImages(input);
+      const exportInput = normalizeCodeFenceLabels(input);
+      const { markdown: preparedInput, failed: mermaidFailed, errors: mermaidErrors } = await inlineMermaidImages(exportInput);
       if (mermaidFailed > 0) {
         toast.warning(`${mermaidFailed} 张图表未能导出，已保留原始代码块`, {
           description: mermaidErrors[0],
@@ -1018,9 +1034,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         templateId,
         openAfterConvert: appConfig?.openAfterConvert ?? true,
         conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
+        tocPageNumbers: previewOutline.map(({ id, page }) => ({ anchorId: id, page })),
       });
-      if (conversionVersion !== conversionVersionRef.current) return;
-      setConvertResult(result);
+      const isCurrentConversion = conversionVersion === conversionVersionRef.current;
+      if (isCurrentConversion) setConvertResult(result);
       await persistHistory([buildHistoryItem(result)]);
       toast[result.ok && !result.simulated ? "success" : result.simulated ? "info" : "error"](result.message ?? (result.ok ? "转换完成" : "转换失败"));
       const actionableWarnings = actionableConversionWarnings(result.warnings);
@@ -1028,10 +1045,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         toast.warning("转换完成，但有需要检查的提示", { description: actionableWarnings.join("\n") });
       }
     } catch (error) {
-      if (conversionVersion !== conversionVersionRef.current) return;
       const message = userFacingErrorMessage(error, "转换调用失败");
       const result: ConvertResult = { ok: false, input, templateId, durationMs: 0, warnings: [], errorCode: "INVOKE_FAILED", message };
-      setConvertResult(result);
+      if (conversionVersion === conversionVersionRef.current) setConvertResult(result);
       await persistHistory([buildHistoryItem(result)]);
       toast.error(message);
     } finally {
@@ -1320,6 +1336,36 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   function renderConvertFooter(className?: string, layout: ConvertFooterLayout = "wide") {
     const canRevealOutput = Boolean(convertResult?.ok && !convertResult.simulated && convertResult.output);
     const stacked = layout !== "wide";
+    const conversionState = isConverting
+      ? "running"
+      : convertResult?.simulated
+        ? "preview"
+        : convertResult?.ok
+          ? "success"
+          : convertResult
+            ? "failed"
+            : "idle";
+    const statusLabel = conversionState === "running"
+      ? "转换中"
+      : conversionState === "success"
+        ? "转换成功"
+        : conversionState === "preview"
+          ? "仅预览"
+          : conversionState === "failed"
+            ? "转换失败"
+            : "待转换";
+    const statusIcon = conversionState === "running"
+      ? <Loader2 className="size-3.5 animate-spin" />
+      : conversionState === "failed"
+        ? <AlertCircle className="size-3.5" />
+        : <CheckCircle2 className="size-3.5" />;
+    const statusIconClass = conversionState === "failed"
+      ? "bg-red-600 text-white"
+      : conversionState === "success"
+        ? "bg-emerald-600 text-white"
+        : conversionState === "running"
+          ? "bg-blue-600 text-white"
+          : "bg-slate-500 text-white";
     const controlsClass = layout === "responsive" || layout === "expanded"
       ? "grid-cols-3"
       : layout === "two-column"
@@ -1331,10 +1377,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     return (
       <section className={cn("mk-preview-footer mk-convert-footer flex min-h-0 min-w-0 flex-col justify-center gap-2 rounded-[5px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", `mk-convert-footer-${layout}`, className)}>
         <div className={cn("flex min-w-0 gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-center" : "items-center")}>
-          <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
-            <CheckCircle2 className="size-3.5" />
+          <div className={cn("flex size-6 shrink-0 items-center justify-center rounded-md", statusIconClass)}>
+            {statusIcon}
           </div>
-          <span className="shrink-0 text-blue-950 dark:text-zinc-100">{convertResult?.simulated ? "预览完成" : convertResult?.ok ? "已生成" : "当前输入"}</span>
+          <span className="shrink-0 text-blue-950 dark:text-zinc-100">{statusLabel}</span>
           <span className="shrink-0">{words} 字符</span>
           <span className="shrink-0">{lines} 行</span>
           <TooltipAnchor content={convertResult?.output ?? outputPath}>
@@ -1695,7 +1741,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 onOpenAdvancedStyle={() => setExpandedStyleEditorOpen(true)}
                 thumbnailContainer={showInlinePreviewSidebar ? previewThumbnailContainer : null}
                 onThumbnailPageSelect={showInlinePreviewSidebar ? scrollToPreviewPage : undefined}
-                onPreviewOutlineChange={showInlinePreviewSidebar ? setPreviewOutline : undefined}
+                onPreviewOutlineChange={setPreviewOutline}
                 onOpenLink={(target) => void handleOpenLink(target)}
                 className="min-h-0 min-w-0"
               />
@@ -1782,7 +1828,7 @@ function ConvertPreviewPanel({
     if (!event.ctrlKey) return;
     event.preventDefault();
     const direction = event.deltaY > 0 ? -1 : 1;
-    setZoom((value) => clampPreviewZoom(value + direction * previewZoomStep));
+    setZoom((value) => clampPreviewZoom(value + direction * previewWheelZoomStep));
   }
 
   async function copyPreviewMarkdown() {

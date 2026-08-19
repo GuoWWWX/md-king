@@ -126,6 +126,7 @@ fn run_convert(
         open_after_convert: Some(open_after_convert),
         overwrite: Some(overwrite),
         conflict_strategy: None,
+        toc_page_numbers: None,
     });
 
     if json {

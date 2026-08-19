@@ -204,7 +204,9 @@ export const defaultStyleDraft: StyleDraft = {
   headerBorderWidth: 1,
   bodyBorderColor: "#CBD5E1",
   bodyBorderWidth: 1,
-  outerBorderStrong: true,
+  // The four outer sides use the same thin line as the inner grid by default.
+  // Users can still opt into a stronger frame explicitly from the table settings.
+  outerBorderStrong: false,
   showInnerVerticalBorder: true,
   showInnerHorizontalBorder: true,
   headerBold: true,
@@ -918,7 +920,10 @@ function normalizeLegacyStyleDraft(styleId: string, draft: Partial<StyleDraft>, 
   const defaultFormat = getDefaultNumberFormat(styleId);
   const isLegacyDefault = (styleId === "heading-1" && normalized.numberFormat === "一、") || (styleId !== "heading-1" && normalized.numberFormat === "1.1");
 
-  if (isLegacyDefault && normalized.numberFormat !== defaultFormat) {
+  // 旧版本把二级及更深标题的默认格式保存成 1.1，但没有同步打开
+  // autoNumbering。格式本身代表用户选择了编号，迁移时要同时恢复开关，
+  // 否则预览和导出都会漏掉这些层级的编号。
+  if (isLegacyDefault) {
     normalized = { ...normalized, autoNumbering: true, numberFormat: defaultFormat };
   }
 

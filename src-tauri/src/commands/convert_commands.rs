@@ -8,8 +8,13 @@ use crate::core::convert::{
 };
 
 #[tauri::command]
-pub fn convert_markdown(app: AppHandle, request: ConvertRequest) -> ConvertResult {
-    convert_markdown_core(&app, request)
+pub async fn convert_markdown(
+    app: AppHandle,
+    request: ConvertRequest,
+) -> Result<ConvertResult, String> {
+    tauri::async_runtime::spawn_blocking(move || convert_markdown_core(&app, request))
+        .await
+        .map_err(|error| format!("转换后台任务异常：{error}"))
 }
 
 #[tauri::command]

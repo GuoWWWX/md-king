@@ -3324,6 +3324,12 @@ select {
     color: #f4f4f5 !important;
   }
 
+  .dark .mk-convert-control > [data-slot="input"] {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+
   .dark .mk-convert-control:hover {
     background: #2a2a2a !important;
   }

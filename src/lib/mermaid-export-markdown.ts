@@ -3,6 +3,11 @@ const MERMAID_FENCE = /^([ \t]*)(```|~~~)[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)^\1?\
 
 export type MermaidImageReplacementResult = { markdown: string; failed: number; errors: string[] };
 
+/** 让出一次浏览器事件循环，避免连续栅格化多张图时界面长时间无响应。 */
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 export async function replaceMermaidFencesWithImages(markdown: string, writeImage: (source: string) => Promise<string>): Promise<MermaidImageReplacementResult> {
   const blocks = [...markdown.matchAll(MERMAID_FENCE)];
   if (blocks.length === 0) return { markdown, failed: 0, errors: [] };
@@ -18,6 +23,7 @@ export async function replaceMermaidFencesWithImages(markdown: string, writeImag
     output += markdown.slice(cursor, start);
 
     try {
+      await yieldToBrowser();
       const path = await writeImage(source);
       output += `![图表](${encodeMarkdownPath(path)})`;
     } catch (cause) {
