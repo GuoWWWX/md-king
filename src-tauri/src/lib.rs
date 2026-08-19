@@ -35,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(system::startup_files::PendingOpenFiles::default())
+        .manage(system::vault_watcher::VaultWatcherState::default())
         .setup(|app| {
             if let Err(error) = system::file_association::release_legacy_file_associations() {
                 eprintln!("Failed to release legacy file associations: {error}");

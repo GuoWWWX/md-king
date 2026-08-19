@@ -5,11 +5,13 @@ use crate::core::vault::{
     read_file, rename_entry, search_files, write_file, VaultEntry, VaultFileContent,
     VaultImageImport, VaultListing, VaultSearchOptions, VaultSearchResponse, VaultWriteResult,
 };
+use crate::system::vault_watcher::VaultWatcherState;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use std::process::Command;
+use tauri::{AppHandle, State};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -26,21 +28,40 @@ fn resolve_root(raw: &str) -> Result<std::path::PathBuf, String> {
 ///
 /// 记录的是规范化后的展示路径，避免同一个目录因为大小写或短名不同在列表里出现多条。
 #[tauri::command]
-pub fn open_vault(path: String) -> Result<VaultListing, String> {
+pub async fn open_vault(
+    app: AppHandle,
+    watcher_state: State<'_, VaultWatcherState>,
+    path: String,
+) -> Result<VaultListing, String> {
     let root = resolve_root(&path)?;
-    let listing = list_entries(&root, None, true)?;
+    let listing_root = root.clone();
+    let listing = tauri::async_runtime::spawn_blocking(move || list_entries(&listing_root, None, true))
+        .await
+        .map_err(|error| format!("LOCKED|打开目录任务失败：{error}"))??;
     remember_vault(&display_path(&root));
+    if let Err(error) = crate::system::vault_watcher::watch_vault(
+        &watcher_state,
+        &app,
+        &root,
+        listing.root.clone(),
+    ) {
+        eprintln!("Failed to watch vault: {error}");
+    }
     Ok(listing)
 }
 
 #[tauri::command]
-pub fn list_vault_entries(
+pub async fn list_vault_entries(
     root: String,
     dir: Option<String>,
     recursive: bool,
 ) -> Result<VaultListing, String> {
-    let root = resolve_root(&root)?;
-    list_entries(&root, dir.as_deref(), recursive)
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = resolve_root(&root)?;
+        list_entries(&root, dir.as_deref(), recursive)
+    })
+    .await
+    .map_err(|error| format!("LOCKED|读取目录任务失败：{error}"))?
 }
 
 #[tauri::command]

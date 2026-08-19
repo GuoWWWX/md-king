@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, ArrowUpDown, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, ClockArrowDown, ClockArrowUp, FilePlus2, FolderOpen, FolderPlus, GripVertical, Loader2, LocateFixed, RefreshCw, Search, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { ResizableDivider } from "@/components/layout/resizable-divider";
 import { Button } from "@/components/ui/button";
@@ -223,6 +224,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
   const marqueeCandidateRef = useRef<MarqueeCandidate | undefined>(undefined);
   const pointerFileDragCandidateRef = useRef<PointerFileDragCandidate | undefined>(undefined);
   const pointerFileDragRef = useRef<PointerFileDragState | undefined>(undefined);
+  const refreshInFlightRef = useRef(false);
+  const refreshQueuedRef = useRef(false);
   const ignoreNextEntryClickRef = useRef(false);
   const openedProjectVaultRef = useRef<string | undefined>(undefined);
   const restoredVaultRef = useRef(false);
@@ -419,20 +422,74 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     }
   }
 
-  async function handleRefresh() {
-    if (!vaultRoot) return;
+  const refreshTree = useCallback(async (showError = true) => {
+    const root = useVaultStore.getState().vaultRoot;
+    if (!root) return;
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true;
+      return;
+    }
+
+    refreshInFlightRef.current = true;
     setIsLoadingTree(true);
     try {
-      const listing = await listVaultEntries(vaultRoot, undefined, true);
-      setEntries(listing.entries, listing.truncated);
-      loadedDirsRef.current = new Set();
+      const listing = await listVaultEntries(root, undefined, true);
+      if (useVaultStore.getState().vaultRoot === root) {
+        setEntries(listing.entries, listing.truncated);
+        loadedDirsRef.current = new Set();
+      }
     } catch (error) {
-      const { message } = parseVaultError(error, "刷新文件树失败");
-      toast.error(message);
+      if (showError) {
+        const { message } = parseVaultError(error, "刷新文件树失败");
+        toast.error(message);
+      }
     } finally {
-      setIsLoadingTree(false);
+      refreshInFlightRef.current = false;
+      if (useVaultStore.getState().vaultRoot === root) {
+        setIsLoadingTree(false);
+      }
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false;
+        window.setTimeout(() => void refreshTree(false), 0);
+      }
     }
+  }, [setEntries, setIsLoadingTree]);
+
+  async function handleRefresh() {
+    await refreshTree(true);
   }
+
+  useEffect(() => {
+    if (!vaultRoot || !isTauriEnvironment()) return;
+    let active = true;
+    let timer: number | undefined;
+    let unlisten: UnlistenFn | undefined;
+
+    const scheduleRefresh = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void refreshTree(false);
+      }, 400);
+    };
+
+    const registerListener = async () => {
+      const cleanup = await listen<{ root?: string }>("vault://changed", (event) => {
+        const changedRoot = event.payload.root;
+        if (changedRoot && changedRoot.toLowerCase() !== vaultRoot.toLowerCase()) return;
+        scheduleRefresh();
+      });
+      if (!active) cleanup();
+      else unlisten = cleanup;
+    };
+    void registerListener();
+
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      unlisten?.();
+    };
+  }, [refreshTree, vaultRoot]);
 
   function handleSortModeChange(nextMode: string) {
     if (!isFileTreeSortMode(nextMode)) return;
