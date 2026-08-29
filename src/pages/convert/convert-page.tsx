@@ -1376,7 +1376,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
     return (
       <section className={cn("mk-preview-footer mk-convert-footer flex min-h-0 min-w-0 flex-col justify-center gap-2 rounded-[5px] border-t border-slate-200 bg-white px-4 py-3 max-[1100px]:border max-[1100px]:border-slate-200 dark:max-[1100px]:border-zinc-700/70 dark:max-[1100px]:bg-zinc-900/92", `mk-convert-footer-${layout}`, className)}>
-        <div className={cn("flex min-w-0 gap-2 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-center" : "items-center")}>
+        <div className={cn("relative flex min-w-0 gap-2 pr-9 text-xs font-bold text-blue-900/58 dark:text-zinc-300/80", stacked ? "flex-wrap items-center" : "items-center")}>
           <div className={cn("flex size-6 shrink-0 items-center justify-center rounded-md", statusIconClass)}>
             {statusIcon}
           </div>
@@ -1387,7 +1387,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             <span className="min-w-0 truncate">{convertResult?.output ?? outputPath}</span>
           </TooltipAnchor>
           {canRevealOutput ? (
-            <TooltipButton variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} tooltip="资源管理器中打开" aria-label="资源管理器中打开生成的 DOCX">
+            <TooltipButton variant="ghost" size="icon-xs" className="absolute top-0 right-0 shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} tooltip="资源管理器中打开" aria-label="资源管理器中打开生成的 DOCX">
               <FolderOpen className="size-3.5" />
             </TooltipButton>
           ) : null}

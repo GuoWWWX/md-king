@@ -1965,6 +1965,7 @@ function TableOfContentsSettingsPanel({ pageSettings, patchPageSettings }: { pag
               <SelectContent>{fontWeightOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
+          <Field label="段前间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleBeforeSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleBeforeSpacing: Number(event.target.value) })} /></Field>
           <Field label="段后间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleAfterSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleAfterSpacing: Number(event.target.value) })} /></Field>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
