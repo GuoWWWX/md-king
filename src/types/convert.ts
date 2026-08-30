@@ -20,6 +20,8 @@ export type ConvertRequest = {
   mermaidScale?: 1 | 2 | 3 | 4;
   imagePolicy?: "vector-preferred" | "original" | "compressed";
   noCompressPictures?: boolean;
+  lintOnly?: boolean;
+  strict?: boolean;
 };
 
 export type ConvertResult = {

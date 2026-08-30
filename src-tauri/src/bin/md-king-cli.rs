@@ -3,6 +3,8 @@ use md_king_lib::{
     convert_markdown_cli, inspect_template_for_cli, list_templates_for_cli,
     resolve_template_selector_for_cli, ConvertRequest, TemplateSelectorError,
 };
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -93,6 +95,18 @@ enum Commands {
         /// Force Word/WPS picture compression off, even with the compressed policy.
         #[arg(long = "no-compress-pictures")]
         no_compress_pictures: bool,
+
+        /// Check Markdown and print diagnostics without generating DOCX.
+        #[arg(long = "lint-only")]
+        lint_only: bool,
+
+        /// Treat diagnostics and Mermaid rendering failures as conversion failures.
+        #[arg(long = "strict")]
+        strict: bool,
+
+        /// Write the complete conversion result to a JSON report file.
+        #[arg(long = "report")]
+        report: Option<String>,
     },
 
     /// Manage and inspect Word/WPS templates.
@@ -145,6 +159,9 @@ fn main() {
             mermaid_scale,
             image_policy,
             no_compress_pictures,
+            lint_only,
+            strict,
+            report,
         } => run_convert(
             input,
             output,
@@ -162,6 +179,9 @@ fn main() {
             mermaid_scale,
             image_policy,
             no_compress_pictures,
+            lint_only,
+            strict,
+            report,
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
@@ -189,6 +209,9 @@ fn run_convert(
     mermaid_scale: u32,
     image_policy: String,
     no_compress_pictures: bool,
+    lint_only: bool,
+    strict: bool,
+    report: Option<String>,
 ) -> i32 {
     let template_id = match resolve_template_id(template_selector) {
         Ok(template_id) => template_id,
@@ -226,10 +249,24 @@ fn run_convert(
         mermaid_scale: Some(mermaid_scale),
         image_policy: Some(image_policy),
         no_compress_pictures: no_compress_pictures.then_some(true),
+        lint_only: lint_only.then_some(true),
+        strict: strict.then_some(true),
     });
+
+    if let Some(report_path) = report.as_deref() {
+        if let Err(error) = write_conversion_report(report_path, &result) {
+            eprintln!("ERROR REPORT_WRITE_FAILED: {error}");
+            return 1;
+        }
+    }
 
     if json {
         print_json(&result);
+    } else if lint_only && result.ok {
+        println!("OK: Markdown 检查完成，未生成 DOCX。");
+        for warning in &result.warnings {
+            println!("warning: {warning}");
+        }
     } else if result.ok {
         println!(
             "OK: {}",
@@ -257,6 +294,16 @@ fn run_convert(
     } else {
         1
     }
+}
+
+fn write_conversion_report(path: &str, result: &impl serde::Serialize) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).map_err(|error| format!("创建报告目录失败：{error}"))?;
+    }
+    let data = serde_json::to_vec_pretty(result)
+        .map_err(|error| format!("序列化转换报告失败：{error}"))?;
+    fs::write(&path, data).map_err(|error| format!("写入转换报告失败：{error}"))
 }
 
 fn run_templates_list(json: bool) -> i32 {

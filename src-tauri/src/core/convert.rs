@@ -77,6 +77,10 @@ pub struct ConvertRequest {
     pub image_policy: Option<String>,
     #[serde(default)]
     pub no_compress_pictures: Option<bool>,
+    #[serde(default)]
+    pub lint_only: Option<bool>,
+    #[serde(default)]
+    pub strict: Option<bool>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -391,6 +395,24 @@ fn convert_markdown_with_runtime(
         .map(str::trim)
         .map(str::to_ascii_lowercase);
 
+    if request.lint_only.unwrap_or(false) {
+        return lint_markdown_request(runtime, request, output, started_at);
+    }
+
+    if request.strict.unwrap_or(false) {
+        let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+        if !diagnostics.is_empty() {
+            return failure_result(
+                request,
+                output,
+                started_at,
+                Vec::new(),
+                "STRICT_DIAGNOSTICS_FAILED",
+                "严格模式检测到转换前诊断，已停止生成 DOCX。",
+            );
+        }
+    }
+
     if input_kind.as_deref() == Some("text") {
         return convert_text_input(runtime, request, output, started_at);
     }
@@ -411,6 +433,64 @@ fn convert_markdown_with_runtime(
     }
 
     convert_text_input(runtime, request, output, started_at)
+}
+
+fn lint_markdown_request(
+    runtime: ConvertRuntime<'_>,
+    request: ConvertRequest,
+    output: Option<String>,
+    started_at: Instant,
+) -> ConvertResult {
+    let Some((markdown, _)) = markdown_source_and_resource_root(&request, output.as_deref()) else {
+        return failure_result(
+            request,
+            output,
+            started_at,
+            Vec::new(),
+            "LINT_INPUT_UNAVAILABLE",
+            "无法读取待检查的 Markdown/TXT 输入。",
+        );
+    };
+    if markdown.trim().is_empty() {
+        return failure_result(
+            request,
+            output,
+            started_at,
+            Vec::new(),
+            "EMPTY_INPUT",
+            "Markdown 文本输入不能为空。",
+        );
+    }
+
+    let template = resolve_template(runtime, &request);
+    let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    let statistics = conversion_statistics(&markdown, None);
+    let strict_failed = request.strict.unwrap_or(false) && !diagnostics.is_empty();
+    let mut warnings = template.warnings;
+    warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
+    ConvertResult {
+        ok: !strict_failed,
+        input: request.input,
+        output: None,
+        template_id: request.template_id,
+        resolved_template_path: template
+            .reference_docx_path
+            .map(|path| path.to_string_lossy().to_string()),
+        template_sha256: template.template_sha256,
+        duration_ms: elapsed_ms(started_at),
+        warnings,
+        diagnostics,
+        statistics,
+        field_update_status: "notRun".to_string(),
+        field_update_provider: None,
+        error_code: strict_failed.then(|| "STRICT_DIAGNOSTICS_FAILED".to_string()),
+        message: Some(if strict_failed {
+            "严格检查失败，未生成 DOCX。"
+        } else {
+            "检查完成，未执行 DOCX 转换。"
+        }
+        .to_string()),
+    }
 }
 
 fn convert_existing_file(
@@ -516,6 +596,20 @@ fn convert_existing_file(
         };
     warnings.extend(prepared_input.warnings.iter().cloned());
     let statistics = prepared_input.statistics.clone();
+    if request.strict.unwrap_or(false) && statistics.mermaid_failed > 0 {
+        if let Some(path) = prepared_input.temporary.as_ref() {
+            let _ = fs::remove_file(path);
+        }
+        cleanup_mermaid_paths(&prepared_input.mermaid_cleanup_paths);
+        return failure_result(
+            request,
+            output_string,
+            started_at,
+            warnings,
+            "STRICT_MERMAID_FAILED",
+            "严格模式下存在 Mermaid 渲染失败，已停止生成 DOCX。",
+        );
+    }
     let heading_numbering = effective_heading_numbering_config(
         &request,
         prepared_input.heading_numbering_mode,
@@ -747,6 +841,17 @@ fn convert_text_input(
     let mermaid = preprocess_mermaid_for_runtime(runtime, &request.input, &request);
     let statistics = conversion_statistics(&request.input, Some(&mermaid));
     warnings.extend(mermaid.warnings.iter().cloned());
+    if request.strict.unwrap_or(false) && statistics.mermaid_failed > 0 {
+        cleanup_mermaid_paths(&mermaid.cleanup_paths);
+        return failure_result(
+            request,
+            output_string,
+            started_at,
+            warnings,
+            "STRICT_MERMAID_FAILED",
+            "严格模式下存在 Mermaid 渲染失败，已停止生成 DOCX。",
+        );
+    }
     let numbered_input = preprocess_heading_numbering(
         &mermaid.markdown,
         heading_numbering_mode,
@@ -8609,7 +8714,7 @@ mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
-        configure_picture_compression, conversion_statistics,
+        configure_picture_compression, conversion_statistics, convert_markdown_cli,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_table_style_config,
         default_page_settings_config, default_report_heading_numbering_config,
@@ -8712,6 +8817,46 @@ mod tests {
     }
 
     #[test]
+    fn lint_only_reports_diagnostics_without_creating_docx() {
+        let input = std::env::temp_dir().join(format!(
+            "md-king-lint-only-test-{}.md",
+            std::process::id()
+        ));
+        fs::write(&input, "# 标题\n\n### 跳级").unwrap();
+        let request = ConvertRequest {
+            input: input.to_string_lossy().to_string(),
+            input_kind: Some("path".to_string()),
+            source_path: None,
+            output: None,
+            template_id: None,
+            open_after_convert: Some(false),
+            overwrite: Some(false),
+            conflict_strategy: None,
+            heading_numbering: None,
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
+            lint_only: Some(true),
+            strict: Some(false),
+        };
+
+        let result = convert_markdown_cli(request);
+
+        assert!(result.ok);
+        assert!(result.output.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.diagnostics[0].code, "HEADING_LEVEL_JUMP");
+        let _ = fs::remove_file(input);
+    }
+
+    #[test]
     fn reports_heading_level_jumps_outside_fenced_code() {
         let diagnostics = detect_heading_level_jumps(
             "# 标题\n### 跳级标题\n```md\n# 代码\n###### 代码\n```\n##### 再次跳级",
@@ -8804,6 +8949,8 @@ mod tests {
             mermaid_scale: None,
             image_policy: None,
             no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
         };
 
         let options = pandoc_document_options(&request);
@@ -8843,6 +8990,8 @@ mod tests {
             mermaid_scale: None,
             image_policy: None,
             no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
         };
 
         assert!(!pandoc_document_options(&request).toc);
@@ -11317,6 +11466,8 @@ mod tests {
             mermaid_scale: None,
             image_policy: None,
             no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
@@ -11374,6 +11525,8 @@ mod tests {
             mermaid_scale: None,
             image_policy: None,
             no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
