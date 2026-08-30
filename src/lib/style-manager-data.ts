@@ -190,7 +190,7 @@ export const defaultStyleDraft: StyleDraft = {
   cellPaddingX: 10,
   cellPaddingY: 8,
   cellWrap: true,
-  minRowHeight: 28,
+  minRowHeight: 0,
   rowStripe: true,
   repeatHeaderOnEachPage: true,
   borderStyle: "solid",

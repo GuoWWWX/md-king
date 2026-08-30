@@ -218,6 +218,7 @@ struct PageSettingsConfig {
 #[derive(Clone)]
 struct TableStyleConfig {
     width_twips: u32,
+    content_height_twips: u32,
     fit_to_page_width: bool,
     layout: String,
     horizontal_align: String,
@@ -1071,6 +1072,7 @@ fn success_result(
         page_settings.as_ref(),
         request_expects_cover(&request, output.as_deref()),
     ));
+    diagnostics.extend(validate_exported_tables(&output_path, page_settings.as_ref()));
     match inspect_exported_images(&output_path, &request, output.as_deref()) {
         Ok((image_details, image_diagnostics)) => {
             statistics.image_details = image_details;
@@ -1274,6 +1276,117 @@ fn validate_export_structure(
                     page_start
                         .map(|value| value.to_string())
                         .unwrap_or_else(|| "未设置".to_string())
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn validate_exported_tables(
+    path: &Path,
+    page_settings: Option<&PageSettingsConfig>,
+) -> Vec<ConversionDiagnostic> {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) => {
+            return vec![diagnostic_without_line(
+                "TABLE_INSPECTION_FAILED",
+                "warning",
+                format!("无法检查导出 DOCX 的表格布局：{error}"),
+            )]
+        }
+    };
+    let mut archive = match ZipArchive::new(file) {
+        Ok(archive) => archive,
+        Err(error) => {
+            return vec![diagnostic_without_line(
+                "TABLE_INSPECTION_FAILED",
+                "warning",
+                format!("无法解析导出 DOCX 的表格布局：{error}"),
+            )]
+        }
+    };
+    let xml = match read_docx_text_part(&mut archive, "word/document.xml") {
+        Ok(xml) => xml,
+        Err(error) => {
+            return vec![diagnostic_without_line(
+                "TABLE_INSPECTION_FAILED",
+                "warning",
+                format!("无法读取导出 DOCX 的表格布局：{error}"),
+            )]
+        }
+    };
+    if !xml.contains("<w:tbl>") {
+        return Vec::new();
+    }
+    let content_width = page_settings
+        .map(page_content_width_twips)
+        .or_else(|| document_content_width_twips(&xml))
+        .unwrap_or_else(default_content_width_twips);
+    let table_re = Regex::new(r#"(?s)<w:tbl>.*?</w:tbl>"#).expect("valid table audit regex");
+    let grid_re = Regex::new(r#"<w:gridCol\b([^>]*)/>"#).expect("valid table grid audit regex");
+    let row_re = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row audit regex");
+    let cell_re = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell audit regex");
+    let mut diagnostics = Vec::new();
+
+    for (table_index, table_match) in table_re.find_iter(&xml).enumerate() {
+        let table = table_match.as_str();
+        let widths = grid_re
+            .captures_iter(table)
+            .filter_map(|captures| numeric_attr(captures.get(1)?.as_str(), "w:w"))
+            .collect::<Vec<_>>();
+        let total_width = widths.iter().copied().sum::<u64>();
+        if total_width > u64::from(content_width) + 20 {
+            diagnostics.push(diagnostic_without_line(
+                "TABLE_WIDTH_OVERFLOW",
+                "error",
+                format!(
+                    "第 {} 个表格网格宽度为 {total_width} twips，超过正文可用宽度 {content_width} twips。",
+                    table_index + 1
+                ),
+            ));
+        }
+        if table.contains("w:hRule=\"exact\"") {
+            diagnostics.push(diagnostic_without_line(
+                "TABLE_FIXED_ROW_HEIGHT_RISK",
+                "warning",
+                format!(
+                    "第 {} 个表格仍包含固定行高，较长内容可能被截断。",
+                    table_index + 1
+                ),
+            ));
+        }
+
+        let mut max_units = vec![0.0_f64; widths.len()];
+        for row in row_re.find_iter(table) {
+            for (column, cell) in cell_re.find_iter(row.as_str()).enumerate() {
+                if let Some(value) = max_units.get_mut(column) {
+                    *value = value.max(estimated_table_cell_text_units(cell.as_str()));
+                }
+            }
+        }
+        if widths.iter().enumerate().any(|(index, width)| {
+            *width < 720 && max_units.get(index).copied().unwrap_or_default() > 6.0
+        }) {
+            diagnostics.push(diagnostic_without_line(
+                "TABLE_NARROW_COLUMN_RISK",
+                "warning",
+                format!(
+                    "第 {} 个表格包含不足 1.27 厘米且文字较多的列，可能出现逐字换行。",
+                    table_index + 1
+                ),
+            ));
+        }
+        if table.contains("<w:noWrap")
+            && max_units.iter().copied().any(|units| units > 12.0)
+        {
+            diagnostics.push(diagnostic_without_line(
+                "TABLE_NOWRAP_OVERFLOW_RISK",
+                "warning",
+                format!(
+                    "第 {} 个表格关闭了单元格换行，长文本可能越过单元格边界。",
+                    table_index + 1
                 ),
             ));
         }
@@ -2708,6 +2821,12 @@ fn table_style_config(request: &ConvertRequest) -> Option<TableStyleConfig> {
                 style.header.border_color = "000000".to_string();
                 style.body.border_color = "000000".to_string();
             }
+            // 默认报告使用 Word 自动行高；旧版本保存的 28px 仅作为兼容基线识别。
+            if template_id == "default-report"
+                && (style.min_row_height - 28.0).abs() < f64::EPSILON
+            {
+                style.min_row_height = 0.0;
+            }
             Some(style)
         })
 }
@@ -2953,10 +3072,15 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
         .get("fitToPageWidth")
         .and_then(Value::as_bool)
         .unwrap_or(true);
-    let content_width_twips = page_settings_config_from_value(config)
+    let page_settings = page_settings_config_from_value(config);
+    let content_width_twips = page_settings
         .as_ref()
         .map(page_content_width_twips)
         .unwrap_or_else(default_content_width_twips);
+    let content_height_twips = page_settings
+        .as_ref()
+        .map(page_content_height_twips)
+        .unwrap_or_else(default_content_height_twips);
     let width_twips = if fit_to_page {
         content_width_twips
     } else {
@@ -2993,6 +3117,7 @@ fn table_style_config_from_value(config: &Value) -> Option<TableStyleConfig> {
 
     Some(TableStyleConfig {
         width_twips,
+        content_height_twips,
         fit_to_page_width: fit_to_page,
         horizontal_align: read_style_string(table, "tableHorizontalAlign", "center"),
         column_width_percentages,
@@ -8670,6 +8795,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
         // A4 with the built-in 3.18 cm side margins is 8300 twips wide.
         // Keep this fallback aligned with the preview instead of the old 8640 twips default.
         width_twips: content_width_twips.unwrap_or_else(default_content_width_twips),
+        content_height_twips: default_content_height_twips(),
         fit_to_page_width: true,
         layout: "auto".to_string(),
         horizontal_align: "center".to_string(),
@@ -8685,7 +8811,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
         show_inner_horizontal_border: true,
         cell_padding_x: 10.0,
         cell_padding_y: 8.0,
-        min_row_height: 28.0,
+        min_row_height: 0.0,
         row_stripe: false,
         cell_wrap: true,
         repeat_header_on_each_page: true,
@@ -8971,7 +9097,9 @@ fn normalize_table_row_xml(
     column_widths: &[u32],
     style: &TableStyleConfig,
 ) -> String {
-    let row_xml = normalize_table_row_properties(row_xml, style, is_header);
+    let allow_split = estimated_table_row_height_twips(row_xml, column_widths, style, is_header)
+        > u64::from(style.content_height_twips);
+    let row_xml = normalize_table_row_properties(row_xml, style, is_header, allow_split);
     let mut cell_index = 0usize;
     let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
     cell.replace_all(&row_xml, |captures: &Captures| {
@@ -8993,15 +9121,21 @@ fn normalize_table_row_properties(
     row_xml: &str,
     style: &TableStyleConfig,
     is_header: bool,
+    allow_split: bool,
 ) -> String {
-    let height = px_to_twips(style.min_row_height);
-    let height_xml = format!(r#"<w:trHeight w:val="{height}" w:hRule="atLeast" />"#);
+    let height_xml = if style.min_row_height > 0.0 {
+        let height = px_to_twips(style.min_row_height);
+        format!(r#"<w:trHeight w:val="{height}" w:hRule="atLeast" />"#)
+    } else {
+        String::new()
+    };
     let header_xml = if is_header && style.repeat_header_on_each_page {
         r#"<w:tblHeader w:val="on" />"#
     } else {
         ""
     };
-    let pagination_xml = format!("{header_xml}<w:cantSplit />");
+    let cant_split_xml = if allow_split { "" } else { "<w:cantSplit />" };
+    let pagination_xml = format!("{header_xml}{cant_split_xml}");
 
     let row_properties =
         Regex::new(r#"(?s)<w:trPr>(.*?)</w:trPr>"#).expect("valid table row property regex");
@@ -9020,6 +9154,38 @@ fn normalize_table_row_properties(
         "<w:tr>",
         &format!("<w:tr><w:trPr>{height_xml}{pagination_xml}</w:trPr>"),
     )
+}
+
+fn estimated_table_row_height_twips(
+    row_xml: &str,
+    column_widths: &[u32],
+    style: &TableStyleConfig,
+    is_header: bool,
+) -> u64 {
+    let cell_style = table_cell_style(style, is_header);
+    let horizontal_padding = u64::from(px_to_twips(style.cell_padding_x.max(0.0) * 2.0));
+    let vertical_padding = u64::from(px_to_twips(style.cell_padding_y.max(0.0) * 2.0));
+    let line_height = (cell_style.font_size.max(1.0) * cell_style.line_height.max(1.0) * 20.0)
+        .round() as u64;
+    let cell_re = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid row height cell regex");
+    cell_re
+        .find_iter(row_xml)
+        .enumerate()
+        .map(|(index, cell)| {
+            let width = u64::from(
+                column_widths
+                    .get(index)
+                    .copied()
+                    .unwrap_or_else(|| style.width_twips / column_widths.len().max(1) as u32),
+            );
+            let usable_width_points = width.saturating_sub(horizontal_padding) as f64 / 20.0;
+            let line_capacity = (usable_width_points / cell_style.font_size.max(1.0)).max(1.0);
+            let text_units = estimated_table_cell_text_units(cell.as_str()).max(1.0);
+            let lines = (text_units / line_capacity).ceil().max(1.0) as u64;
+            lines.saturating_mul(line_height).saturating_add(vertical_padding)
+        })
+        .max()
+        .unwrap_or(line_height.saturating_add(vertical_padding))
 }
 
 fn normalize_table_cell_xml(
@@ -9377,7 +9543,7 @@ mod tests {
         table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        validate_docx_package, validate_xml_part, HeadingNumberingMode, HeadingTarget,
+        validate_docx_package, validate_exported_tables, validate_xml_part, HeadingNumberingMode, HeadingTarget,
         runtime_diagnostics_from_warnings, validate_updated_field_results, FieldUpdateProvider,
         MarkdownFeatureConfig,
         MermaidPreprocessResult, TocPageNumber,
@@ -9865,6 +10031,64 @@ mod tests {
         assert_eq!(output.matches(r#"<w:jc w:val="center" />"#).count(), 2);
         assert!(output.contains(r#"<w:tblHeader w:val="on" />"#));
         assert_eq!(output.matches("<w:cantSplit />").count(), 2);
+        assert!(!output.contains("<w:trHeight"));
+    }
+
+    #[test]
+    fn allows_a_single_oversized_table_row_to_split_across_pages() {
+        let long_text = "长内容".repeat(1200);
+        let input = format!(
+            r#"<w:document><w:body><w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0" /></w:tblPr><w:tr><w:tc><w:tcPr /><w:p><w:r><w:t>表头</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr /><w:p><w:r><w:t>{long_text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#
+        );
+
+        let output = normalize_document_xml(
+            &input,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(output.matches("<w:cantSplit />").count(), 1);
+        assert!(!output.contains("<w:trHeight"));
+    }
+
+    #[test]
+    fn reports_exported_table_overflow_fixed_height_and_narrow_columns() {
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-table-audit-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let docx_path = directory.join("table.docx");
+        let file = fs::File::create(&docx_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("word/document.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(r#"<w:document><w:body><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="8500"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:noWrap/></w:tcPr><w:p><w:r><w:t>很长很长的窄列文字继续增加内容</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>正文</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#.as_bytes())
+            .unwrap();
+        writer.finish().unwrap();
+
+        let diagnostics =
+            validate_exported_tables(&docx_path, Some(&default_page_settings_config()));
+
+        for code in [
+            "TABLE_WIDTH_OVERFLOW",
+            "TABLE_FIXED_ROW_HEIGHT_RISK",
+            "TABLE_NARROW_COLUMN_RISK",
+            "TABLE_NOWRAP_OVERFLOW_RISK",
+        ] {
+            assert!(diagnostics.iter().any(|item| item.code == code), "{code}");
+        }
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
