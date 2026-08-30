@@ -1046,7 +1046,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       }
     } catch (error) {
       const message = userFacingErrorMessage(error, "转换调用失败");
-      const result: ConvertResult = { ok: false, input, templateId, durationMs: 0, warnings: [], errorCode: "INVOKE_FAILED", message };
+      const result: ConvertResult = { ok: false, input, templateId, durationMs: 0, warnings: [], diagnostics: [], errorCode: "INVOKE_FAILED", message };
       if (conversionVersion === conversionVersionRef.current) setConvertResult(result);
       await persistHistory([buildHistoryItem(result)]);
       toast.error(message);

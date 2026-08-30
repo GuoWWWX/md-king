@@ -81,10 +81,20 @@ pub struct ConvertResult {
     pub template_sha256: Option<String>,
     pub duration_ms: u64,
     pub warnings: Vec<String>,
+    pub diagnostics: Vec<ConversionDiagnostic>,
     pub field_update_status: String,
     pub field_update_provider: Option<String>,
     pub error_code: Option<String>,
     pub message: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionDiagnostic {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+    pub line: Option<usize>,
 }
 
 struct TemplateResolution {
@@ -849,6 +859,8 @@ fn success_result(
     resolved_template_path: Option<String>,
     template_sha256: Option<String>,
 ) -> ConvertResult {
+    let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
     let toc_enabled = page_settings_config(&request).is_some_and(|settings| settings.toc_enabled);
     let requested_field_update = FieldUpdateProvider::from_request(&request);
     let mut field_update_status = if toc_enabled {
@@ -901,6 +913,7 @@ fn success_result(
         template_sha256,
         duration_ms: elapsed_ms(started_at),
         warnings,
+        diagnostics,
         field_update_status,
         field_update_provider,
         error_code: None,
@@ -916,6 +929,9 @@ fn failure_result(
     error_code: &str,
     message: &str,
 ) -> ConvertResult {
+    let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    let mut warnings = warnings;
+    warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
     ConvertResult {
         ok: false,
         input: request.input,
@@ -925,6 +941,7 @@ fn failure_result(
         template_sha256: None,
         duration_ms: elapsed_ms(started_at),
         warnings,
+        diagnostics,
         field_update_status: "notRun".to_string(),
         field_update_provider: None,
         error_code: Some(error_code.to_string()),
@@ -939,6 +956,221 @@ fn append_pandoc_success_messages(execution: &PandocExecution, warnings: &mut Ve
             warnings.push(format!("Pandoc：{detail}"));
         }
     }
+}
+
+fn collect_conversion_diagnostics(
+    request: &ConvertRequest,
+    output: Option<&str>,
+) -> Vec<ConversionDiagnostic> {
+    let input_path = PathBuf::from(&request.input);
+    let (markdown, resource_root) = if input_path.is_file() {
+        let Ok(markdown) = fs::read_to_string(&input_path) else {
+            return Vec::new();
+        };
+        (markdown, input_path.parent().map(Path::to_path_buf))
+    } else if request
+        .input_kind
+        .as_deref()
+        .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("path"))
+    {
+        return Vec::new();
+    } else {
+        let root = request
+            .source_path
+            .as_deref()
+            .map(PathBuf::from)
+            .and_then(|path| {
+                if path.is_dir() {
+                    Some(path)
+                } else {
+                    path.parent().map(Path::to_path_buf)
+                }
+            })
+            .or_else(|| {
+                output
+                    .map(PathBuf::from)
+                    .and_then(|path| path.parent().map(Path::to_path_buf))
+            });
+        (request.input.clone(), root)
+    };
+
+    let mut diagnostics = detect_heading_level_jumps(&markdown);
+    diagnostics.extend(detect_missing_local_images(
+        &markdown,
+        resource_root.as_deref(),
+    ));
+    diagnostics.extend(detect_wide_markdown_tables(&markdown));
+    diagnostics
+}
+
+fn diagnostic(code: &str, message: String, line: usize) -> ConversionDiagnostic {
+    ConversionDiagnostic {
+        code: code.to_string(),
+        severity: "warning".to_string(),
+        message,
+        line: Some(line),
+    }
+}
+
+fn detect_heading_level_jumps(markdown: &str) -> Vec<ConversionDiagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    let mut previous_level = None;
+
+    for (index, line) in markdown.lines().enumerate() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+
+        let Some((level, _, _)) = parse_atx_heading(line) else {
+            continue;
+        };
+        if previous_level.is_some_and(|previous| level > previous + 1) {
+            diagnostics.push(diagnostic(
+                "HEADING_LEVEL_JUMP",
+                format!(
+                    "第 {} 行标题从 H{} 跳到 H{}，可能导致目录层级断裂。",
+                    index + 1,
+                    previous_level.unwrap_or(level),
+                    level
+                ),
+                index + 1,
+            ));
+        }
+        previous_level = Some(level);
+    }
+    diagnostics
+}
+
+fn detect_missing_local_images(
+    markdown: &str,
+    resource_root: Option<&Path>,
+) -> Vec<ConversionDiagnostic> {
+    let Some(resource_root) = resource_root else {
+        return Vec::new();
+    };
+    let standard_image = Regex::new(r#"!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))"#)
+        .expect("valid Markdown image regex");
+    let obsidian_image =
+        Regex::new(r#"!\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]"#)
+            .expect("valid Obsidian image regex");
+    let mut diagnostics = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+
+    for (index, line) in markdown.lines().enumerate() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+
+        for captures in standard_image.captures_iter(line) {
+            let target = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            push_missing_image_diagnostic(
+                &mut diagnostics,
+                resource_root,
+                target,
+                index + 1,
+            );
+        }
+        for captures in obsidian_image.captures_iter(line) {
+            push_missing_image_diagnostic(
+                &mut diagnostics,
+                resource_root,
+                captures.get(1).map(|value| value.as_str()).unwrap_or(""),
+                index + 1,
+            );
+        }
+    }
+    diagnostics
+}
+
+fn push_missing_image_diagnostic(
+    diagnostics: &mut Vec<ConversionDiagnostic>,
+    resource_root: &Path,
+    target: &str,
+    line: usize,
+) {
+    let target = target.trim().replace("%20", " ");
+    if target.is_empty()
+        || target.starts_with('#')
+        || target.starts_with("data:")
+        || target.starts_with("http://")
+        || target.starts_with("https://")
+    {
+        return;
+    }
+    let path = PathBuf::from(&target);
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        resource_root.join(path)
+    };
+    if resolved.is_file() {
+        return;
+    }
+    diagnostics.push(diagnostic(
+        "IMAGE_NOT_FOUND",
+        format!("第 {line} 行引用的本地图片不存在：{target}"),
+        line,
+    ));
+}
+
+fn detect_wide_markdown_tables(markdown: &str) -> Vec<ConversionDiagnostic> {
+    let separator = Regex::new(
+        r#"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"#,
+    )
+    .expect("valid Markdown table separator regex");
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut diagnostics = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+
+    for (index, line) in lines.iter().enumerate() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+        if index == 0 || !separator.is_match(line) {
+            continue;
+        }
+
+        let header = lines[index - 1].trim().trim_matches('|');
+        let column_count = header.split('|').count();
+        if column_count > 8 {
+            diagnostics.push(diagnostic(
+                "TABLE_WIDTH_RISK",
+                format!(
+                    "第 {} 行表格包含 {} 列，导出时可能出现窄列或逐字换行。",
+                    index,
+                    column_count
+                ),
+                index,
+            ));
+        }
+    }
+    diagnostics
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8134,7 +8366,8 @@ mod tests {
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_table_style_config,
         default_page_settings_config, default_report_heading_numbering_config,
-        detect_adjacent_image_caption_warnings, document_style_config_from_value,
+        detect_adjacent_image_caption_warnings, detect_heading_level_jumps,
+        detect_missing_local_images, detect_wide_markdown_tables, document_style_config_from_value,
         ensure_no_picture_compression, ensure_toc_fields_update_on_open, footer_page_number_xml,
         has_supported_text_extension,
         filter_benign_pandoc_svg_fallback_warning,
@@ -8215,6 +8448,50 @@ mod tests {
             filter_benign_pandoc_svg_fallback_warning(detail),
             "[WARNING] 其他警告"
         );
+    }
+
+    #[test]
+    fn reports_heading_level_jumps_outside_fenced_code() {
+        let diagnostics = detect_heading_level_jumps(
+            "# 标题\n### 跳级标题\n```md\n# 代码\n###### 代码\n```\n##### 再次跳级",
+        );
+
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(diagnostics[0].code, "HEADING_LEVEL_JUMP");
+        assert_eq!(diagnostics[0].line, Some(2));
+        assert_eq!(diagnostics[1].line, Some(7));
+    }
+
+    #[test]
+    fn reports_only_missing_local_images() {
+        let root = std::env::temp_dir().join(format!(
+            "md-king-diagnostic-image-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("exists.png"), b"image").unwrap();
+        let markdown = "![存在](exists.png)\n![缺失](missing%20image.png)\n![远程](https://example.com/a.png)\n![[also-missing.png|300]]";
+
+        let diagnostics = detect_missing_local_images(markdown, Some(&root));
+
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics
+            .iter()
+            .all(|item| item.code == "IMAGE_NOT_FOUND"));
+        assert_eq!(diagnostics[0].line, Some(2));
+        assert_eq!(diagnostics[1].line, Some(4));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reports_tables_with_more_than_eight_columns() {
+        let markdown = "| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |\n|---|---|---|---|---|---|---|---|---|\n| a | b | c | d | e | f | g | h | i |";
+
+        let diagnostics = detect_wide_markdown_tables(markdown);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "TABLE_WIDTH_RISK");
+        assert_eq!(diagnostics[0].line, Some(1));
     }
 
     #[test]

@@ -24,6 +24,12 @@ export type ConvertResult = {
   templateSha256?: string;
   durationMs: number;
   warnings: string[];
+  diagnostics: Array<{
+    code: string;
+    severity: "warning" | "error";
+    message: string;
+    line?: number;
+  }>;
   fieldUpdateStatus?: "notRun" | "notRequested" | "pendingOnOpen" | "updated" | "failed";
   fieldUpdateProvider?: "WPS" | "Word";
   errorCode?: string;

@@ -446,6 +446,7 @@ export function convertMarkdown(request: ConvertRequest) {
     templateId: request.templateId,
     durationMs: 0,
     warnings: [PREVIEW_WARNING],
+    diagnostics: [],
     message: "浏览器预览完成，未生成实际 DOCX 文件。",
   });
 }
