@@ -481,12 +481,12 @@ export const defaultPageSettings: PageSettingsDraft = {
   tocTitleChineseFont: "宋体",
   tocTitleLatinFont: "Times New Roman",
   tocTitleFontSize: 18,
-  tocTitleFontWeight: "400",
+  tocTitleFontWeight: "700",
   tocTitleColor: "#111827",
-  tocTitleLineHeight: "1.35",
+  tocTitleLineHeight: "1.25",
   tocTitleAlign: "center",
-  tocTitleBeforeSpacing: 0,
-  tocTitleAfterSpacing: 18,
+  tocTitleBeforeSpacing: 10,
+  tocTitleAfterSpacing: 5,
 };
 
 export const defaultMarkdownFeatures: MarkdownFeatureSettings = {
@@ -722,11 +722,20 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
       "heading-6": 9,
     };
     for (const [styleId, fontSize] of Object.entries(defaultReportHeadingSizes)) {
+      const isBaselineHeading = ["heading-1", "heading-2", "heading-3"].includes(styleId);
       styles[styleId] = {
         ...styles[styleId],
         chineseFont: "宋体",
         latinFont: "Times New Roman",
         fontSize,
+        ...(isBaselineHeading ? {
+          fontWeight: "700",
+          lineHeight: "1.25",
+          beforeSpacing: 10,
+          afterSpacing: 5,
+          firstLineIndent: 0,
+          align: "left" as const,
+        } : {}),
       };
     }
     styles.normal = {
@@ -966,6 +975,25 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
       }
     }
 
+    const legacyHeadingSpacing: Record<string, { beforeSpacing: number; afterSpacing: number }> = {
+      "heading-1": { beforeSpacing: 18, afterSpacing: 10 },
+      "heading-2": { beforeSpacing: 18, afterSpacing: 10 },
+      "heading-3": { beforeSpacing: 12, afterSpacing: 6 },
+    };
+    for (const [styleId, legacy] of Object.entries(legacyHeadingSpacing)) {
+      const current = styles[styleId];
+      if (current?.lineHeight === "1.35"
+        && current.beforeSpacing === legacy.beforeSpacing
+        && current.afterSpacing === legacy.afterSpacing) {
+        styles[styleId] = {
+          ...current,
+          lineHeight: defaults.styles[styleId].lineHeight,
+          beforeSpacing: defaults.styles[styleId].beforeSpacing,
+          afterSpacing: defaults.styles[styleId].afterSpacing,
+        };
+      }
+    }
+
     // 旧版本默认报告模板使用浅灰/蓝灰边框；仅迁移这组精确的旧默认值，
     // 不覆盖用户后来主动设置的其他颜色。
     const table = styles.table;
@@ -979,6 +1007,20 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
         bodyBorderColor: "#000000",
       };
     }
+  }
+  const pageSettings = {
+    ...defaults.pageSettings,
+    ...(config?.pageSettings ?? {}),
+  };
+  if (templateId === "default-report"
+    && pageSettings.tocTitleFontWeight === "400"
+    && pageSettings.tocTitleLineHeight === "1.35"
+    && pageSettings.tocTitleBeforeSpacing === 0
+    && pageSettings.tocTitleAfterSpacing === 18) {
+    pageSettings.tocTitleFontWeight = defaults.pageSettings.tocTitleFontWeight;
+    pageSettings.tocTitleLineHeight = defaults.pageSettings.tocTitleLineHeight;
+    pageSettings.tocTitleBeforeSpacing = defaults.pageSettings.tocTitleBeforeSpacing;
+    pageSettings.tocTitleAfterSpacing = defaults.pageSettings.tocTitleAfterSpacing;
   }
   const legacyDefaultHeadingOneDrafts = [
     { ...defaults.styles["heading-1"], fontSize: 20, align: "center" as const },
@@ -1001,10 +1043,7 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
     ...config,
     templateId,
     styles,
-    pageSettings: {
-      ...defaults.pageSettings,
-      ...(config?.pageSettings ?? {}),
-    },
+    pageSettings,
     markdownFeatures: {
       ...defaults.markdownFeatures,
       ...(config?.markdownFeatures ?? {}),

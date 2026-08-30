@@ -24,19 +24,6 @@ export function resolveWordAutoLineHeightPx(
   return fontSize * (4 / 3) * resolvedMultiplier * WORD_AUTO_LINE_HEIGHT_FACTOR;
 }
 
-// Word Heading 1-6 styles are normalized with w:lineRule="exact" by the
-// converter. Their line box is the configured font size multiplied directly
-// by the line-height value, without the automatic line-box factor above.
-export function resolveWordExactLineHeightPx(
-  fontSize: number,
-  lineHeight: string | number | undefined,
-  fallback = 1.5,
-) {
-  const multiplier = Number(lineHeight);
-  const resolvedMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : fallback;
-  return fontSize * (4 / 3) * resolvedMultiplier;
-}
-
 type EstimateTableColumnContentWidthsOptions = {
   rows: ReadonlyArray<ReadonlyArray<string>>;
   tableWidth: number;

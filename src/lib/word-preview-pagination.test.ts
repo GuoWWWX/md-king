@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, resolveWordExactLineHeightPx, splitTableRows } from "./word-preview-pagination.ts";
+import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows } from "./word-preview-pagination.ts";
 
 test("Word 自动行距按字体单倍行高估算，而不是直接按 CSS 字号倍数", () => {
   // 12pt * 1.25 in Word's Chinese mixed-text layout is about 19.5pt = 26px.
   assert.equal(resolveWordAutoLineHeightPx(12, "1.25"), 26);
-});
-
-test("Word 标题精确行距不使用自动行高放大系数", () => {
-  assert.equal(resolveWordExactLineHeightPx(15, "1.35"), 27);
 });
 
 test("Mermaid 分页使用 SVG 实际高度且不预留语言标签空间", () => {

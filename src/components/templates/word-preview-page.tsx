@@ -17,7 +17,7 @@ import { isExternalDocumentLink, nextMarkdownHeadingAnchor, normalizeBareExterna
 import { obsidianWikilinkPlugin } from "@/lib/obsidian-wikilinks";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, resolveWordExactLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
+import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { svgDataUrl } from "@/lib/svg-image";
 import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
@@ -562,10 +562,7 @@ function MermaidBlock({ source, dark, maxHeight, style, className, onSize }: { s
 }
 
 function headingTextStyle(draft: StyleDraft): CSSProperties {
-  return {
-    ...textStyle(draft),
-    lineHeight: `${resolveWordExactLineHeightPx(draft.fontSize, draft.lineHeight)}px`,
-  };
+  return textStyle(draft);
 }
 
 function textSegments(text: string): PreviewTextSegment[] {
@@ -1388,7 +1385,7 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
 function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
-    const lineHeight = block.isDocumentTitle ? resolveLineHeightPx(draft) : resolveWordExactLineHeightPx(draft.fontSize, draft.lineHeight);
+    const lineHeight = resolveLineHeightPx(draft);
     return ptToPx(draft.beforeSpacing + draft.afterSpacing) + estimateTextLines(block.text, estimateCharsPerLine(contentWidth, draft, 1.05)) * lineHeight;
   }
 
@@ -2317,9 +2314,9 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const tocPages = shouldPaginate && showTocPage
     ? createPreviewTocPages(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth, pageContentHeight, previewDrafts, contentWidth, metadataHeight, {
       fontSize: pageSettings?.tocTitleFontSize ?? 18,
-      lineHeight: pageSettings?.tocTitleLineHeight ?? "1.35",
-      beforeSpacing: pageSettings?.tocTitleBeforeSpacing ?? 0,
-      afterSpacing: pageSettings?.tocTitleAfterSpacing ?? 18,
+      lineHeight: pageSettings?.tocTitleLineHeight ?? "1.25",
+      beforeSpacing: pageSettings?.tocTitleBeforeSpacing ?? 10,
+      afterSpacing: pageSettings?.tocTitleAfterSpacing ?? 5,
     })
     : [];
   const documentBlocks = tocPages.length > 0 ? blocksWithTableColumnWidths : [...metadataBlocks, ...blocksWithTableColumnWidths];
@@ -2350,7 +2347,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const thumbnailScale = Math.min(0.16, 112 / paperWidth);
   const thumbnailPageScaleStyle: CSSProperties = { position: "relative", width: paperWidth * thumbnailScale, height: paperHeight * thumbnailScale };
   const thumbnailPageStyle: CSSProperties = { ...pageStyle, transform: `scale(${thumbnailScale})` };
-  const markdownTableStyle = { imageStyle, figureCaptionPosition: caption.captionPosition, figureCaptionStyle, captionPosition: tableCaption.captionPosition, captionStyle, headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders }, rowStripe: table.rowStripe, columnWidthMode: table.columnWidthMode, columnWidthPercentages: [table.firstColumnWidth, table.secondColumnWidth, table.thirdColumnWidth] as [number, number, number], tocLeader: pageSettings?.tocLeader ?? "dot", tocShowPageNumbers: pageSettings?.tocShowPageNumbers ?? true, tocTitle: pageSettings?.tocTitle ?? "目录", tocTitleChineseFont: pageSettings?.tocTitleChineseFont ?? "宋体", tocTitleLatinFont: pageSettings?.tocTitleLatinFont ?? "Times New Roman", tocTitleFontSize: pageSettings?.tocTitleFontSize ?? 18, tocTitleFontWeight: pageSettings?.tocTitleFontWeight ?? "400", tocTitleColor: pageSettings?.tocTitleColor ?? "#111827", tocTitleLineHeight: pageSettings?.tocTitleLineHeight ?? "1.35", tocTitleAlign: pageSettings?.tocTitleAlign ?? "center", tocTitleBeforeSpacing: pageSettings?.tocTitleBeforeSpacing ?? 0, tocTitleAfterSpacing: pageSettings?.tocTitleAfterSpacing ?? 18 };
+  const markdownTableStyle = { imageStyle, figureCaptionPosition: caption.captionPosition, figureCaptionStyle, captionPosition: tableCaption.captionPosition, captionStyle, headerStyle, bodyCellStyle, tableWidth, tableMargin, tableLayout: table.tableLayout, borderStyle: { border: baseBorder, ...sideBorders }, rowStripe: table.rowStripe, columnWidthMode: table.columnWidthMode, columnWidthPercentages: [table.firstColumnWidth, table.secondColumnWidth, table.thirdColumnWidth] as [number, number, number], tocLeader: pageSettings?.tocLeader ?? "dot", tocShowPageNumbers: pageSettings?.tocShowPageNumbers ?? true, tocTitle: pageSettings?.tocTitle ?? "目录", tocTitleChineseFont: pageSettings?.tocTitleChineseFont ?? "宋体", tocTitleLatinFont: pageSettings?.tocTitleLatinFont ?? "Times New Roman", tocTitleFontSize: pageSettings?.tocTitleFontSize ?? 18, tocTitleFontWeight: pageSettings?.tocTitleFontWeight ?? "700", tocTitleColor: pageSettings?.tocTitleColor ?? "#111827", tocTitleLineHeight: pageSettings?.tocTitleLineHeight ?? "1.25", tocTitleAlign: pageSettings?.tocTitleAlign ?? "center", tocTitleBeforeSpacing: pageSettings?.tocTitleBeforeSpacing ?? 10, tocTitleAfterSpacing: pageSettings?.tocTitleAfterSpacing ?? 5 };
 
   useEffect(() => {
     if (!onPreviewOutlineChange || lastPreviewOutlineSignatureRef.current === previewOutlineSignature) return;

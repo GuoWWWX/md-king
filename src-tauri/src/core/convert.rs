@@ -1221,7 +1221,12 @@ fn page_settings_config(request: &ConvertRequest) -> Option<PageSettingsConfig> 
     get_template_style_config(template_id.to_string())
         .ok()
         .flatten()
-        .and_then(|config| page_settings_config_from_value(&config))
+        .and_then(|mut config| {
+            if template_id == "default-report" {
+                migrate_default_report_style_baseline(&mut config);
+            }
+            page_settings_config_from_value(&config)
+        })
         .or_else(|| is_built_in_template_id(template_id).then(default_page_settings_config))
 }
 
@@ -1247,12 +1252,78 @@ fn default_page_settings_config() -> PageSettingsConfig {
         toc_title_chinese_font: "宋体".to_string(),
         toc_title_latin_font: "Times New Roman".to_string(),
         toc_title_font_size: 18.0,
-        toc_title_font_weight: "400".to_string(),
+        toc_title_font_weight: "700".to_string(),
         toc_title_color: "111827".to_string(),
-        toc_title_line_height: 1.35,
+        toc_title_line_height: 1.25,
         toc_title_align: "center".to_string(),
-        toc_title_before_spacing: 0.0,
-        toc_title_after_spacing: 18.0,
+        toc_title_before_spacing: 10.0,
+        toc_title_after_spacing: 5.0,
+    }
+}
+
+fn migrate_default_report_style_baseline(config: &mut Value) {
+    if let Some(styles) = config.get_mut("styles").and_then(Value::as_object_mut) {
+        for (style_id, legacy_before, legacy_after) in [
+            ("heading-1", 18.0, 10.0),
+            ("heading-2", 18.0, 10.0),
+            ("heading-3", 12.0, 6.0),
+        ] {
+            let Some(style) = styles.get_mut(style_id).and_then(Value::as_object_mut) else {
+                continue;
+            };
+            let is_legacy = style
+                .get("lineHeight")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "1.35")
+                && style
+                    .get("beforeSpacing")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (value - legacy_before).abs() < f64::EPSILON)
+                && style
+                    .get("afterSpacing")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (value - legacy_after).abs() < f64::EPSILON);
+            if is_legacy {
+                style.insert("lineHeight".to_string(), Value::String("1.25".to_string()));
+                style.insert("beforeSpacing".to_string(), Value::from(10.0));
+                style.insert("afterSpacing".to_string(), Value::from(5.0));
+            }
+        }
+    }
+
+    let Some(page_settings) = config
+        .get_mut("pageSettings")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    let is_legacy_toc = page_settings
+        .get("tocTitleFontWeight")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value == "400")
+        && page_settings
+            .get("tocTitleLineHeight")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "1.35")
+        && page_settings
+            .get("tocTitleBeforeSpacing")
+            .and_then(Value::as_f64)
+            .is_some_and(|value| value.abs() < f64::EPSILON)
+        && page_settings
+            .get("tocTitleAfterSpacing")
+            .and_then(Value::as_f64)
+            .is_some_and(|value| (value - 18.0).abs() < f64::EPSILON);
+    if is_legacy_toc {
+        page_settings.insert(
+            "tocTitleFontWeight".to_string(),
+            Value::String("700".to_string()),
+        );
+        page_settings.insert(
+            "tocTitleLineHeight".to_string(),
+            Value::String("1.25".to_string()),
+        );
+        page_settings.insert("tocTitleBeforeSpacing".to_string(), Value::from(10.0));
+        page_settings.insert("tocTitleAfterSpacing".to_string(), Value::from(5.0));
     }
 }
 
@@ -1302,7 +1373,12 @@ fn document_style_config(request: &ConvertRequest) -> Option<DocumentStyleConfig
     get_template_style_config(template_id.to_string())
         .ok()
         .flatten()
-        .and_then(|config| document_style_config_from_value(&config))
+        .and_then(|mut config| {
+            if template_id == "default-report" {
+                migrate_default_report_style_baseline(&mut config);
+            }
+            document_style_config_from_value(&config)
+        })
 }
 
 fn block_style_config(request: &ConvertRequest) -> Option<BlockStyleConfig> {
@@ -1465,18 +1541,18 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .unwrap_or("400")
+            .unwrap_or("700")
             .to_string(),
         toc_title_color: read_style_color(settings, "tocTitleColor", "111827"),
-        toc_title_line_height: read_line_height_key(settings, "tocTitleLineHeight", 1.35).clamp(0.8, 3.0),
+        toc_title_line_height: read_line_height_key(settings, "tocTitleLineHeight", 1.25).clamp(0.8, 3.0),
         toc_title_align: settings
             .get("tocTitleAlign")
             .and_then(Value::as_str)
             .filter(|value| matches!(*value, "left" | "center" | "right"))
             .unwrap_or("center")
             .to_string(),
-        toc_title_before_spacing: read_non_negative_number(settings, "tocTitleBeforeSpacing", 0.0).clamp(0.0, 72.0),
-        toc_title_after_spacing: read_non_negative_number(settings, "tocTitleAfterSpacing", 18.0).clamp(0.0, 72.0),
+        toc_title_before_spacing: read_non_negative_number(settings, "tocTitleBeforeSpacing", 10.0).clamp(0.0, 72.0),
+        toc_title_after_spacing: read_non_negative_number(settings, "tocTitleAfterSpacing", 5.0).clamp(0.0, 72.0),
     })
 }
 
@@ -4295,10 +4371,7 @@ fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> Strin
         .unwrap_or(false);
     let before = points_to_twentieths(page_settings.toc_title_before_spacing);
     let after = points_to_twentieths(page_settings.toc_title_after_spacing);
-    let line = line_height_twips(
-        page_settings.toc_title_font_size,
-        page_settings.toc_title_line_height,
-    );
+    let line = auto_line_height_units(page_settings.toc_title_line_height);
     let align = word_alignment_value(&page_settings.toc_title_align);
     let run_properties = format!(
         r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:eastAsia="{}" /><w:color w:val="{}" /><w:sz w:val="{size}" /><w:szCs w:val="{size}" /><w:b w:val="{}" /><w:bCs w:val="{}" />"#,
@@ -4448,7 +4521,8 @@ fn toc_cached_entries_xml(
                 String::new()
             };
             let visible_run = format!(
-                r#"<w:r><w:rPr><w:sz w:val="21" /><w:szCs w:val="21" /></w:rPr><w:t xml:space="preserve">{}</w:t></w:r>"#,
+                r#"<w:r><w:rPr>{}</w:rPr><w:t xml:space="preserve">{}</w:t></w:r>"#,
+                body_run_properties_xml(),
                 escape_xml_text(&visible_text),
             );
             // The TOC field itself contains \h, but its cached result is plain
@@ -4464,7 +4538,7 @@ fn toc_cached_entries_xml(
                 })
                 .unwrap_or(visible_run);
             Some(format!(
-                r#"<w:p><w:pPr><w:spacing w:after="80" />{indent_xml}{tabs}</w:pPr>{visible_entry}{}{}</w:p>"#,
+                r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" />{indent_xml}{tabs}</w:pPr>{visible_entry}{}{}</w:p>"#,
                 if page_settings.toc_show_page_numbers {
                     r#"<w:r><w:tab /></w:r>"#
                 } else {
@@ -5081,15 +5155,7 @@ fn normalize_template_style_xml(
     {
         if let Some(style) = document_style.and_then(|config| config.styles.get(template_style_id))
         {
-            let normalized = normalize_text_style_xml(style_xml, style);
-            return if word_style_id
-                .as_deref()
-                .is_some_and(heading_uses_exact_line_height)
-            {
-                apply_exact_line_height_to_style_xml(&normalized)
-            } else {
-                normalized
-            };
+            return normalize_text_style_xml(style_xml, style);
         }
     }
 
@@ -5107,11 +5173,7 @@ fn normalize_template_style_xml(
                 after,
                 line,
             );
-            return if heading_uses_exact_line_height(&style_id) {
-                apply_exact_line_height_to_style_xml(&normalized)
-            } else {
-                normalized
-            };
+            return normalized;
         }
     }
 
@@ -5171,34 +5233,18 @@ fn default_heading_style_overrides(
     style_id: &str,
 ) -> Option<(&'static str, u32, &'static str, u32, u32, u32)> {
     match style_id {
-        // (对齐, 字号 half-point, 中文字体, 段前, 段后, 精确行距；后 3 项单位均为 twips)
+        // (对齐, 字号 half-point, 中文字体, 段前, 段后, 自动行距倍数；
+        // 段前/段后单位为 twips，自动行距单位为 1/240 行)
         // 必须与前端 createDefaultTemplateStyleConfig("default-report") 一致。
-        "Title" => Some(("center", 36, "宋体", 0, 480, 486)),
-        "Heading1" => Some(("left", 32, "宋体", 360, 200, 432)),
-        "Heading2" => Some(("left", 30, "宋体", 360, 200, 405)),
-        "Heading3" => Some(("left", 28, "宋体", 240, 120, 378)),
+        "Title" => Some(("center", 36, "宋体", 0, 480, 324)),
+        "Heading1" => Some(("left", 32, "宋体", 200, 100, 300)),
+        "Heading2" => Some(("left", 30, "宋体", 200, 100, 300)),
+        "Heading3" => Some(("left", 28, "宋体", 200, 100, 300)),
         "Heading4" => Some(("left", 24, "宋体", 240, 120, 324)),
-        "Heading5" => Some(("left", 21, "宋体", 240, 120, 284)),
-        "Heading6" => Some(("left", 18, "宋体", 240, 120, 243)),
+        "Heading5" => Some(("left", 21, "宋体", 240, 120, 324)),
+        "Heading6" => Some(("left", 18, "宋体", 240, 120, 324)),
         _ => None,
     }
-}
-
-fn heading_uses_exact_line_height(style_id: &str) -> bool {
-    matches!(
-        style_id,
-        "Heading1" | "Heading2" | "Heading3" | "Heading4" | "Heading5" | "Heading6"
-    )
-}
-
-fn apply_exact_line_height_to_style_xml(style_xml: &str) -> String {
-    let paragraph_properties =
-        Regex::new(r#"(?s)<w:pPr\b[^>]*>.*?</w:pPr>"#).expect("valid style paragraph regex");
-    paragraph_properties
-        .replace(style_xml, |captures: &Captures| {
-            captures[0].replace(r#"w:lineRule="auto""#, r#"w:lineRule="exact""#)
-        })
-        .to_string()
 }
 
 /// 把标题样式的对齐、字号与中文字体纠正到前端默认值。
@@ -5216,7 +5262,7 @@ fn apply_default_heading_style(
     let paragraph_re = Regex::new(r#"(?s)<w:pPr\b[^>]*/>|<w:pPr\b[^>]*>.*?</w:pPr>"#)
         .expect("valid style paragraph regex");
     let paragraph_properties = format!(
-        r#"<w:pPr>{}<w:spacing w:before="{before_spacing}" w:after="{after_spacing}" w:line="{line_spacing}" w:lineRule="exact" /><w:jc w:val="{align}" /><w:ind w:firstLine="0" /></w:pPr>"#,
+        r#"<w:pPr>{}<w:spacing w:before="{before_spacing}" w:after="{after_spacing}" w:line="{line_spacing}" w:lineRule="auto" /><w:jc w:val="{align}" /><w:ind w:firstLine="0" /></w:pPr>"#,
         preserved_style_paragraph_flow_xml(style_xml),
     );
     let aligned = if let Some(found) = paragraph_re.find(style_xml) {
@@ -5346,14 +5392,14 @@ fn body_run_properties_xml() -> &'static str {
 fn text_style_paragraph_properties_xml(style: &TextStyleConfig) -> String {
     let before = points_to_twentieths(style.before_spacing);
     let after = points_to_twentieths(style.after_spacing);
-    let line = line_height_twips(style.font_size, style.line_height);
+    let line = auto_line_height_units(style.line_height);
     let align = word_alignment_value(&style.align);
 
     if style.is_list {
         let level_style = list_level_style(style, 0);
         let before = points_to_twentieths(level_style.before_spacing);
         let after = points_to_twentieths(level_style.after_spacing);
-        let line = line_height_twips(level_style.font_size, level_style.line_height);
+        let line = auto_line_height_units(level_style.line_height);
         let align = word_alignment_value(&level_style.align);
         let indent = list_indent_xml(style);
         return format!(
@@ -6156,7 +6202,7 @@ fn code_paragraph_properties_xml(
         .map(|value| value.border_color.as_str())
         .unwrap_or("E2E8F0");
     let line = style
-        .map(|value| line_height_twips(value.font_size, value.line_height))
+        .map(|value| auto_line_height_units(value.line_height))
         .unwrap_or(300);
     let before = if include_top_border {
         points_to_twentieths(style.map(|value| value.before_spacing).unwrap_or(6.0))
@@ -6341,12 +6387,11 @@ fn quote_paragraph_properties_xml_with_colors(
         .unwrap_or("94A3B8");
     let background = colors.map(|value| value.0).unwrap_or(background);
     let border_color = colors.map(|value| value.1).unwrap_or(border_color);
-    let font_size = style.map(|value| value.font_size).unwrap_or(10.5);
     let line_height =
         style
             .map(|value| value.line_height)
             .unwrap_or(if is_list { 1.55 } else { 1.7 });
-    let line = line_height_twips(font_size, line_height);
+    let line = auto_line_height_units(line_height);
     let before = points_to_twentieths(
         style
             .map(|value| value.before_spacing)
@@ -6420,7 +6465,11 @@ fn points_to_twentieths(value: f64) -> u32 {
     (value * 20.0).round().clamp(0.0, 2000.0) as u32
 }
 
-fn line_height_twips(font_size: f64, line_height: f64) -> u32 {
+fn auto_line_height_units(line_height: f64) -> u32 {
+    (line_height * 240.0).round().clamp(120.0, 2000.0) as u32
+}
+
+fn exact_line_height_twips(font_size: f64, line_height: f64) -> u32 {
     (font_size * line_height * 20.0)
         .round()
         .clamp(120.0, 2000.0) as u32
@@ -6757,7 +6806,7 @@ fn list_level_paragraph_properties_xml(
     let level_style = list_level_style(style, level);
     let before = points_to_twentieths(level_style.before_spacing);
     let after = points_to_twentieths(level_style.after_spacing);
-    let line = line_height_twips(level_style.font_size, level_style.line_height);
+    let line = auto_line_height_units(level_style.line_height);
     let align = word_alignment_value(&level_style.align);
     let indent = list_indent_xml_for_marker(style, level, marker);
     format!(
@@ -7503,7 +7552,7 @@ fn cell_borders_xml(style: &str, width: f64, color: &str) -> String {
 fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyleConfig) -> String {
     let cell_style = table_cell_style(style, is_header);
     let alignment = word_horizontal_align(&cell_style.horizontal_align);
-    let line = line_height_twips(cell_style.font_size, cell_style.line_height);
+    let line = exact_line_height_twips(cell_style.font_size, cell_style.line_height);
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
     let output = paragraph_properties
@@ -7690,6 +7739,7 @@ mod tests {
         ensure_toc_fields_update_on_open, footer_page_number_xml, has_supported_text_extension,
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
+        migrate_default_report_style_baseline,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
         normalize_emoji_runs, normalize_image_drawings,
@@ -8548,7 +8598,7 @@ mod tests {
         assert!(output.contains(r#"w:fill="0F172A""#));
         assert!(output.contains(r#"w:color="38BDF8""#));
         assert!(output.contains(
-            r#"<w:spacing w:before="240" w:after="280" w:line="396" w:lineRule="auto" />"#
+            r#"<w:spacing w:before="240" w:after="280" w:line="432" w:lineRule="auto" />"#
         ));
         assert!(output.contains(r#"<w:ind w:left="360" w:right="360" w:firstLine="0" />"#));
         assert!(
@@ -8863,6 +8913,60 @@ mod tests {
     }
 
     #[test]
+    fn default_toc_title_and_entries_match_report_spacing_baseline() {
+        let settings = default_page_settings_config();
+        let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr></w:pPr><w:r><w:t>第一章</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_toc_fields(
+            input,
+            &settings,
+            Some(&default_report_heading_numbering_config()),
+            None,
+        );
+
+        assert!(output.contains(
+            r#"<w:spacing w:before="200" w:after="100" w:line="300" w:lineRule="auto" />"#
+        ));
+        assert!(output.contains(r#"<w:b w:val="1" /><w:bCs w:val="1" />"#));
+        assert!(output.contains(
+            r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" />"#
+        ));
+        assert!(output.contains(r#"<w:sz w:val="24" /><w:szCs w:val="24" />"#));
+    }
+
+    #[test]
+    fn migrates_legacy_default_report_heading_and_toc_spacing() {
+        let mut config = json!({
+            "styles": {
+                "heading-1": { "lineHeight": "1.35", "beforeSpacing": 18, "afterSpacing": 10 },
+                "heading-2": { "lineHeight": "1.35", "beforeSpacing": 18, "afterSpacing": 10 },
+                "heading-3": { "lineHeight": "1.35", "beforeSpacing": 12, "afterSpacing": 6 }
+            },
+            "pageSettings": {
+                "tocTitleFontWeight": "400",
+                "tocTitleLineHeight": "1.35",
+                "tocTitleBeforeSpacing": 0,
+                "tocTitleAfterSpacing": 18
+            }
+        });
+
+        migrate_default_report_style_baseline(&mut config);
+
+        let document = document_style_config_from_value(&config).unwrap();
+        for style_id in ["heading-1", "heading-2", "heading-3"] {
+            let style = &document.styles[style_id];
+            assert_eq!(style.line_height, 1.25);
+            assert_eq!(style.before_spacing, 10.0);
+            assert_eq!(style.after_spacing, 5.0);
+        }
+        let page = page_settings_config_from_value(&config).unwrap();
+        assert_eq!(page.toc_title_font_weight, "700");
+        assert_eq!(page.toc_title_line_height, 1.25);
+        assert_eq!(page.toc_title_before_spacing, 10.0);
+        assert_eq!(page.toc_title_after_spacing, 5.0);
+    }
+
+    #[test]
     fn yaml_title_before_toc_does_not_remove_content_control_opening_tags() {
         let settings = page_settings_config_from_value(&json!({
             "pageSettings": { "tocEnabled": true, "tocDepth": "1-3" }
@@ -9005,7 +9109,7 @@ mod tests {
         assert!(output.contains(r#"<w:jc w:val="right" />"#));
         assert!(output.contains(r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="黑体" />"#));
         assert!(output.contains(r#"<w:color w:val="1D4ED8" /><w:sz w:val="32" /><w:szCs w:val="32" /><w:b w:val="1" /><w:bCs w:val="1" />"#));
-        assert!(output.contains(r#"<w:spacing w:before="120" w:after="240" w:line="480" w:lineRule="auto" />"#));
+        assert!(output.contains(r#"<w:spacing w:before="120" w:after="240" w:line="360" w:lineRule="auto" />"#));
     }
 
     #[test]
@@ -9627,7 +9731,7 @@ mod tests {
         );
 
         assert!(output.contains(
-            r#"<w:spacing w:before="240" w:after="160" w:line="560" w:lineRule="auto" />"#
+            r#"<w:spacing w:before="240" w:after="160" w:line="480" w:lineRule="auto" />"#
         ));
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
         assert!(output.contains(r#"<w:ind w:left="720" w:firstLine="0" />"#));
@@ -10047,7 +10151,7 @@ mod tests {
         );
         assert!(normalized.contains("<w:keepNext />"), "应保留段中不分页");
         assert!(normalized.contains(
-            r#"<w:spacing w:before="360" w:after="200" w:line="432" w:lineRule="exact" />"#
+            r#"<w:spacing w:before="200" w:after="100" w:line="300" w:lineRule="auto" />"#
         ));
         assert!(normalized.contains(r#"<w:ind w:firstLine="0" />"#));
 
@@ -10058,7 +10162,7 @@ mod tests {
         assert!(normalized_title.contains(r#"<w:sz w:val="36" />"#));
         assert!(normalized_title.contains("<w:b />"), "标题原有加粗设置应保留");
         assert!(normalized_title.contains(
-            r#"<w:spacing w:before="0" w:after="480" w:line="486" w:lineRule="exact" />"#
+            r#"<w:spacing w:before="0" w:after="480" w:line="324" w:lineRule="auto" />"#
         ));
     }
 
@@ -10089,6 +10193,6 @@ mod tests {
         assert!(normalized.contains("<w:widowControl />"));
         assert!(normalized.contains(r#"<w:outlineLvl w:val="0" />"#));
         assert!(normalized.contains(r#"<w:jc w:val="left" />"#));
-        assert!(normalized.contains(r#"w:lineRule="exact""#));
+        assert!(normalized.contains(r#"w:line="360" w:lineRule="auto""#));
     }
 }
