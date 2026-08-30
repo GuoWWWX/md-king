@@ -32,6 +32,7 @@
     "targets": "all",
     "resources": {
       "resources/pandoc/windows/pandoc.exe": "pandoc/windows/pandoc.exe",
+      "resources/mermaid/mermaid.min.js": "mermaid/mermaid.min.js",
       "resources/templates/default-report/reference.docx": "templates/default-report/reference.docx"
     },
     "icon": [

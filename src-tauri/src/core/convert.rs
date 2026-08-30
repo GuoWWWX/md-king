@@ -13,6 +13,9 @@ use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
 use crate::core::config::load_config;
+use crate::core::mermaid::{
+    cleanup_mermaid_paths, preprocess_mermaid_for_word, MermaidPreprocessResult,
+};
 use crate::core::pandoc::{
     check_pandoc_available, check_pandoc_available_cli, run_pandoc_to_docx, run_pandoc_to_docx_cli,
     PandocDocumentOptions, PandocExecution, PandocStatus,
@@ -420,8 +423,8 @@ fn convert_existing_file(
         );
     }
 
-    let (pandoc_input_path, temp_preprocessed_input) =
-        match prepare_markdown_file_for_pandoc(&input_path) {
+    let prepared_input =
+        match prepare_markdown_file_for_pandoc_for_runtime(runtime, &input_path) {
             Ok(value) => value,
             Err(error) => {
                 return failure_result(
@@ -434,21 +437,23 @@ fn convert_existing_file(
                 )
             }
         };
+    warnings.extend(prepared_input.warnings.iter().cloned());
 
     let mut pandoc_options = pandoc_document_options(&request);
     pandoc_options.resource_path = input_path.parent().map(Path::to_path_buf);
 
     let conversion = run_pandoc_to_docx_for(
         runtime,
-        &pandoc_input_path,
+        &prepared_input.path,
         &staged_output_path,
         template_resolution.reference_docx_path.as_deref(),
         &pandoc_options,
     );
 
-    if let Some(path) = temp_preprocessed_input {
+    if let Some(path) = prepared_input.temporary {
         let _ = fs::remove_file(path);
     }
+    cleanup_mermaid_paths(&prepared_input.mermaid_cleanup_paths);
 
     match conversion {
         Ok(execution) if execution.success => {
@@ -634,8 +639,11 @@ fn convert_text_input(
         }
     }
 
-    let prepared_input = preprocess_markdown_for_word(&request.input);
+    let mermaid = preprocess_mermaid_for_runtime(runtime, &request.input);
+    warnings.extend(mermaid.warnings.iter().cloned());
+    let prepared_input = preprocess_markdown_for_word(&mermaid.markdown);
     if let Err(error) = fs::write(&temp_input_path, prepared_input.as_bytes()) {
+        cleanup_mermaid_paths(&mermaid.cleanup_paths);
         return failure_result(
             request,
             output_string,
@@ -655,13 +663,16 @@ fn convert_text_input(
         .and_then(|path| path.parent().map(Path::to_path_buf))
         .or_else(|| output_path.parent().map(Path::to_path_buf));
 
-    match run_pandoc_to_docx_for(
+    let conversion = run_pandoc_to_docx_for(
         runtime,
         &temp_input_path,
         &staged_output_path,
         template_resolution.reference_docx_path.as_deref(),
         &pandoc_options,
-    ) {
+    );
+    cleanup_mermaid_paths(&mermaid.cleanup_paths);
+
+    match conversion {
         Ok(execution) if execution.success => {
             let _ = fs::remove_file(&temp_input_path);
             append_pandoc_success_messages(&execution, &mut warnings);
@@ -2028,6 +2039,42 @@ fn heading_numbering_config_from_value(config: &Value) -> Option<HeadingNumberin
         .then_some(HeadingNumberingConfig { formats, mappings })
 }
 
+fn mermaid_runtime_path(runtime: ConvertRuntime<'_>) -> Option<PathBuf> {
+    const RESOURCE_PATH: &str = "mermaid/mermaid.min.js";
+    match runtime {
+        ConvertRuntime::Tauri(app) => app
+            .path()
+            .resolve(RESOURCE_PATH, BaseDirectory::Resource)
+            .ok()
+            .filter(|path| path.is_file())
+            .or_else(|| built_in_reference_docx_path_for_cli_resource(RESOURCE_PATH)),
+        ConvertRuntime::Cli => built_in_reference_docx_path_for_cli_resource(RESOURCE_PATH),
+    }
+}
+
+fn preprocess_mermaid_for_runtime(
+    runtime: ConvertRuntime<'_>,
+    markdown: &str,
+) -> MermaidPreprocessResult {
+    let mut result = preprocess_mermaid_for_word(
+        markdown,
+        mermaid_runtime_path(runtime).as_deref(),
+        4,
+    );
+    if result.rendered > 0 {
+        result
+            .warnings
+            .push(format!("已将 {} 个 Mermaid 代码块渲染为高清图片。", result.rendered));
+    }
+    if result.failed > 0 {
+        result.warnings.push(format!(
+            "{} 个 Mermaid 代码块未能渲染，已保留对应源码。",
+            result.failed
+        ));
+    }
+    result
+}
+
 fn default_heading_number_format(level: usize) -> &'static str {
     match level.clamp(1, 6) {
         1 => "1",
@@ -2294,6 +2341,7 @@ fn commit_staged_output(staged_path: &Path, output_path: &Path) -> Result<Option
     }
 }
 
+#[cfg(test)]
 fn prepare_markdown_file_for_pandoc(
     input_path: &Path,
 ) -> Result<(PathBuf, Option<PathBuf>), ConvertResultPreparationError> {
@@ -2323,6 +2371,55 @@ fn prepare_markdown_file_for_pandoc(
 }
 
 struct ConvertResultPreparationError(String);
+
+struct PreparedMarkdownFile {
+    path: PathBuf,
+    temporary: Option<PathBuf>,
+    mermaid_cleanup_paths: Vec<PathBuf>,
+    warnings: Vec<String>,
+}
+
+fn prepare_markdown_file_for_pandoc_for_runtime(
+    runtime: ConvertRuntime<'_>,
+    input_path: &Path,
+) -> Result<PreparedMarkdownFile, ConvertResultPreparationError> {
+    let original = fs::read_to_string(input_path).map_err(|error| {
+        ConvertResultPreparationError(format!("读取 Markdown/TXT 文件失败：{error}"))
+    })?;
+    let mermaid = preprocess_mermaid_for_runtime(runtime, &original);
+    let prepared = preprocess_markdown_for_word(&mermaid.markdown);
+    let is_text_file = input_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"));
+    if prepared == original && !is_text_file {
+        return Ok(PreparedMarkdownFile {
+            path: input_path.to_path_buf(),
+            temporary: None,
+            mermaid_cleanup_paths: mermaid.cleanup_paths,
+            warnings: mermaid.warnings,
+        });
+    }
+
+    let temp_input_path = make_sibling_temp_path(input_path, "input-prepared", "md");
+    if let Some(parent) = temp_input_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            cleanup_mermaid_paths(&mermaid.cleanup_paths);
+            ConvertResultPreparationError(format!("创建临时 Markdown 目录失败：{error}"))
+        })?;
+    }
+    fs::write(&temp_input_path, prepared.as_bytes()).map_err(|error| {
+        cleanup_mermaid_paths(&mermaid.cleanup_paths);
+        ConvertResultPreparationError(format!("写入临时 Markdown 文件失败：{error}"))
+    })?;
+
+    Ok(PreparedMarkdownFile {
+        path: temp_input_path.clone(),
+        temporary: Some(temp_input_path),
+        mermaid_cleanup_paths: mermaid.cleanup_paths,
+        warnings: mermaid.warnings,
+    })
+}
 
 fn preprocess_markdown_for_word(markdown: &str) -> String {
     let mut output = Vec::new();
@@ -3448,6 +3545,10 @@ fn normalize_document_images(
     } else {
         u64::from(content_width_twips) * 635
     };
+    let content_height_twips = page_settings
+        .map(page_content_height_twips)
+        .unwrap_or_else(|| default_content_height_twips());
+    let target_height_emu = u64::from(content_height_twips) * 635;
     let align = image_style
         .map(|style| word_alignment_value(&style.align))
         .unwrap_or("center");
@@ -3463,14 +3564,18 @@ fn normalize_document_images(
             let paragraph = if width_mode == "original" {
                 paragraph.to_string()
             } else {
-                normalize_image_drawings(paragraph, target_width_emu)
+                normalize_image_drawings(paragraph, target_width_emu, target_height_emu)
             };
             ensure_image_paragraph_aligned(&paragraph, align)
         })
         .to_string()
 }
 
-fn normalize_image_drawings(xml: &str, target_width_emu: u64) -> String {
+fn normalize_image_drawings(
+    xml: &str,
+    target_width_emu: u64,
+    target_height_emu: u64,
+) -> String {
     let drawing_re =
         Regex::new(r#"(?s)<w:drawing\b[^>]*>.*?</w:drawing>"#).expect("valid drawing regex");
 
@@ -3483,8 +3588,17 @@ fn normalize_image_drawings(xml: &str, target_width_emu: u64) -> String {
 
             let (current_width, current_height) =
                 drawing_extent(drawing).unwrap_or((target_width_emu, target_width_emu));
-            let target_height = scale_dimension(current_height, target_width_emu, current_width);
-            replace_drawing_extents(drawing, target_width_emu, target_height)
+            let width_limited_height =
+                scale_dimension(current_height, target_width_emu, current_width);
+            let (fitted_width, fitted_height) = if width_limited_height > target_height_emu {
+                (
+                    scale_dimension(current_width, target_height_emu, current_height),
+                    target_height_emu,
+                )
+            } else {
+                (target_width_emu, width_limited_height)
+            };
+            replace_drawing_extents(drawing, fitted_width, fitted_height)
         })
         .to_string()
 }
@@ -3601,11 +3715,34 @@ fn page_content_width_twips(page_settings: &PageSettingsConfig) -> u32 {
         .max(1)
 }
 
+fn page_content_height_twips(page_settings: &PageSettingsConfig) -> u32 {
+    let (mut width, mut height) = paper_size_twips(&page_settings.paper_size);
+    if page_settings
+        .orientation
+        .trim()
+        .eq_ignore_ascii_case("landscape")
+    {
+        std::mem::swap(&mut width, &mut height);
+    }
+    height
+        .saturating_sub(cm_to_twips(page_settings.margin_top))
+        .saturating_sub(cm_to_twips(page_settings.margin_bottom))
+        .max(1)
+}
+
 fn default_content_width_twips() -> u32 {
     let (width, _) = paper_size_twips("A4");
     width
         .saturating_sub(cm_to_twips(3.18))
         .saturating_sub(cm_to_twips(3.18))
+        .max(1)
+}
+
+fn default_content_height_twips() -> u32 {
+    let (_, height) = paper_size_twips("A4");
+    height
+        .saturating_sub(cm_to_twips(2.54))
+        .saturating_sub(cm_to_twips(2.54))
         .max(1)
 }
 
@@ -7019,10 +7156,11 @@ mod tests {
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         normalize_default_report_styles_xml, normalize_document_captions,
-        normalize_document_images, normalize_document_xml, normalize_docx, normalize_emoji_runs,
+        normalize_document_images, normalize_document_xml, normalize_docx,
+        normalize_emoji_runs, normalize_image_drawings,
         normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
         mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
-        page_content_width_twips, page_settings_config_from_value,
+        page_content_height_twips, page_content_width_twips, page_settings_config_from_value,
         pandoc_document_options_from_value, paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
         read_style_fill, table_column_widths,
@@ -7276,6 +7414,34 @@ mod tests {
         )));
         assert!(output.contains(&format!(
             r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
+        )));
+    }
+
+    #[test]
+    fn scales_tall_images_to_page_content_height_without_cropping() {
+        let page_settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A4",
+                "orientation": "portrait",
+                "marginTop": 2.54,
+                "marginBottom": 2.54,
+                "marginLeft": 3.18,
+                "marginRight": 3.18
+            }
+        }))
+        .expect("page settings should parse");
+        let max_width = u64::from(page_content_width_twips(&page_settings)) * 635;
+        let max_height = u64::from(page_content_height_twips(&page_settings)) * 635;
+        let input = r#"<w:drawing><wp:inline><wp:extent cx="1000" cy="4000"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="4000"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>"#;
+
+        let output = normalize_image_drawings(input, max_width, max_height);
+        let expected_width = max_height / 4;
+
+        assert!(output.contains(&format!(
+            r#"<wp:extent cx="{expected_width}" cy="{max_height}"/>"#
+        )));
+        assert!(output.contains(&format!(
+            r#"<a:ext cx="{expected_width}" cy="{max_height}"/>"#
         )));
     }
 
