@@ -1002,9 +1002,10 @@ fn success_result(
     template_sha256: Option<String>,
     statistics: ConversionStatistics,
 ) -> ConvertResult {
-    let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
-    warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
-    let toc_enabled = page_settings_config(&request).is_some_and(|settings| settings.toc_enabled);
+    let mut diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    diagnostics.extend(runtime_diagnostics_from_warnings(&warnings));
+    let page_settings = page_settings_config(&request);
+    let toc_enabled = page_settings.as_ref().is_some_and(|settings| settings.toc_enabled);
     let requested_field_update = FieldUpdateProvider::from_request(&request);
     let mut field_update_status = if toc_enabled {
         "pendingOnOpen"
@@ -1028,9 +1029,15 @@ fn success_result(
             }
             Err(error) => {
                 field_update_status = "failed".to_string();
-                warnings.push(format!(
+                let message = format!(
                     "{} 域更新失败，已保留更新前的有效 DOCX：{error}",
                     provider.label()
+                );
+                warnings.push(message.clone());
+                diagnostics.push(diagnostic_without_line(
+                    "FIELD_UPDATE_FAILED",
+                    "error",
+                    message,
                 ));
             }
         }
@@ -1039,6 +1046,17 @@ fn success_result(
             "已设置首次打开 DOCX 时自动更新目录、页码和交叉引用；当前状态为等待 WPS/Word 更新。"
                 .to_string(),
         );
+    }
+
+    diagnostics.extend(validate_export_structure(
+        &output_path,
+        page_settings.as_ref(),
+        request_expects_cover(&request, output.as_deref()),
+    ));
+    for diagnostic in &diagnostics {
+        if !warnings.contains(&diagnostic.message) {
+            warnings.push(diagnostic.message.clone());
+        }
     }
 
     if request.open_after_convert.unwrap_or(false) {
@@ -1073,12 +1091,17 @@ fn failure_result(
     error_code: &str,
     message: &str,
 ) -> ConvertResult {
-    let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    let mut diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    diagnostics.extend(runtime_diagnostics_from_warnings(&warnings));
     let statistics = markdown_source_and_resource_root(&request, output.as_deref())
         .map(|(markdown, _)| conversion_statistics(&markdown, None))
         .unwrap_or_default();
     let mut warnings = warnings;
-    warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
+    for diagnostic in &diagnostics {
+        if !warnings.contains(&diagnostic.message) {
+            warnings.push(diagnostic.message.clone());
+        }
+    }
     ConvertResult {
         ok: false,
         input: request.input,
@@ -1104,6 +1127,129 @@ fn append_pandoc_success_messages(execution: &PandocExecution, warnings: &mut Ve
             warnings.push(format!("Pandoc：{detail}"));
         }
     }
+}
+
+fn runtime_diagnostics_from_warnings(warnings: &[String]) -> Vec<ConversionDiagnostic> {
+    warnings
+        .iter()
+        .filter_map(|warning| {
+            if warning.starts_with("Mermaid 第")
+                && (warning.contains("渲染失败") || warning.contains("未渲染"))
+            {
+                Some(diagnostic_without_line(
+                    "MERMAID_RENDER_FAILED",
+                    "error",
+                    warning.clone(),
+                ))
+            } else if warning.starts_with("Mermaid 第") && warning.contains("回退为高清 PNG") {
+                Some(diagnostic_without_line(
+                    "MERMAID_SVG_FALLBACK",
+                    "warning",
+                    warning.clone(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn request_expects_cover(request: &ConvertRequest, output: Option<&str>) -> bool {
+    let Some((markdown, _)) = markdown_source_and_resource_root(request, output) else {
+        return false;
+    };
+    let mappings = heading_mappings_for_request(request);
+    markdown.lines().any(|line| {
+        parse_atx_heading(line)
+            .is_some_and(|(level, _, _)| mappings[level - 1] == HeadingTarget::Title)
+    })
+}
+
+fn validate_export_structure(
+    path: &Path,
+    page_settings: Option<&PageSettingsConfig>,
+    expects_cover: bool,
+) -> Vec<ConversionDiagnostic> {
+    let Some(page_settings) = page_settings else {
+        return Vec::new();
+    };
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) => {
+            return vec![diagnostic_without_line(
+                "DOCX_STRUCTURE_INSPECTION_FAILED",
+                "error",
+                format!("无法检查导出 DOCX 的分节结构：{error}"),
+            )]
+        }
+    };
+    let mut archive = match ZipArchive::new(file) {
+        Ok(archive) => archive,
+        Err(error) => {
+            return vec![diagnostic_without_line(
+                "DOCX_STRUCTURE_INSPECTION_FAILED",
+                "error",
+                format!("无法解析导出 DOCX 的分节结构：{error}"),
+            )]
+        }
+    };
+    let mut xml = String::new();
+    let mut document = match archive.by_name("word/document.xml") {
+        Ok(document) => document,
+        Err(error) => {
+            return vec![diagnostic_without_line(
+                "DOCX_STRUCTURE_INSPECTION_FAILED",
+                "error",
+                format!("无法读取导出 DOCX 的 document.xml：{error}"),
+            )]
+        }
+    };
+    if let Err(error) = document.read_to_string(&mut xml) {
+        return vec![diagnostic_without_line(
+            "DOCX_STRUCTURE_INSPECTION_FAILED",
+            "error",
+            format!("无法读取导出 DOCX 的 document.xml：{error}"),
+        )];
+    }
+
+    let section = Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#)
+        .expect("valid exported section regex");
+    let sections = section.find_iter(&xml).collect::<Vec<_>>();
+    let mut diagnostics = Vec::new();
+    if page_settings.toc_enabled {
+        let expected = if expects_cover { 3 } else { 2 };
+        if sections.len() < expected {
+            diagnostics.push(diagnostic_without_line(
+                "SECTION_STRUCTURE_MISSING",
+                "error",
+                format!(
+                    "导出 DOCX 只有 {} 个节，预期至少 {expected} 个节以分隔封面、目录和正文。",
+                    sections.len()
+                ),
+            ));
+        }
+    }
+    if let Some(body_section) = sections.last() {
+        let expected = page_settings.footer_start_page.max(1);
+        let page_start = Regex::new(r#"<w:pgNumType\b[^>]*w:start="(\d+)"[^>]*/>"#)
+            .expect("valid exported page start regex")
+            .captures(body_section.as_str())
+            .and_then(|captures| captures.get(1))
+            .and_then(|value| value.as_str().parse::<u32>().ok());
+        if page_start != Some(expected) {
+            diagnostics.push(diagnostic_without_line(
+                "BODY_PAGE_START_MISMATCH",
+                "error",
+                format!(
+                    "正文节页码起始值应为 {expected}，实际为 {}。",
+                    page_start
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "未设置".to_string())
+                ),
+            ));
+        }
+    }
+    diagnostics
 }
 
 fn markdown_source_and_resource_root(
@@ -1152,12 +1298,32 @@ fn collect_conversion_diagnostics(
     };
 
     let mut diagnostics = detect_heading_level_jumps(&markdown);
+    if requested_heading_numbering_mode(request) == HeadingNumberingMode::Word
+        && markdown_uses_manual_heading_numbering(&markdown, &heading_mappings_for_request(request))
+    {
+        let line = first_manually_numbered_heading_line(&markdown).unwrap_or(1);
+        diagnostics.push(diagnostic(
+            "HEADING_NUMBERING_CONFLICT",
+            format!(
+                "第 {line} 行起的标题已包含手工编号，同时请求了 Word 自动编号；导出时会移除源码编号以避免重复。"
+            ),
+            line,
+        ));
+    }
     diagnostics.extend(detect_missing_local_images(
         &markdown,
         resource_root.as_deref(),
     ));
     diagnostics.extend(detect_wide_markdown_tables(&markdown));
+    diagnostics.extend(detect_adjacent_image_caption_diagnostics(&markdown));
     diagnostics
+}
+
+fn first_manually_numbered_heading_line(markdown: &str) -> Option<usize> {
+    markdown.lines().enumerate().find_map(|(index, line)| {
+        let (_, _, content) = parse_atx_heading(line)?;
+        split_manual_heading_number(heading_visible_text(content)).map(|_| index + 1)
+    })
 }
 
 fn conversion_statistics(
@@ -1278,6 +1444,15 @@ fn diagnostic(code: &str, message: String, line: usize) -> ConversionDiagnostic 
         severity: "warning".to_string(),
         message,
         line: Some(line),
+    }
+}
+
+fn diagnostic_without_line(code: &str, severity: &str, message: String) -> ConversionDiagnostic {
+    ConversionDiagnostic {
+        code: code.to_string(),
+        severity: severity.to_string(),
+        message,
+        line: None,
     }
 }
 
@@ -4748,6 +4923,17 @@ fn is_image_caption_paragraph(paragraph_xml: &str) -> bool {
 }
 
 fn detect_adjacent_image_caption_warnings(markdown: &str) -> Vec<String> {
+    let conflicts = detect_adjacent_image_caption_diagnostics(markdown).len();
+    if conflicts == 0 {
+        Vec::new()
+    } else {
+        vec![format!(
+            "检测到 {conflicts} 处非空图片说明与相邻显式图题；导出时仅保留显式图题，图片说明继续写入辅助说明属性。"
+        )]
+    }
+}
+
+fn detect_adjacent_image_caption_diagnostics(markdown: &str) -> Vec<ConversionDiagnostic> {
     let image = Regex::new(r#"^\s*!\[([^\]]+)\]\([^)]*\)(?:\{[^}]*\})?\s*$"#)
         .expect("valid markdown image regex");
     let explicit_caption = Regex::new(
@@ -4756,7 +4942,7 @@ fn detect_adjacent_image_caption_warnings(markdown: &str) -> Vec<String> {
     .expect("valid image caption marker regex");
     let lines = markdown.lines().collect::<Vec<_>>();
     let mut fence: Option<(char, usize)> = None;
-    let mut conflicts = 0usize;
+    let mut diagnostics = Vec::new();
 
     for (index, line) in lines.iter().enumerate() {
         if let Some((marker, length)) = fence {
@@ -4785,17 +4971,17 @@ fn detect_adjacent_image_caption_warnings(markdown: &str) -> Vec<String> {
             next += 1;
         }
         if next < lines.len() && explicit_caption.is_match(lines[next].trim()) {
-            conflicts += 1;
+            diagnostics.push(diagnostic(
+                "DUPLICATE_IMAGE_CAPTION",
+                format!(
+                    "第 {} 行图片同时包含非空说明和相邻显式图题；导出时只显示显式图题。",
+                    index + 1
+                ),
+                index + 1,
+            ));
         }
     }
-
-    if conflicts == 0 {
-        Vec::new()
-    } else {
-        vec![format!(
-            "检测到 {conflicts} 处非空图片说明与相邻显式图题；导出时仅保留显式图题，图片说明继续写入辅助说明属性。"
-        )]
-    }
+    diagnostics
 }
 
 fn image_description(paragraph_xml: &str) -> Option<String> {
@@ -8714,11 +8900,13 @@ mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
-        configure_picture_compression, conversion_statistics, convert_markdown_cli,
+        collect_conversion_diagnostics, configure_picture_compression, conversion_statistics,
+        convert_markdown_cli,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_table_style_config,
         default_page_settings_config, default_report_heading_numbering_config,
-        detect_adjacent_image_caption_warnings, detect_heading_level_jumps,
+        detect_adjacent_image_caption_diagnostics, detect_adjacent_image_caption_warnings,
+        detect_heading_level_jumps,
         detect_missing_local_images, detect_wide_markdown_tables, document_style_config_from_value,
         ensure_no_picture_compression, ensure_toc_fields_update_on_open, footer_page_number_xml,
         has_supported_text_extension,
@@ -8742,7 +8930,8 @@ mod tests {
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         validate_docx_package, validate_xml_part, HeadingNumberingMode, HeadingTarget,
-        validate_updated_field_results, FieldUpdateProvider, MarkdownFeatureConfig,
+        runtime_diagnostics_from_warnings, validate_updated_field_results, FieldUpdateProvider,
+        MarkdownFeatureConfig,
         MermaidPreprocessResult, TocPageNumber,
         MERMAID_WIDTH_TITLE_PREFIX, UNNUMBERED_HEADING_MARKER,
     };
@@ -8866,6 +9055,61 @@ mod tests {
         assert_eq!(diagnostics[0].code, "HEADING_LEVEL_JUMP");
         assert_eq!(diagnostics[0].line, Some(2));
         assert_eq!(diagnostics[1].line, Some(7));
+    }
+
+    #[test]
+    fn reports_manual_heading_numbers_when_word_numbering_is_forced() {
+        let request = ConvertRequest {
+            input: "# 报告\n\n## 1 概述\n\n### 1.1 背景\n\n### 1.2 目标".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: None,
+            output: None,
+            template_id: Some("default-report".to_string()),
+            open_after_convert: Some(false),
+            overwrite: Some(false),
+            conflict_strategy: None,
+            heading_numbering: Some("word".to_string()),
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
+            lint_only: Some(true),
+            strict: Some(false),
+        };
+
+        let diagnostics = collect_conversion_diagnostics(&request, None);
+
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.code == "HEADING_NUMBERING_CONFLICT" && item.line == Some(3)));
+    }
+
+    #[test]
+    fn reports_each_duplicate_image_caption_with_its_line() {
+        let markdown = "![网络图](network.png)\n\n::: {custom-style=\"Image Caption\"}\n**图1 网络图**\n:::";
+
+        let diagnostics = detect_adjacent_image_caption_diagnostics(markdown);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "DUPLICATE_IMAGE_CAPTION");
+        assert_eq!(diagnostics[0].line, Some(1));
+    }
+
+    #[test]
+    fn promotes_mermaid_runtime_failure_to_structured_diagnostic() {
+        let diagnostics = runtime_diagnostics_from_warnings(&[
+            "Mermaid 第 2 个代码块渲染失败：syntax error".to_string(),
+        ]);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "MERMAID_RENDER_FAILED");
+        assert_eq!(diagnostics[0].severity, "error");
     }
 
     #[test]
