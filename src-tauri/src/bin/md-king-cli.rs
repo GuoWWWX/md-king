@@ -61,6 +61,22 @@ enum Commands {
             value_parser = ["none", "wps", "word"]
         )]
         update_fields: String,
+
+        /// Maximum heading depth included in the table of contents.
+        #[arg(long = "toc-depth", value_parser = clap::value_parser!(u8).range(1..=6))]
+        toc_depth: Option<u8>,
+
+        /// TOC placement, or disable it completely.
+        #[arg(long = "toc-position", value_parser = ["after-cover", "before-body", "none"])]
+        toc_position: Option<String>,
+
+        /// First Arabic page number of the body section.
+        #[arg(long = "body-page-start", value_parser = clap::value_parser!(u32).range(1..))]
+        body_page_start: Option<u32>,
+
+        /// Page numbering for cover and TOC sections.
+        #[arg(long = "front-page-number", value_parser = ["none", "roman"])]
+        front_page_number: Option<String>,
     },
 
     /// Manage and inspect Word/WPS templates.
@@ -105,6 +121,10 @@ fn main() {
             json,
             heading_numbering,
             update_fields,
+            toc_depth,
+            toc_position,
+            body_page_start,
+            front_page_number,
         } => run_convert(
             input,
             output,
@@ -114,6 +134,10 @@ fn main() {
             json,
             heading_numbering,
             update_fields,
+            toc_depth,
+            toc_position,
+            body_page_start,
+            front_page_number,
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
@@ -133,6 +157,10 @@ fn run_convert(
     json: bool,
     heading_numbering: String,
     update_fields: String,
+    toc_depth: Option<u8>,
+    toc_position: Option<String>,
+    body_page_start: Option<u32>,
+    front_page_number: Option<String>,
 ) -> i32 {
     let template_id = match resolve_template_id(template_selector) {
         Ok(template_id) => template_id,
@@ -162,6 +190,10 @@ fn run_convert(
         heading_numbering: Some(heading_numbering),
         toc_page_numbers: None,
         update_fields: Some(update_fields),
+        toc_depth,
+        toc_position,
+        body_page_start,
+        front_page_number,
     });
 
     if json {

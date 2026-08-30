@@ -61,6 +61,14 @@ pub struct ConvertRequest {
     pub toc_page_numbers: Option<Vec<TocPageNumber>>,
     #[serde(default)]
     pub update_fields: Option<String>,
+    #[serde(default)]
+    pub toc_depth: Option<u8>,
+    #[serde(default)]
+    pub toc_position: Option<String>,
+    #[serde(default)]
+    pub body_page_start: Option<u32>,
+    #[serde(default)]
+    pub front_page_number: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -173,6 +181,8 @@ struct PageSettingsConfig {
     toc_title_align: String,
     toc_title_before_spacing: f64,
     toc_title_after_spacing: f64,
+    toc_position: String,
+    front_page_number: String,
 }
 
 #[derive(Clone)]
@@ -1757,46 +1767,88 @@ fn markdown_feature_config(request: &ConvertRequest) -> MarkdownFeatureConfig {
 }
 
 fn pandoc_document_options(request: &ConvertRequest) -> PandocDocumentOptions {
-    let Some(template_id) = request.template_id.as_deref().map(str::trim) else {
-        return PandocDocumentOptions::default();
-    };
-    if template_id.is_empty() {
-        return PandocDocumentOptions::default();
-    }
-
-    get_template_style_config(template_id.to_string())
-        .ok()
-        .flatten()
-        .map(|config| pandoc_document_options_from_value(&config))
-        .unwrap_or_else(|| {
-            if is_built_in_template_id(template_id) {
-                PandocDocumentOptions {
-                    toc: true,
-                    toc_depth: Some(3),
-                    resource_path: None,
+    let template_id = request.template_id.as_deref().map(str::trim).unwrap_or("");
+    let mut options = if template_id.is_empty() {
+        PandocDocumentOptions::default()
+    } else {
+        get_template_style_config(template_id.to_string())
+            .ok()
+            .flatten()
+            .map(|config| pandoc_document_options_from_value(&config))
+            .unwrap_or_else(|| {
+                if is_built_in_template_id(template_id) {
+                    PandocDocumentOptions {
+                        toc: true,
+                        toc_depth: Some(3),
+                        resource_path: None,
+                    }
+                } else {
+                    PandocDocumentOptions::default()
                 }
-            } else {
-                PandocDocumentOptions::default()
-            }
-        })
+            })
+    };
+    if let Some(depth) = request.toc_depth.filter(|depth| (1..=6).contains(depth)) {
+        options.toc = true;
+        options.toc_depth = Some(depth);
+    }
+    if request
+        .toc_position
+        .as_deref()
+        .is_some_and(|position| position.trim().eq_ignore_ascii_case("none"))
+    {
+        options.toc = false;
+    }
+    options
 }
 
 fn page_settings_config(request: &ConvertRequest) -> Option<PageSettingsConfig> {
-    let template_id = request.template_id.as_deref().map(str::trim)?;
-    if template_id.is_empty() {
-        return None;
+    let template_id = request.template_id.as_deref().map(str::trim).unwrap_or("");
+    let mut settings = if template_id.is_empty() {
+        None
+    } else {
+        get_template_style_config(template_id.to_string())
+            .ok()
+            .flatten()
+            .and_then(|mut config| {
+                if template_id == "default-report" {
+                    migrate_default_report_style_baseline(&mut config);
+                }
+                page_settings_config_from_value(&config)
+            })
+            .or_else(|| is_built_in_template_id(template_id).then(default_page_settings_config))
+    };
+    if settings.is_none()
+        && (request.toc_depth.is_some()
+            || request.toc_position.is_some()
+            || request.body_page_start.is_some()
+            || request.front_page_number.is_some())
+    {
+        settings = Some(default_page_settings_config());
     }
-
-    get_template_style_config(template_id.to_string())
-        .ok()
-        .flatten()
-        .and_then(|mut config| {
-            if template_id == "default-report" {
-                migrate_default_report_style_baseline(&mut config);
+    let settings = settings.as_mut()?;
+    if let Some(depth) = request.toc_depth.filter(|depth| (1..=6).contains(depth)) {
+        settings.toc_enabled = true;
+        settings.toc_depth = format!("1-{depth}");
+    }
+    if let Some(position) = request.toc_position.as_deref().map(str::trim) {
+        match position {
+            "none" => settings.toc_enabled = false,
+            "after-cover" | "before-body" => {
+                settings.toc_enabled = true;
+                settings.toc_position = position.to_string();
             }
-            page_settings_config_from_value(&config)
-        })
-        .or_else(|| is_built_in_template_id(template_id).then(default_page_settings_config))
+            _ => {}
+        }
+    }
+    if let Some(start) = request.body_page_start.filter(|start| *start > 0) {
+        settings.footer_start_page = start;
+    }
+    if let Some(format) = request.front_page_number.as_deref().map(str::trim) {
+        if matches!(format, "none" | "roman") {
+            settings.front_page_number = format.to_string();
+        }
+    }
+    Some(settings.clone())
 }
 
 fn default_page_settings_config() -> PageSettingsConfig {
@@ -1827,6 +1879,8 @@ fn default_page_settings_config() -> PageSettingsConfig {
         toc_title_align: "center".to_string(),
         toc_title_before_spacing: 10.0,
         toc_title_after_spacing: 5.0,
+        toc_position: "after-cover".to_string(),
+        front_page_number: "none".to_string(),
     }
 }
 
@@ -2122,6 +2176,16 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
             .to_string(),
         toc_title_before_spacing: read_non_negative_number(settings, "tocTitleBeforeSpacing", 10.0).clamp(0.0, 72.0),
         toc_title_after_spacing: read_non_negative_number(settings, "tocTitleAfterSpacing", 5.0).clamp(0.0, 72.0),
+        toc_position: settings
+            .get("tocPosition")
+            .and_then(Value::as_str)
+            .unwrap_or("after-cover")
+            .to_string(),
+        front_page_number: settings
+            .get("frontPageNumber")
+            .and_then(Value::as_str)
+            .unwrap_or("none")
+            .to_string(),
     })
 }
 
@@ -3928,7 +3992,7 @@ fn normalize_docx(
             }
         } else if name == "word/footer-mdking.xml" {
             if let Some(settings) =
-                header_footer.filter(|settings| page_settings_has_footer(settings))
+                header_footer.filter(|settings| page_settings_needs_footer_part(settings))
             {
                 data = create_footer_xml(settings).into_bytes();
             }
@@ -3992,7 +4056,7 @@ fn normalize_docx(
                 .map_err(|error| format!("写入 header-mdking.xml 内容失败：{error}"))?;
         }
 
-        if page_settings_has_footer(settings) && !has_footer_xml {
+        if page_settings_needs_footer_part(settings) && !has_footer_xml {
             writer
                 .start_file(
                     "word/footer-mdking.xml",
@@ -5599,14 +5663,23 @@ fn normalize_front_section_page_settings(
     page_settings: &PageSettingsConfig,
 ) -> String {
     let normalized = normalize_section_page_settings(section_xml, page_settings);
-    Regex::new(r#"(?s)<w:(?:headerReference|footerReference|pgNumType)\b[^>]*/>"#)
+    let normalized = Regex::new(r#"(?s)<w:(?:headerReference|footerReference|pgNumType)\b[^>]*/>"#)
         .expect("valid front section header footer regex")
         .replace_all(&normalized, "")
-        .to_string()
+        .to_string();
+    if page_settings.front_page_number.trim() != "roman" {
+        return normalized;
+    }
+
+    normalized.replacen(
+        "</w:sectPr>",
+        r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" /><w:pgNumType w:fmt="lowerRoman" w:start="1" /></w:sectPr>"#,
+        1,
+    )
 }
 
 fn page_settings_has_header_footer(page_settings: &PageSettingsConfig) -> bool {
-    page_settings_has_header(page_settings) || page_settings_has_footer(page_settings)
+    page_settings_has_header(page_settings) || page_settings_needs_footer_part(page_settings)
 }
 
 fn page_settings_has_header(page_settings: &PageSettingsConfig) -> bool {
@@ -5617,6 +5690,11 @@ fn page_settings_has_footer(page_settings: &PageSettingsConfig) -> bool {
     page_settings.footer_enabled
         && (!page_settings.footer_text.trim().is_empty()
             || page_settings.footer_page_number_format.trim() != "none")
+}
+
+fn page_settings_needs_footer_part(page_settings: &PageSettingsConfig) -> bool {
+    page_settings_has_footer(page_settings)
+        || page_settings.front_page_number.trim().eq_ignore_ascii_case("roman")
 }
 
 fn section_header_footer_references_xml(page_settings: &PageSettingsConfig) -> String {
@@ -5646,7 +5724,7 @@ fn ensure_header_footer_content_types_xml(xml: &str, page_settings: &PageSetting
             r#"<Override PartName="/word/header-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" /></Types>"#,
         );
     }
-    if page_settings_has_footer(page_settings) && !output.contains("/word/footer-mdking.xml") {
+    if page_settings_needs_footer_part(page_settings) && !output.contains("/word/footer-mdking.xml") {
         output = output.replace(
             "</Types>",
             r#"<Override PartName="/word/footer-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" /></Types>"#,
@@ -5660,7 +5738,7 @@ fn create_header_footer_content_types_xml(page_settings: &PageSettingsConfig) ->
     if page_settings_has_header(page_settings) {
         xml.push_str(r#"<Override PartName="/word/header-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" />"#);
     }
-    if page_settings_has_footer(page_settings) {
+    if page_settings_needs_footer_part(page_settings) {
         xml.push_str(r#"<Override PartName="/word/footer-mdking.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" />"#);
     }
     xml.push_str("</Types>");
@@ -5678,7 +5756,7 @@ fn ensure_header_footer_relationships_xml(xml: &str, page_settings: &PageSetting
             r#"<Relationship Id="rIdMdKingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header-mdking.xml" /></Relationships>"#,
         );
     }
-    if page_settings_has_footer(page_settings)
+    if page_settings_needs_footer_part(page_settings)
         && !output.contains(r#"Id="rIdMdKingFooter""#)
         && !output.contains(r#"Target="footer-mdking.xml""#)
     {
@@ -5695,7 +5773,7 @@ fn create_header_footer_relationships_xml(page_settings: &PageSettingsConfig) ->
     if page_settings_has_header(page_settings) {
         xml.push_str(r#"<Relationship Id="rIdMdKingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header-mdking.xml" />"#);
     }
-    if page_settings_has_footer(page_settings) {
+    if page_settings_needs_footer_part(page_settings) {
         xml.push_str(r#"<Relationship Id="rIdMdKingFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer-mdking.xml" />"#);
     }
     xml.push_str("</Relationships>");
@@ -5711,6 +5789,13 @@ fn create_header_xml(page_settings: &PageSettingsConfig) -> String {
 
 fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
     let text = page_settings.footer_text.trim();
+    let page_number_format = if page_settings.footer_page_number_format.trim() == "none"
+        && page_settings.front_page_number.trim().eq_ignore_ascii_case("roman")
+    {
+        "page"
+    } else {
+        page_settings.footer_page_number_format.trim()
+    };
     let text_xml = if text.is_empty() {
         String::new()
     } else {
@@ -5721,7 +5806,7 @@ fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
         )
     };
     let separator_xml =
-        if !text_xml.is_empty() && page_settings.footer_page_number_format.trim() != "none" {
+        if !text_xml.is_empty() && page_number_format != "none" {
             format!(
                 r#"<w:r><w:rPr>{}</w:rPr><w:t> · </w:t></w:r>"#,
                 footer_run_style_xml()
@@ -5729,7 +5814,7 @@ fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
         } else {
             String::new()
         };
-    let page_number_xml = footer_page_number_xml(&page_settings.footer_page_number_format);
+    let page_number_xml = footer_page_number_xml(page_number_format);
 
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center" /></w:pPr>{text_xml}{separator_xml}{page_number_xml}</w:p></w:ftr>"#
@@ -8503,11 +8588,13 @@ mod tests {
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
         normalize_emoji_runs, normalize_image_drawings,
+        normalize_front_section_page_settings,
         normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
         office_field_update_script,
         mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
         page_content_height_twips, page_content_width_twips, page_settings_config_from_value,
-        pandoc_document_options_from_value, paragraph_shading_xml,
+        page_settings_config, pandoc_document_options, pandoc_document_options_from_value,
+        paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_heading_numbering,
         preprocess_markdown_for_word, read_style_bold_key, read_style_fill,
         table_column_widths,
@@ -8646,6 +8733,65 @@ mod tests {
         assert_eq!(statistics.table_count, 1);
         assert_eq!(statistics.multi_page_table_candidate_count, 1);
         assert_eq!(statistics.table_width_risk_indices, vec![1]);
+    }
+
+    #[test]
+    fn applies_toc_and_section_overrides_from_convert_request() {
+        let request = ConvertRequest {
+            input: "# 标题".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: None,
+            output: None,
+            template_id: None,
+            open_after_convert: Some(false),
+            overwrite: Some(false),
+            conflict_strategy: None,
+            heading_numbering: None,
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: Some(2),
+            toc_position: Some("after-cover".to_string()),
+            body_page_start: Some(3),
+            front_page_number: Some("roman".to_string()),
+        };
+
+        let options = pandoc_document_options(&request);
+        let settings = page_settings_config(&request).expect("overrides create page settings");
+        let front = normalize_front_section_page_settings(
+            r#"<w:sectPr><w:type w:val="nextPage" /></w:sectPr>"#,
+            &settings,
+        );
+
+        assert!(options.toc);
+        assert_eq!(options.toc_depth, Some(2));
+        assert_eq!(settings.toc_depth, "1-2");
+        assert_eq!(settings.footer_start_page, 3);
+        assert!(front.contains(r#"<w:pgNumType w:fmt="lowerRoman" w:start="1" />"#));
+        assert!(front.contains(r#"r:id="rIdMdKingFooter""#));
+    }
+
+    #[test]
+    fn toc_position_none_disables_pandoc_toc() {
+        let request = ConvertRequest {
+            input: "# 标题".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: None,
+            output: None,
+            template_id: Some("default-report".to_string()),
+            open_after_convert: Some(false),
+            overwrite: Some(false),
+            conflict_strategy: None,
+            heading_numbering: None,
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: Some(3),
+            toc_position: Some("none".to_string()),
+            body_page_start: None,
+            front_page_number: None,
+        };
+
+        assert!(!pandoc_document_options(&request).toc);
+        assert!(!page_settings_config(&request).unwrap().toc_enabled);
     }
 
     #[test]
@@ -11105,6 +11251,10 @@ mod tests {
             heading_numbering: None,
             toc_page_numbers: None,
             update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
@@ -11154,6 +11304,10 @@ mod tests {
             heading_numbering: None,
             toc_page_numbers: None,
             update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();

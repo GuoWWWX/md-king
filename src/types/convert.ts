@@ -12,6 +12,10 @@ export type ConvertRequest = {
   headingNumbering?: "auto" | "source" | "word" | "none";
   tocPageNumbers?: Array<{ anchorId: string; page: number }>;
   updateFields?: "none" | "wps" | "word";
+  tocDepth?: 1 | 2 | 3 | 4 | 5 | 6;
+  tocPosition?: "after-cover" | "before-body" | "none";
+  bodyPageStart?: number;
+  frontPageNumber?: "none" | "roman";
 };
 
 export type ConvertResult = {

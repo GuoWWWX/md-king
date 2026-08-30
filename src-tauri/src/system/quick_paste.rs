@@ -118,6 +118,10 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
         heading_numbering: None,
         toc_page_numbers: None,
         update_fields: None,
+        toc_depth: None,
+        toc_position: None,
+        body_page_start: None,
+        front_page_number: None,
     };
     let convert_result = convert_markdown(app, request);
     let _ = fs::remove_file(&input_path);
