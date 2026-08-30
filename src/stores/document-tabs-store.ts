@@ -10,6 +10,10 @@ export type DocumentViewState = {
   scrollTop: number;
   anchor: number;
   head: number;
+  /** 视口顶部对应的文档位置。动态表格、图片重新测高后仍可回到同一段内容。 */
+  scrollAnchor?: number;
+  /** 锚点顶部相对当前滚动位置的偏移，通常为 0 或负值。 */
+  scrollAnchorOffset?: number;
 };
 
 export type DocumentTab = {
@@ -179,16 +183,24 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
   setActiveTab: (activeTabId) => set({ activeTabId }),
 
   setTabViewState: (id, viewState) => set((state) => {
-    const next = {
+    const next: DocumentViewState = {
       scrollTop: Math.max(0, Number.isFinite(viewState.scrollTop) ? viewState.scrollTop : 0),
       anchor: Math.max(0, Number.isFinite(viewState.anchor) ? Math.floor(viewState.anchor) : 0),
       head: Math.max(0, Number.isFinite(viewState.head) ? Math.floor(viewState.head) : 0),
     };
+    if (Number.isFinite(viewState.scrollAnchor)) {
+      next.scrollAnchor = Math.max(0, Math.floor(viewState.scrollAnchor!));
+    }
+    if (Number.isFinite(viewState.scrollAnchorOffset)) {
+      next.scrollAnchorOffset = viewState.scrollAnchorOffset;
+    }
     const current = state.tabs.find((tab) => tab.id === id)?.viewState;
     if (current
       && Math.abs(current.scrollTop - next.scrollTop) < 0.5
       && current.anchor === next.anchor
-      && current.head === next.head) {
+      && current.head === next.head
+      && current.scrollAnchor === next.scrollAnchor
+      && Math.abs((current.scrollAnchorOffset ?? 0) - (next.scrollAnchorOffset ?? 0)) < 0.5) {
       return state;
     }
     return {

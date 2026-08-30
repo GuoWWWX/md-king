@@ -60,6 +60,8 @@ export type LiveMarkdownViewState = {
   scrollTop: number;
   anchor: number;
   head: number;
+  scrollAnchor?: number;
+  scrollAnchorOffset?: number;
 };
 
 export type LiveMarkdownEditorHandle = {
@@ -329,17 +331,23 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   incomingViewStateRef.current = viewState;
   const viewStateTimerRef = useRef<number | undefined>(undefined);
   const restoreScrollFrameRef = useRef<number | undefined>(undefined);
+  const restoreScrollReleaseTimerRef = useRef<number | undefined>(undefined);
+  const restoringDocumentIdRef = useRef<string | undefined>(undefined);
   // 初始内容同理只在创建时读一次，之后的 props 变化不该反向覆盖用户正在编辑的内容。
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
 
   function reportViewState(view: EditorView, targetDocumentId = activeDocumentIdRef.current) {
-    if (!targetDocumentId) return;
+    if (!targetDocumentId || restoringDocumentIdRef.current === targetDocumentId) return;
     const selection = view.state.selection.main;
+    const scrollTop = view.scrollDOM.scrollTop;
+    const scrollBlock = view.lineBlockAtHeight(scrollTop);
     onViewStateChangeRef.current?.(targetDocumentId, {
-      scrollTop: view.scrollDOM.scrollTop,
+      scrollTop,
       anchor: selection.anchor,
       head: selection.head,
+      scrollAnchor: scrollBlock.from,
+      scrollAnchorOffset: scrollBlock.top - scrollTop,
     });
   }
 
@@ -351,19 +359,47 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     }, 120);
   }
 
-  function restoreScrollPosition(view: EditorView, state: LiveMarkdownViewState | undefined) {
+  function restoreScrollPosition(view: EditorView, state: LiveMarkdownViewState | undefined, targetDocumentId = activeDocumentIdRef.current) {
     if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
+    if (restoreScrollReleaseTimerRef.current !== undefined) window.clearTimeout(restoreScrollReleaseTimerRef.current);
+    restoringDocumentIdRef.current = targetDocumentId;
+    if (viewStateTimerRef.current !== undefined) {
+      window.clearTimeout(viewStateTimerRef.current);
+      viewStateTimerRef.current = undefined;
+    }
     const scrollTop = Math.max(0, state?.scrollTop ?? 0);
+    const scrollAnchor = state?.scrollAnchor === undefined
+      ? undefined
+      : Math.min(Math.max(0, state.scrollAnchor), view.state.doc.length);
+    const scrollAnchorOffset = Number.isFinite(state?.scrollAnchorOffset)
+      ? state!.scrollAnchorOffset!
+      : 0;
     const apply = () => {
       if (viewRef.current !== view) return;
-      view.requestMeasure();
-      view.scrollDOM.scrollTop = Math.min(scrollTop, Math.max(0, view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight));
+      view.requestMeasure({
+        read(currentView) {
+          const anchoredTop = scrollAnchor === undefined
+            ? scrollTop
+            : currentView.lineBlockAt(scrollAnchor).top - scrollAnchorOffset;
+          return Math.min(
+            Math.max(0, anchoredTop),
+            Math.max(0, currentView.scrollDOM.scrollHeight - currentView.scrollDOM.clientHeight),
+          );
+        },
+        write(nextScrollTop, currentView) {
+          if (viewRef.current === currentView) currentView.scrollDOM.scrollTop = nextScrollTop;
+        },
+      });
     };
     restoreScrollFrameRef.current = window.requestAnimationFrame(() => {
       apply();
       restoreScrollFrameRef.current = window.requestAnimationFrame(() => {
         restoreScrollFrameRef.current = undefined;
         apply();
+        restoreScrollReleaseTimerRef.current = window.setTimeout(() => {
+          restoreScrollReleaseTimerRef.current = undefined;
+          if (restoringDocumentIdRef.current === targetDocumentId) restoringDocumentIdRef.current = undefined;
+        }, 160);
       });
     });
   }
@@ -623,6 +659,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       if (viewStateTimerRef.current !== undefined) window.clearTimeout(viewStateTimerRef.current);
       if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
+      if (restoreScrollReleaseTimerRef.current !== undefined) window.clearTimeout(restoreScrollReleaseTimerRef.current);
       view.scrollDOM.removeEventListener("scroll", handleEditorScroll);
       host.removeEventListener(tableContextChangeEvent, handleTableContextChange);
       document.removeEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
@@ -712,7 +749,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
           resetCalloutCollapsedEffect.of(undefined),
         ],
       });
-      restoreScrollPosition(view, nextViewState);
+      restoreScrollPosition(view, nextViewState, documentId);
       reportTableContext(null);
       return;
     }
@@ -729,7 +766,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 这里不清历史是刻意的：CM 的 history 会把整段替换当成一步，Ctrl+Z 能整体回退，
       // 由上层的自动保存/冲突流程决定是否需要更强的隔离。
     });
-    restoreScrollPosition(view, nextViewState);
+    restoreScrollPosition(view, nextViewState, documentId);
     reportTableContext(null);
   }, [documentId, documentKey]);
 

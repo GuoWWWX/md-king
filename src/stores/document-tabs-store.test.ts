@@ -193,11 +193,11 @@ test("每个标签分别保存滚动位置和光标位置", () => {
     const firstId = useDocumentTabsStore.getState().openScratchTab({ title: "第一份", content: "第一份正文" });
     const secondId = useDocumentTabsStore.getState().openScratchTab({ title: "第二份", content: "第二份正文" });
 
-    useDocumentTabsStore.getState().setTabViewState(firstId, { scrollTop: 480.25, anchor: 4, head: 7 });
+    useDocumentTabsStore.getState().setTabViewState(firstId, { scrollTop: 480.25, anchor: 4, head: 7, scrollAnchor: 3, scrollAnchorOffset: -12.5 });
     useDocumentTabsStore.getState().setTabViewState(secondId, { scrollTop: 920, anchor: 2, head: 2 });
 
     const [first, second] = useDocumentTabsStore.getState().tabs;
-    assert.deepEqual(first?.viewState, { scrollTop: 480.25, anchor: 4, head: 7 });
+    assert.deepEqual(first?.viewState, { scrollTop: 480.25, anchor: 4, head: 7, scrollAnchor: 3, scrollAnchorOffset: -12.5 });
     assert.deepEqual(second?.viewState, { scrollTop: 920, anchor: 2, head: 2 });
   } finally {
     resetTabs();

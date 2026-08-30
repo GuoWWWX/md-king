@@ -50,11 +50,18 @@ function finiteNonNegative(value: unknown, integer = false) {
 function normalizeViewState(value: unknown): DocumentViewState | undefined {
   if (!value || typeof value !== "object") return undefined;
   const viewState = value as Partial<DocumentViewState>;
-  return {
+  const normalized: DocumentViewState = {
     scrollTop: finiteNonNegative(viewState.scrollTop),
     anchor: finiteNonNegative(viewState.anchor, true),
     head: finiteNonNegative(viewState.head, true),
   };
+  if (typeof viewState.scrollAnchor === "number" && Number.isFinite(viewState.scrollAnchor)) {
+    normalized.scrollAnchor = finiteNonNegative(viewState.scrollAnchor, true);
+  }
+  if (typeof viewState.scrollAnchorOffset === "number" && Number.isFinite(viewState.scrollAnchorOffset)) {
+    normalized.scrollAnchorOffset = viewState.scrollAnchorOffset;
+  }
+  return normalized;
 }
 
 function optionalString(value: unknown, maximumLength = maximumPathLength) {
