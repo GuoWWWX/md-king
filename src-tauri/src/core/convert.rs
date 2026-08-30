@@ -3272,7 +3272,7 @@ fn normalize_docx(
             "word/styles.xml" => apply_default_template_style || document_style.is_some(),
             "word/numbering.xml" => heading_numbering
                 .is_some_and(|config| config.mode == HeadingNumberingMode::Word),
-            "word/settings.xml" => page_settings.is_some_and(|settings| settings.toc_enabled),
+            "word/settings.xml" => true,
             "[Content_Types].xml" | "word/_rels/document.xml.rels" => header_footer.is_some(),
             "word/header-mdking.xml" => header_footer.is_some_and(page_settings_has_header),
             "word/footer-mdking.xml" => header_footer.is_some_and(page_settings_has_footer),
@@ -3342,7 +3342,11 @@ fn normalize_docx(
         } else if name == "word/settings.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 settings.xml 失败：{error}"))?;
-            data = ensure_toc_fields_update_on_open(&xml, page_settings).into_bytes();
+            data = ensure_no_picture_compression(&ensure_toc_fields_update_on_open(
+                &xml,
+                page_settings,
+            ))
+            .into_bytes();
         }
         if name == "[Content_Types].xml" {
             if let Some(settings) = header_footer {
@@ -6635,6 +6639,24 @@ fn auto_line_height_units(line_height: f64) -> u32 {
     (line_height * 240.0).round().clamp(120.0, 2000.0) as u32
 }
 
+fn ensure_no_picture_compression(xml: &str) -> String {
+    let setting = Regex::new(
+        r#"(?s)<w:doNot(?:Auto)?CompressPictures\b[^>]*(?:/>|>.*?</w:doNot(?:Auto)?CompressPictures>)"#,
+    )
+    .expect("valid doNotAutoCompressPictures regex");
+    if setting.is_match(xml) {
+        return setting
+            .replace(xml, r#"<w:doNotAutoCompressPictures w:val="true" />"#)
+            .to_string();
+    }
+
+    xml.replacen(
+        "</w:settings>",
+        "<w:doNotAutoCompressPictures w:val=\"true\" /></w:settings>",
+        1,
+    )
+}
+
 fn exact_line_height_twips(font_size: f64, line_height: f64) -> u32 {
     (font_size * line_height * 20.0)
         .round()
@@ -7902,7 +7924,8 @@ mod tests {
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_page_settings_config, default_report_heading_numbering_config,
         detect_adjacent_image_caption_warnings, document_style_config_from_value,
-        ensure_toc_fields_update_on_open, footer_page_number_xml, has_supported_text_extension,
+        ensure_no_picture_compression, ensure_toc_fields_update_on_open, footer_page_number_xml,
+        has_supported_text_extension,
         filter_benign_pandoc_svg_fallback_warning,
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
@@ -9204,6 +9227,23 @@ mod tests {
             ensure_toc_fields_update_on_open(existing, Some(&disabled)),
             existing
         );
+    }
+
+    #[test]
+    fn disables_picture_compression_in_document_settings() {
+        let missing = r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:settings>"#;
+        let disabled = r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:doNotCompressPictures w:val="false" /></w:settings>"#;
+
+        for input in [missing, disabled] {
+            let output = ensure_no_picture_compression(input);
+            assert_eq!(
+                output
+                    .matches(r#"<w:doNotAutoCompressPictures w:val="true" />"#)
+                    .count(),
+                1
+            );
+            assert!(!output.contains(r#"w:val="false""#));
+        }
     }
 
     #[test]
