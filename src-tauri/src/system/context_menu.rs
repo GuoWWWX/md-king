@@ -53,6 +53,7 @@ pub fn handle_startup_context_action(app: AppHandle) {
             open_after_convert: Some(config.open_after_convert),
             overwrite: None,
             conflict_strategy: Some(config.default_conflict_strategy),
+            heading_numbering: None,
             toc_page_numbers: None,
         };
         let result = convert_markdown(&app, request);

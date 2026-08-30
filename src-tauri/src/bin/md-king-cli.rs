@@ -45,6 +45,14 @@ enum Commands {
         /// Print structured JSON output.
         #[arg(long)]
         json: bool,
+
+        /// Heading numbering source: auto, source, word or none.
+        #[arg(
+            long = "heading-numbering",
+            default_value = "auto",
+            value_parser = ["auto", "source", "word", "none"]
+        )]
+        heading_numbering: String,
     },
 
     /// Manage and inspect Word/WPS templates.
@@ -77,6 +85,7 @@ fn main() {
             open_after_convert,
             overwrite,
             json,
+            heading_numbering,
         } => run_convert(
             input,
             output,
@@ -84,6 +93,7 @@ fn main() {
             open_after_convert,
             overwrite,
             json,
+            heading_numbering,
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
@@ -100,6 +110,7 @@ fn run_convert(
     open_after_convert: bool,
     overwrite: bool,
     json: bool,
+    heading_numbering: String,
 ) -> i32 {
     let template_id = match resolve_template_id(template_selector) {
         Ok(template_id) => template_id,
@@ -126,6 +137,7 @@ fn run_convert(
         open_after_convert: Some(open_after_convert),
         overwrite: Some(overwrite),
         conflict_strategy: None,
+        heading_numbering: Some(heading_numbering),
         toc_page_numbers: None,
     });
 

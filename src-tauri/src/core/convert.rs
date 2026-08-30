@@ -27,6 +27,7 @@ use crate::system::open_file::open_path;
 const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
 const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
+const UNNUMBERED_HEADING_MARKER: &str = "MD_KING_UNNUMBERED_HEADING:";
 const WORD_TEXT_CHARACTER_SPACING_TWIPS: u32 = 4;
 
 #[derive(Deserialize)]
@@ -42,6 +43,8 @@ pub struct ConvertRequest {
     pub open_after_convert: Option<bool>,
     pub overwrite: Option<bool>,
     pub conflict_strategy: Option<String>,
+    #[serde(default)]
+    pub heading_numbering: Option<String>,
     #[serde(default)]
     pub toc_page_numbers: Option<Vec<TocPageNumber>>,
 }
@@ -75,6 +78,15 @@ struct TemplateResolution {
 struct HeadingNumberingConfig {
     formats: [Option<String>; 6],
     mappings: [HeadingTarget; 6],
+    mode: HeadingNumberingMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeadingNumberingMode {
+    Auto,
+    Source,
+    Word,
+    None,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -424,7 +436,7 @@ fn convert_existing_file(
     }
 
     let prepared_input =
-        match prepare_markdown_file_for_pandoc_for_runtime(runtime, &input_path) {
+        match prepare_markdown_file_for_pandoc_for_runtime(runtime, &input_path, &request) {
             Ok(value) => value,
             Err(error) => {
                 return failure_result(
@@ -438,6 +450,10 @@ fn convert_existing_file(
             }
         };
     warnings.extend(prepared_input.warnings.iter().cloned());
+    let heading_numbering = effective_heading_numbering_config(
+        &request,
+        prepared_input.heading_numbering_mode,
+    );
 
     let mut pandoc_options = pandoc_document_options(&request);
     pandoc_options.resource_path = input_path.parent().map(Path::to_path_buf);
@@ -461,7 +477,7 @@ fn convert_existing_file(
             if let Err(error) = normalize_docx(
                 &staged_output_path,
                 should_apply_default_template_postprocess(&request),
-                heading_numbering_config(&request).as_ref(),
+                heading_numbering.as_ref(),
                 &markdown_feature_config(&request),
                 page_settings_config(&request).as_ref(),
                 table_style_config(&request).as_ref(),
@@ -639,9 +655,21 @@ fn convert_text_input(
         }
     }
 
+    let (heading_numbering_mode, heading_numbering_warning) =
+        resolve_heading_numbering_mode(&request, &request.input);
+    if let Some(warning) = heading_numbering_warning {
+        warnings.push(warning);
+    }
+    let heading_numbering =
+        effective_heading_numbering_config(&request, heading_numbering_mode);
     let mermaid = preprocess_mermaid_for_runtime(runtime, &request.input);
     warnings.extend(mermaid.warnings.iter().cloned());
-    let prepared_input = preprocess_markdown_for_word(&mermaid.markdown);
+    let numbered_input = preprocess_heading_numbering(
+        &mermaid.markdown,
+        heading_numbering_mode,
+        &heading_mappings_for_request(&request),
+    );
+    let prepared_input = preprocess_markdown_for_word(&numbered_input);
     if let Err(error) = fs::write(&temp_input_path, prepared_input.as_bytes()) {
         cleanup_mermaid_paths(&mermaid.cleanup_paths);
         return failure_result(
@@ -679,7 +707,7 @@ fn convert_text_input(
             if let Err(error) = normalize_docx(
                 &staged_output_path,
                 should_apply_default_template_postprocess(&request),
-                heading_numbering_config(&request).as_ref(),
+                heading_numbering.as_ref(),
                 &markdown_feature_config(&request),
                 page_settings_config(&request).as_ref(),
                 table_style_config(&request).as_ref(),
@@ -1041,6 +1069,64 @@ fn heading_numbering_config(request: &ConvertRequest) -> Option<HeadingNumbering
     }
 
     default_built_in_heading_numbering_config(template_id)
+}
+
+fn requested_heading_numbering_mode(request: &ConvertRequest) -> HeadingNumberingMode {
+    match request
+        .heading_numbering
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("auto")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "source" => HeadingNumberingMode::Source,
+        "word" => HeadingNumberingMode::Word,
+        "none" => HeadingNumberingMode::None,
+        _ => HeadingNumberingMode::Auto,
+    }
+}
+
+fn resolve_heading_numbering_mode(
+    request: &ConvertRequest,
+    markdown: &str,
+) -> (HeadingNumberingMode, Option<String>) {
+    let requested = requested_heading_numbering_mode(request);
+    if requested != HeadingNumberingMode::Auto {
+        return (requested, None);
+    }
+
+    let mappings = heading_mappings_for_request(request);
+    let mode = if markdown_uses_manual_heading_numbering(markdown, &mappings) {
+        HeadingNumberingMode::Source
+    } else {
+        HeadingNumberingMode::Word
+    };
+    let message = match mode {
+        HeadingNumberingMode::Source => {
+            "检测到 Markdown 标题已包含连续章节号，已保留源码编号并关闭 Word 自动编号。"
+        }
+        _ => "未检测到成组的手写章节号，已使用 Word 多级自动编号。",
+    };
+    (mode, Some(message.to_string()))
+}
+
+fn heading_mappings_for_request(request: &ConvertRequest) -> [HeadingTarget; 6] {
+    heading_numbering_config(request)
+        .map(|config| config.mappings)
+        .unwrap_or_else(default_heading_mappings)
+}
+
+fn effective_heading_numbering_config(
+    request: &ConvertRequest,
+    mode: HeadingNumberingMode,
+) -> Option<HeadingNumberingConfig> {
+    let mut config = heading_numbering_config(request)?;
+    config.mode = mode;
+    if mode != HeadingNumberingMode::Word {
+        config.formats = Default::default();
+    }
+    Some(config)
 }
 
 fn markdown_feature_config(request: &ConvertRequest) -> MarkdownFeatureConfig {
@@ -1981,6 +2067,7 @@ fn default_report_heading_numbering_config() -> HeadingNumberingConfig {
             Some("1.1.1.1.1.1".to_string()),
         ],
         mappings: default_built_in_heading_mappings(),
+        mode: HeadingNumberingMode::Word,
     }
 }
 
@@ -1997,6 +2084,7 @@ fn default_built_in_heading_numbering_config(template_id: &str) -> Option<Headin
                 Some("1.1.1.1.1.1".to_string()),
             ],
             mappings: default_built_in_heading_mappings(),
+            mode: HeadingNumberingMode::Word,
         }),
         _ => None,
     }
@@ -2036,7 +2124,11 @@ fn heading_numbering_config_from_value(config: &Value) -> Option<HeadingNumberin
     }
 
     (formats.iter().any(Option::is_some) || mappings != default_heading_mappings())
-        .then_some(HeadingNumberingConfig { formats, mappings })
+        .then_some(HeadingNumberingConfig {
+            formats,
+            mappings,
+            mode: HeadingNumberingMode::Word,
+        })
 }
 
 fn mermaid_runtime_path(runtime: ConvertRuntime<'_>) -> Option<PathBuf> {
@@ -2377,17 +2469,30 @@ struct PreparedMarkdownFile {
     temporary: Option<PathBuf>,
     mermaid_cleanup_paths: Vec<PathBuf>,
     warnings: Vec<String>,
+    heading_numbering_mode: HeadingNumberingMode,
 }
 
 fn prepare_markdown_file_for_pandoc_for_runtime(
     runtime: ConvertRuntime<'_>,
     input_path: &Path,
+    request: &ConvertRequest,
 ) -> Result<PreparedMarkdownFile, ConvertResultPreparationError> {
     let original = fs::read_to_string(input_path).map_err(|error| {
         ConvertResultPreparationError(format!("读取 Markdown/TXT 文件失败：{error}"))
     })?;
+    let (heading_numbering_mode, heading_numbering_warning) =
+        resolve_heading_numbering_mode(request, &original);
     let mermaid = preprocess_mermaid_for_runtime(runtime, &original);
-    let prepared = preprocess_markdown_for_word(&mermaid.markdown);
+    let numbered = preprocess_heading_numbering(
+        &mermaid.markdown,
+        heading_numbering_mode,
+        &heading_mappings_for_request(request),
+    );
+    let prepared = preprocess_markdown_for_word(&numbered);
+    let mut warnings = mermaid.warnings;
+    if let Some(warning) = heading_numbering_warning {
+        warnings.push(warning);
+    }
     let is_text_file = input_path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -2397,7 +2502,8 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
             path: input_path.to_path_buf(),
             temporary: None,
             mermaid_cleanup_paths: mermaid.cleanup_paths,
-            warnings: mermaid.warnings,
+            warnings,
+            heading_numbering_mode,
         });
     }
 
@@ -2417,8 +2523,205 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
         path: temp_input_path.clone(),
         temporary: Some(temp_input_path),
         mermaid_cleanup_paths: mermaid.cleanup_paths,
-        warnings: mermaid.warnings,
+        warnings,
+        heading_numbering_mode,
     })
+}
+
+fn markdown_uses_manual_heading_numbering(
+    markdown: &str,
+    mappings: &[HeadingTarget; 6],
+) -> bool {
+    let mut fence: Option<(char, usize)> = None;
+    let mut eligible = 0usize;
+    let mut numbered = 0usize;
+    let mut hierarchy_is_continuous = true;
+    let mut previous_level = 0usize;
+
+    for line in markdown.lines() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+
+        let Some((source_level, _, content)) = parse_atx_heading(line) else {
+            continue;
+        };
+        let HeadingTarget::Heading(target_level) = mappings[source_level - 1] else {
+            continue;
+        };
+        let (content, explicitly_unnumbered) = remove_unnumbered_heading_attribute(content);
+        let visible = heading_visible_text(&content);
+        if explicitly_unnumbered || is_conventional_unnumbered_heading(visible) {
+            continue;
+        }
+
+        eligible += 1;
+        if let Some((depth, _)) = split_manual_heading_number(visible) {
+            if depth == target_level {
+                numbered += 1;
+                if previous_level > 0 && target_level > previous_level + 1 {
+                    hierarchy_is_continuous = false;
+                }
+                previous_level = target_level;
+            }
+        }
+    }
+
+    eligible > 0 && numbered * 2 > eligible && hierarchy_is_continuous
+}
+
+fn preprocess_heading_numbering(
+    markdown: &str,
+    mode: HeadingNumberingMode,
+    mappings: &[HeadingTarget; 6],
+) -> String {
+    let mut output = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+
+    for line in markdown.lines() {
+        if let Some((marker, length)) = fence {
+            output.push(line.to_string());
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            output.push(line.to_string());
+            continue;
+        }
+
+        let Some((level, prefix, content)) = parse_atx_heading(line) else {
+            output.push(line.to_string());
+            continue;
+        };
+        if mappings[level - 1] == HeadingTarget::Title {
+            output.push(line.to_string());
+            continue;
+        }
+        let (mut content, explicitly_unnumbered) = remove_unnumbered_heading_attribute(content);
+        let visible = heading_visible_text(&content);
+        let conventional_unnumbered = is_conventional_unnumbered_heading(visible);
+        if matches!(mode, HeadingNumberingMode::Word | HeadingNumberingMode::None) {
+            if let Some((_depth, without_number)) = split_manual_heading_number(visible) {
+                content = replace_heading_visible_text(&content, without_number);
+            }
+        }
+        if mode == HeadingNumberingMode::Word
+            && (explicitly_unnumbered || conventional_unnumbered)
+        {
+            content = format!("{UNNUMBERED_HEADING_MARKER}{content}");
+        }
+        output.push(format!("{prefix}{content}"));
+    }
+
+    let mut prepared = output.join("\n");
+    if markdown.ends_with('\n') {
+        prepared.push('\n');
+    }
+    prepared
+}
+
+fn parse_atx_heading(line: &str) -> Option<(usize, &str, &str)> {
+    let bytes = line.as_bytes();
+    let indent = bytes.iter().take_while(|value| **value == b' ').count();
+    if indent > 3 {
+        return None;
+    }
+    let mut cursor = indent;
+    while cursor < bytes.len() && bytes[cursor] == b'#' {
+        cursor += 1;
+    }
+    let level = cursor.saturating_sub(indent);
+    if !(1..=6).contains(&level)
+        || cursor >= bytes.len()
+        || !matches!(bytes[cursor], b' ' | b'\t')
+    {
+        return None;
+    }
+    while cursor < bytes.len() && matches!(bytes[cursor], b' ' | b'\t') {
+        cursor += 1;
+    }
+    Some((level, &line[..cursor], &line[cursor..]))
+}
+
+fn remove_unnumbered_heading_attribute(content: &str) -> (String, bool) {
+    let attributes = Regex::new(r#"\s*\{([^{}]*)\}\s*$"#).expect("valid heading attribute regex");
+    let Some(captures) = attributes.captures(content) else {
+        return (content.to_string(), false);
+    };
+    let Some(full) = captures.get(0) else {
+        return (content.to_string(), false);
+    };
+    let values = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+    let mut unnumbered = false;
+    let retained = values
+        .split_whitespace()
+        .filter(|value| {
+            let is_unnumbered = matches!(*value, ".unnumbered" | "unnumbered");
+            unnumbered |= is_unnumbered;
+            !is_unnumbered
+        })
+        .collect::<Vec<_>>();
+    if !unnumbered {
+        return (content.to_string(), false);
+    }
+
+    let mut cleaned = content[..full.start()].trim_end().to_string();
+    if !retained.is_empty() {
+        cleaned.push_str(" {");
+        cleaned.push_str(&retained.join(" "));
+        cleaned.push('}');
+    }
+    (cleaned, true)
+}
+
+fn heading_visible_text(content: &str) -> &str {
+    let trimmed = content.trim();
+    let without_hashes = trimmed.trim_end_matches('#');
+    if without_hashes.len() < trimmed.len()
+        && without_hashes
+            .chars()
+            .last()
+            .is_some_and(char::is_whitespace)
+    {
+        without_hashes.trim_end()
+    } else {
+        trimmed
+    }
+}
+
+fn replace_heading_visible_text(content: &str, replacement: &str) -> String {
+    let visible = heading_visible_text(content);
+    let Some(start) = content.find(visible) else {
+        return replacement.to_string();
+    };
+    let end = start + visible.len();
+    format!("{}{replacement}{}", &content[..start], &content[end..])
+}
+
+fn split_manual_heading_number(text: &str) -> Option<(usize, &str)> {
+    let captures = Regex::new(r#"^(\d+(?:\.\d+){0,5})(?:[.、][ \t]*|[ \t]+)(.+)$"#)
+        .expect("valid manual heading number regex")
+        .captures(text.trim())?;
+    let number = captures.get(1)?.as_str();
+    let title = captures.get(2)?.as_str().trim_start();
+    (!title.is_empty()).then_some((number.split('.').count(), title))
+}
+
+fn is_conventional_unnumbered_heading(text: &str) -> bool {
+    matches!(
+        text.trim(),
+        "摘要" | "前言" | "参考文献" | "附录说明" | "Abstract" | "ABSTRACT"
+    )
 }
 
 fn preprocess_markdown_for_word(markdown: &str) -> String {
@@ -2800,7 +3103,8 @@ fn normalize_docx(
         let rewrite = match name.as_str() {
             "word/document.xml" => true,
             "word/styles.xml" => apply_default_template_style || document_style.is_some(),
-            "word/numbering.xml" => heading_numbering.is_some(),
+            "word/numbering.xml" => heading_numbering
+                .is_some_and(|config| config.mode == HeadingNumberingMode::Word),
             "word/settings.xml" => page_settings.is_some_and(|settings| settings.toc_enabled),
             "[Content_Types].xml" | "word/_rels/document.xml.rels" => header_footer.is_some(),
             "word/header-mdking.xml" => header_footer.is_some_and(page_settings_has_header),
@@ -2867,7 +3171,9 @@ fn normalize_docx(
             )
             .into_bytes();
         } else if name == "word/numbering.xml" {
-            if let Some(heading_numbering) = heading_numbering {
+            if let Some(heading_numbering) = heading_numbering
+                .filter(|config| config.mode == HeadingNumberingMode::Word)
+            {
                 let xml = String::from_utf8(data)
                     .map_err(|error| format!("解析 numbering.xml 失败：{error}"))?;
                 data = ensure_heading_numbering_xml(&xml, heading_numbering).into_bytes();
@@ -2907,7 +3213,9 @@ fn normalize_docx(
             .map_err(|error| format!("写入 DOCX 内容失败：{error}"))?;
     }
 
-    if let Some(heading_numbering) = heading_numbering.filter(|_| !has_numbering_xml) {
+    if let Some(heading_numbering) = heading_numbering.filter(|config| {
+        config.mode == HeadingNumberingMode::Word && !has_numbering_xml
+    }) {
         writer
             .start_file(
                 "word/numbering.xml",
@@ -4076,9 +4384,12 @@ fn toc_heading_number(
     heading_numbering: Option<&HeadingNumberingConfig>,
     has_numbering: bool,
 ) -> Option<String> {
+    if heading_numbering.is_some_and(|config| config.mode != HeadingNumberingMode::Word) {
+        return None;
+    }
     let configured_format = heading_numbering
         .and_then(|config| config.formats.get(level - 1).and_then(Option::as_deref));
-    if !has_numbering && configured_format.is_none() {
+    if !has_numbering {
         return None;
     }
 
@@ -6408,7 +6719,10 @@ fn normalize_heading_paragraph(
         .clamp(1, 6);
     let mut paragraph_xml = paragraph_xml.to_string();
     let level = match heading_numbering.mappings[source_level - 1] {
-        HeadingTarget::Title => return replace_paragraph_style_id(&paragraph_xml, "Title"),
+        HeadingTarget::Title => {
+            paragraph_xml = replace_paragraph_style_id(&paragraph_xml, "Title");
+            return remove_paragraph_numbering(&strip_unnumbered_heading_marker(&paragraph_xml).0);
+        }
         HeadingTarget::Heading(level) => {
             if source_level != level {
                 paragraph_xml =
@@ -6418,12 +6732,33 @@ fn normalize_heading_paragraph(
         }
     };
 
-    if heading_numbering.formats[level - 1].is_none() {
-        return paragraph_xml;
+    let (paragraph_xml, unnumbered) = strip_unnumbered_heading_marker(&paragraph_xml);
+    if unnumbered || heading_numbering.mode != HeadingNumberingMode::Word {
+        return remove_paragraph_numbering(&paragraph_xml);
     }
 
-    // 手写编号属于标题正文，不能在添加 Word 自动编号时丢弃。
+    if heading_numbering.formats[level - 1].is_none() {
+        return remove_paragraph_numbering(&paragraph_xml);
+    }
+
     ensure_paragraph_numbering(&paragraph_xml, level)
+}
+
+fn strip_unnumbered_heading_marker(paragraph_xml: &str) -> (String, bool) {
+    if !paragraph_xml.contains(UNNUMBERED_HEADING_MARKER) {
+        return (paragraph_xml.to_string(), false);
+    }
+    (
+        paragraph_xml.replacen(UNNUMBERED_HEADING_MARKER, "", 1),
+        true,
+    )
+}
+
+fn remove_paragraph_numbering(paragraph_xml: &str) -> String {
+    Regex::new(r#"(?s)<w:numPr>.*?</w:numPr>"#)
+        .expect("valid heading numbering cleanup regex")
+        .replace_all(paragraph_xml, "")
+        .to_string()
 }
 
 fn replace_paragraph_style_id(paragraph_xml: &str, style_id: &str) -> String {
@@ -7162,11 +7497,13 @@ mod tests {
         mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
         page_content_height_twips, page_content_width_twips, page_settings_config_from_value,
         pandoc_document_options_from_value, paragraph_shading_xml,
-        prepare_markdown_file_for_pandoc, preprocess_markdown_for_word, read_style_bold_key,
-        read_style_fill, table_column_widths,
+        prepare_markdown_file_for_pandoc, preprocess_heading_numbering,
+        preprocess_markdown_for_word, read_style_bold_key, read_style_fill,
+        table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        HeadingTarget, MarkdownFeatureConfig, TocPageNumber,
+        HeadingNumberingMode, HeadingTarget, MarkdownFeatureConfig, TocPageNumber,
+        UNNUMBERED_HEADING_MARKER,
     };
     use regex::Regex;
     use serde_json::json;
@@ -8353,7 +8690,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_toc_entries_keep_configured_numbering_and_clear_inherited_indent() {
+    fn cached_toc_entries_do_not_duplicate_typed_numbers_and_clear_inherited_indent() {
         let settings = page_settings_config_from_value(&json!({
             "pageSettings": {
                 "tocEnabled": true,
@@ -8368,7 +8705,8 @@ mod tests {
         let output = normalize_toc_fields(input, &settings, Some(&heading_numbering), None);
 
         assert!(output.contains(r#"<w:t xml:space="preserve">1 概览</w:t>"#), "{output}");
-        assert!(output.contains(r#"<w:t xml:space="preserve">1.1 1. 已有编号</w:t>"#));
+        assert!(output.contains(r#"<w:t xml:space="preserve">1. 已有编号</w:t>"#));
+        assert!(!output.contains("1.1 1. 已有编号"));
         assert!(output.contains(r#"<w:ind w:left="0" w:firstLine="0" w:hanging="0" />"#));
         assert!(output.contains(r#"<w:ind w:left="480" w:firstLine="0" w:hanging="0" />"#));
     }
@@ -8672,8 +9010,20 @@ mod tests {
     }
 
     #[test]
-    fn adds_word_heading_numbering_and_preserves_typed_prefixes() {
-        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>总述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>1. 背景</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading3" /></w:pPr><w:r><w:t>1.1.1 细节</w:t></w:r></w:p></w:body></w:document>"#;
+    fn adds_word_heading_numbering_after_typed_prefixes_are_removed() {
+        let markdown = "# 2026 课题报告\n\n## 摘要 {.unnumbered}\n\n## 1 研究概述\n\n### 1.1 研究背景\n";
+        let prepared = preprocess_heading_numbering(
+            markdown,
+            HeadingNumberingMode::Word,
+            &super::default_built_in_heading_mappings(),
+        );
+        assert!(prepared.contains("# 2026 课题报告"));
+        assert!(prepared.contains("## MD_KING_UNNUMBERED_HEADING:摘要"));
+        assert!(prepared.contains("## 研究概述"));
+        assert!(prepared.contains("### 研究背景"));
+        assert!(!prepared.contains("## 1 研究概述"));
+
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>MD_KING_UNNUMBERED_HEADING:摘要</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>研究概述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:t>研究背景</w:t></w:r></w:p></w:body></w:document>"#;
 
         let mut config = default_report_heading_numbering_config();
         config.mappings = default_heading_mappings();
@@ -8687,14 +9037,41 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(
-            r#"<w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" />"#
-        ));
-        assert!(output.contains(r#"<w:ilvl w:val="0" /><w:numId w:val="9100" />"#));
+        assert!(!output.contains(UNNUMBERED_HEADING_MARKER));
+        assert!(output.contains(r#"<w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>摘要"#));
+        assert_eq!(output.matches(r#"<w:ilvl w:val="0" /><w:numId w:val="9100" />"#).count(), 1);
         assert!(output.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
-        assert!(output.contains(r#"<w:ilvl w:val="2" /><w:numId w:val="9100" />"#));
-        assert!(output.contains("<w:t>1. 背景</w:t>"));
-        assert!(output.contains("<w:t>1.1.1 细节</w:t>"));
+        assert!(!output.contains("<w:t>1 研究概述</w:t>"));
+        assert!(!output.contains("<w:t>1.1 研究背景</w:t>"));
+    }
+
+    #[test]
+    fn auto_detects_a_manually_numbered_heading_hierarchy() {
+        let markdown = "# 报告\n\n## 摘要\n\n## 1 研究概述\n\n### 1.1 研究背景\n\n#### 1.1.1 技术范围\n";
+        assert!(super::markdown_uses_manual_heading_numbering(
+            markdown,
+            &super::default_built_in_heading_mappings(),
+        ));
+    }
+
+    #[test]
+    fn source_mode_preserves_typed_numbers_and_removes_word_numbering() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr></w:pPr><w:r><w:t>1 研究概述</w:t></w:r></w:p></w:body></w:document>"#;
+        let mut config = default_report_heading_numbering_config();
+        config.mappings = default_heading_mappings();
+        config.mode = HeadingNumberingMode::Source;
+        let output = normalize_document_xml(
+            input,
+            true,
+            Some(&config),
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(output.contains("<w:t>1 研究概述</w:t>"));
+        assert!(!output.contains("<w:numPr>"));
     }
 
     #[test]
@@ -9049,6 +9426,7 @@ mod tests {
                 None,
             ],
             mappings: default_heading_mappings(),
+            mode: HeadingNumberingMode::Word,
         };
         let numbering = create_heading_numbering_xml(&config);
 
@@ -9283,6 +9661,7 @@ mod tests {
             open_after_convert: Some(false),
             overwrite: None,
             conflict_strategy: Some("rename".to_string()),
+            heading_numbering: None,
             toc_page_numbers: None,
         };
         let mut output_path = path.clone();
@@ -9330,6 +9709,7 @@ mod tests {
             open_after_convert: Some(false),
             overwrite: None,
             conflict_strategy: Some("ask".to_string()),
+            heading_numbering: None,
             toc_page_numbers: None,
         };
         let mut output_path = path.clone();

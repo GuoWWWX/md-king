@@ -9,6 +9,7 @@ export type ConvertRequest = {
   openAfterConvert?: boolean;
   overwrite?: boolean;
   conflictStrategy?: "overwrite" | "rename" | "ask";
+  headingNumbering?: "auto" | "source" | "word" | "none";
   tocPageNumbers?: Array<{ anchorId: string; page: number }>;
 };
 
