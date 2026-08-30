@@ -124,6 +124,8 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
         front_page_number: None,
         mermaid_format: None,
         mermaid_scale: None,
+        image_policy: None,
+        no_compress_pictures: None,
     };
     let convert_result = convert_markdown(app, request);
     let _ = fs::remove_file(&input_path);

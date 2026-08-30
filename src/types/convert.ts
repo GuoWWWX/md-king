@@ -18,6 +18,8 @@ export type ConvertRequest = {
   frontPageNumber?: "none" | "roman";
   mermaidFormat?: "svg" | "png";
   mermaidScale?: 1 | 2 | 3 | 4;
+  imagePolicy?: "vector-preferred" | "original" | "compressed";
+  noCompressPictures?: boolean;
 };
 
 export type ConvertResult = {

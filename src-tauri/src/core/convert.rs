@@ -73,6 +73,10 @@ pub struct ConvertRequest {
     pub mermaid_format: Option<String>,
     #[serde(default)]
     pub mermaid_scale: Option<u32>,
+    #[serde(default)]
+    pub image_policy: Option<String>,
+    #[serde(default)]
+    pub no_compress_pictures: Option<bool>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -547,6 +551,7 @@ fn convert_existing_file(
                 document_style_config(&request).as_ref(),
                 block_style_config(&request).as_ref(),
                 request.toc_page_numbers.as_deref(),
+                prevent_picture_compression(&request),
             ) {
                 let _ = fs::remove_file(&staged_output_path);
                 return failure_result(
@@ -793,6 +798,7 @@ fn convert_text_input(
                 document_style_config(&request).as_ref(),
                 block_style_config(&request).as_ref(),
                 request.toc_page_numbers.as_deref(),
+                prevent_picture_compression(&request),
             ) {
                 let _ = fs::remove_file(&staged_output_path);
                 return failure_result(
@@ -1989,6 +1995,15 @@ fn image_style_config(request: &ConvertRequest) -> Option<ImageStyleConfig> {
         .ok()
         .flatten()
         .and_then(|config| image_style_config_from_value(&config))
+}
+
+fn prevent_picture_compression(request: &ConvertRequest) -> bool {
+    request.no_compress_pictures.unwrap_or_else(|| {
+        !request
+            .image_policy
+            .as_deref()
+            .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("compressed"))
+    })
 }
 
 fn document_style_config(request: &ConvertRequest) -> Option<DocumentStyleConfig> {
@@ -3865,6 +3880,7 @@ fn normalize_docx(
     document_style: Option<&DocumentStyleConfig>,
     block_style: Option<&BlockStyleConfig>,
     toc_page_numbers: Option<&[TocPageNumber]>,
+    prevent_picture_compression: bool,
 ) -> Result<(), String> {
     let original = fs::read(path).map_err(|error| format!("读取 DOCX 失败：{error}"))?;
     let reader = Cursor::new(original);
@@ -3974,10 +3990,10 @@ fn normalize_docx(
         } else if name == "word/settings.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 settings.xml 失败：{error}"))?;
-            data = ensure_no_picture_compression(&ensure_toc_fields_update_on_open(
-                &xml,
-                page_settings,
-            ))
+            data = configure_picture_compression(
+                &ensure_toc_fields_update_on_open(&xml, page_settings),
+                prevent_picture_compression,
+            )
             .into_bytes();
         }
         if name == "[Content_Types].xml" {
@@ -7310,6 +7326,18 @@ fn ensure_no_picture_compression(xml: &str) -> String {
     )
 }
 
+fn configure_picture_compression(xml: &str, prevent_compression: bool) -> String {
+    if prevent_compression {
+        return ensure_no_picture_compression(xml);
+    }
+    Regex::new(
+        r#"(?s)<w:doNot(?:Auto)?CompressPictures\b[^>]*(?:/>|>.*?</w:doNot(?:Auto)?CompressPictures>)"#,
+    )
+    .expect("valid picture compression setting regex")
+    .replace_all(xml, "")
+    .to_string()
+}
+
 fn exact_line_height_twips(font_size: f64, line_height: f64) -> u32 {
     (font_size * line_height * 20.0)
         .round()
@@ -8581,7 +8609,7 @@ mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
-        conversion_statistics,
+        configure_picture_compression, conversion_statistics,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_table_style_config,
         default_page_settings_config, default_report_heading_numbering_config,
@@ -8670,6 +8698,17 @@ mod tests {
             filter_benign_pandoc_svg_fallback_warning(detail),
             "[WARNING] 其他警告"
         );
+    }
+
+    #[test]
+    fn toggles_word_picture_compression_setting() {
+        let input = r#"<w:settings><w:doNotAutoCompressPictures w:val="true" /></w:settings>"#;
+
+        let compressed = configure_picture_compression(input, false);
+        let original = configure_picture_compression(&compressed, true);
+
+        assert!(!compressed.contains("doNotAutoCompressPictures"));
+        assert!(original.contains(r#"<w:doNotAutoCompressPictures w:val="true" />"#));
     }
 
     #[test]
@@ -8763,6 +8802,8 @@ mod tests {
             front_page_number: Some("roman".to_string()),
             mermaid_format: None,
             mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
         };
 
         let options = pandoc_document_options(&request);
@@ -8800,6 +8841,8 @@ mod tests {
             front_page_number: None,
             mermaid_format: None,
             mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
         };
 
         assert!(!pandoc_document_options(&request).toc);
@@ -10491,6 +10534,7 @@ mod tests {
             None,
             None,
             None,
+            true,
         )
         .unwrap();
 
@@ -11150,6 +11194,7 @@ mod tests {
             None,
             None,
             None,
+            true,
         )
         .unwrap();
 
@@ -11215,6 +11260,7 @@ mod tests {
             None,
             None,
             None,
+            true,
         )
         .unwrap();
 
@@ -11269,6 +11315,8 @@ mod tests {
             front_page_number: None,
             mermaid_format: None,
             mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
@@ -11324,6 +11372,8 @@ mod tests {
             front_page_number: None,
             mermaid_format: None,
             mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();

@@ -85,6 +85,14 @@ enum Commands {
         /// Device scale factor used when Mermaid is exported as PNG.
         #[arg(long = "mermaid-scale", default_value_t = 4, value_parser = clap::value_parser!(u32).range(1..=4))]
         mermaid_scale: u32,
+
+        /// Image preservation policy used by the generated DOCX.
+        #[arg(long = "image-policy", default_value = "vector-preferred", value_parser = ["vector-preferred", "original", "compressed"])]
+        image_policy: String,
+
+        /// Force Word/WPS picture compression off, even with the compressed policy.
+        #[arg(long = "no-compress-pictures")]
+        no_compress_pictures: bool,
     },
 
     /// Manage and inspect Word/WPS templates.
@@ -135,6 +143,8 @@ fn main() {
             front_page_number,
             mermaid_format,
             mermaid_scale,
+            image_policy,
+            no_compress_pictures,
         } => run_convert(
             input,
             output,
@@ -150,6 +160,8 @@ fn main() {
             front_page_number,
             mermaid_format,
             mermaid_scale,
+            image_policy,
+            no_compress_pictures,
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
@@ -175,6 +187,8 @@ fn run_convert(
     front_page_number: Option<String>,
     mermaid_format: String,
     mermaid_scale: u32,
+    image_policy: String,
+    no_compress_pictures: bool,
 ) -> i32 {
     let template_id = match resolve_template_id(template_selector) {
         Ok(template_id) => template_id,
@@ -210,6 +224,8 @@ fn run_convert(
         front_page_number,
         mermaid_format: Some(mermaid_format),
         mermaid_scale: Some(mermaid_scale),
+        image_policy: Some(image_policy),
+        no_compress_pictures: no_compress_pictures.then_some(true),
     });
 
     if json {

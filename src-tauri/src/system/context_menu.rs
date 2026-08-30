@@ -62,6 +62,8 @@ pub fn handle_startup_context_action(app: AppHandle) {
             front_page_number: None,
             mermaid_format: None,
             mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
         };
         let result = convert_markdown(&app, request);
         write_context_log(&format!(
