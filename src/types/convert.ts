@@ -30,6 +30,15 @@ export type ConvertResult = {
     message: string;
     line?: number;
   }>;
+  statistics: {
+    mermaidBlocks: number;
+    mermaidRendered: number;
+    mermaidFailed: number;
+    imageCount: number;
+    tableCount: number;
+    multiPageTableCandidateCount: number;
+    tableWidthRiskIndices: number[];
+  };
   fieldUpdateStatus?: "notRun" | "notRequested" | "pendingOnOpen" | "updated" | "failed";
   fieldUpdateProvider?: "WPS" | "Word";
   errorCode?: string;

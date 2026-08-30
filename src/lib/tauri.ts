@@ -447,6 +447,7 @@ export function convertMarkdown(request: ConvertRequest) {
     durationMs: 0,
     warnings: [PREVIEW_WARNING],
     diagnostics: [],
+    statistics: { mermaidBlocks: 0, mermaidRendered: 0, mermaidFailed: 0, imageCount: 0, tableCount: 0, multiPageTableCandidateCount: 0, tableWidthRiskIndices: [] },
     message: "浏览器预览完成，未生成实际 DOCX 文件。",
   });
 }

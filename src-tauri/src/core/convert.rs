@@ -82,6 +82,7 @@ pub struct ConvertResult {
     pub duration_ms: u64,
     pub warnings: Vec<String>,
     pub diagnostics: Vec<ConversionDiagnostic>,
+    pub statistics: ConversionStatistics,
     pub field_update_status: String,
     pub field_update_provider: Option<String>,
     pub error_code: Option<String>,
@@ -95,6 +96,18 @@ pub struct ConversionDiagnostic {
     pub severity: String,
     pub message: String,
     pub line: Option<usize>,
+}
+
+#[derive(Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionStatistics {
+    pub mermaid_blocks: usize,
+    pub mermaid_rendered: usize,
+    pub mermaid_failed: usize,
+    pub image_count: usize,
+    pub table_count: usize,
+    pub multi_page_table_candidate_count: usize,
+    pub table_width_risk_indices: Vec<usize>,
 }
 
 struct TemplateResolution {
@@ -484,6 +497,7 @@ fn convert_existing_file(
             }
         };
     warnings.extend(prepared_input.warnings.iter().cloned());
+    let statistics = prepared_input.statistics.clone();
     let heading_numbering = effective_heading_numbering_config(
         &request,
         prepared_input.heading_numbering_mode,
@@ -564,6 +578,7 @@ fn convert_existing_file(
                 warnings,
                 resolved_template_path,
                 template_sha256,
+                statistics,
             )
         }
         Ok(execution) => {
@@ -711,6 +726,7 @@ fn convert_text_input(
     let heading_numbering =
         effective_heading_numbering_config(&request, heading_numbering_mode);
     let mermaid = preprocess_mermaid_for_runtime(runtime, &request.input);
+    let statistics = conversion_statistics(&request.input, Some(&mermaid));
     warnings.extend(mermaid.warnings.iter().cloned());
     let numbered_input = preprocess_heading_numbering(
         &mermaid.markdown,
@@ -808,6 +824,7 @@ fn convert_text_input(
                 warnings,
                 resolved_template_path,
                 template_sha256,
+                statistics,
             )
         }
         Ok(execution) => {
@@ -858,6 +875,7 @@ fn success_result(
     mut warnings: Vec<String>,
     resolved_template_path: Option<String>,
     template_sha256: Option<String>,
+    statistics: ConversionStatistics,
 ) -> ConvertResult {
     let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
     warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
@@ -914,6 +932,7 @@ fn success_result(
         duration_ms: elapsed_ms(started_at),
         warnings,
         diagnostics,
+        statistics,
         field_update_status,
         field_update_provider,
         error_code: None,
@@ -930,6 +949,9 @@ fn failure_result(
     message: &str,
 ) -> ConvertResult {
     let diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
+    let statistics = markdown_source_and_resource_root(&request, output.as_deref())
+        .map(|(markdown, _)| conversion_statistics(&markdown, None))
+        .unwrap_or_default();
     let mut warnings = warnings;
     warnings.extend(diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
     ConvertResult {
@@ -942,6 +964,7 @@ fn failure_result(
         duration_ms: elapsed_ms(started_at),
         warnings,
         diagnostics,
+        statistics,
         field_update_status: "notRun".to_string(),
         field_update_provider: None,
         error_code: Some(error_code.to_string()),
@@ -958,40 +981,49 @@ fn append_pandoc_success_messages(execution: &PandocExecution, warnings: &mut Ve
     }
 }
 
-fn collect_conversion_diagnostics(
+fn markdown_source_and_resource_root(
     request: &ConvertRequest,
     output: Option<&str>,
-) -> Vec<ConversionDiagnostic> {
+) -> Option<(String, Option<PathBuf>)> {
     let input_path = PathBuf::from(&request.input);
-    let (markdown, resource_root) = if input_path.is_file() {
-        let Ok(markdown) = fs::read_to_string(&input_path) else {
-            return Vec::new();
-        };
-        (markdown, input_path.parent().map(Path::to_path_buf))
-    } else if request
+    if input_path.is_file() {
+        return fs::read_to_string(&input_path)
+            .ok()
+            .map(|markdown| (markdown, input_path.parent().map(Path::to_path_buf)));
+    }
+    if request
         .input_kind
         .as_deref()
         .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("path"))
     {
+        return None;
+    }
+
+    let resource_root = request
+        .source_path
+        .as_deref()
+        .map(PathBuf::from)
+        .and_then(|path| {
+            if path.is_dir() {
+                Some(path)
+            } else {
+                path.parent().map(Path::to_path_buf)
+            }
+        })
+        .or_else(|| {
+            output
+                .map(PathBuf::from)
+                .and_then(|path| path.parent().map(Path::to_path_buf))
+        });
+    Some((request.input.clone(), resource_root))
+}
+
+fn collect_conversion_diagnostics(
+    request: &ConvertRequest,
+    output: Option<&str>,
+) -> Vec<ConversionDiagnostic> {
+    let Some((markdown, resource_root)) = markdown_source_and_resource_root(request, output) else {
         return Vec::new();
-    } else {
-        let root = request
-            .source_path
-            .as_deref()
-            .map(PathBuf::from)
-            .and_then(|path| {
-                if path.is_dir() {
-                    Some(path)
-                } else {
-                    path.parent().map(Path::to_path_buf)
-                }
-            })
-            .or_else(|| {
-                output
-                    .map(PathBuf::from)
-                    .and_then(|path| path.parent().map(Path::to_path_buf))
-            });
-        (request.input.clone(), root)
     };
 
     let mut diagnostics = detect_heading_level_jumps(&markdown);
@@ -1001,6 +1033,118 @@ fn collect_conversion_diagnostics(
     ));
     diagnostics.extend(detect_wide_markdown_tables(&markdown));
     diagnostics
+}
+
+fn conversion_statistics(
+    markdown: &str,
+    mermaid: Option<&MermaidPreprocessResult>,
+) -> ConversionStatistics {
+    let tables = markdown_table_summaries(markdown);
+    let source_mermaid_blocks = count_mermaid_blocks(markdown);
+    let (mermaid_rendered, mermaid_failed) = mermaid
+        .map(|result| (result.rendered, result.failed))
+        .unwrap_or_default();
+    let processed_mermaid_blocks = mermaid_rendered + mermaid_failed;
+    ConversionStatistics {
+        mermaid_blocks: processed_mermaid_blocks.max(source_mermaid_blocks),
+        mermaid_rendered,
+        mermaid_failed,
+        image_count: count_markdown_images(markdown),
+        table_count: tables.len(),
+        multi_page_table_candidate_count: tables.iter().filter(|table| table.rows > 25).count(),
+        table_width_risk_indices: tables
+            .iter()
+            .enumerate()
+            .filter_map(|(index, table)| (table.columns > 8).then_some(index + 1))
+            .collect(),
+    }
+}
+
+fn count_mermaid_blocks(markdown: &str) -> usize {
+    markdown
+        .lines()
+        .filter_map(parse_markdown_fence_start)
+        .filter(|fence| {
+            fence
+                .language
+                .as_deref()
+                .is_some_and(|language| language.eq_ignore_ascii_case("mermaid"))
+        })
+        .count()
+}
+
+fn count_markdown_images(markdown: &str) -> usize {
+    let standard_image = Regex::new(r#"!\[[^\]]*\]\(\s*(?:<[^>]+>|[^\s)]+)"#)
+        .expect("valid Markdown image count regex");
+    let obsidian_image =
+        Regex::new(r#"!\[\[[^\]]+\]\]"#).expect("valid Obsidian image count regex");
+    let mut count = 0;
+    let mut fence: Option<(char, usize)> = None;
+    for line in markdown.lines() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+        count += standard_image.find_iter(line).count();
+        count += obsidian_image.find_iter(line).count();
+    }
+    count
+}
+
+struct MarkdownTableSummary {
+    line: usize,
+    columns: usize,
+    rows: usize,
+}
+
+fn markdown_table_summaries(markdown: &str) -> Vec<MarkdownTableSummary> {
+    let separator = Regex::new(
+        r#"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"#,
+    )
+    .expect("valid Markdown table separator regex");
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut tables = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    let mut index = 0usize;
+
+    while index < lines.len() {
+        let line = lines[index];
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            index += 1;
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            index += 1;
+            continue;
+        }
+        if index == 0 || !separator.is_match(line) {
+            index += 1;
+            continue;
+        }
+
+        let columns = line.trim().trim_matches('|').split('|').count();
+        let mut end = index + 1;
+        while end < lines.len() && lines[end].contains('|') && !lines[end].trim().is_empty() {
+            end += 1;
+        }
+        tables.push(MarkdownTableSummary {
+            line: index,
+            columns,
+            rows: 1 + end.saturating_sub(index + 1),
+        });
+        index = end;
+    }
+    tables
 }
 
 fn diagnostic(code: &str, message: String, line: usize) -> ConversionDiagnostic {
@@ -1133,40 +1277,17 @@ fn push_missing_image_diagnostic(
 }
 
 fn detect_wide_markdown_tables(markdown: &str) -> Vec<ConversionDiagnostic> {
-    let separator = Regex::new(
-        r#"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"#,
-    )
-    .expect("valid Markdown table separator regex");
-    let lines = markdown.lines().collect::<Vec<_>>();
     let mut diagnostics = Vec::new();
-    let mut fence: Option<(char, usize)> = None;
-
-    for (index, line) in lines.iter().enumerate() {
-        if let Some((marker, length)) = fence {
-            if is_fence_end(line, marker, length) {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some(start) = parse_markdown_fence_start(line) {
-            fence = Some((start.marker, start.length));
-            continue;
-        }
-        if index == 0 || !separator.is_match(line) {
-            continue;
-        }
-
-        let header = lines[index - 1].trim().trim_matches('|');
-        let column_count = header.split('|').count();
-        if column_count > 8 {
+    for table in markdown_table_summaries(markdown) {
+        if table.columns > 8 {
             diagnostics.push(diagnostic(
                 "TABLE_WIDTH_RISK",
                 format!(
                     "第 {} 行表格包含 {} 列，导出时可能出现窄列或逐字换行。",
-                    index,
-                    column_count
+                    table.line,
+                    table.columns
                 ),
-                index,
+                table.line,
             ));
         }
     }
@@ -3071,6 +3192,7 @@ struct PreparedMarkdownFile {
     mermaid_cleanup_paths: Vec<PathBuf>,
     warnings: Vec<String>,
     heading_numbering_mode: HeadingNumberingMode,
+    statistics: ConversionStatistics,
 }
 
 fn prepare_markdown_file_for_pandoc_for_runtime(
@@ -3084,6 +3206,7 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
     let (heading_numbering_mode, heading_numbering_warning) =
         resolve_heading_numbering_mode(request, &original);
     let mermaid = preprocess_mermaid_for_runtime(runtime, &original);
+    let statistics = conversion_statistics(&original, Some(&mermaid));
     let numbered = preprocess_heading_numbering(
         &mermaid.markdown,
         heading_numbering_mode,
@@ -3106,6 +3229,7 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
             mermaid_cleanup_paths: mermaid.cleanup_paths,
             warnings,
             heading_numbering_mode,
+            statistics,
         });
     }
 
@@ -3127,6 +3251,7 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
         mermaid_cleanup_paths: mermaid.cleanup_paths,
         warnings,
         heading_numbering_mode,
+        statistics,
     })
 }
 
@@ -8363,6 +8488,7 @@ mod tests {
     use super::{
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
+        conversion_statistics,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_table_style_config,
         default_page_settings_config, default_report_heading_numbering_config,
@@ -8388,7 +8514,8 @@ mod tests {
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         validate_docx_package, validate_xml_part, HeadingNumberingMode, HeadingTarget,
-        validate_updated_field_results, FieldUpdateProvider, MarkdownFeatureConfig, TocPageNumber,
+        validate_updated_field_results, FieldUpdateProvider, MarkdownFeatureConfig,
+        MermaidPreprocessResult, TocPageNumber,
         MERMAID_WIDTH_TITLE_PREFIX, UNNUMBERED_HEADING_MARKER,
     };
     use regex::Regex;
@@ -8492,6 +8619,33 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "TABLE_WIDTH_RISK");
         assert_eq!(diagnostics[0].line, Some(1));
+    }
+
+    #[test]
+    fn reports_mermaid_image_and_table_statistics() {
+        let rows = (0..26)
+            .map(|_| "| a | b | c | d | e | f | g | h | i |")
+            .collect::<Vec<_>>()
+            .join("\n");
+        let markdown = format!(
+            "```mermaid\nflowchart LR\nA-->B\n```\n\n![图](image.png)\n\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |\n|---|---|---|---|---|---|---|---|---|\n{rows}"
+        );
+        let mermaid = MermaidPreprocessResult {
+            markdown: markdown.clone(),
+            warnings: Vec::new(),
+            cleanup_paths: Vec::new(),
+            rendered: 1,
+            failed: 0,
+        };
+
+        let statistics = conversion_statistics(&markdown, Some(&mermaid));
+
+        assert_eq!(statistics.mermaid_blocks, 1);
+        assert_eq!(statistics.mermaid_rendered, 1);
+        assert_eq!(statistics.image_count, 1);
+        assert_eq!(statistics.table_count, 1);
+        assert_eq!(statistics.multi_page_table_candidate_count, 1);
+        assert_eq!(statistics.table_width_risk_indices, vec![1]);
     }
 
     #[test]
