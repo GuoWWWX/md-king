@@ -27,7 +27,11 @@ export type { TableWidthMode } from "./cm/table-display-settings";
 export type LiveMarkdownEditorProps = {
   /** 受控换文件的判据：只有它变了才做全量替换，内容变化不触发（否则每次自己的输入都会把光标打回去）。 */
   documentKey: string;
+  /** 标签的稳定 id；revision 变化时 documentKey 会变，但视图位置仍属于同一个标签。 */
+  documentId?: string;
   initialContent: string;
+  viewState?: LiveMarkdownViewState;
+  onViewStateChange?: (documentId: string, viewState: LiveMarkdownViewState) => void;
   /** 只读显示在文档属性之前，不写入 Markdown 源码。 */
   documentTitle?: string;
   /** 确认标题编辑后重命名磁盘文件；返回 false 时恢复原文件名。 */
@@ -50,6 +54,12 @@ export type LiveMarkdownEditorProps = {
   tableDefaultWidthMode?: TableWidthMode;
   onTableContextChange?: (context: TableDisplayContext) => void;
   className?: string;
+};
+
+export type LiveMarkdownViewState = {
+  scrollTop: number;
+  anchor: number;
+  head: number;
 };
 
 export type LiveMarkdownEditorHandle = {
@@ -258,12 +268,18 @@ function docChangeDebounceMs(length: number): number {
   return 200;
 }
 
-function initialEditorSelection(content: string) {
+function initialEditorSelection(content: string, viewState?: LiveMarkdownViewState) {
+  if (viewState) {
+    return {
+      anchor: Math.min(Math.max(0, viewState.anchor), content.length),
+      head: Math.min(Math.max(0, viewState.head), content.length),
+    };
+  }
   return { anchor: parseYamlFrontmatter(content)?.to ?? 0 };
 }
 
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
-  { documentKey, initialContent, documentTitle, onDocumentTitleChange, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
+  { documentKey, documentId, initialContent, viewState, onViewStateChange, documentTitle, onDocumentTitleChange, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -287,6 +303,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const onImportImageRef = useRef(onImportImage);
   const onOpenLinkRef = useRef(onOpenLink);
   const onDocumentTitleChangeRef = useRef(onDocumentTitleChange);
+  const onViewStateChangeRef = useRef(onViewStateChange);
   const openLinksOnClickRef = useRef(openLinksOnClick);
   const onTableContextChangeRef = useRef(onTableContextChange);
   const tableDefaultWidthModeRef = useRef(tableDefaultWidthMode);
@@ -298,6 +315,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   onImportImageRef.current = onImportImage;
   onOpenLinkRef.current = onOpenLink;
   onDocumentTitleChangeRef.current = onDocumentTitleChange;
+  onViewStateChangeRef.current = onViewStateChange;
   openLinksOnClickRef.current = openLinksOnClick;
   onTableContextChangeRef.current = onTableContextChange;
   tableDefaultWidthModeRef.current = tableDefaultWidthMode;
@@ -306,9 +324,49 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const debounceRef = useRef<number | null>(null);
   // 首个 documentKey 已经由 initialContent 建进 state，不能在 mount 后再替换一次。
   const lastDocumentKeyRef = useRef(documentKey);
+  const activeDocumentIdRef = useRef(documentId);
+  const incomingViewStateRef = useRef(viewState);
+  incomingViewStateRef.current = viewState;
+  const viewStateTimerRef = useRef<number | undefined>(undefined);
+  const restoreScrollFrameRef = useRef<number | undefined>(undefined);
   // 初始内容同理只在创建时读一次，之后的 props 变化不该反向覆盖用户正在编辑的内容。
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
+
+  function reportViewState(view: EditorView, targetDocumentId = activeDocumentIdRef.current) {
+    if (!targetDocumentId) return;
+    const selection = view.state.selection.main;
+    onViewStateChangeRef.current?.(targetDocumentId, {
+      scrollTop: view.scrollDOM.scrollTop,
+      anchor: selection.anchor,
+      head: selection.head,
+    });
+  }
+
+  function scheduleViewStateReport(view: EditorView) {
+    if (viewStateTimerRef.current !== undefined) return;
+    viewStateTimerRef.current = window.setTimeout(() => {
+      viewStateTimerRef.current = undefined;
+      if (viewRef.current === view) reportViewState(view);
+    }, 120);
+  }
+
+  function restoreScrollPosition(view: EditorView, state: LiveMarkdownViewState | undefined) {
+    if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
+    const scrollTop = Math.max(0, state?.scrollTop ?? 0);
+    const apply = () => {
+      if (viewRef.current !== view) return;
+      view.requestMeasure();
+      view.scrollDOM.scrollTop = Math.min(scrollTop, Math.max(0, view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight));
+    };
+    restoreScrollFrameRef.current = window.requestAnimationFrame(() => {
+      apply();
+      restoreScrollFrameRef.current = window.requestAnimationFrame(() => {
+        restoreScrollFrameRef.current = undefined;
+        apply();
+      });
+    });
+  }
 
   function insertTextIntoView(view: EditorView, text: string) {
     if (!text || view.state.facet(EditorState.readOnly)) return false;
@@ -516,6 +574,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
           activeTableFromRef.current = tableFrom;
           if (tableFrom !== previousTableFrom) reportTableContext(tableFrom);
         }
+        if (update.selectionSet) scheduleViewStateReport(update.view);
         if (!update.docChanged) return;
         const isExternal = update.transactions.some((tr) => tr.annotation(externalUpdate));
         const text = update.state.doc.toString();
@@ -529,12 +588,15 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     const view = new EditorView({
       state: EditorState.create({
         doc: initialContentRef.current,
-        selection: initialEditorSelection(initialContentRef.current),
+        selection: initialEditorSelection(initialContentRef.current, incomingViewStateRef.current),
         extensions,
       }),
       parent: host,
     });
     viewRef.current = view;
+    const handleEditorScroll = () => scheduleViewStateReport(view);
+    view.scrollDOM.addEventListener("scroll", handleEditorScroll, { passive: true });
+    restoreScrollPosition(view, incomingViewStateRef.current);
     if (tableDefaultWidthModeRef.current !== "content") {
       view.dispatch({
         effects: setTableWidthModeEffect.of({ scope: "global", mode: tableDefaultWidthModeRef.current }),
@@ -557,7 +619,11 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     document.addEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
 
     return () => {
+      reportViewState(view);
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+      if (viewStateTimerRef.current !== undefined) window.clearTimeout(viewStateTimerRef.current);
+      if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
+      view.scrollDOM.removeEventListener("scroll", handleEditorScroll);
       host.removeEventListener(tableContextChangeEvent, handleTableContextChange);
       document.removeEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
       view.destroy();
@@ -630,10 +696,13 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     const view = viewRef.current;
     if (!view) return;
     if (lastDocumentKeyRef.current === documentKey) return;
+    reportViewState(view, activeDocumentIdRef.current);
     lastDocumentKeyRef.current = documentKey;
+    activeDocumentIdRef.current = documentId;
 
     const next = initialContentRef.current;
-    const selection = initialEditorSelection(next);
+    const nextViewState = incomingViewStateRef.current;
+    const selection = initialEditorSelection(next, nextViewState);
     activeTableFromRef.current = null;
     if (view.state.doc.toString() === next) {
       view.dispatch({
@@ -642,8 +711,8 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
           resetTableDisplaySettingsEffect.of(tableDefaultWidthModeRef.current),
           resetCalloutCollapsedEffect.of(undefined),
         ],
-        scrollIntoView: true,
       });
+      restoreScrollPosition(view, nextViewState);
       reportTableContext(null);
       return;
     }
@@ -659,10 +728,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 换文件后旧文档的 undo 历史没有意义，撤回过去只会撤出上一个文件的内容。
       // 这里不清历史是刻意的：CM 的 history 会把整段替换当成一步，Ctrl+Z 能整体回退，
       // 由上层的自动保存/冲突流程决定是否需要更强的隔离。
-      scrollIntoView: true,
     });
+    restoreScrollPosition(view, nextViewState);
     reportTableContext(null);
-  }, [documentKey]);
+  }, [documentId, documentKey]);
 
   return <div ref={hostRef} className={cn("mk-cm-host min-h-0 flex-1 overflow-hidden", className)} />;
 });

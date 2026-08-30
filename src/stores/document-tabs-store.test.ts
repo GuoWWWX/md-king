@@ -186,3 +186,63 @@ test("切换仓库时关闭全部文档和图片标签", () => {
     resetTabs();
   }
 });
+
+test("每个标签分别保存滚动位置和光标位置", () => {
+  resetTabs();
+  try {
+    const firstId = useDocumentTabsStore.getState().openScratchTab({ title: "第一份", content: "第一份正文" });
+    const secondId = useDocumentTabsStore.getState().openScratchTab({ title: "第二份", content: "第二份正文" });
+
+    useDocumentTabsStore.getState().setTabViewState(firstId, { scrollTop: 480.25, anchor: 4, head: 7 });
+    useDocumentTabsStore.getState().setTabViewState(secondId, { scrollTop: 920, anchor: 2, head: 2 });
+
+    const [first, second] = useDocumentTabsStore.getState().tabs;
+    assert.deepEqual(first?.viewState, { scrollTop: 480.25, anchor: 4, head: 7 });
+    assert.deepEqual(second?.viewState, { scrollTop: 920, anchor: 2, head: 2 });
+  } finally {
+    resetTabs();
+  }
+});
+
+test("恢复会话时保持标签顺序和关闭前激活的标签", () => {
+  resetTabs();
+  try {
+    useDocumentTabsStore.getState().restoreSessionTabs([
+      { kind: "vault", path: "第一份.md", absolutePath: "D:/仓库/第一份.md", title: "第一份.md", content: "一", dirty: false, viewState: { scrollTop: 100, anchor: 1, head: 1 } },
+      { kind: "image", path: "图片/结构图.png", absolutePath: "D:/仓库/图片/结构图.png", title: "结构图.png", content: "", dirty: false },
+      { kind: "scratch", title: "第三份", content: "三", dirty: true, viewState: { scrollTop: 300, anchor: 2, head: 2 } },
+    ], 2);
+
+    const state = useDocumentTabsStore.getState();
+    assert.deepEqual(state.tabs.map((tab) => tab.title), ["第一份.md", "结构图.png", "第三份"]);
+    assert.equal(state.tabs.findIndex((tab) => tab.id === state.activeTabId), 2);
+    assert.equal(state.tabs[0]?.revision, 0);
+    assert.deepEqual(state.tabs[2]?.viewState, { scrollTop: 300, anchor: 2, head: 2 });
+  } finally {
+    resetTabs();
+  }
+});
+
+test("异步恢复会话时不覆盖启动参数已经打开的文件", () => {
+  resetTabs();
+  try {
+    const startupTabId = useDocumentTabsStore.getState().openVaultTab({
+      path: "启动文件.md",
+      absolutePath: "D:\\仓库\\启动文件.md",
+      title: "启动文件.md",
+      content: "当前启动参数打开的内容",
+    });
+
+    useDocumentTabsStore.getState().restoreSessionTabs([
+      { kind: "vault", path: "旧文件.md", absolutePath: "D:/仓库/旧文件.md", title: "旧文件.md", content: "旧内容", dirty: false },
+      { kind: "vault", path: "启动文件.md", absolutePath: "d:/仓库/启动文件.md", title: "启动文件.md", content: "旧会话内容", dirty: false },
+    ], 0);
+
+    const state = useDocumentTabsStore.getState();
+    assert.deepEqual(state.tabs.map((tab) => tab.title), ["旧文件.md", "启动文件.md"]);
+    assert.equal(state.activeTabId, startupTabId);
+    assert.equal(state.tabs[1]?.content, "当前启动参数打开的内容");
+  } finally {
+    resetTabs();
+  }
+});

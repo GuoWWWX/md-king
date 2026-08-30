@@ -41,9 +41,12 @@ import { DocumentTabBar, type DocumentPageTab } from "@/components/editor/docume
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { documentLinkFragment, findMarkdownHeadingLine, isExternalDocumentLink, resolveVaultDocumentLink } from "@/lib/document-links";
+import { createDocumentSession, documentSessionStorageKey, loadDocumentSession, saveDocumentSession, type PersistedDocumentTab } from "@/lib/document-session";
 import { markdownOutlineRevealEvent } from "@/lib/document-outline";
+import { vaultProjectWindowRoot } from "@/lib/vault-window";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
 import type { VaultEol } from "@/types/vault";
+import type { RestorableDocumentTab } from "@/stores/document-tabs-store";
 
 type PreviewSidebarView = "pages" | "outline";
 type PreviewPaperTheme = "light" | "dark";
@@ -118,6 +121,76 @@ function stripMarkdownExtension(value: string) {
 
 function isAbsoluteFilePath(path: string) {
   return /^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(path);
+}
+
+function sameVaultRoot(left: string | undefined, right: string | undefined) {
+  const normalize = (value: string | undefined) => value?.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() ?? "";
+  return normalize(left) === normalize(right);
+}
+
+async function restorePersistedDocumentTab(tab: PersistedDocumentTab, vaultRoot: string | undefined): Promise<RestorableDocumentTab | undefined> {
+  if (tab.kind === "scratch") {
+    if (tab.content === undefined) return undefined;
+    return {
+      kind: "scratch",
+      title: tab.title,
+      titleEdited: tab.titleEdited,
+      content: tab.content,
+      dirty: tab.dirty,
+      viewState: tab.viewState,
+    };
+  }
+
+  if (tab.kind === "image") {
+    if (!vaultRoot || !tab.path || isAbsoluteFilePath(tab.path)) return undefined;
+    await resolveVaultImageSource(vaultRoot, tab.path);
+    return {
+      kind: "image",
+      path: tab.path,
+      absolutePath: tab.absolutePath ?? vaultAbsolutePath(vaultRoot, tab.path),
+      title: tab.title,
+      content: "",
+      dirty: false,
+      viewState: tab.viewState,
+    };
+  }
+
+  const relativePath = tab.path && !isAbsoluteFilePath(tab.path) ? tab.path : undefined;
+  if (relativePath && vaultRoot) {
+    const disk = await readVaultFile(vaultRoot, relativePath);
+    const restoreUnsavedContent = tab.dirty && tab.content !== undefined;
+    return {
+      kind: "vault",
+      path: disk.path,
+      absolutePath: tab.absolutePath ?? vaultAbsolutePath(vaultRoot, disk.path),
+      title: tab.title,
+      titleEdited: tab.titleEdited,
+      content: restoreUnsavedContent ? tab.content! : disk.content,
+      dirty: restoreUnsavedContent,
+      eol: tab.eol ?? disk.eol,
+      hasBom: tab.hasBom ?? disk.hasBom,
+      modifiedMs: restoreUnsavedContent ? tab.modifiedMs ?? disk.modifiedMs : disk.modifiedMs,
+      viewState: tab.viewState,
+    };
+  }
+
+  const absolutePath = tab.absolutePath ?? (tab.path && isAbsoluteFilePath(tab.path) ? tab.path : undefined);
+  if (!absolutePath) return undefined;
+  const diskContent = await readMarkdownFileFromPath(absolutePath);
+  const restoreUnsavedContent = tab.dirty && tab.content !== undefined;
+  return {
+    kind: "vault",
+    path: absolutePath.replace(/\\/g, "/"),
+    absolutePath,
+    title: tab.title,
+    titleEdited: tab.titleEdited,
+    content: restoreUnsavedContent ? tab.content! : diskContent,
+    dirty: restoreUnsavedContent,
+    eol: tab.eol,
+    hasBom: tab.hasBom,
+    modifiedMs: tab.modifiedMs,
+    viewState: tab.viewState,
+  };
 }
 
 function readFileAsDataUrl(file: File) {
@@ -348,6 +421,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const markTabClean = useDocumentTabsStore((state) => state.markTabClean);
   const markTabSavedAs = useDocumentTabsStore((state) => state.markTabSavedAs);
   const openVaultTab = useDocumentTabsStore((state) => state.openVaultTab);
+  const restoreSessionTabs = useDocumentTabsStore((state) => state.restoreSessionTabs);
+  const setTabViewState = useDocumentTabsStore((state) => state.setTabViewState);
   const previewVisible = useVaultStore((state) => state.previewVisible);
   const setPreviewVisible = useVaultStore((state) => state.setPreviewVisible);
   const vaultRoot = useVaultStore((state) => state.vaultRoot);
@@ -401,6 +476,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     widthMode: "content",
     scope: "global",
   });
+  const [documentSessionReady, setDocumentSessionReady] = useState(false);
+  const restoredSessionKeyRef = useRef<string | undefined>(undefined);
+  const latestDocumentSessionRef = useRef<ReturnType<typeof createDocumentSession> | undefined>(undefined);
 
   useEffect(() => {
     if (!isImageTab || !vaultRoot || !activeTab?.path) {
@@ -414,6 +492,114 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       .catch(() => { if (!cancelled) setActiveImageSource(undefined); });
     return () => { cancelled = true; };
   }, [activeTab?.path, isImageTab, vaultRoot]);
+
+  useEffect(() => {
+    if (!appConfig) return undefined;
+    const projectRoot = vaultProjectWindowRoot(window.location.search);
+    const expectedRoot = projectRoot
+      ?? appConfig.vaultRoot
+      ?? appConfig.recentVaults.find((root) => root.trim());
+    if (expectedRoot && !sameVaultRoot(vaultRoot, expectedRoot)) return undefined;
+
+    const sessionRoot = vaultRoot ?? expectedRoot;
+    const sessionKey = documentSessionStorageKey(sessionRoot);
+    if (restoredSessionKeyRef.current === sessionKey) return undefined;
+    restoredSessionKeyRef.current = sessionKey;
+    setDocumentSessionReady(false);
+
+    const session = loadDocumentSession(sessionRoot);
+    if (!session) {
+      setDocumentSessionReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    void Promise.all(session.tabs.map((tab) => restorePersistedDocumentTab(tab, sessionRoot).catch(() => undefined)))
+      .then((results) => {
+        if (cancelled) return;
+        const restoredTabs = results.filter((tab): tab is RestorableDocumentTab => Boolean(tab));
+        const activeResult = results[session.activeIndex];
+        let restoredActiveIndex = 0;
+        if (activeResult) {
+          restoredActiveIndex = results.slice(0, session.activeIndex + 1).filter(Boolean).length - 1;
+        } else {
+          const nextIndex = results.findIndex((tab, index) => index > session.activeIndex && Boolean(tab));
+          if (nextIndex >= 0) {
+            restoredActiveIndex = results.slice(0, nextIndex + 1).filter(Boolean).length - 1;
+          } else {
+            restoredActiveIndex = Math.max(0, restoredTabs.length - 1);
+          }
+        }
+        restoreSessionTabs(restoredTabs, restoredActiveIndex);
+        useAppStore.setState({
+          activePage: session.activePage,
+          pageTabs: session.pageTabs,
+        });
+        setDocumentSessionReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setDocumentSessionReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appConfig, restoreSessionTabs, vaultRoot]);
+
+  const activeSessionKey = documentSessionStorageKey(vaultRoot);
+  const canPersistDocumentSession = documentSessionReady
+    && restoredSessionKeyRef.current === activeSessionKey;
+
+  useEffect(() => {
+    if (!canPersistDocumentSession) return undefined;
+    latestDocumentSessionRef.current = createDocumentSession(
+      tabs,
+      activeTabId,
+      vaultRoot,
+      activePage,
+      pageTabs,
+    );
+    const timer = window.setTimeout(() => {
+      const session = latestDocumentSessionRef.current;
+      if (session) saveDocumentSession(session);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [activePage, activeTabId, canPersistDocumentSession, pageTabs, tabs, vaultRoot]);
+
+  useEffect(() => {
+    if (!canPersistDocumentSession) return undefined;
+    const flush = () => {
+      const session = latestDocumentSessionRef.current;
+      if (session) saveDocumentSession(session);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      flush();
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeSessionKey, canPersistDocumentSession]);
+
+  useEffect(() => {
+    if (!activeTab || activeTab.kind !== "vault" || !activeTab.path || isAbsoluteFilePath(activeTab.path)) {
+      useVaultStore.getState().setActiveFile(undefined);
+      setSaveState(activeTab?.dirty ? "dirty" : "clean");
+      return;
+    }
+    useVaultStore.getState().setActiveFile({
+      path: activeTab.path,
+      eol: activeTab.eol ?? "lf",
+      hasBom: activeTab.hasBom ?? false,
+      modifiedMs: activeTab.modifiedMs ?? 0,
+    });
+    setSaveState(activeTab.dirty ? "dirty" : "clean");
+  }, [activeTab?.dirty, activeTab?.eol, activeTab?.hasBom, activeTab?.id, activeTab?.kind, activeTab?.modifiedMs, activeTab?.path, setSaveState]);
 
   function cycleContentWidthMode() {
     setContentWidthMode((current) => {
@@ -1668,6 +1854,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 onDocumentTitleChange={activeTab && activeTab.kind !== "image" ? renameActiveDocument : undefined}
                 documentKey={documentKey}
                 documentTabId={activeTabId}
+                documentViewState={activeTab?.viewState}
+                onDocumentViewStateChange={setTabViewState}
                 markdownSourcePath={markdownSourcePath}
                 isDark={isDark}
                 onChange={setMarkdown}

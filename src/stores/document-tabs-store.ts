@@ -6,6 +6,12 @@ import type { VaultEol } from "@/types/vault";
 /// - scratch：粘贴/导入/新建产生的临时内容，没有落盘，关掉就没了
 export type DocumentTabKind = "vault" | "scratch" | "image";
 
+export type DocumentViewState = {
+  scrollTop: number;
+  anchor: number;
+  head: number;
+};
+
 export type DocumentTab = {
   id: string;
   kind: DocumentTabKind;
@@ -25,7 +31,16 @@ export type DocumentTab = {
   modifiedMs?: number;
   /// 外部灌入内容时递增，编辑器据此决定何时做全量替换。
   revision: number;
+  /// 每个标签各自的编辑器位置；切换标签和恢复会话时原样还原。
+  viewState?: DocumentViewState;
 };
+
+export type RestorableDocumentTab = Omit<DocumentTab, "id" | "revision">;
+
+function documentTabPathKey(tab: Pick<DocumentTab, "kind" | "path" | "absolutePath">) {
+  const path = tab.absolutePath ?? tab.path;
+  return path ? `${tab.kind}:${path.replace(/\\/g, "/").toLowerCase()}` : undefined;
+}
 
 type DocumentTabsState = {
   tabs: DocumentTab[];
@@ -37,7 +52,9 @@ type DocumentTabsState = {
   openScratchTab: (input: { title: string; content: string; dirty?: boolean }) => string;
   /// 图片和 Markdown 一样作为工作区标签打开，但不会进入编辑、保存或转换流程。
   openImageTab: (file: { path: string; absolutePath: string; title: string }) => string;
+  restoreSessionTabs: (tabs: RestorableDocumentTab[], activeIndex: number) => void;
   setActiveTab: (id: string) => void;
+  setTabViewState: (id: string, viewState: DocumentViewState) => void;
   /// 拖动标签排序；beforeId 为空表示移到末尾。
   moveTab: (id: string, beforeId?: string) => void;
   /// 用户编辑：只改内容和脏标记，不动 revision（动了会打断输入）。
@@ -129,7 +146,55 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
     return id;
   },
 
+  restoreSessionTabs: (tabs, activeIndex) => set((state) => {
+    const restoredTabs = tabs.map((tab) => ({
+      ...tab,
+      id: nextTabId(tab.kind),
+      revision: 0,
+    }));
+    const safeActiveIndex = Math.min(Math.max(0, activeIndex), Math.max(0, restoredTabs.length - 1));
+    if (state.tabs.length === 0) {
+      return {
+        tabs: restoredTabs,
+        activeTabId: restoredTabs[safeActiveIndex]?.id,
+      };
+    }
+
+    // 启动参数或用户点击可能在异步会话读取完成前已经打开文件；这些显式操作优先，
+    // 恢复时只补回其余标签，不能把刚打开的文件覆盖掉。
+    const currentKeys = new Set(state.tabs.flatMap((tab) => {
+      const key = documentTabPathKey(tab);
+      return key ? [key] : [];
+    }));
+    const missingRestoredTabs = restoredTabs.filter((tab) => {
+      const key = documentTabPathKey(tab);
+      return !key || !currentKeys.has(key);
+    });
+    return {
+      tabs: [...missingRestoredTabs, ...state.tabs],
+      activeTabId: state.activeTabId ?? restoredTabs[safeActiveIndex]?.id,
+    };
+  }),
+
   setActiveTab: (activeTabId) => set({ activeTabId }),
+
+  setTabViewState: (id, viewState) => set((state) => {
+    const next = {
+      scrollTop: Math.max(0, Number.isFinite(viewState.scrollTop) ? viewState.scrollTop : 0),
+      anchor: Math.max(0, Number.isFinite(viewState.anchor) ? Math.floor(viewState.anchor) : 0),
+      head: Math.max(0, Number.isFinite(viewState.head) ? Math.floor(viewState.head) : 0),
+    };
+    const current = state.tabs.find((tab) => tab.id === id)?.viewState;
+    if (current
+      && Math.abs(current.scrollTop - next.scrollTop) < 0.5
+      && current.anchor === next.anchor
+      && current.head === next.head) {
+      return state;
+    }
+    return {
+      tabs: state.tabs.map((tab) => tab.id === id ? { ...tab, viewState: next } : tab),
+    };
+  }),
 
   moveTab: (id, beforeId) => set((state) => {
     const fromIndex = state.tabs.findIndex((tab) => tab.id === id);

@@ -5,7 +5,7 @@ import { forwardRef, type ChangeEvent, type DragEvent, useEffect, useImperativeH
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { LiveMarkdownEditor, type LiveMarkdownEditorHandle, type TableDisplayContext, type TableWidthMode } from "@/components/editor/live-markdown-editor";
+import { LiveMarkdownEditor, type LiveMarkdownEditorHandle, type LiveMarkdownViewState, type TableDisplayContext, type TableWidthMode } from "@/components/editor/live-markdown-editor";
 import { adjustCodeBlockIndent, getCodeBlockIndentContext } from "@/components/editor/cm/formatting-keymap";
 import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/lib/document-outline";
@@ -26,6 +26,8 @@ type ConversionInputCardProps = {
   /// 换文档时变化的 key：内容变化不触发编辑器重载，只有它变了才做全量替换。
   documentKey: string;
   documentTabId?: string;
+  documentViewState?: LiveMarkdownViewState;
+  onDocumentViewStateChange?: (documentId: string, viewState: LiveMarkdownViewState) => void;
   markdownSourcePath?: string;
   /// 一个标签都没打开时显示引导区，而不是一个空编辑器。
   hasDocument?: boolean;
@@ -62,6 +64,8 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   onDocumentTitleChange,
   documentKey,
   documentTabId,
+  documentViewState,
+  onDocumentViewStateChange,
   markdownSourcePath,
   hasDocument = true,
   documentInfo,
@@ -311,7 +315,10 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
         <LiveMarkdownEditor
           ref={editorRef}
           documentKey={documentKey}
+          documentId={documentTabId}
           initialContent={markdown}
+          viewState={documentViewState}
+          onViewStateChange={onDocumentViewStateChange}
           documentTitle={documentTitle}
           onDocumentTitleChange={onDocumentTitleChange}
           markdownSourcePath={markdownSourcePath}
