@@ -11,6 +11,7 @@ export type ConvertRequest = {
   conflictStrategy?: "overwrite" | "rename" | "ask";
   headingNumbering?: "auto" | "source" | "word" | "none";
   tocPageNumbers?: Array<{ anchorId: string; page: number }>;
+  updateFields?: "none" | "wps" | "word";
 };
 
 export type ConvertResult = {
@@ -23,6 +24,8 @@ export type ConvertResult = {
   templateSha256?: string;
   durationMs: number;
   warnings: string[];
+  fieldUpdateStatus?: "notRun" | "notRequested" | "pendingOnOpen" | "updated" | "failed";
+  fieldUpdateProvider?: "WPS" | "Word";
   errorCode?: string;
   message?: string;
 };

@@ -53,6 +53,14 @@ enum Commands {
             value_parser = ["auto", "source", "word", "none"]
         )]
         heading_numbering: String,
+
+        /// Update TOC, page number and cross-reference fields with WPS or Word after conversion.
+        #[arg(
+            long = "update-fields",
+            default_value = "none",
+            value_parser = ["none", "wps", "word"]
+        )]
+        update_fields: String,
     },
 
     /// Manage and inspect Word/WPS templates.
@@ -96,6 +104,7 @@ fn main() {
             overwrite,
             json,
             heading_numbering,
+            update_fields,
         } => run_convert(
             input,
             output,
@@ -104,6 +113,7 @@ fn main() {
             overwrite,
             json,
             heading_numbering,
+            update_fields,
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
@@ -122,6 +132,7 @@ fn run_convert(
     overwrite: bool,
     json: bool,
     heading_numbering: String,
+    update_fields: String,
 ) -> i32 {
     let template_id = match resolve_template_id(template_selector) {
         Ok(template_id) => template_id,
@@ -150,6 +161,7 @@ fn run_convert(
         conflict_strategy: None,
         heading_numbering: Some(heading_numbering),
         toc_page_numbers: None,
+        update_fields: Some(update_fields),
     });
 
     if json {

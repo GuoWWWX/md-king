@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use regex::{Captures, Regex};
 use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
@@ -6,12 +7,19 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::AppHandle;
 use tauri::Manager;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use crate::core::config::load_config;
 use crate::core::mermaid::{
@@ -51,6 +59,8 @@ pub struct ConvertRequest {
     pub heading_numbering: Option<String>,
     #[serde(default)]
     pub toc_page_numbers: Option<Vec<TocPageNumber>>,
+    #[serde(default)]
+    pub update_fields: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -71,6 +81,8 @@ pub struct ConvertResult {
     pub template_sha256: Option<String>,
     pub duration_ms: u64,
     pub warnings: Vec<String>,
+    pub field_update_status: String,
+    pub field_update_provider: Option<String>,
     pub error_code: Option<String>,
     pub message: Option<String>,
 }
@@ -837,6 +849,43 @@ fn success_result(
     resolved_template_path: Option<String>,
     template_sha256: Option<String>,
 ) -> ConvertResult {
+    let toc_enabled = page_settings_config(&request).is_some_and(|settings| settings.toc_enabled);
+    let requested_field_update = FieldUpdateProvider::from_request(&request);
+    let mut field_update_status = if toc_enabled {
+        "pendingOnOpen"
+    } else {
+        "notRequested"
+    }
+    .to_string();
+    let mut field_update_provider = None;
+    let mut result_message = "Pandoc 转换完成。".to_string();
+
+    if let Some(provider) = requested_field_update {
+        field_update_provider = Some(provider.label().to_string());
+        match update_fields_safely(&output_path, provider) {
+            Ok(()) => {
+                field_update_status = "updated".to_string();
+                result_message = format!("转换完成，目录和页码域已由 {} 更新。", provider.label());
+                warnings.push(format!(
+                    "已使用 {} 更新目录、页码和交叉引用，并完成更新后结构校验。",
+                    provider.label()
+                ));
+            }
+            Err(error) => {
+                field_update_status = "failed".to_string();
+                warnings.push(format!(
+                    "{} 域更新失败，已保留更新前的有效 DOCX：{error}",
+                    provider.label()
+                ));
+            }
+        }
+    } else if toc_enabled {
+        warnings.push(
+            "已设置首次打开 DOCX 时自动更新目录、页码和交叉引用；当前状态为等待 WPS/Word 更新。"
+                .to_string(),
+        );
+    }
+
     if request.open_after_convert.unwrap_or(false) {
         if let Err(error) = open_path(&output_path) {
             warnings.push(format!("打开输出文件失败：{error}"));
@@ -852,8 +901,10 @@ fn success_result(
         template_sha256,
         duration_ms: elapsed_ms(started_at),
         warnings,
+        field_update_status,
+        field_update_provider,
         error_code: None,
-        message: Some("Pandoc 转换完成。".to_string()),
+        message: Some(result_message),
     }
 }
 
@@ -874,6 +925,8 @@ fn failure_result(
         template_sha256: None,
         duration_ms: elapsed_ms(started_at),
         warnings,
+        field_update_status: "notRun".to_string(),
+        field_update_provider: None,
         error_code: Some(error_code.to_string()),
         message: Some(message.to_string()),
     }
@@ -886,6 +939,156 @@ fn append_pandoc_success_messages(execution: &PandocExecution, warnings: &mut Ve
             warnings.push(format!("Pandoc：{detail}"));
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldUpdateProvider {
+    Word,
+    Wps,
+}
+
+impl FieldUpdateProvider {
+    fn from_request(request: &ConvertRequest) -> Option<Self> {
+        match request
+            .update_fields
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("word") => Some(Self::Word),
+            Some("wps") => Some(Self::Wps),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Word => "Word",
+            Self::Wps => "WPS",
+        }
+    }
+
+    fn prog_id(self) -> &'static str {
+        match self {
+            Self::Word => "Word.Application",
+            Self::Wps => "kwps.Application",
+        }
+    }
+}
+
+fn update_fields_safely(path: &Path, provider: FieldUpdateProvider) -> Result<(), String> {
+    let staged = make_sibling_temp_path(path, "fields-updated", "docx");
+    fs::copy(path, &staged).map_err(|error| format!("创建域更新副本失败：{error}"))?;
+
+    let result = (|| {
+        run_office_field_update(&staged, provider)?;
+        validate_docx_package(&staged)?;
+        validate_updated_field_results(&staged)?;
+        commit_staged_output(&staged, path).map(|_| ())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn run_office_field_update(path: &Path, provider: FieldUpdateProvider) -> Result<(), String> {
+    let script = office_field_update_script(path, provider);
+    let encoded = BASE64_STANDARD.encode(
+        script
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            &encoded,
+        ])
+        .creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|error| format!("启动 {} 域更新失败：{error}", provider.label()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = if stderr.trim().is_empty() {
+        stdout.trim()
+    } else {
+        stderr.trim()
+    };
+    Err(if detail.is_empty() {
+        format!("{} 域更新进程退出状态异常。", provider.label())
+    } else {
+        format!("{} 域更新进程失败：{detail}", provider.label())
+    })
+}
+
+#[cfg(not(windows))]
+fn run_office_field_update(_path: &Path, provider: FieldUpdateProvider) -> Result<(), String> {
+    Err(format!("{} 自动域更新仅支持 Windows。", provider.label()))
+}
+
+fn office_field_update_script(path: &Path, provider: FieldUpdateProvider) -> String {
+    let path = path.to_string_lossy().replace('\'', "''");
+    format!(
+        r#"$ErrorActionPreference='Stop'
+$app=$null
+$doc=$null
+try {{
+  $app=New-Object -ComObject '{prog_id}'
+  $app.Visible=$false
+  try {{ $app.DisplayAlerts=0 }} catch {{}}
+  $doc=$app.Documents.Open('{path}',$false,$false)
+  try {{ $doc.Repaginate() }} catch {{}}
+  if($doc.Fields.Count -gt 0) {{ [void]$doc.Fields.Update() }}
+  for($index=1;$index -le $doc.TablesOfContents.Count;$index++) {{
+    [void]$doc.TablesOfContents.Item($index).Update()
+  }}
+  try {{ $doc.Repaginate() }} catch {{}}
+  $doc.Save()
+  if(-not $doc.Saved) {{ throw '办公软件未确认文档已保存' }}
+}} finally {{
+  if($doc -ne $null) {{ $doc.Close($false) }}
+  if($app -ne $null) {{ $app.Quit() }}
+}}"#,
+        prog_id = provider.prog_id()
+    )
+}
+
+fn validate_updated_field_results(path: &Path) -> Result<(), String> {
+    let file = fs::File::open(path).map_err(|error| format!("读取域更新 DOCX 失败：{error}"))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|error| format!("解析域更新 DOCX 失败：{error}"))?;
+    let mut document = String::new();
+    archive
+        .by_name("word/document.xml")
+        .map_err(|error| format!("域更新 DOCX 缺少 document.xml：{error}"))?
+        .read_to_string(&mut document)
+        .map_err(|error| format!("读取域更新 document.xml 失败：{error}"))?;
+    let visible_text = Regex::new(r#"(?s)<[^>]+>"#)
+        .expect("valid XML tag regex")
+        .replace_all(&document, "");
+    for marker in [
+        "Error! Reference source not found.",
+        "错误!未找到引用源。",
+        "错误！未找到引用源。",
+    ] {
+        if visible_text.contains(marker) {
+            return Err(format!("域更新后检测到无效交叉引用：{marker}"));
+        }
+    }
+    Ok(())
 }
 
 fn filter_benign_pandoc_svg_fallback_warning(detail: &str) -> String {
@@ -7934,6 +8137,7 @@ mod tests {
         normalize_document_images, normalize_document_xml, normalize_docx,
         normalize_emoji_runs, normalize_image_drawings,
         normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
+        office_field_update_script,
         mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
         page_content_height_twips, page_content_width_twips, page_settings_config_from_value,
         pandoc_document_options_from_value, paragraph_shading_xml,
@@ -7943,7 +8147,7 @@ mod tests {
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         validate_docx_package, validate_xml_part, HeadingNumberingMode, HeadingTarget,
-        MarkdownFeatureConfig, TocPageNumber,
+        validate_updated_field_results, FieldUpdateProvider, MarkdownFeatureConfig, TocPageNumber,
         MERMAID_WIDTH_TITLE_PREFIX, UNNUMBERED_HEADING_MARKER,
     };
     use regex::Regex;
@@ -8003,6 +8207,44 @@ mod tests {
             filter_benign_pandoc_svg_fallback_warning(detail),
             "[WARNING] 其他警告"
         );
+    }
+
+    #[test]
+    fn builds_office_field_update_script_for_selected_provider() {
+        let script = office_field_update_script(
+            Path::new(r"C:\Reports\O'Brien.docx"),
+            FieldUpdateProvider::Wps,
+        );
+
+        assert!(script.contains("New-Object -ComObject 'kwps.Application'"));
+        assert!(script.contains(r#"Documents.Open('C:\Reports\O''Brien.docx'"#));
+        assert!(script.contains("TablesOfContents.Item($index).Update()"));
+        assert!(script.contains("$doc.Fields.Update()"));
+        assert!(script.contains("$doc.Save()"));
+    }
+
+    #[test]
+    fn rejects_updated_docx_with_broken_cross_reference_text() {
+        let path = std::env::temp_dir().join(format!(
+            "md-king-field-error-test-{}.docx",
+            std::process::id()
+        ));
+        let file = fs::File::create(&path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("word/document.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(
+                br#"<w:document><w:body><w:p><w:r><w:t>Error! Reference source not found.</w:t></w:r></w:p></w:body></w:document>"#,
+            )
+            .unwrap();
+        writer.finish().unwrap();
+
+        let error = validate_updated_field_results(&path).unwrap_err();
+        assert!(error.contains("无效交叉引用"));
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
@@ -10408,6 +10650,7 @@ mod tests {
             conflict_strategy: Some("rename".to_string()),
             heading_numbering: None,
             toc_page_numbers: None,
+            update_fields: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
@@ -10456,6 +10699,7 @@ mod tests {
             conflict_strategy: Some("ask".to_string()),
             heading_numbering: None,
             toc_page_numbers: None,
+            update_fields: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();

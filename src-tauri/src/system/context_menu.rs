@@ -55,6 +55,7 @@ pub fn handle_startup_context_action(app: AppHandle) {
             conflict_strategy: Some(config.default_conflict_strategy),
             heading_numbering: None,
             toc_page_numbers: None,
+            update_fields: None,
         };
         let result = convert_markdown(&app, request);
         write_context_log(&format!(
