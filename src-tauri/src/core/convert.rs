@@ -1,4 +1,5 @@
 use regex::{Captures, Regex};
+use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -2437,7 +2438,41 @@ fn validate_docx_package(path: &Path) -> Result<(), String> {
             .by_name(required)
             .map_err(|_| format!("生成的 DOCX 缺少必要内容：{required}"))?;
     }
+
+    for index in 0..archive.len() {
+        let mut part = archive
+            .by_index(index)
+            .map_err(|error| format!("读取 DOCX 内容失败：{error}"))?;
+        let name = part.name().to_string();
+        if name != "[Content_Types].xml"
+            && !name.ends_with(".xml")
+            && !name.ends_with(".rels")
+        {
+            continue;
+        }
+        let mut data = Vec::new();
+        part.read_to_end(&mut data)
+            .map_err(|error| format!("读取 DOCX XML 部件失败（{name}）：{error}"))?;
+        validate_xml_part(&name, &data)?;
+    }
     Ok(())
+}
+
+fn validate_xml_part(name: &str, data: &[u8]) -> Result<(), String> {
+    let mut reader = Reader::from_reader(Cursor::new(data));
+    let mut buffer = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(quick_xml::events::Event::Eof) => return Ok(()),
+            Ok(_) => buffer.clear(),
+            Err(error) => {
+                return Err(format!(
+                    "生成的 DOCX XML 无效（{name}，字节位置 {}）：{error}",
+                    reader.error_position()
+                ))
+            }
+        }
+    }
 }
 
 fn commit_staged_output(staged_path: &Path, output_path: &Path) -> Result<Option<String>, String> {
@@ -4240,10 +4275,16 @@ fn normalize_toc_fields(
 }
 
 fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> String {
-    let paragraph = Regex::new(
-        r#"(?s)<w:p(?:\s[^>]*)?>.*?<w:pStyle\b[^>]*w:val="TOCHeading"[^>]*/>.*?</w:p>"#,
-    )
-    .expect("valid TOC heading paragraph regex");
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
+        .expect("valid TOC heading paragraph regex");
+    let toc_heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="TOCHeading"[^>]*/>"#)
+        .expect("valid TOC heading style regex");
+    let Some(paragraph) = paragraph
+        .find_iter(xml)
+        .find(|paragraph| toc_heading_style.is_match(paragraph.as_str()))
+    else {
+        return xml.to_string();
+    };
     let title = escape_xml_text(&page_settings.toc_title);
     let size = font_size_half_points(page_settings.toc_title_font_size);
     let bold = page_settings
@@ -4271,7 +4312,12 @@ fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> Strin
     let replacement = format!(
         r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading" /><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" /></w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{title}</w:t></w:r></w:p>"#,
     );
-    paragraph.replace(xml, replacement).to_string()
+    format!(
+        "{}{}{}",
+        &xml[..paragraph.start()],
+        replacement,
+        &xml[paragraph.end()..]
+    )
 }
 
 fn populate_empty_toc_result(
@@ -7656,7 +7702,8 @@ mod tests {
         table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        HeadingNumberingMode, HeadingTarget, MarkdownFeatureConfig, TocPageNumber,
+        validate_docx_package, validate_xml_part, HeadingNumberingMode, HeadingTarget,
+        MarkdownFeatureConfig, TocPageNumber,
         UNNUMBERED_HEADING_MARKER,
     };
     use regex::Regex;
@@ -8813,6 +8860,56 @@ mod tests {
         assert!(!output.contains("<w:t xml:space=\"preserve\">1.1.1 细节</w:t>"));
         assert_eq!(output.matches(r#"w:fldCharType="begin""#).count(), 1);
         assert_eq!(output.matches(r#"w:fldCharType="end""#).count(), 1);
+    }
+
+    #[test]
+    fn yaml_title_before_toc_does_not_remove_content_control_opening_tags() {
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": { "tocEnabled": true, "tocDepth": "1-3" }
+        }))
+        .unwrap();
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Title" /></w:pPr><w:r><w:t>YAML 标题</w:t></w:r></w:p><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>第一章</w:t></w:r></w:p><w:sectPr /></w:body></w:document>"#;
+
+        let output = normalize_toc_fields(input, &settings, None, None);
+
+        assert!(output.contains("<w:t>YAML 标题</w:t>"));
+        assert!(output.find("YAML 标题").unwrap() < output.find("<w:sdt>").unwrap());
+        assert_eq!(output.matches("<w:sdtContent>").count(), 1);
+        assert_eq!(output.matches("</w:sdtContent>").count(), 1);
+        validate_xml_part("word/document.xml", output.as_bytes())
+            .expect("normalized YAML title and TOC should remain well-formed XML");
+    }
+
+    #[test]
+    fn rejects_docx_with_malformed_xml_part() {
+        let path = std::env::temp_dir().join(format!(
+            "md-king-malformed-xml-{}.docx",
+            std::process::id()
+        ));
+        {
+            let file = fs::File::create(&path).unwrap();
+            let mut writer = ZipWriter::new(file);
+            for (name, content) in [
+                ("[Content_Types].xml", "<Types></Types>"),
+                ("word/styles.xml", "<w:styles></w:styles>"),
+                (
+                    "word/document.xml",
+                    "<w:document><w:body></w:sdtContent></w:document>",
+                ),
+            ] {
+                writer
+                    .start_file(name, SimpleFileOptions::default())
+                    .unwrap();
+                writer.write_all(content.as_bytes()).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+
+        let error = validate_docx_package(&path).expect_err("malformed XML should be rejected");
+
+        assert!(error.contains("word/document.xml"), "{error}");
+        assert!(error.contains("XML 无效"), "{error}");
+        let _ = fs::remove_file(path);
     }
 
     #[test]

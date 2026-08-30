@@ -209,9 +209,7 @@ fn run_resolved_pandoc_to_docx(
 }
 
 fn pandoc_document_option_args(options: &PandocDocumentOptions) -> Vec<String> {
-    // Frontmatter 的 title 是文档属性，不是正文标题。清空 Pandoc 元数据标题，
-    // 正文里真正写出的 Markdown 标题仍按 Heading 样式正常导出。
-    let mut args = vec!["--metadata=title:".to_string()];
+    let mut args = Vec::new();
     if let Some(resource_path) = options.resource_path.as_ref() {
         args.push(format!(
             "--resource-path={}",
@@ -406,13 +404,10 @@ mod tests {
             resource_path: None,
         });
 
-        assert_eq!(
-            args,
-            vec!["--metadata=title:", "--toc", "--toc-depth=3"]
-        );
+        assert_eq!(args, vec!["--toc", "--toc-depth=3"]);
         assert_eq!(
             pandoc_document_option_args(&PandocDocumentOptions::default()),
-            vec!["--metadata=title:"]
+            Vec::<String>::new()
         );
     }
 
@@ -429,10 +424,7 @@ mod tests {
             resource_path: Some(Path::new(r"C:\docs\assets").to_path_buf()),
         });
 
-        assert_eq!(
-            args,
-            vec!["--metadata=title:", r"--resource-path=C:\docs\assets"]
-        );
+        assert_eq!(args, vec![r"--resource-path=C:\docs\assets"]);
     }
 
     #[test]
