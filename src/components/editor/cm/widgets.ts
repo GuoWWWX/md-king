@@ -46,6 +46,7 @@ import {
   reorderTableRow,
   serializeMarkdownTable,
   tableOperationFocus,
+  tableCellPointerSelection,
   tableSelectionBounds,
   tableSelectionCoversWholeTable,
   tableSelectionToTsv,
@@ -795,6 +796,7 @@ export class TableWidget extends WidgetType {
     const wrapper = document.createElement("div");
     wrapper.className = "mk-cm-table-wrapper mk-cm-table-wrapper--readonly";
     wrapper.dataset.tableFrom = String(this.tableFrom);
+    wrapper.tabIndex = 0;
     wrapper.classList.toggle("is-wrap", this.widthMode === "content");
     const container = measuredBlockWidget(wrapper, "table");
 
@@ -833,6 +835,71 @@ export class TableWidget extends WidgetType {
     this.applyDocumentSelectedRows(wrapper);
     let dragAnchor: number | null = null;
     let finishFrame: number | null = null;
+    let cellSelection: TableSelection | null = null;
+    let cellDrag: {
+      pointerId: number;
+      anchor: { row: number; column: number };
+      focus: { row: number; column: number };
+    } | null = null;
+    const clearCellSelection = () => {
+      cellSelection = null;
+      wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
+    };
+    const applyCellSelection = (next: TableSelection) => {
+      cellSelection = next;
+      wrapper.querySelectorAll(".mk-table-selected").forEach((element) => element.classList.remove("mk-table-selected"));
+      const bounds = tableSelectionBounds(this.model, next);
+      wrapper.querySelectorAll<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]").forEach((element) => {
+        const row = Number(element.dataset.tableRow);
+        const column = Number(element.dataset.tableColumn);
+        if (row >= bounds.top && row <= bounds.bottom && column >= bounds.left && column <= bounds.right) {
+          element.classList.add("mk-table-selected");
+        }
+      });
+    };
+    const cellAtPoint = (x: number, y: number) => {
+      const element = document.elementFromPoint(x, y)
+        ?.closest<HTMLElement>("th[data-table-row][data-table-column], td[data-table-row][data-table-column]");
+      if (!element || !wrapper.contains(element)) return null;
+      const row = Number(element.dataset.tableRow);
+      const column = Number(element.dataset.tableColumn);
+      return Number.isInteger(row) && Number.isInteger(column) ? { row, column } : null;
+    };
+    const beginCellSelection = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const cell = cellAtPoint(event.clientX, event.clientY);
+      if (!cell) return;
+      event.preventDefault();
+      event.stopPropagation();
+      // 表格内开始拖选时使用和编辑模式一致的单元格选区，不再同时扩展正文行选区。
+      dragAnchor = null;
+      const nextSelection = tableCellPointerSelection(cellSelection, cell, event.shiftKey);
+      if (nextSelection.kind === "range") {
+        applyCellSelection(nextSelection);
+      } else {
+        cellDrag = { pointerId: event.pointerId, anchor: cell, focus: cell };
+        applyCellSelection(nextSelection);
+      }
+      wrapper.focus({ preventScroll: true });
+    };
+    const updateCellSelection = (event: PointerEvent) => {
+      if (!cellDrag || event.pointerId !== cellDrag.pointerId) return;
+      const cell = cellAtPoint(event.clientX, event.clientY);
+      if (!cell || (cell.row === cellDrag.focus.row && cell.column === cellDrag.focus.column)) return;
+      cellDrag.focus = cell;
+      applyCellSelection({ kind: "range", anchor: cellDrag.anchor, focus: cell });
+    };
+    const finishCellSelection = (event: PointerEvent) => {
+      if (!cellDrag || event.pointerId !== cellDrag.pointerId) return;
+      updateCellSelection(event);
+      cellDrag = null;
+    };
+    const cancelCellSelection = (event: PointerEvent) => {
+      if (cellDrag?.pointerId === event.pointerId) cellDrag = null;
+    };
+    const clearCellSelectionOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !wrapper.contains(event.target)) clearCellSelection();
+    };
     const renderedRowAtPoint = (event: MouseEvent) => {
       const cell = document.elementFromPoint(event.clientX, event.clientY)
         ?.closest<HTMLElement>("th[data-table-row], td[data-table-row]");
@@ -854,6 +921,10 @@ export class TableWidget extends WidgetType {
     const captureDocumentSelectionAnchor = (event: MouseEvent) => {
       dragAnchor = null;
       if (event.button !== 0 || !(event.target instanceof Node) || !view.dom.contains(event.target)) return;
+      if (event.target instanceof Element) {
+        const cell = event.target.closest("th[data-table-row][data-table-column], td[data-table-row][data-table-column]");
+        if (cell && wrapper.contains(cell)) return;
+      }
       dragAnchor = view.posAtCoords({ x: event.clientX, y: event.clientY });
     };
     const extendDocumentSelectionThroughRow = (event: MouseEvent) => {
@@ -877,17 +948,37 @@ export class TableWidget extends WidgetType {
     };
     document.addEventListener("pointerdown", captureDocumentSelectionAnchor, true);
     document.addEventListener("mousedown", captureDocumentSelectionAnchor, true);
+    document.addEventListener("pointerdown", clearCellSelectionOutside, true);
     document.addEventListener("pointermove", extendDocumentSelectionThroughRow, true);
     document.addEventListener("mousemove", extendDocumentSelectionThroughRow, true);
     document.addEventListener("pointerup", finishDocumentSelection, true);
     document.addEventListener("mouseup", finishDocumentSelection, true);
+    table.addEventListener("pointerdown", beginCellSelection);
+    table.addEventListener("pointermove", updateCellSelection);
+    document.addEventListener("pointerup", finishCellSelection, true);
+    document.addEventListener("pointercancel", cancelCellSelection, true);
+    wrapper.addEventListener("copy", (event) => {
+      if (!cellSelection) return;
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", tableSelectionCoversWholeTable(this.model, cellSelection)
+        ? serializeMarkdownTable(this.model)
+        : tableSelectionToTsv(this.model, cellSelection));
+    });
+    wrapper.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") clearCellSelection();
+    });
     this.cleanups.set(container, () => {
       document.removeEventListener("pointerdown", captureDocumentSelectionAnchor, true);
       document.removeEventListener("mousedown", captureDocumentSelectionAnchor, true);
+      document.removeEventListener("pointerdown", clearCellSelectionOutside, true);
       document.removeEventListener("pointermove", extendDocumentSelectionThroughRow, true);
       document.removeEventListener("mousemove", extendDocumentSelectionThroughRow, true);
       document.removeEventListener("pointerup", finishDocumentSelection, true);
       document.removeEventListener("mouseup", finishDocumentSelection, true);
+      table.removeEventListener("pointerdown", beginCellSelection);
+      table.removeEventListener("pointermove", updateCellSelection);
+      document.removeEventListener("pointerup", finishCellSelection, true);
+      document.removeEventListener("pointercancel", cancelCellSelection, true);
       if (finishFrame !== null) cancelAnimationFrame(finishFrame);
     });
     return container;
@@ -1788,15 +1879,16 @@ export class TableWidget extends WidgetType {
           return;
         }
         const current = selection;
-        if (event.shiftKey && current && (current.kind === "cell" || current.kind === "range")) {
-          updateSelection({ kind: "range", anchor: current.anchor, focus: { row, column } });
+        const nextSelection = tableCellPointerSelection(current, { row, column }, event.shiftKey);
+        if (nextSelection.kind === "range") {
+          updateSelection(nextSelection);
           rendered.focus();
           return;
         }
 
         const anchor = { row, column };
         cellDrag = { pointerId: event.pointerId, anchor, focus: anchor, dragged: false };
-        updateSelection({ kind: "cell", anchor, focus: anchor });
+        updateSelection(nextSelection);
       });
       rendered.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === "F2") {

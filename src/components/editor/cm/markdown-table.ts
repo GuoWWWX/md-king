@@ -39,6 +39,18 @@ function backslashRunLength(value: string, start: number): number {
   return end - start;
 }
 
+/** 编辑和阅读模式共用同一套单元格点击/Shift 扩选规则。 */
+export function tableCellPointerSelection(
+  current: TableSelection | null,
+  cell: TableCellPosition,
+  extend: boolean,
+): Extract<TableSelection, { kind: "cell" | "range" }> {
+  if (extend && current && (current.kind === "cell" || current.kind === "range")) {
+    return { kind: "range", anchor: current.anchor, focus: cell };
+  }
+  return { kind: "cell", anchor: cell, focus: cell };
+}
+
 function obsidianWikilinkPipePositions(value: string): Set<number> {
   const positions = new Set<number>();
   for (const link of findObsidianWikilinks(value)) {

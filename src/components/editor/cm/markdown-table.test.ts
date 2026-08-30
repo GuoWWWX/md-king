@@ -15,6 +15,7 @@ import {
   reorderTableRow,
   serializeMarkdownTable,
   tableSelectionBounds,
+  tableCellPointerSelection,
   tableSelectionCoversWholeTable,
   tableSelectionToTsv,
   tableOperationFocus,
@@ -166,6 +167,25 @@ test("单格、整行、整列和矩形选区按 TSV 复制并可清空", () => 
   assert.equal(tableSelectionToTsv(table, { kind: "row", index: 1 }), "A\tB\tC");
   assert.equal(tableSelectionToTsv(table, { kind: "column", index: 0 }), "H1\r\nA\r\nD");
   assert.deepEqual(clearTableSelection(table, range).rows, [["H1", "H2", "H3"], ["A", "", ""], ["D", "", ""]]);
+});
+
+test("阅读模式和编辑模式使用相同的单元格点击与 Shift 扩选规则", () => {
+  const first = tableCellPointerSelection(null, { row: 1, column: 1 }, false);
+  assert.deepEqual(first, {
+    kind: "cell",
+    anchor: { row: 1, column: 1 },
+    focus: { row: 1, column: 1 },
+  });
+  assert.deepEqual(tableCellPointerSelection(first, { row: 3, column: 2 }, true), {
+    kind: "range",
+    anchor: { row: 1, column: 1 },
+    focus: { row: 3, column: 2 },
+  });
+  assert.deepEqual(tableCellPointerSelection({ kind: "row", index: 1 }, { row: 2, column: 0 }, true), {
+    kind: "cell",
+    anchor: { row: 2, column: 0 },
+    focus: { row: 2, column: 0 },
+  });
 });
 
 test("拖选覆盖所有单元格时识别为整张表格", () => {
