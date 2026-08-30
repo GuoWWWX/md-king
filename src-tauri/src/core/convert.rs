@@ -7703,9 +7703,16 @@ fn table_column_widths_for_xml(
 
     let minimum_content_width_twips = px_to_twips(24.0);
     let horizontal_padding_twips = px_to_twips(style.cell_padding_x.max(0.0) * 2.0);
-    let minimum_column_width = minimum_content_width_twips + horizontal_padding_twips;
+    let requested_minimum_column_width = minimum_content_width_twips + horizontal_padding_twips;
+    // A wide table must still stay inside the printable content area. When the
+    // requested minimum widths cannot all fit, narrow every column evenly and
+    // let Word wrap the cell text instead of expanding the table past margins.
+    let maximum_fitting_column_width = (style.width_twips / count as u32).max(1);
+    let minimum_column_width = requested_minimum_column_width
+        .min(maximum_fitting_column_width)
+        .max(1);
     let minimum_table_width = minimum_column_width.saturating_mul(count as u32);
-    let table_width = style.width_twips.max(minimum_table_width);
+    let table_width = style.width_twips.max(count as u32);
     let distributable_width = table_width.saturating_sub(minimum_table_width);
     let total_weight = content_weights.iter().sum::<f64>().max(count as f64);
 
@@ -8125,6 +8132,7 @@ mod tests {
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
+        default_table_style_config,
         default_page_settings_config, default_report_heading_numbering_config,
         detect_adjacent_image_caption_warnings, document_style_config_from_value,
         ensure_no_picture_compression, ensure_toc_fields_update_on_open, footer_page_number_xml,
@@ -8336,6 +8344,21 @@ mod tests {
             .map(|captures| captures[1].parse::<u32>().expect("numeric cell width"))
             .collect::<Vec<_>>();
         assert_eq!(actual_cell_widths, [widths.clone(), widths].concat());
+    }
+
+    #[test]
+    fn wide_auto_table_never_exceeds_printable_content_width() {
+        let cells = (1..=16)
+            .map(|index| format!("<w:tc><w:p><w:r><w:t>列{index}</w:t></w:r></w:p></w:tc>"))
+            .collect::<String>();
+        let input = format!("<w:tbl><w:tr>{cells}</w:tr></w:tbl>");
+        let style = default_table_style_config(Some(8_300));
+
+        let widths = table_column_widths_for_xml(&input, 16, &style);
+
+        assert_eq!(widths.len(), 16);
+        assert_eq!(widths.iter().sum::<u32>(), 8_300);
+        assert!(widths.iter().all(|width| *width > 0));
     }
 
     #[test]
