@@ -4110,11 +4110,21 @@ fn apply_page_settings_to_document_xml_with_heading_numbering(
         toc_page_numbers,
     );
 
-    let section = Regex::new(r#"(?s)<w:sectPr\b[^>]*>.*?</w:sectPr>"#).expect("valid sectPr regex");
+    let section = Regex::new(
+        r#"(?s)<w:sectPr\b[^>]*/>|<w:sectPr\b[^>]*>.*?</w:sectPr>"#,
+    )
+    .expect("valid sectPr regex");
     if section.is_match(&xml) {
+        let section_count = section.find_iter(&xml).count();
+        let mut section_index = 0usize;
         return section
             .replace_all(&xml, |captures: &Captures| {
-                normalize_section_page_settings(&captures[0], page_settings)
+                section_index += 1;
+                if section_index == section_count {
+                    normalize_section_page_settings(&captures[0], page_settings)
+                } else {
+                    normalize_front_section_page_settings(&captures[0], page_settings)
+                }
             })
             .to_string();
     }
@@ -4175,6 +4185,7 @@ fn normalize_toc_fields(
         .to_string();
 
     let xml = normalize_toc_heading(&xml, page_settings);
+    let xml = arrange_cover_toc_and_body_sections(&xml, page_settings);
     let xml = populate_empty_toc_result(
         &xml,
         page_settings,
@@ -4183,7 +4194,7 @@ fn normalize_toc_fields(
     );
     let xml = normalize_toc_cached_hyperlinks(&xml);
 
-    ensure_page_break_after_toc(&xml)
+    xml
 }
 
 fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> String {
@@ -4426,12 +4437,23 @@ fn toc_heading_number(
 }
 
 fn toc_cached_page_number(xml: &str, paragraph_start: usize, page_settings: &PageSettingsConfig) -> u32 {
-    let content_start = page_settings.footer_start_page.max(1).saturating_add(1);
+    let before_heading = &xml[..paragraph_start];
+    let body_start = Regex::new(
+        r#"(?s)<w:p(?:\s[^>]*)?>\s*<w:pPr(?:\s[^>]*)?>.*?<w:sectPr\b[^>]*>.*?</w:sectPr>.*?</w:pPr>\s*</w:p>"#,
+    )
+    .expect("valid section break paragraph regex")
+    .find_iter(before_heading)
+    .last()
+    .map(|section| section.end())
+    .unwrap_or(0);
     let page_breaks = Regex::new(r#"<w:br\b[^>]*w:type=\"page\"[^>]*/>"#)
         .expect("valid page break regex")
-        .find_iter(&xml[..paragraph_start])
+        .find_iter(&xml[body_start..paragraph_start])
         .count() as u32;
-    content_start.saturating_add(page_breaks)
+    page_settings
+        .footer_start_page
+        .max(1)
+        .saturating_add(page_breaks)
 }
 
 fn toc_tab_leader(value: &str) -> &'static str {
@@ -4530,24 +4552,92 @@ fn ensure_toc_fields_update_on_open(
     )
 }
 
-fn ensure_page_break_after_toc(xml: &str) -> String {
+fn arrange_cover_toc_and_body_sections(
+    xml: &str,
+    page_settings: &PageSettingsConfig,
+) -> String {
     let toc = Regex::new(
-        r#"(?s)(<w:sdt>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>.*?</w:sdt>)(\s*)(<w:p><w:r><w:br w:type="page" /></w:r></w:p>)?"#,
+        r#"(?s)<w:sdt\b[^>]*>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>.*?</w:sdt>"#,
     )
     .expect("valid TOC content control regex");
-    if !toc.is_match(xml) {
+    let Some(toc_match) = toc.find(xml) else {
+        return xml.to_string();
+    };
+    let section_break_after_toc = Regex::new(
+        r#"(?s)^\s*<w:p(?:\s[^>]*)?>\s*<w:pPr(?:\s[^>]*)?>.*?<w:sectPr\b[^>]*>.*?<w:type\b[^>]*w:val="nextPage"[^>]*/>.*?</w:sectPr>.*?</w:pPr>\s*</w:p>"#,
+    )
+    .expect("valid TOC section break regex");
+    if section_break_after_toc.is_match(&xml[toc_match.end()..]) {
         return xml.to_string();
     }
-    toc.replace(xml, |captures: &Captures| {
-        let content = captures.get(1).map(|value| value.as_str()).unwrap_or("");
-        let whitespace = captures.get(2).map(|value| value.as_str()).unwrap_or("");
-        let page_break = captures
-            .get(3)
-            .map(|value| value.as_str())
-            .unwrap_or(r#"<w:p><w:r><w:br w:type="page" /></w:r></w:p>"#);
-        format!("{content}{whitespace}{page_break}")
-    })
-    .to_string()
+    let toc_xml = toc_match.as_str();
+    let page_break = Regex::new(
+        r#"(?s)^\s*<w:p(?:\s[^>]*)?>\s*<w:r(?:\s[^>]*)?>\s*<w:br\b[^>]*w:type="page"[^>]*/>\s*</w:r>\s*</w:p>"#,
+    )
+    .expect("valid page break paragraph regex");
+    let suffix = page_break.replace(&xml[toc_match.end()..], "");
+    let without_toc = format!("{}{}", &xml[..toc_match.start()], suffix);
+
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
+        .expect("valid paragraph regex");
+    let title_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Title"[^>]*/>"#)
+        .expect("valid title style regex");
+    let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading[1-6]"[^>]*/>"#)
+        .expect("valid heading style regex");
+    let title_match = paragraph
+        .find_iter(&without_toc)
+        .find(|paragraph| title_style.is_match(paragraph.as_str()));
+    let body_start = title_match
+        .and_then(|title_match| {
+            paragraph
+                .find_iter(&without_toc[title_match.end()..])
+                .find(|paragraph| heading_style.is_match(paragraph.as_str()))
+                .map(|heading_match| title_match.end() + heading_match.start())
+        })
+        .map(|heading_start| heading_with_leading_bookmark_start(&without_toc, heading_start))
+        .or_else(|| {
+            title_match.and_then(|_| {
+                Regex::new(r#"<w:sectPr\b"#)
+                    .expect("valid final section regex")
+                    .find(&without_toc)
+                    .map(|section| section.start())
+            })
+        })
+        .unwrap_or_else(|| toc_match.start().min(without_toc.len()));
+
+    let cover_break = title_match
+        .map(|_| next_page_section_break_paragraph(page_settings))
+        .unwrap_or_default();
+    let toc_break = next_page_section_break_paragraph(page_settings);
+    format!(
+        "{}{}{}{}{}",
+        &without_toc[..body_start],
+        cover_break,
+        toc_xml,
+        toc_break,
+        &without_toc[body_start..]
+    )
+}
+
+fn heading_with_leading_bookmark_start(xml: &str, heading_start: usize) -> usize {
+    let prefix = &xml[..heading_start];
+    let search_start = prefix.rfind("</w:p>").map(|index| index + 6).unwrap_or(0);
+    let between = &xml[search_start..heading_start];
+    let bookmark_prefix = Regex::new(r#"(?s)^\s*(?:<w:bookmarkStart\b[^>]*/>\s*)+$"#)
+        .expect("valid heading bookmark prefix regex");
+    if bookmark_prefix.is_match(between) {
+        search_start
+    } else {
+        heading_start
+    }
+}
+
+fn next_page_section_break_paragraph(page_settings: &PageSettingsConfig) -> String {
+    let section = normalize_front_section_page_settings(
+        r#"<w:sectPr><w:type w:val="nextPage" /></w:sectPr>"#,
+        page_settings,
+    );
+    format!(r#"<w:p><w:pPr>{section}</w:pPr></w:p>"#)
 }
 
 fn toc_field_instruction(page_settings: &PageSettingsConfig) -> String {
@@ -4572,6 +4662,16 @@ fn normalize_section_page_settings(
     section_xml: &str,
     page_settings: &PageSettingsConfig,
 ) -> String {
+    let expanded_section;
+    let section_xml = if section_xml.trim_end().ends_with("/>") {
+        expanded_section = Regex::new(r#"\s*/>\s*$"#)
+            .expect("valid self closing section regex")
+            .replace(section_xml, "></w:sectPr>")
+            .to_string();
+        expanded_section.as_str()
+    } else {
+        section_xml
+    };
     let section_parts = Regex::new(r#"(?s)^(<w:sectPr\b[^>]*>)(.*)(</w:sectPr>)$"#)
         .expect("valid sectPr parts regex");
     let Some(captures) = section_parts.captures(section_xml) else {
@@ -4600,6 +4700,17 @@ fn normalize_section_page_settings(
     let header_footer_refs = section_header_footer_references_xml(page_settings);
 
     format!("{start}{header_footer_refs}{page_size}{page_margins}{body}{end}")
+}
+
+fn normalize_front_section_page_settings(
+    section_xml: &str,
+    page_settings: &PageSettingsConfig,
+) -> String {
+    let normalized = normalize_section_page_settings(section_xml, page_settings);
+    Regex::new(r#"(?s)<w:(?:headerReference|footerReference|pgNumType)\b[^>]*/>"#)
+        .expect("valid front section header footer regex")
+        .replace_all(&normalized, "")
+        .to_string()
 }
 
 fn page_settings_has_header_footer(page_settings: &PageSettingsConfig) -> bool {
@@ -7486,7 +7597,8 @@ mod tests {
         apply_conflict_strategy, apply_page_settings_to_document_xml,
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
-        default_report_heading_numbering_config, document_style_config_from_value,
+        default_page_settings_config, default_report_heading_numbering_config,
+        document_style_config_from_value,
         ensure_toc_fields_update_on_open, footer_page_number_xml, has_supported_text_extension,
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
@@ -8796,9 +8908,47 @@ mod tests {
         let pandoc_toc = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:instrText xml:space="preserve">TOC \o &quot;1-3&quot; \h \z \u</w:instrText></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>正文</w:t></w:r></w:p><w:sectPr /></w:body></w:document>"#;
         let output = apply_page_settings_to_document_xml(pandoc_toc, Some(&settings));
         assert!(output.contains(r#"<w:instrText xml:space="preserve">TOC \o &quot;1-4&quot; \h \z \u \p &quot; &quot;</w:instrText>"#));
-        assert_eq!(output.matches(r#"<w:br w:type="page" />"#).count(), 1);
+        assert_eq!(output.matches("<w:sectPr").count(), 2);
+        assert_eq!(output.matches(r#"<w:type w:val="nextPage" />"#).count(), 1);
+        assert!(!output.contains(r#"<w:br w:type="page" />"#));
         let output = apply_page_settings_to_document_xml(&output, Some(&settings));
-        assert_eq!(output.matches(r#"<w:br w:type="page" />"#).count(), 1);
+        assert_eq!(output.matches("<w:sectPr").count(), 2);
+    }
+
+    #[test]
+    fn orders_cover_toc_and_body_into_independent_sections() {
+        let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>目录</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:bookmarkStart w:id="1" w:name="报告" /><w:p><w:pPr><w:pStyle w:val="Title" /></w:pPr><w:r><w:t>研究报告</w:t></w:r></w:p><w:p><w:r><w:t>文档状态：评审稿</w:t></w:r></w:p><w:bookmarkStart w:id="2" w:name="摘要" /><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>摘要</w:t></w:r></w:p><w:bookmarkEnd w:id="2" /><w:bookmarkStart w:id="3" w:name="研究概述" /><w:p><w:pPr><w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr></w:pPr><w:r><w:t>研究概述</w:t></w:r></w:p><w:bookmarkEnd w:id="3" /><w:bookmarkEnd w:id="1" /><w:sectPr /></w:body></w:document>"#;
+        let settings = default_page_settings_config();
+
+        let output = apply_page_settings_to_document_xml(input, Some(&settings));
+        let title = output.find("研究报告").unwrap();
+        let status = output.find("文档状态：评审稿").unwrap();
+        let toc = output.find("Table of Contents").unwrap();
+        let abstract_heading = output.rfind("<w:t>摘要</w:t>").unwrap();
+        assert!(title < status && status < toc && toc < abstract_heading);
+
+        let section = Regex::new(
+            r#"(?s)<w:sectPr\b[^>]*/>|<w:sectPr\b[^>]*>.*?</w:sectPr>"#,
+        )
+        .unwrap();
+        let sections = section
+            .find_iter(&output)
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(sections.len(), 3, "{output}");
+        assert!(sections[..2]
+            .iter()
+            .all(|section| section.contains(r#"<w:type w:val="nextPage" />"#)));
+        assert!(sections[..2]
+            .iter()
+            .all(|section| !section.contains("footerReference") && !section.contains("pgNumType")));
+        assert!(sections[2].contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
+        assert!(sections[2].contains(r#"<w:pgNumType w:start="1" />"#));
+
+        let toc_end = output[toc..].find("</w:sdt>").unwrap() + toc;
+        let toc_xml = &output[toc..toc_end];
+        assert!(toc_xml.contains(r#"PAGEREF &quot;研究概述&quot; \h"#));
+        assert!(toc_xml.contains("<w:t>1</w:t>"));
     }
 
     #[test]
