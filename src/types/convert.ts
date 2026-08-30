@@ -16,6 +16,8 @@ export type ConvertRequest = {
   tocPosition?: "after-cover" | "before-body" | "none";
   bodyPageStart?: number;
   frontPageNumber?: "none" | "roman";
+  mermaidFormat?: "svg" | "png";
+  mermaidScale?: 1 | 2 | 3 | 4;
 };
 
 export type ConvertResult = {

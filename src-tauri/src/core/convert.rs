@@ -69,6 +69,10 @@ pub struct ConvertRequest {
     pub body_page_start: Option<u32>,
     #[serde(default)]
     pub front_page_number: Option<String>,
+    #[serde(default)]
+    pub mermaid_format: Option<String>,
+    #[serde(default)]
+    pub mermaid_scale: Option<u32>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -735,7 +739,7 @@ fn convert_text_input(
     }
     let heading_numbering =
         effective_heading_numbering_config(&request, heading_numbering_mode);
-    let mermaid = preprocess_mermaid_for_runtime(runtime, &request.input);
+    let mermaid = preprocess_mermaid_for_runtime(runtime, &request.input, &request);
     let statistics = conversion_statistics(&request.input, Some(&mermaid));
     warnings.extend(mermaid.warnings.iter().cloned());
     let numbered_input = preprocess_heading_numbering(
@@ -2899,11 +2903,15 @@ fn mermaid_runtime_path(runtime: ConvertRuntime<'_>) -> Option<PathBuf> {
 fn preprocess_mermaid_for_runtime(
     runtime: ConvertRuntime<'_>,
     markdown: &str,
+    request: &ConvertRequest,
 ) -> MermaidPreprocessResult {
+    let format = request.mermaid_format.as_deref().unwrap_or("svg");
+    let scale = request.mermaid_scale.unwrap_or(4).clamp(1, 4);
     let mut result = preprocess_mermaid_for_word(
         markdown,
         mermaid_runtime_path(runtime).as_deref(),
-        4,
+        scale,
+        format,
     );
     if result.rendered > 0 {
         result
@@ -3269,7 +3277,7 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
     })?;
     let (heading_numbering_mode, heading_numbering_warning) =
         resolve_heading_numbering_mode(request, &original);
-    let mermaid = preprocess_mermaid_for_runtime(runtime, &original);
+    let mermaid = preprocess_mermaid_for_runtime(runtime, &original, request);
     let statistics = conversion_statistics(&original, Some(&mermaid));
     let numbered = preprocess_heading_numbering(
         &mermaid.markdown,
@@ -8753,6 +8761,8 @@ mod tests {
             toc_position: Some("after-cover".to_string()),
             body_page_start: Some(3),
             front_page_number: Some("roman".to_string()),
+            mermaid_format: None,
+            mermaid_scale: None,
         };
 
         let options = pandoc_document_options(&request);
@@ -8788,6 +8798,8 @@ mod tests {
             toc_position: Some("none".to_string()),
             body_page_start: None,
             front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
         };
 
         assert!(!pandoc_document_options(&request).toc);
@@ -11255,6 +11267,8 @@ mod tests {
             toc_position: None,
             body_page_start: None,
             front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();
@@ -11308,6 +11322,8 @@ mod tests {
             toc_position: None,
             body_page_start: None,
             front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
         };
         let mut output_path = path.clone();
         let mut warnings = Vec::new();

@@ -1,8 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -41,15 +42,28 @@ pub fn preprocess_mermaid_for_word(
     markdown: &str,
     mermaid_script: Option<&Path>,
     scale: u32,
+    format: &str,
 ) -> MermaidPreprocessResult {
-    replace_mermaid_fences(markdown, |source, block_index, attributes| {
+    let prefer_svg = !format.trim().eq_ignore_ascii_case("png");
+    replace_mermaid_fences(markdown, prefer_svg, |source, block_index, attributes| {
         let script = mermaid_script
             .ok_or_else(|| "未找到内置 Mermaid 运行时资源，已保留源码".to_string())?;
-        render_mermaid_image(script, source, block_index, scale, attributes.compact)
+        render_mermaid_image(
+            script,
+            source,
+            block_index,
+            scale,
+            attributes.compact,
+            prefer_svg,
+        )
     })
 }
 
-fn replace_mermaid_fences<F>(markdown: &str, mut render: F) -> MermaidPreprocessResult
+fn replace_mermaid_fences<F>(
+    markdown: &str,
+    warn_png_fallback: bool,
+    mut render: F,
+) -> MermaidPreprocessResult
 where
     F: FnMut(&str, usize, MermaidAttributes) -> Result<PathBuf, String>,
 {
@@ -94,7 +108,8 @@ where
                 } else {
                     output.push_str(&format!("![]({markdown_path})\n\n"));
                 }
-                if image_path
+                if warn_png_fallback
+                    && image_path
                     .extension()
                     .and_then(|extension| extension.to_str())
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
@@ -258,6 +273,7 @@ fn render_mermaid_image(
     block_index: usize,
     scale: u32,
     compact: bool,
+    prefer_svg: bool,
 ) -> Result<PathBuf, String> {
     if !mermaid_script.is_file() {
         return Err(format!(
@@ -310,13 +326,15 @@ fn render_mermaid_image(
             .and_then(|value| value.parse::<f64>().ok())
             .filter(|value| *value > 0.0)
             .ok_or_else(|| browser_failure("Mermaid 渲染未返回有效高度", &inspect))?;
-        if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
-            if let Ok(svg_bytes) = BASE64_STANDARD.decode(svg_base64) {
-                if let Ok(svg) = String::from_utf8(svg_bytes) {
-                    if validate_svg(&svg) {
-                        fs::write(&svg_path, svg.as_bytes())
-                            .map_err(|error| format!("写入 Mermaid SVG 失败：{error}"))?;
-                        return Ok(svg_path);
+        if prefer_svg {
+            if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
+                if let Ok(svg_bytes) = BASE64_STANDARD.decode(svg_base64) {
+                    if let Ok(svg) = String::from_utf8(svg_bytes) {
+                        if validate_svg(&svg) {
+                            fs::write(&svg_path, svg.as_bytes())
+                                .map_err(|error| format!("写入 Mermaid SVG 失败：{error}"))?;
+                            return Ok(svg_path);
+                        }
                     }
                 }
             }
@@ -459,10 +477,10 @@ fn find_headless_browser() -> Option<PathBuf> {
         }
     }
     let candidates = [
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     ];
     candidates
         .into_iter()
@@ -472,12 +490,39 @@ fn find_headless_browser() -> Option<PathBuf> {
 
 fn run_browser(browser: &Path, args: &[String]) -> Result<Output, String> {
     let mut command = Command::new(browser);
-    command.args(args);
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-    command
-        .output()
-        .map_err(|error| format!("启动 Mermaid 无头浏览器失败：{error}"))
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("启动 Mermaid 无头浏览器失败：{error}"))?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|error| format!("读取 Mermaid 无头浏览器结果失败：{error}"));
+            }
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
+            Ok(None) => {
+                #[cfg(windows)]
+                {
+                    let _ = Command::new("taskkill")
+                        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .output();
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Mermaid 无头浏览器运行超过 30 秒，已终止本次渲染".to_string());
+            }
+            Err(error) => return Err(format!("检查 Mermaid 无头浏览器状态失败：{error}")),
+        }
+    }
 }
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {
@@ -549,7 +594,7 @@ mod tests {
     #[test]
     fn replaces_case_insensitive_mermaid_fences_and_keeps_other_code() {
         let markdown = "正文\n\n```Mermaid\nflowchart LR\n A --> B\n```\n\n## 后续标题\n\n```rust\nfn main() {}\n```\n";
-        let result = replace_mermaid_fences(markdown, |source, index, attributes| {
+        let result = replace_mermaid_fences(markdown, true, |source, index, attributes| {
             assert_eq!(index, 1);
             assert_eq!(source, "flowchart LR\n A --> B\n");
             assert_eq!(attributes, MermaidAttributes::default());
@@ -568,7 +613,7 @@ mod tests {
     #[test]
     fn preserves_source_and_reports_block_number_when_rendering_fails() {
         let markdown = "~~~mermaid\ngraph TD\n A --> B\n~~~";
-        let result = replace_mermaid_fences(markdown, |_source, _index, _attributes| {
+        let result = replace_mermaid_fences(markdown, true, |_source, _index, _attributes| {
             Err("syntax error".to_string())
         });
         assert_eq!(result.markdown, markdown);
@@ -581,6 +626,18 @@ mod tests {
     }
 
     #[test]
+    fn requested_png_is_not_reported_as_svg_fallback() {
+        let markdown = "```mermaid\ngraph TD\nA-->B\n```";
+        let result = replace_mermaid_fences(markdown, false, |_source, _index, _attributes| {
+            Ok(PathBuf::from(r"C:\Temp\diagram.png"))
+        });
+
+        assert_eq!(result.rendered, 1);
+        assert!(result.warnings.is_empty());
+        assert!(result.markdown.contains("diagram.png"));
+    }
+
+    #[test]
     fn supports_fence_attributes_and_ignores_unclosed_blocks() {
         let markdown = "```mermaid {width=80% layout=compact}\ngraph LR\n A-->B\n```\n\n```mermaid\nunclosed";
         let blocks = find_mermaid_blocks(markdown);
@@ -589,7 +646,7 @@ mod tests {
         assert_eq!(blocks[0].attributes.width_percent, Some(80));
         assert!(blocks[0].attributes.compact);
 
-        let result = replace_mermaid_fences(markdown, |_source, _index, _attributes| {
+        let result = replace_mermaid_fences(markdown, true, |_source, _index, _attributes| {
             Ok(PathBuf::from(r"C:\Temp\diagram.svg"))
         });
         assert!(result.markdown.contains(

@@ -77,6 +77,14 @@ enum Commands {
         /// Page numbering for cover and TOC sections.
         #[arg(long = "front-page-number", value_parser = ["none", "roman"])]
         front_page_number: Option<String>,
+
+        /// Mermaid image format. SVG stays sharp; PNG uses the selected scale.
+        #[arg(long = "mermaid-format", default_value = "svg", value_parser = ["svg", "png"])]
+        mermaid_format: String,
+
+        /// Device scale factor used when Mermaid is exported as PNG.
+        #[arg(long = "mermaid-scale", default_value_t = 4, value_parser = clap::value_parser!(u32).range(1..=4))]
+        mermaid_scale: u32,
     },
 
     /// Manage and inspect Word/WPS templates.
@@ -125,6 +133,8 @@ fn main() {
             toc_position,
             body_page_start,
             front_page_number,
+            mermaid_format,
+            mermaid_scale,
         } => run_convert(
             input,
             output,
@@ -138,6 +148,8 @@ fn main() {
             toc_position,
             body_page_start,
             front_page_number,
+            mermaid_format,
+            mermaid_scale,
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
@@ -161,6 +173,8 @@ fn run_convert(
     toc_position: Option<String>,
     body_page_start: Option<u32>,
     front_page_number: Option<String>,
+    mermaid_format: String,
+    mermaid_scale: u32,
 ) -> i32 {
     let template_id = match resolve_template_id(template_selector) {
         Ok(template_id) => template_id,
@@ -194,6 +208,8 @@ fn run_convert(
         toc_position,
         body_page_start,
         front_page_number,
+        mermaid_format: Some(mermaid_format),
+        mermaid_scale: Some(mermaid_scale),
     });
 
     if json {

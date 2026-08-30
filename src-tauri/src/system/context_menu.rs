@@ -60,6 +60,8 @@ pub fn handle_startup_context_action(app: AppHandle) {
             toc_position: None,
             body_page_start: None,
             front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
         };
         let result = convert_markdown(&app, request);
         write_context_log(&format!(
