@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -24,6 +25,13 @@ struct MermaidBlock {
     start: usize,
     end: usize,
     source: String,
+    attributes: MermaidAttributes,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct MermaidAttributes {
+    width_percent: Option<u32>,
+    compact: bool,
 }
 
 /// Render Mermaid fences before Pandoc sees the Markdown. This is deliberately
@@ -34,16 +42,16 @@ pub fn preprocess_mermaid_for_word(
     mermaid_script: Option<&Path>,
     scale: u32,
 ) -> MermaidPreprocessResult {
-    replace_mermaid_fences(markdown, |source, block_index| {
+    replace_mermaid_fences(markdown, |source, block_index, attributes| {
         let script = mermaid_script
             .ok_or_else(|| "未找到内置 Mermaid 运行时资源，已保留源码".to_string())?;
-        render_mermaid_png(script, source, block_index, scale)
+        render_mermaid_image(script, source, block_index, scale, attributes.compact)
     })
 }
 
 fn replace_mermaid_fences<F>(markdown: &str, mut render: F) -> MermaidPreprocessResult
 where
-    F: FnMut(&str, usize) -> Result<PathBuf, String>,
+    F: FnMut(&str, usize, MermaidAttributes) -> Result<PathBuf, String>,
 {
     let blocks = find_mermaid_blocks(markdown);
     if blocks.is_empty() {
@@ -76,10 +84,34 @@ where
             continue;
         }
 
-        match render(&block.source, block_number) {
+        match render(&block.source, block_number, block.attributes) {
             Ok(image_path) => {
                 let markdown_path = encode_markdown_image_path(&image_path);
-                output.push_str(&format!("![]({markdown_path})\n\n"));
+                if let Some(width) = block.attributes.width_percent {
+                    output.push_str(&format!(
+                        "![]({markdown_path} \"MD_KING_MERMAID_WIDTH_{width}\"){{ width={width}% }}\n\n"
+                    ));
+                } else {
+                    output.push_str(&format!("![]({markdown_path})\n\n"));
+                }
+                if image_path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+                {
+                    warnings.push(format!(
+                        "Mermaid 第 {block_number} 个代码块未能保留为 SVG，已回退为高清 PNG。"
+                    ));
+                }
+                if let Some((width, height)) = rendered_image_dimensions(&image_path) {
+                    let aspect_ratio = width / height;
+                    if !(0.2..=5.0).contains(&aspect_ratio) {
+                        warnings.push(format!(
+                            "Mermaid 第 {block_number} 个代码块尺寸为 {:.0}×{:.0}，按页面等比例缩放后文字可能过小；建议拆分图或使用 layout=compact。",
+                            width, height
+                        ));
+                    }
+                }
                 if let Some(parent) = image_path.parent() {
                     cleanup_paths.push(parent.to_path_buf());
                 }
@@ -116,7 +148,7 @@ fn find_mermaid_blocks(markdown: &str) -> Vec<MermaidBlock> {
 
     while index < lines.len() {
         let (line_start, line_end, line) = lines[index];
-        let Some((marker, fence_len)) = mermaid_fence_start(line) else {
+        let Some((marker, fence_len, attributes)) = mermaid_fence_start(line) else {
             index += 1;
             continue;
         };
@@ -138,6 +170,7 @@ fn find_mermaid_blocks(markdown: &str) -> Vec<MermaidBlock> {
                 start: line_start,
                 end: close_end,
                 source: markdown[source_start..close_start].to_string(),
+                attributes,
             });
             index = closing + 1;
         } else {
@@ -162,7 +195,7 @@ fn lines_with_offsets(markdown: &str) -> Vec<(usize, usize, &str)> {
     result
 }
 
-fn mermaid_fence_start(line: &str) -> Option<(char, usize)> {
+fn mermaid_fence_start(line: &str) -> Option<(char, usize, MermaidAttributes)> {
     let trimmed = line.trim_start_matches([' ', '\t']);
     let marker = trimmed.chars().next()?;
     if marker != '`' && marker != '~' {
@@ -178,9 +211,27 @@ fn mermaid_fence_start(line: &str) -> Option<(char, usize)> {
         .next()?
         .trim_matches('{')
         .trim_start_matches('.');
-    language
-        .eq_ignore_ascii_case("mermaid")
-        .then_some((marker, fence_len))
+    if !language.eq_ignore_ascii_case("mermaid") {
+        return None;
+    }
+    let width_percent = regex::Regex::new(r#"(?i)\bwidth\s*=\s*[\"']?(\d+(?:\.\d+)?)%"#)
+        .expect("valid Mermaid width regex")
+        .captures(rest)
+        .and_then(|captures| captures.get(1))
+        .and_then(|value| value.as_str().parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+        .map(|value| value.round().clamp(20.0, 100.0) as u32);
+    let compact = regex::Regex::new(r#"(?i)\blayout\s*=\s*[\"']?compact(?:[\"'\s}]|$)"#)
+        .expect("valid Mermaid layout regex")
+        .is_match(rest);
+    Some((
+        marker,
+        fence_len,
+        MermaidAttributes {
+            width_percent,
+            compact,
+        },
+    ))
 }
 
 fn is_fence_close(line: &str, marker: char, minimum_len: usize) -> bool {
@@ -201,11 +252,12 @@ fn encode_markdown_image_path(path: &Path) -> String {
     encoded
 }
 
-fn render_mermaid_png(
+fn render_mermaid_image(
     mermaid_script: &Path,
     source: &str,
     block_index: usize,
     scale: u32,
+    compact: bool,
 ) -> Result<PathBuf, String> {
     if !mermaid_script.is_file() {
         return Err(format!(
@@ -220,10 +272,11 @@ fn render_mermaid_png(
     fs::create_dir_all(&work_dir).map_err(|error| format!("创建 Mermaid 临时目录失败：{error}"))?;
     let result = (|| {
         let html_path = work_dir.join("render.html");
+        let svg_path = work_dir.join("diagram.svg");
         let image_path = work_dir.join("diagram.png");
         let inspect_profile = work_dir.join("profile-inspect");
         let capture_profile = work_dir.join("profile-capture");
-        let html = renderer_html(mermaid_script, source);
+        let html = renderer_html(mermaid_script, source, compact);
         fs::write(&html_path, html)
             .map_err(|error| format!("写入 Mermaid 渲染页面失败：{error}"))?;
 
@@ -257,6 +310,18 @@ fn render_mermaid_png(
             .and_then(|value| value.parse::<f64>().ok())
             .filter(|value| *value > 0.0)
             .ok_or_else(|| browser_failure("Mermaid 渲染未返回有效高度", &inspect))?;
+        if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
+            if let Ok(svg_bytes) = BASE64_STANDARD.decode(svg_base64) {
+                if let Ok(svg) = String::from_utf8(svg_bytes) {
+                    if validate_svg(&svg) {
+                        fs::write(&svg_path, svg.as_bytes())
+                            .map_err(|error| format!("写入 Mermaid SVG 失败：{error}"))?;
+                        return Ok(svg_path);
+                    }
+                }
+            }
+        }
+
         let viewport_width = width.ceil().clamp(32.0, 16_000.0) as u32;
         let viewport_height = height.ceil().clamp(32.0, 16_000.0) as u32;
         let scale = scale.clamp(1, 4);
@@ -289,13 +354,15 @@ fn render_mermaid_png(
     result
 }
 
-fn renderer_html(mermaid_script: &Path, source: &str) -> String {
+fn renderer_html(mermaid_script: &Path, source: &str, compact: bool) -> String {
     let source_json = serde_json::to_string(source)
         .unwrap_or_else(|_| "\"\"".to_string())
         .replace('<', "\\u003c")
         .replace('>', "\\u003e")
         .replace('&', "\\u0026");
     let script_url = file_url(mermaid_script);
+    let node_spacing = if compact { 20 } else { 50 };
+    let rank_spacing = if compact { 25 } else { 50 };
     format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;height:max-content}}
@@ -306,7 +373,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',flowchart:{{htmlLabels:true,useMaxWidth:false}}}});
+    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:false,fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',flowchart:{{htmlLabels:false,useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}}}});
     const rendered=await mermaid.render('mdking-mermaid',source);
     const host=document.getElementById('diagram'); host.innerHTML=rendered.svg;
     const svg=host.querySelector('svg');
@@ -317,13 +384,72 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     width=Math.max(1,Math.ceil(width)); height=Math.max(1,Math.ceil(height));
     svg.setAttribute('width',String(width)); svg.setAttribute('height',String(height));
     svg.style.width=width+'px'; svg.style.height=height+'px';
+    const serialized=new XMLSerializer().serializeToString(svg);
+    const bytes=new TextEncoder().encode(serialized); let binary='';
+    for(let offset=0;offset<bytes.length;offset+=32768) binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
     document.documentElement.style.width=width+'px'; document.documentElement.style.height=height+'px';
     document.body.style.width=width+'px'; document.body.style.height=height+'px';
-    document.body.dataset.width=String(width); document.body.dataset.height=String(height); document.body.dataset.state='ready';
+    document.body.dataset.width=String(width); document.body.dataset.height=String(height); document.body.dataset.svgBase64=btoa(binary); document.body.dataset.state='ready';
   }}catch(error){{document.body.dataset.state='error';document.body.dataset.error=String(error&&error.message?error.message:error)}}
 }})();
 </script></body></html>"#
     )
+}
+
+fn validate_svg(svg: &str) -> bool {
+    if !svg.trim_start().starts_with("<svg") || !svg.contains("</svg>") {
+        return false;
+    }
+    let mut reader = quick_xml::Reader::from_str(svg);
+    loop {
+        match reader.read_event() {
+            Ok(quick_xml::events::Event::Eof) => return true,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+}
+
+fn rendered_image_dimensions(path: &Path) -> Option<(f64, f64)> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "svg" => {
+            let svg = fs::read_to_string(path).ok()?;
+            let view_box = regex::Regex::new(
+                r#"(?i)\bviewBox\s*=\s*\"[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)\""#,
+            )
+            .ok()?
+            .captures(&svg);
+            if let Some(captures) = view_box {
+                let width = captures.get(1)?.as_str().parse::<f64>().ok()?;
+                let height = captures.get(2)?.as_str().parse::<f64>().ok()?;
+                return (width > 0.0 && height > 0.0).then_some((width, height));
+            }
+            let width = numeric_svg_attribute(&svg, "width")?;
+            let height = numeric_svg_attribute(&svg, "height")?;
+            (width > 0.0 && height > 0.0).then_some((width, height))
+        }
+        "png" => {
+            let bytes = fs::read(path).ok()?;
+            if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+                return None;
+            }
+            let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?) as f64;
+            let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?) as f64;
+            (width > 0.0 && height > 0.0).then_some((width, height))
+        }
+        _ => None,
+    }
+}
+
+fn numeric_svg_attribute(svg: &str, name: &str) -> Option<f64> {
+    let pattern = format!(r#"(?i)\b{}\s*=\s*\"([\d.]+)"#, regex::escape(name));
+    regex::Regex::new(&pattern)
+        .ok()?
+        .captures(svg)?
+        .get(1)?
+        .as_str()
+        .parse::<f64>()
+        .ok()
 }
 
 fn find_headless_browser() -> Option<PathBuf> {
@@ -423,9 +549,10 @@ mod tests {
     #[test]
     fn replaces_case_insensitive_mermaid_fences_and_keeps_other_code() {
         let markdown = "正文\n\n```Mermaid\nflowchart LR\n A --> B\n```\n\n## 后续标题\n\n```rust\nfn main() {}\n```\n";
-        let result = replace_mermaid_fences(markdown, |source, index| {
+        let result = replace_mermaid_fences(markdown, |source, index, attributes| {
             assert_eq!(index, 1);
             assert_eq!(source, "flowchart LR\n A --> B\n");
+            assert_eq!(attributes, MermaidAttributes::default());
             Ok(PathBuf::from(r"C:\Temp\diagram one.png"))
         });
         assert_eq!(result.rendered, 1);
@@ -441,8 +568,9 @@ mod tests {
     #[test]
     fn preserves_source_and_reports_block_number_when_rendering_fails() {
         let markdown = "~~~mermaid\ngraph TD\n A --> B\n~~~";
-        let result =
-            replace_mermaid_fences(markdown, |_source, _index| Err("syntax error".to_string()));
+        let result = replace_mermaid_fences(markdown, |_source, _index, _attributes| {
+            Err("syntax error".to_string())
+        });
         assert_eq!(result.markdown, markdown);
         assert_eq!(result.rendered, 0);
         assert_eq!(result.failed, 1);
@@ -454,17 +582,50 @@ mod tests {
 
     #[test]
     fn supports_fence_attributes_and_ignores_unclosed_blocks() {
-        let markdown = "```mermaid {width=100%}\ngraph LR\n A-->B\n```\n\n```mermaid\nunclosed";
+        let markdown = "```mermaid {width=80% layout=compact}\ngraph LR\n A-->B\n```\n\n```mermaid\nunclosed";
         let blocks = find_mermaid_blocks(markdown);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].source, "graph LR\n A-->B\n");
+        assert_eq!(blocks[0].attributes.width_percent, Some(80));
+        assert!(blocks[0].attributes.compact);
+
+        let result = replace_mermaid_fences(markdown, |_source, _index, _attributes| {
+            Ok(PathBuf::from(r"C:\Temp\diagram.svg"))
+        });
+        assert!(result.markdown.contains(
+            r#"![](C:/Temp/diagram.svg "MD_KING_MERMAID_WIDTH_80"){ width=80% }"#
+        ));
     }
 
     #[test]
     fn renderer_page_escapes_script_terminators_from_user_source() {
-        let html = renderer_html(Path::new(r"C:\runtime\mermaid.min.js"), "A[</script>]");
+        let html = renderer_html(
+            Path::new(r"C:\runtime\mermaid.min.js"),
+            "A[</script>]",
+            true,
+        );
         assert!(!html.contains("A[</script>]"));
         assert!(html.contains("\\u003c/script\\u003e"));
         assert!(html.contains("securityLevel:'strict'"));
+        assert!(html.contains("htmlLabels:false"));
+        assert!(html.contains("nodeSpacing:20"));
+        assert!(html.contains("rankSpacing:25"));
+        assert!(html.contains("dataset.svgBase64"));
+    }
+
+    #[test]
+    fn reads_svg_dimensions_from_view_box() {
+        let dir = unique_temp_dir("mermaid-dimensions-test");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("diagram.svg");
+        fs::write(
+            &path,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240"></svg>"#,
+        )
+        .unwrap();
+
+        assert_eq!(rendered_image_dimensions(&path), Some((1200.0, 240.0)));
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

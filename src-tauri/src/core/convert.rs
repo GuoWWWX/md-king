@@ -31,6 +31,7 @@ const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
 const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 const UNNUMBERED_HEADING_MARKER: &str = "MD_KING_UNNUMBERED_HEADING:";
+const MERMAID_WIDTH_TITLE_PREFIX: &str = "MD_KING_MERMAID_WIDTH_";
 const WORD_TEXT_CHARACTER_SPACING_TWIPS: u32 = 4;
 
 #[derive(Deserialize)]
@@ -880,10 +881,21 @@ fn failure_result(
 
 fn append_pandoc_success_messages(execution: &PandocExecution, warnings: &mut Vec<String>) {
     for detail in [execution.stderr.trim(), execution.stdout.trim()] {
+        let detail = filter_benign_pandoc_svg_fallback_warning(detail);
         if !detail.is_empty() {
             warnings.push(format!("Pandoc：{detail}"));
         }
     }
+}
+
+fn filter_benign_pandoc_svg_fallback_warning(detail: &str) -> String {
+    Regex::new(
+        r#"(?s)\[WARNING\] Could not convert image .*?rsvg-convert: createProcess: does not exist \(No such file or directory\)\"\s*"#,
+    )
+    .expect("valid Pandoc SVG fallback warning regex")
+    .replace_all(detail, "")
+    .trim()
+    .to_string()
 }
 
 fn check_pandoc_available_for(runtime: ConvertRuntime<'_>) -> PandocStatus {
@@ -2276,7 +2288,7 @@ fn preprocess_mermaid_for_runtime(
     if result.rendered > 0 {
         result
             .warnings
-            .push(format!("已将 {} 个 Mermaid 代码块渲染为高清图片。", result.rendered));
+            .push(format!("已将 {} 个 Mermaid 代码块渲染为矢量图或高清图片。", result.rendered));
     }
     if result.failed > 0 {
         result.warnings.push(format!(
@@ -4145,14 +4157,45 @@ fn normalize_document_images(
                 return paragraph.to_string();
             }
 
-            let paragraph = if width_mode == "original" {
-                paragraph.to_string()
+            let mermaid_width = mermaid_width_percent(paragraph);
+            let paragraph = strip_mermaid_width_title(paragraph);
+            let drawing_width_emu = mermaid_width
+                .map(|width| {
+                    ((f64::from(content_width_twips) * f64::from(width) / 100.0).round()
+                        as u64)
+                        * 635
+                })
+                .unwrap_or(target_width_emu);
+            let paragraph = if width_mode == "original" && mermaid_width.is_none() {
+                paragraph
             } else {
-                normalize_image_drawings(paragraph, target_width_emu, target_height_emu)
+                normalize_image_drawings(&paragraph, drawing_width_emu, target_height_emu)
             };
             ensure_image_paragraph_aligned(&paragraph, align)
         })
         .to_string()
+}
+
+fn mermaid_width_percent(paragraph: &str) -> Option<u32> {
+    Regex::new(&format!(
+        r#"\btitle=\"{}(\d{{1,3}})\""#,
+        regex::escape(MERMAID_WIDTH_TITLE_PREFIX)
+    ))
+    .expect("valid Mermaid width marker regex")
+    .captures(paragraph)
+    .and_then(|captures| captures.get(1))
+    .and_then(|value| value.as_str().parse::<u32>().ok())
+    .map(|value| value.clamp(20, 100))
+}
+
+fn strip_mermaid_width_title(paragraph: &str) -> String {
+    Regex::new(&format!(
+        r#"\s+title=\"{}\d{{1,3}}\""#,
+        regex::escape(MERMAID_WIDTH_TITLE_PREFIX)
+    ))
+    .expect("valid Mermaid width marker regex")
+    .replace_all(paragraph, "")
+    .to_string()
 }
 
 fn normalize_image_drawings(
@@ -7860,6 +7903,7 @@ mod tests {
         default_page_settings_config, default_report_heading_numbering_config,
         detect_adjacent_image_caption_warnings, document_style_config_from_value,
         ensure_toc_fields_update_on_open, footer_page_number_xml, has_supported_text_extension,
+        filter_benign_pandoc_svg_fallback_warning,
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         migrate_default_report_style_baseline,
@@ -7877,7 +7921,7 @@ mod tests {
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
         validate_docx_package, validate_xml_part, HeadingNumberingMode, HeadingTarget,
         MarkdownFeatureConfig, TocPageNumber,
-        UNNUMBERED_HEADING_MARKER,
+        MERMAID_WIDTH_TITLE_PREFIX, UNNUMBERED_HEADING_MARKER,
     };
     use regex::Regex;
     use serde_json::json;
@@ -7925,6 +7969,16 @@ mod tests {
         assert_eq!(
             read_style_bold_key(&json!({ "fontWeight": "800" }), "fontWeight"),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn filters_only_pandoc_svg_fallback_warnings() {
+        let detail = "[WARNING] Could not convert image diagram.svg: \"check that rsvg-convert is in path.\nrsvg-convert: createProcess: does not exist (No such file or directory)\"\n[WARNING] 其他警告";
+
+        assert_eq!(
+            filter_benign_pandoc_svg_fallback_warning(detail),
+            "[WARNING] 其他警告"
         );
     }
 
@@ -8126,6 +8180,33 @@ mod tests {
         assert!(output.contains(&format!(
             r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
         )));
+    }
+
+    #[test]
+    fn mermaid_width_attribute_overrides_global_image_width() {
+        let page_settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "paperSize": "A4",
+                "orientation": "portrait",
+                "marginLeft": 3.18,
+                "marginRight": 3.18
+            }
+        }))
+        .expect("page settings should parse");
+        let target_width =
+            (f64::from(page_content_width_twips(&page_settings)) * 0.8).round() as u64 * 635;
+        let target_height = target_width / 2;
+        let input = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><wp:docPr id="1" name="Picture" title="MD_KING_MERMAID_WIDTH_80"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_images(input, Some(&page_settings), None);
+
+        assert!(output.contains(&format!(
+            r#"<wp:extent cx="{target_width}" cy="{target_height}"/>"#
+        )));
+        assert!(output.contains(&format!(
+            r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
+        )));
+        assert!(!output.contains(MERMAID_WIDTH_TITLE_PREFIX));
     }
 
     #[test]
