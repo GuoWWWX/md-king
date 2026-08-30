@@ -681,6 +681,7 @@ fn convert_text_input(
 
     let (heading_numbering_mode, heading_numbering_warning) =
         resolve_heading_numbering_mode(&request, &request.input);
+    warnings.extend(detect_adjacent_image_caption_warnings(&request.input));
     if let Some(warning) = heading_numbering_warning {
         warnings.push(warning);
     }
@@ -2643,6 +2644,7 @@ fn prepare_markdown_file_for_pandoc_for_runtime(
     );
     let prepared = preprocess_markdown_for_word(&numbered);
     let mut warnings = mermaid.warnings;
+    warnings.extend(detect_adjacent_image_caption_warnings(&original));
     if let Some(warning) = heading_numbering_warning {
         warnings.push(warning);
     }
@@ -3293,13 +3295,7 @@ fn normalize_docx(
                 document_style,
                 block_style,
             );
-            let xml = if document_style.is_some_and(|style| {
-                style.image_caption.is_some() || style.table_caption.is_some()
-            }) {
-                normalize_document_captions(&xml, document_style)
-            } else {
-                xml
-            };
+            let xml = normalize_document_captions(&xml, document_style);
             let xml = apply_page_settings_to_document_xml_with_heading_numbering(
                 &xml,
                 page_settings,
@@ -3771,19 +3767,69 @@ fn ensure_paragraph_tab_stop(paragraph_xml: &str, position: u32) -> String {
 }
 
 fn normalize_document_captions(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
+    let xml = deduplicate_image_alt_captions(xml);
     let Some(document_style) = document_style else {
-        return xml.to_string();
+        return xml;
     };
     let xml = document_style
         .image_caption
         .as_ref()
-        .map(|style| normalize_image_captions(xml, style))
-        .unwrap_or_else(|| xml.to_string());
+        .map(|style| normalize_image_captions(&xml, style))
+        .unwrap_or(xml);
     document_style
         .table_caption
         .as_ref()
         .map(|style| normalize_table_captions(&xml, style))
         .unwrap_or(xml)
+}
+
+fn deduplicate_image_alt_captions(xml: &str) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+    let mut blocks = Vec::new();
+    let mut cursor = 0;
+    for matched in paragraph.find_iter(xml) {
+        blocks.push((
+            xml[cursor..matched.start()].to_string(),
+            matched.as_str().to_string(),
+        ));
+        cursor = matched.end();
+    }
+    if blocks.is_empty() {
+        return xml.to_string();
+    }
+
+    let mut output = String::new();
+    let mut index = 0;
+    while index < blocks.len() {
+        let (gap, current) = &blocks[index];
+        output.push_str(gap);
+        let auto_caption = blocks.get(index + 1);
+        let explicit_caption = blocks.get(index + 2);
+        let duplicate_alt_caption = current.contains("<w:drawing")
+            && auto_caption.is_some_and(|(_, caption)| is_image_caption_paragraph(caption))
+            && explicit_caption.is_some_and(|(_, caption)| is_image_caption_paragraph(caption))
+            && image_description(current).is_some_and(|description| {
+                auto_caption.is_some_and(|(_, caption)| {
+                    description == paragraph_plain_text(caption).trim()
+                })
+            });
+
+        if duplicate_alt_caption {
+            let (auto_gap, _) = &blocks[index + 1];
+            let (explicit_gap, explicit) = &blocks[index + 2];
+            output.push_str(current);
+            output.push_str(auto_gap);
+            output.push_str(explicit_gap);
+            output.push_str(explicit);
+            index += 3;
+            continue;
+        }
+
+        output.push_str(current);
+        index += 1;
+    }
+    output.push_str(&xml[cursor..]);
+    output
 }
 
 fn normalize_image_captions(xml: &str, style: &CaptionStyleConfig) -> String {
@@ -3917,6 +3963,67 @@ fn normalize_table_captions(xml: &str, style: &CaptionStyleConfig) -> String {
 
 fn is_image_caption_paragraph(paragraph_xml: &str) -> bool {
     capture_paragraph_style_id(paragraph_xml).is_some_and(|style_id| style_id == "ImageCaption")
+}
+
+fn detect_adjacent_image_caption_warnings(markdown: &str) -> Vec<String> {
+    let image = Regex::new(r#"^\s*!\[([^\]]+)\]\([^)]*\)(?:\{[^}]*\})?\s*$"#)
+        .expect("valid markdown image regex");
+    let explicit_caption = Regex::new(
+        r#"(?i)^:::\s*\{\s*custom-style\s*=\s*[\"']Image Caption[\"']\s*\}\s*$"#,
+    )
+    .expect("valid image caption marker regex");
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut fence: Option<(char, usize)> = None;
+    let mut conflicts = 0usize;
+
+    for (index, line) in lines.iter().enumerate() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+
+        let Some(captures) = image.captures(line) else {
+            continue;
+        };
+        if captures
+            .get(1)
+            .is_none_or(|alt| alt.as_str().trim().is_empty())
+        {
+            continue;
+        }
+
+        let mut next = index + 1;
+        while next < lines.len() && lines[next].trim().is_empty() {
+            next += 1;
+        }
+        if next < lines.len() && explicit_caption.is_match(lines[next].trim()) {
+            conflicts += 1;
+        }
+    }
+
+    if conflicts == 0 {
+        Vec::new()
+    } else {
+        vec![format!(
+            "检测到 {conflicts} 处非空图片说明与相邻显式图题；导出时仅保留显式图题，图片说明继续写入辅助说明属性。"
+        )]
+    }
+}
+
+fn image_description(paragraph_xml: &str) -> Option<String> {
+    Regex::new(r#"<wp:docPr\b[^>]*\bdescr=\"([^\"]*)\""#)
+        .expect("valid image description regex")
+        .captures(paragraph_xml)
+        .and_then(|captures| captures.get(1))
+        .map(|value| decode_basic_xml_entities(value.as_str()))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn is_table_caption_paragraph(paragraph_xml: &str) -> bool {
@@ -7735,7 +7842,7 @@ mod tests {
         block_style_config_from_value, cell_shading_xml, commit_staged_output,
         create_heading_numbering_xml, default_heading_mappings, default_markdown_feature_config,
         default_page_settings_config, default_report_heading_numbering_config,
-        document_style_config_from_value,
+        detect_adjacent_image_caption_warnings, document_style_config_from_value,
         ensure_toc_fields_update_on_open, footer_page_number_xml, has_supported_text_extension,
         heading_numbering_config_from_value, image_style_config_from_value,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
@@ -8299,6 +8406,85 @@ mod tests {
                 < output.find("表 1 字段说明").expect("table caption")
         );
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
+    }
+
+    #[test]
+    fn keeps_alt_as_image_description_without_duplicating_explicit_caption() {
+        let document_style = document_style_config_from_value(&json!({
+            "styles": {
+                "caption": {
+                    "captionAlign": "center",
+                    "captionPosition": "below",
+                    "captionNumbering": true,
+                    "captionNumberFormat": "图 1-1"
+                }
+            }
+        }))
+        .expect("document style should parse");
+        let input = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><wp:docPr id="1" name="Picture 1" descr="网络结构图" /></wp:inline></w:drawing></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>网络结构图</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>图1-1 网络结构图</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_captions(input, Some(&document_style));
+
+        assert!(output.contains(r#"descr="网络结构图""#));
+        assert_eq!(output.matches(r#"w:val="ImageCaption""#).count(), 0);
+        assert_eq!(output.matches("网络结构图</w:t>").count(), 1);
+        assert!(output.contains("图 1-1 网络结构图"));
+    }
+
+    #[test]
+    fn deduplicates_alt_caption_even_without_saved_template_styles() {
+        let input = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><wp:docPr id="1" name="Picture 1" descr="网络结构图" /></wp:inline></w:drawing></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>网络结构图</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>图1-1 网络结构图</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_captions(input, None);
+
+        assert!(output.contains(r#"descr="网络结构图""#));
+        assert_eq!(output.matches(r#"w:val="ImageCaption""#).count(), 1);
+        assert_eq!(output.matches("网络结构图</w:t>").count(), 1);
+        assert!(output.contains("图1-1 网络结构图"));
+    }
+
+    #[test]
+    fn keeps_alt_as_visible_caption_without_an_explicit_caption() {
+        let document_style = document_style_config_from_value(&json!({
+            "styles": {
+                "caption": {
+                    "captionAlign": "center",
+                    "captionPosition": "below",
+                    "captionNumbering": true,
+                    "captionNumberFormat": "图 1-1"
+                }
+            }
+        }))
+        .expect("document style should parse");
+        let input = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><wp:docPr id="1" name="Picture 1" descr="网络结构图" /></wp:inline></w:drawing></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>网络结构图</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_captions(input, Some(&document_style));
+
+        assert!(output.contains(r#"descr="网络结构图""#));
+        assert_eq!(output.matches("网络结构图</w:t>").count(), 1);
+        assert!(output.contains("图 1-1 网络结构图"));
+    }
+
+    #[test]
+    fn warns_when_nonempty_image_alt_is_followed_by_explicit_caption() {
+        let markdown = r#"![网络结构图](network.png)
+
+::: {custom-style="Image Caption"}
+**图1-1 网络结构图**
+:::
+
+![](plain.png)
+
+```markdown
+![代码示例](ignored.png)
+::: {custom-style="Image Caption"}
+```
+"#;
+
+        let warnings = detect_adjacent_image_caption_warnings(markdown);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("检测到 1 处"));
     }
 
     #[test]
