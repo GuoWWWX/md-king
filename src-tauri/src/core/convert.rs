@@ -3,6 +3,7 @@ use regex::{Captures, Regex};
 use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
@@ -128,6 +129,23 @@ pub struct ConversionStatistics {
     pub table_count: usize,
     pub multi_page_table_candidate_count: usize,
     pub table_width_risk_indices: Vec<usize>,
+    pub image_details: Vec<ImageStatistic>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageStatistic {
+    pub index: usize,
+    pub source: Option<String>,
+    pub media_path: String,
+    pub format: String,
+    pub source_width_pixels: Option<u32>,
+    pub source_height_pixels: Option<u32>,
+    pub embedded_width_pixels: Option<u32>,
+    pub embedded_height_pixels: Option<u32>,
+    pub display_width_cm: f64,
+    pub display_height_cm: f64,
+    pub effective_dpi: Option<f64>,
 }
 
 struct TemplateResolution {
@@ -1000,7 +1018,7 @@ fn success_result(
     mut warnings: Vec<String>,
     resolved_template_path: Option<String>,
     template_sha256: Option<String>,
-    statistics: ConversionStatistics,
+    mut statistics: ConversionStatistics,
 ) -> ConvertResult {
     let mut diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
     diagnostics.extend(runtime_diagnostics_from_warnings(&warnings));
@@ -1053,6 +1071,17 @@ fn success_result(
         page_settings.as_ref(),
         request_expects_cover(&request, output.as_deref()),
     ));
+    match inspect_exported_images(&output_path, &request, output.as_deref()) {
+        Ok((image_details, image_diagnostics)) => {
+            statistics.image_details = image_details;
+            diagnostics.extend(image_diagnostics);
+        }
+        Err(error) => diagnostics.push(diagnostic_without_line(
+            "IMAGE_INSPECTION_FAILED",
+            "warning",
+            format!("无法检查导出 DOCX 的图片质量：{error}"),
+        )),
+    }
     for diagnostic in &diagnostics {
         if !warnings.contains(&diagnostic.message) {
             warnings.push(diagnostic.message.clone());
@@ -1348,6 +1377,7 @@ fn conversion_statistics(
             .enumerate()
             .filter_map(|(index, table)| (table.columns > 8).then_some(index + 1))
             .collect(),
+        image_details: Vec::new(),
     }
 }
 
@@ -1574,6 +1604,423 @@ fn push_missing_image_diagnostic(
         format!("第 {line} 行引用的本地图片不存在：{target}"),
         line,
     ));
+}
+
+#[derive(Clone)]
+struct SourceImageInfo {
+    target: String,
+    line: usize,
+    width_pixels: Option<u32>,
+    height_pixels: Option<u32>,
+    sha256: Option<String>,
+}
+
+fn inspect_exported_images(
+    path: &Path,
+    request: &ConvertRequest,
+    output: Option<&str>,
+) -> Result<(Vec<ImageStatistic>, Vec<ConversionDiagnostic>), String> {
+    let source_images = markdown_source_and_resource_root(request, output)
+        .map(|(markdown, root)| source_image_infos(&markdown, root.as_deref()))
+        .unwrap_or_default();
+    let file = fs::File::open(path).map_err(|error| format!("读取 DOCX 失败：{error}"))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|error| format!("打开 DOCX 包失败：{error}"))?;
+    let document_xml = read_docx_text_part(&mut archive, "word/document.xml")?;
+    if !document_xml.contains("<a:blip") {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let relationships_xml =
+        read_docx_text_part(&mut archive, "word/_rels/document.xml.rels")?;
+    let relationships = image_relationships(&relationships_xml);
+    let drawing_re = Regex::new(r#"(?s)<w:drawing\b[^>]*>.*?</w:drawing>"#)
+        .expect("valid image inspection drawing regex");
+    let embed_re = Regex::new(r#"<a:blip\b[^>]*\br:embed=\"([^\"]+)\""#)
+        .expect("valid image inspection relationship regex");
+    let mut media_cache = HashMap::<String, Vec<u8>>::new();
+    let mut source_used = vec![false; source_images.len()];
+    let mut details = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    for drawing in drawing_re.find_iter(&document_xml) {
+        let drawing = drawing.as_str();
+        let Some(relationship_id) = embed_re
+            .captures(drawing)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str())
+        else {
+            continue;
+        };
+        let Some(media_path) = relationships.get(relationship_id) else {
+            continue;
+        };
+        if !media_cache.contains_key(media_path) {
+            let mut media = archive
+                .by_name(media_path)
+                .map_err(|error| format!("读取图片 {media_path} 失败：{error}"))?;
+            let mut bytes = Vec::new();
+            media
+                .read_to_end(&mut bytes)
+                .map_err(|error| format!("读取图片 {media_path} 内容失败：{error}"))?;
+            media_cache.insert(media_path.clone(), bytes);
+        }
+        let bytes = media_cache
+            .get(media_path)
+            .expect("cached DOCX image must exist");
+        let format = image_format(media_path, bytes);
+        let (embedded_width, embedded_height) = raster_image_dimensions(bytes, &format)
+            .map(|(width, height)| (Some(width), Some(height)))
+            .unwrap_or((None, None));
+        let embedded_hash = bytes_sha256(bytes);
+        let source_index = match_source_image(
+            &source_images,
+            &source_used,
+            &embedded_hash,
+            embedded_width,
+            embedded_height,
+        );
+        if let Some(index) = source_index {
+            source_used[index] = true;
+        }
+        let source = source_index.map(|index| &source_images[index]);
+        let (display_width_emu, display_height_emu) = drawing_extent(drawing).unwrap_or_default();
+        let display_width_cm = round_decimal(display_width_emu as f64 / 360_000.0, 2);
+        let display_height_cm = round_decimal(display_height_emu as f64 / 360_000.0, 2);
+        let effective_dpi = embedded_width
+            .zip(embedded_height)
+            .and_then(|(width, height)| {
+                let width_inches = display_width_emu as f64 / 914_400.0;
+                let height_inches = display_height_emu as f64 / 914_400.0;
+                (width_inches > 0.0 && height_inches > 0.0).then_some(
+                    (f64::from(width) / width_inches).min(f64::from(height) / height_inches),
+                )
+            })
+            .map(|dpi| round_decimal(dpi, 1));
+        let index = details.len() + 1;
+
+        if let Some(dpi) = effective_dpi.filter(|dpi| *dpi < 150.0) {
+            diagnostics.push(ConversionDiagnostic {
+                code: "IMAGE_LOW_RESOLUTION".to_string(),
+                severity: "warning".to_string(),
+                message: format!(
+                    "第 {index} 张图片按 {:.2}×{:.2} 厘米显示时有效分辨率约为 {dpi:.1} DPI，低于 150 DPI。",
+                    display_width_cm, display_height_cm
+                ),
+                line: source.map(|item| item.line),
+            });
+        }
+        if let Some(source) = source {
+            if source
+                .width_pixels
+                .zip(source.height_pixels)
+                .zip(embedded_width.zip(embedded_height))
+                .is_some_and(|((source_width, source_height), (width, height))| {
+                    width.saturating_mul(10) < source_width.saturating_mul(9)
+                        || height.saturating_mul(10) < source_height.saturating_mul(9)
+                })
+            {
+                diagnostics.push(ConversionDiagnostic {
+                    code: "IMAGE_EMBEDDED_DOWNSAMPLED".to_string(),
+                    severity: "warning".to_string(),
+                    message: format!(
+                        "第 {index} 张图片的嵌入像素低于源文件，可能在域更新或保存时被压缩。"
+                    ),
+                    line: Some(source.line),
+                });
+            }
+        }
+
+        details.push(ImageStatistic {
+            index,
+            source: source.map(|item| item.target.clone()),
+            media_path: media_path.clone(),
+            format,
+            source_width_pixels: source.and_then(|item| item.width_pixels),
+            source_height_pixels: source.and_then(|item| item.height_pixels),
+            embedded_width_pixels: embedded_width,
+            embedded_height_pixels: embedded_height,
+            display_width_cm,
+            display_height_cm,
+            effective_dpi,
+        });
+    }
+
+    Ok((details, diagnostics))
+}
+
+fn read_docx_text_part<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    name: &str,
+) -> Result<String, String> {
+    let mut part = archive
+        .by_name(name)
+        .map_err(|error| format!("读取 {name} 失败：{error}"))?;
+    let mut text = String::new();
+    part.read_to_string(&mut text)
+        .map_err(|error| format!("解析 {name} 失败：{error}"))?;
+    Ok(text)
+}
+
+fn image_relationships(xml: &str) -> HashMap<String, String> {
+    let relationship_re =
+        Regex::new(r#"<Relationship\b[^>]*/>"#).expect("valid relationship tag regex");
+    let id_re = Regex::new(r#"\bId=\"([^\"]+)\""#).expect("valid relationship id regex");
+    let target_re =
+        Regex::new(r#"\bTarget=\"([^\"]+)\""#).expect("valid relationship target regex");
+    let type_re = Regex::new(r#"\bType=\"([^\"]+)\""#).expect("valid relationship type regex");
+    relationship_re
+        .find_iter(xml)
+        .filter_map(|tag| {
+            let tag = tag.as_str();
+            let relationship_type = type_re.captures(tag)?.get(1)?.as_str();
+            if !relationship_type.ends_with("/image") {
+                return None;
+            }
+            let id = id_re.captures(tag)?.get(1)?.as_str().to_string();
+            let target = target_re.captures(tag)?.get(1)?.as_str();
+            Some((id, docx_relationship_target("word", target)))
+        })
+        .collect()
+}
+
+fn docx_relationship_target(base: &str, target: &str) -> String {
+    let target = target.replace('\\', "/");
+    if target.starts_with('/') {
+        return target.trim_start_matches('/').to_string();
+    }
+    let mut components = base
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for component in target.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                components.pop();
+            }
+            value => components.push(value.to_string()),
+        }
+    }
+    components.join("/")
+}
+
+fn source_image_infos(markdown: &str, resource_root: Option<&Path>) -> Vec<SourceImageInfo> {
+    let Some(resource_root) = resource_root else {
+        return Vec::new();
+    };
+    let standard_image = Regex::new(r#"!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))"#)
+        .expect("valid source image regex");
+    let obsidian_image = Regex::new(r#"!\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]"#)
+        .expect("valid source Obsidian image regex");
+    let mut images = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    for (index, line) in markdown.lines().enumerate() {
+        if let Some((marker, length)) = fence {
+            if is_fence_end(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(line) {
+            fence = Some((start.marker, start.length));
+            continue;
+        }
+        for captures in standard_image.captures_iter(line) {
+            let target = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            push_source_image_info(&mut images, resource_root, target, index + 1);
+        }
+        for captures in obsidian_image.captures_iter(line) {
+            push_source_image_info(
+                &mut images,
+                resource_root,
+                captures.get(1).map(|value| value.as_str()).unwrap_or(""),
+                index + 1,
+            );
+        }
+    }
+    images
+}
+
+fn push_source_image_info(
+    images: &mut Vec<SourceImageInfo>,
+    resource_root: &Path,
+    target: &str,
+    line: usize,
+) {
+    let target = target.trim().replace("%20", " ");
+    if target.is_empty()
+        || target.starts_with("data:")
+        || target.starts_with("http://")
+        || target.starts_with("https://")
+    {
+        return;
+    }
+    let path = PathBuf::from(&target);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        resource_root.join(&path)
+    };
+    let Ok(bytes) = fs::read(&path) else {
+        return;
+    };
+    let format = image_format(&target, &bytes);
+    let dimensions = raster_image_dimensions(&bytes, &format);
+    images.push(SourceImageInfo {
+        target,
+        line,
+        width_pixels: dimensions.map(|value| value.0),
+        height_pixels: dimensions.map(|value| value.1),
+        sha256: Some(bytes_sha256(&bytes)),
+    });
+}
+
+fn match_source_image(
+    sources: &[SourceImageInfo],
+    used: &[bool],
+    embedded_hash: &str,
+    embedded_width: Option<u32>,
+    embedded_height: Option<u32>,
+) -> Option<usize> {
+    sources
+        .iter()
+        .enumerate()
+        .find(|(index, source)| {
+            !used[*index] && source.sha256.as_deref() == Some(embedded_hash)
+        })
+        .map(|(index, _)| index)
+        .or_else(|| {
+            let embedded_ratio = embedded_width.zip(embedded_height).and_then(|(width, height)| {
+                (height > 0).then_some(f64::from(width) / f64::from(height))
+            })?;
+            sources
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !used[*index])
+                .filter_map(|(index, source)| {
+                    let ratio = source
+                        .width_pixels
+                        .zip(source.height_pixels)
+                        .and_then(|(width, height)| {
+                            (height > 0).then_some(f64::from(width) / f64::from(height))
+                        })?;
+                    let difference = (ratio - embedded_ratio).abs() / ratio.max(embedded_ratio);
+                    (difference <= 0.02).then_some((index, difference))
+                })
+                .min_by(|left, right| left.1.total_cmp(&right.1))
+                .map(|(index, _)| index)
+        })
+}
+
+fn image_format(path: &str, bytes: &[u8]) -> String {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "png"
+    } else if bytes.starts_with(&[0xff, 0xd8]) {
+        "jpeg"
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        "gif"
+    } else if bytes.starts_with(b"BM") {
+        "bmp"
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        "webp"
+    } else if bytes.starts_with(b"<svg") || bytes.windows(4).any(|window| window == b"<svg") {
+        "svg"
+    } else {
+        Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("unknown")
+    }
+    .to_string()
+}
+
+fn raster_image_dimensions(bytes: &[u8], format: &str) -> Option<(u32, u32)> {
+    match format {
+        "png" if bytes.len() >= 24 => Some((
+            u32::from_be_bytes(bytes[16..20].try_into().ok()?),
+            u32::from_be_bytes(bytes[20..24].try_into().ok()?),
+        )),
+        "gif" if bytes.len() >= 10 => Some((
+            u16::from_le_bytes(bytes[6..8].try_into().ok()?) as u32,
+            u16::from_le_bytes(bytes[8..10].try_into().ok()?) as u32,
+        )),
+        "bmp" if bytes.len() >= 26 => {
+            let width = i32::from_le_bytes(bytes[18..22].try_into().ok()?).unsigned_abs();
+            let height = i32::from_le_bytes(bytes[22..26].try_into().ok()?).unsigned_abs();
+            (width > 0 && height > 0).then_some((width, height))
+        }
+        "jpeg" => jpeg_dimensions(bytes),
+        "webp" => webp_dimensions(bytes),
+        _ => None,
+    }
+}
+
+fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 4 || !bytes.starts_with(&[0xff, 0xd8]) {
+        return None;
+    }
+    let mut index = 2usize;
+    while index + 8 < bytes.len() {
+        if bytes[index] != 0xff {
+            index += 1;
+            continue;
+        }
+        let marker = bytes[index + 1];
+        index += 2;
+        if marker == 0xd8 || marker == 0xd9 || marker == 0x01 {
+            continue;
+        }
+        if index + 2 > bytes.len() {
+            return None;
+        }
+        let segment_length = u16::from_be_bytes(bytes[index..index + 2].try_into().ok()?) as usize;
+        if segment_length < 2 || index + segment_length > bytes.len() {
+            return None;
+        }
+        if matches!(
+            marker,
+            0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd
+                | 0xce | 0xcf
+        ) && segment_length >= 7
+        {
+            let height = u16::from_be_bytes(bytes[index + 3..index + 5].try_into().ok()?) as u32;
+            let width = u16::from_be_bytes(bytes[index + 5..index + 7].try_into().ok()?) as u32;
+            return (width > 0 && height > 0).then_some((width, height));
+        }
+        index += segment_length;
+    }
+    None
+}
+
+fn webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 30 || bytes.get(8..12) != Some(b"WEBP") {
+        return None;
+    }
+    match bytes.get(12..16)? {
+        b"VP8X" => Some((
+            1 + u32::from_le_bytes([bytes[24], bytes[25], bytes[26], 0]),
+            1 + u32::from_le_bytes([bytes[27], bytes[28], bytes[29], 0]),
+        )),
+        b"VP8L" if bytes.len() >= 25 && bytes[20] == 0x2f => {
+            let bits = u32::from_le_bytes(bytes[21..25].try_into().ok()?);
+            Some(((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1))
+        }
+        _ => None,
+    }
+}
+
+fn bytes_sha256(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn round_decimal(value: f64, places: i32) -> f64 {
+    let factor = 10_f64.powi(places);
+    (value * factor).round() / factor
 }
 
 fn detect_wide_markdown_tables(markdown: &str) -> Vec<ConversionDiagnostic> {
@@ -8912,6 +9359,7 @@ mod tests {
         has_supported_text_extension,
         filter_benign_pandoc_svg_fallback_warning,
         heading_numbering_config_from_value, image_style_config_from_value,
+        inspect_exported_images,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         migrate_default_report_style_baseline,
         normalize_default_report_styles_xml, normalize_document_captions,
@@ -9110,6 +9558,97 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "MERMAID_RENDER_FAILED");
         assert_eq!(diagnostics[0].severity, "error");
+    }
+
+    #[test]
+    fn reports_exported_image_pixels_display_size_and_low_dpi() {
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-image-statistics-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let source_path = directory.join("source.md");
+        let source_image_path = directory.join("source.png");
+        let docx_path = directory.join("output.docx");
+        let source_png = minimal_png_header(200, 100);
+        let embedded_png = minimal_png_header(100, 50);
+        fs::write(&source_path, "![测试图片](source.png)").unwrap();
+        fs::write(&source_image_path, &source_png).unwrap();
+
+        let file = fs::File::create(&docx_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("word/document.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:drawing><wp:inline><wp:extent cx="9144000" cy="4572000"/><a:blip r:embed="rId1"/></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#)
+            .unwrap();
+        writer
+            .start_file(
+                "word/_rels/document.xml.rels",
+                SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer
+            .write_all(br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>"#)
+            .unwrap();
+        writer
+            .start_file("word/media/image1.png", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(&embedded_png).unwrap();
+        writer.finish().unwrap();
+
+        let request = ConvertRequest {
+            input: "![测试图片](source.png)".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: Some(source_path.to_string_lossy().to_string()),
+            output: Some(docx_path.to_string_lossy().to_string()),
+            template_id: None,
+            open_after_convert: Some(false),
+            overwrite: Some(true),
+            conflict_strategy: None,
+            heading_numbering: None,
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
+        };
+
+        let (details, diagnostics) = inspect_exported_images(&docx_path, &request, None).unwrap();
+
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].source.as_deref(), Some("source.png"));
+        assert_eq!(details[0].source_width_pixels, Some(200));
+        assert_eq!(details[0].embedded_width_pixels, Some(100));
+        assert_eq!(details[0].display_width_cm, 25.4);
+        assert_eq!(details[0].effective_dpi, Some(10.0));
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.code == "IMAGE_LOW_RESOLUTION" && item.line == Some(1)));
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "IMAGE_EMBEDDED_DOWNSAMPLED" && item.line == Some(1)
+        }));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn minimal_png_header(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes
     }
 
     #[test]

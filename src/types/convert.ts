@@ -48,6 +48,19 @@ export type ConvertResult = {
     tableCount: number;
     multiPageTableCandidateCount: number;
     tableWidthRiskIndices: number[];
+    imageDetails: Array<{
+      index: number;
+      source?: string;
+      mediaPath: string;
+      format: string;
+      sourceWidthPixels?: number;
+      sourceHeightPixels?: number;
+      embeddedWidthPixels?: number;
+      embeddedHeightPixels?: number;
+      displayWidthCm: number;
+      displayHeightCm: number;
+      effectiveDpi?: number;
+    }>;
   };
   fieldUpdateStatus?: "notRun" | "notRequested" | "pendingOnOpen" | "updated" | "failed";
   fieldUpdateProvider?: "WPS" | "Word";
