@@ -3769,18 +3769,31 @@ fn ensure_paragraph_tab_stop(paragraph_xml: &str, position: u32) -> String {
 fn normalize_document_captions(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
     let xml = deduplicate_image_alt_captions(xml);
     let Some(document_style) = document_style else {
-        return xml;
+        return normalize_image_caption_paragraph_layout(&xml, "center");
     };
     let xml = document_style
         .image_caption
         .as_ref()
         .map(|style| normalize_image_captions(&xml, style))
-        .unwrap_or(xml);
+        .unwrap_or_else(|| normalize_image_caption_paragraph_layout(&xml, "center"));
     document_style
         .table_caption
         .as_ref()
         .map(|style| normalize_table_captions(&xml, style))
         .unwrap_or(xml)
+}
+
+fn normalize_image_caption_paragraph_layout(xml: &str, align: &str) -> String {
+    Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#)
+        .expect("valid paragraph regex")
+        .replace_all(xml, |captures: &Captures| {
+            let paragraph = &captures[0];
+            if !is_image_caption_paragraph(paragraph) {
+                return paragraph.to_string();
+            }
+            ensure_image_paragraph_aligned(paragraph, align)
+        })
+        .to_string()
 }
 
 fn deduplicate_image_alt_captions(xml: &str) -> String {
@@ -4046,7 +4059,10 @@ fn normalize_caption_paragraph(
     } else {
         text.trim().to_string()
     };
-    let paragraph_properties = text_style_paragraph_properties_xml(&style.text);
+    let paragraph_properties = align_paragraph_properties(
+        &text_style_paragraph_properties_xml(&style.text),
+        word_alignment_value(&style.text.align),
+    );
     let run_properties = text_style_run_properties_xml(&style.text);
     let paragraph_start = Regex::new(r#"<w:p(\s[^>]*)?>"#).expect("valid paragraph start regex");
     let attributes = paragraph_start
@@ -4207,7 +4223,7 @@ fn ensure_image_paragraph_aligned(paragraph: &str, align: &str) -> String {
     paragraph_start_re
         .replace(paragraph, |captures: &Captures| {
             format!(
-                "{}<w:pPr><w:ind w:left=\"0\" w:right=\"0\" w:firstLine=\"0\" /><w:jc w:val=\"{align}\" /></w:pPr>",
+                "{}<w:pPr><w:ind w:left=\"0\" w:right=\"0\" w:firstLine=\"0\" w:firstLineChars=\"0\" /><w:jc w:val=\"{align}\" /></w:pPr>",
                 &captures[0]
             )
         })
@@ -4220,7 +4236,7 @@ fn align_paragraph_properties(properties: &str, align: &str) -> String {
     if let Some(captures) = self_closing_re.captures(properties) {
         let attrs = captures.get(1).map(|value| value.as_str()).unwrap_or("");
         return format!(
-            r#"<w:pPr{attrs}><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{align}" /></w:pPr>"#
+            r#"<w:pPr{attrs}><w:ind w:left="0" w:right="0" w:firstLine="0" w:firstLineChars="0" /><w:jc w:val="{align}" /></w:pPr>"#
         );
     }
 
@@ -4235,7 +4251,7 @@ fn align_paragraph_properties(properties: &str, align: &str) -> String {
         .replacen(
             "</w:pPr>",
             &format!(
-                r#"<w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{align}" /></w:pPr>"#
+                r#"<w:ind w:left="0" w:right="0" w:firstLine="0" w:firstLineChars="0" /><w:jc w:val="{align}" /></w:pPr>"#
             ),
             1,
         )
@@ -8101,7 +8117,7 @@ mod tests {
 
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
         assert!(output.contains(
-            r#"<w:ind w:left="0" w:right="0" w:firstLine="0" />"#
+            r#"<w:ind w:left="0" w:right="0" w:firstLine="0" w:firstLineChars="0" />"#
         ));
         assert!(!output.contains(r#"<w:jc w:val="left" />"#));
         assert!(output.contains(&format!(
@@ -8441,6 +8457,35 @@ mod tests {
         assert_eq!(output.matches(r#"w:val="ImageCaption""#).count(), 1);
         assert_eq!(output.matches("网络结构图</w:t>").count(), 1);
         assert!(output.contains("图1-1 网络结构图"));
+        assert!(output.contains(
+            r#"<w:ind w:left="0" w:right="0" w:firstLine="0" w:firstLineChars="0" />"#
+        ));
+        assert!(output.contains(r#"<w:jc w:val="center" />"#));
+    }
+
+    #[test]
+    fn image_caption_ignores_body_and_configured_first_line_indent() {
+        let document_style = document_style_config_from_value(&json!({
+            "styles": {
+                "caption": {
+                    "firstLineIndent": 2,
+                    "captionAlign": "right",
+                    "captionNumbering": false
+                }
+            }
+        }))
+        .expect("document style should parse");
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="ImageCaption" /><w:ind w:left="480" w:firstLine="480" w:firstLineChars="200" /></w:pPr><w:r><w:t>图题</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let output = normalize_document_captions(input, Some(&document_style));
+
+        assert!(output.contains(
+            r#"<w:ind w:left="0" w:right="0" w:firstLine="0" w:firstLineChars="0" />"#
+        ));
+        assert!(output.contains(r#"<w:jc w:val="right" />"#));
+        assert!(!output.contains(r#"w:left="480""#));
+        assert!(!output.contains(r#"w:firstLine="480""#));
+        assert!(!output.contains(r#"w:firstLineChars="200""#));
     }
 
     #[test]
