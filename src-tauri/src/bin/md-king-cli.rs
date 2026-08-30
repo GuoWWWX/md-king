@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use md_king_lib::{
-    convert_markdown_cli, list_templates_for_cli, resolve_template_selector_for_cli,
-    ConvertRequest, TemplateSelectorError,
+    convert_markdown_cli, inspect_template_for_cli, list_templates_for_cli,
+    resolve_template_selector_for_cli, ConvertRequest, TemplateSelectorError,
 };
 
 #[derive(Parser)]
@@ -73,6 +73,16 @@ enum TemplateCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Show the resolved reference.docx path and SHA-256 for one template.
+    Inspect {
+        /// Template id or exact template name.
+        selector: String,
+
+        /// Print structured JSON output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() {
@@ -97,6 +107,7 @@ fn main() {
         ),
         Commands::Templates { command } => match command {
             TemplateCommands::List { json } => run_templates_list(json),
+            TemplateCommands::Inspect { selector, json } => run_templates_inspect(&selector, json),
         },
     };
 
@@ -185,6 +196,44 @@ fn run_templates_list(json: bool) -> i32 {
     0
 }
 
+fn run_templates_inspect(selector: &str, json: bool) -> i32 {
+    match inspect_template_for_cli(selector) {
+        Ok(inspection) => {
+            if json {
+                print_json(&inspection);
+            } else {
+                println!("template-id: {}", inspection.template_id);
+                println!("name: {}", inspection.name);
+                println!(
+                    "resolved-template-path: {}",
+                    inspection
+                        .resolved_template_path
+                        .as_deref()
+                        .unwrap_or("未解析")
+                );
+                println!(
+                    "template-sha256: {}",
+                    inspection.template_sha256.as_deref().unwrap_or("不可用")
+                );
+            }
+            0
+        }
+        Err(error) => {
+            let error = template_selector_error(error);
+            if json {
+                print_json(&serde_json::json!({
+                    "ok": false,
+                    "errorCode": error.code,
+                    "message": error.message,
+                }));
+            } else {
+                eprintln!("ERROR {}: {}", error.code, error.message);
+            }
+            1
+        }
+    }
+}
+
 struct CliTemplateError {
     code: &'static str,
     message: String,
@@ -203,19 +252,25 @@ fn resolve_template_id(
 
     match resolve_template_selector_for_cli(selector) {
         Ok(template) => Ok(Some(template.id)),
-        Err(TemplateSelectorError::NotFound(value)) => Err(CliTemplateError {
+        Err(error) => Err(template_selector_error(error)),
+    }
+}
+
+fn template_selector_error(error: TemplateSelectorError) -> CliTemplateError {
+    match error {
+        TemplateSelectorError::NotFound(value) => CliTemplateError {
             code: "TEMPLATE_NOT_FOUND",
             message: format!(
                 "未找到模板「{value}」。请运行 `md-king-cli templates list` 查看可用模板。"
             ),
-        }),
-        Err(TemplateSelectorError::AmbiguousName { name, ids }) => Err(CliTemplateError {
+        },
+        TemplateSelectorError::AmbiguousName { name, ids } => CliTemplateError {
             code: "TEMPLATE_NAME_AMBIGUOUS",
             message: format!(
                 "模板名称「{name}」不唯一，请改用模板 id：{}",
                 ids.join(", ")
             ),
-        }),
+        },
     }
 }
 

@@ -19,6 +19,8 @@ export type ConvertResult = {
   input: string;
   output?: string;
   templateId?: string;
+  resolvedTemplatePath?: string;
+  templateSha256?: string;
   durationMs: number;
   warnings: string[];
   errorCode?: string;

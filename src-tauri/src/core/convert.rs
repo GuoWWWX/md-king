@@ -20,7 +20,9 @@ use crate::core::pandoc::{
     check_pandoc_available, check_pandoc_available_cli, run_pandoc_to_docx, run_pandoc_to_docx_cli,
     PandocDocumentOptions, PandocExecution, PandocStatus,
 };
-use crate::core::template::find_template;
+use crate::core::template::{
+    find_template, resolve_built_in_reference_docx_path, template_sha256,
+};
 use crate::core::template_style::get_template_style_config;
 use crate::system::open_file::open_path;
 
@@ -63,6 +65,8 @@ pub struct ConvertResult {
     pub input: String,
     pub output: Option<String>,
     pub template_id: Option<String>,
+    pub resolved_template_path: Option<String>,
+    pub template_sha256: Option<String>,
     pub duration_ms: u64,
     pub warnings: Vec<String>,
     pub error_code: Option<String>,
@@ -71,6 +75,7 @@ pub struct ConvertResult {
 
 struct TemplateResolution {
     reference_docx_path: Option<PathBuf>,
+    template_sha256: Option<String>,
     warnings: Vec<String>,
 }
 
@@ -388,6 +393,11 @@ fn convert_existing_file(
         .unwrap_or_else(|| input_path.with_extension("docx"));
 
     let template_resolution = resolve_template(runtime, &request);
+    let resolved_template_path = template_resolution
+        .reference_docx_path
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string());
+    let template_sha256 = template_resolution.template_sha256.clone();
     let mut warnings = template_resolution.warnings;
 
     if let Err(error) = ensure_output_parent_dir(&output_path) {
@@ -522,7 +532,15 @@ fn convert_existing_file(
                     );
                 }
             }
-            success_result(request, output_path, output_string, started_at, warnings)
+            success_result(
+                request,
+                output_path,
+                output_string,
+                started_at,
+                warnings,
+                resolved_template_path,
+                template_sha256,
+            )
         }
         Ok(execution) => {
             let _ = fs::remove_file(&staged_output_path);
@@ -580,6 +598,11 @@ fn convert_text_input(
     }
 
     let template_resolution = resolve_template(runtime, &request);
+    let resolved_template_path = template_resolution
+        .reference_docx_path
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string());
+    let template_sha256 = template_resolution.template_sha256.clone();
     let mut warnings = template_resolution.warnings;
     let output_was_provided = output.is_some();
     let mut output_path = output
@@ -752,7 +775,15 @@ fn convert_text_input(
                     );
                 }
             }
-            success_result(request, output_path, output_string, started_at, warnings)
+            success_result(
+                request,
+                output_path,
+                output_string,
+                started_at,
+                warnings,
+                resolved_template_path,
+                template_sha256,
+            )
         }
         Ok(execution) => {
             let _ = fs::remove_file(&temp_input_path);
@@ -800,6 +831,8 @@ fn success_result(
     output: Option<String>,
     started_at: Instant,
     mut warnings: Vec<String>,
+    resolved_template_path: Option<String>,
+    template_sha256: Option<String>,
 ) -> ConvertResult {
     if request.open_after_convert.unwrap_or(false) {
         if let Err(error) = open_path(&output_path) {
@@ -812,6 +845,8 @@ fn success_result(
         input: request.input,
         output,
         template_id: request.template_id,
+        resolved_template_path,
+        template_sha256,
         duration_ms: elapsed_ms(started_at),
         warnings,
         error_code: None,
@@ -832,6 +867,8 @@ fn failure_result(
         input: request.input,
         output,
         template_id: request.template_id,
+        resolved_template_path: None,
+        template_sha256: None,
         duration_ms: elapsed_ms(started_at),
         warnings,
         error_code: Some(error_code.to_string()),
@@ -946,6 +983,7 @@ fn resolve_template(runtime: ConvertRuntime<'_>, request: &ConvertRequest) -> Te
     else {
         return TemplateResolution {
             reference_docx_path: None,
+            template_sha256: None,
             warnings,
         };
     };
@@ -956,51 +994,55 @@ fn resolve_template(runtime: ConvertRuntime<'_>, request: &ConvertRequest) -> Te
         ));
         return TemplateResolution {
             reference_docx_path: None,
+            template_sha256: None,
             warnings,
         };
     };
 
     let reference_docx_path = template.reference_docx_path.trim();
-    if reference_docx_path.is_empty() {
-        if let Some(path) = built_in_reference_docx_path(runtime, &template.id) {
-            warnings.push(format!(
-                "已应用内置模板「{}」的 reference.docx。",
-                template.name
-            ));
-            return TemplateResolution {
-                reference_docx_path: Some(path),
-                warnings,
-            };
-        }
-
+    let path = if reference_docx_path.is_empty() {
+        built_in_reference_docx_path(runtime, &template.id)
+    } else {
+        Some(PathBuf::from(reference_docx_path))
+    };
+    let Some(path) = path else {
         warnings.push(format!(
             "模板「{}」未绑定 reference.docx，使用 Pandoc 默认 DOCX 样式。",
             template.name
         ));
         return TemplateResolution {
             reference_docx_path: None,
+            template_sha256: None,
             warnings,
         };
-    }
+    };
 
-    let path = PathBuf::from(reference_docx_path);
     if !path.exists() || !path.is_file() {
         warnings.push(format!(
             "模板「{}」的 reference.docx 不存在，已跳过：{}",
-            template.name, reference_docx_path
+            template.name,
+            path.to_string_lossy()
         ));
         return TemplateResolution {
             reference_docx_path: None,
+            template_sha256: None,
             warnings,
         };
     }
 
+    let path = path.canonicalize().unwrap_or(path);
+    let hash = template_sha256(&path).ok();
     warnings.push(format!(
-        "已应用模板「{}」的 reference.docx。",
-        template.name
+        "已应用模板「{}」：{}{}",
+        template.name,
+        path.to_string_lossy(),
+        hash.as_deref()
+            .map(|hash| format!("（SHA-256：{hash}）"))
+            .unwrap_or_default()
     ));
     TemplateResolution {
         reference_docx_path: Some(path),
+        template_sha256: hash,
         warnings,
     }
 }
@@ -1013,7 +1055,7 @@ fn built_in_reference_docx_path(runtime: ConvertRuntime<'_>, template_id: &str) 
         _ => return None,
     };
 
-    match runtime {
+    resolve_built_in_reference_docx_path(template_id).or_else(|| match runtime {
         ConvertRuntime::Tauri(app) => app
             .path()
             .resolve(resource_path, BaseDirectory::Resource)
@@ -1021,7 +1063,7 @@ fn built_in_reference_docx_path(runtime: ConvertRuntime<'_>, template_id: &str) 
             .filter(|path| path.exists() && path.is_file())
             .or_else(|| built_in_reference_docx_path_for_cli_resource(resource_path)),
         ConvertRuntime::Cli => built_in_reference_docx_path_for_cli_resource(resource_path),
-    }
+    })
 }
 
 fn built_in_reference_docx_path_for_cli_resource(resource_path: &str) -> Option<PathBuf> {

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -39,13 +40,23 @@ pub struct ImportTemplateRequest {
     pub is_default: Option<bool>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateInspection {
+    pub template_id: String,
+    pub name: String,
+    pub resolved_template_path: Option<String>,
+    pub template_sha256: Option<String>,
+    pub is_built_in: bool,
+}
+
 pub fn built_in_templates() -> Vec<Template> {
     vec![
         Template {
             id: "default-report".to_string(),
             name: "默认报告模板".to_string(),
             description: Some("适合 AI 生成的通用报告、方案和说明文档。".to_string()),
-            reference_docx_path: "".to_string(),
+            reference_docx_path: built_in_template_path_string("default-report"),
             preview_image_path: None,
             tags: vec!["系统".to_string(), "内置".to_string()],
             is_built_in: true,
@@ -57,7 +68,7 @@ pub fn built_in_templates() -> Vec<Template> {
             id: "official-document".to_string(),
             name: "正式公文模板".to_string(),
             description: Some("适合正式材料的标题层级、正文缩进和页边距样式。".to_string()),
-            reference_docx_path: "".to_string(),
+            reference_docx_path: built_in_template_path_string("official-document"),
             preview_image_path: None,
             tags: vec!["系统".to_string(), "内置".to_string()],
             is_built_in: true,
@@ -69,7 +80,7 @@ pub fn built_in_templates() -> Vec<Template> {
             id: "technical-spec".to_string(),
             name: "技术文档模板".to_string(),
             description: Some("强化代码块、表格、列表和引用样式，适合技术方案。".to_string()),
-            reference_docx_path: "".to_string(),
+            reference_docx_path: built_in_template_path_string("technical-spec"),
             preview_image_path: None,
             tags: vec!["系统".to_string(), "内置".to_string()],
             is_built_in: true,
@@ -120,6 +131,78 @@ pub fn resolve_template_selector_for_cli(
             ids: matches.into_iter().map(|template| template.id).collect(),
         }),
     }
+}
+
+pub fn inspect_template_for_cli(
+    selector: &str,
+) -> Result<TemplateInspection, TemplateSelectorError> {
+    let template = resolve_template_selector_for_cli(selector)?;
+    let path = (!template.reference_docx_path.trim().is_empty())
+        .then(|| PathBuf::from(template.reference_docx_path.trim()))
+        .filter(|path| path.is_file());
+    let template_sha256 = path.as_deref().and_then(|path| template_sha256(path).ok());
+    Ok(TemplateInspection {
+        template_id: template.id,
+        name: template.name,
+        resolved_template_path: path.map(|path| path.to_string_lossy().to_string()),
+        template_sha256,
+        is_built_in: template.is_built_in,
+    })
+}
+
+pub fn template_sha256(path: &Path) -> Result<String, String> {
+    let data = fs::read(path).map_err(|error| format!("读取模板文件失败：{error}"))?;
+    let mut digest = Sha256::new();
+    digest.update(data);
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+pub fn resolve_built_in_reference_docx_path(template_id: &str) -> Option<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(root) = std::env::var_os("MD_KING_TEMPLATES_DIR").map(PathBuf::from) {
+        roots.push(root);
+    }
+    if let Ok(root) = templates_dir() {
+        roots.push(root);
+    }
+    if let Ok(root) = std::env::current_dir() {
+        roots.push(root.join("templates"));
+    }
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+    {
+        roots.push(exe_dir.join("templates"));
+        roots.push(exe_dir.join("resources").join("templates"));
+    }
+    roots.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("templates"),
+    );
+
+    resolve_built_in_reference_docx_path_from_roots(template_id, &roots)
+}
+
+fn resolve_built_in_reference_docx_path_from_roots(
+    template_id: &str,
+    roots: &[PathBuf],
+) -> Option<PathBuf> {
+    for candidate_id in [template_id, "default-report"] {
+        for root in roots {
+            let path = root.join(candidate_id).join("reference.docx");
+            if path.is_file() {
+                return Some(path.canonicalize().unwrap_or(path));
+            }
+        }
+    }
+    None
+}
+
+fn built_in_template_path_string(template_id: &str) -> String {
+    resolve_built_in_reference_docx_path(template_id)
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 pub fn import_template(request: ImportTemplateRequest) -> Result<Template, String> {
@@ -937,7 +1020,8 @@ fn now_millis() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_page_settings, extract_theme_fonts, extract_word_style, validate_reference_docx,
+        extract_page_settings, extract_theme_fonts, extract_word_style,
+        resolve_built_in_reference_docx_path_from_roots, template_sha256, validate_reference_docx,
     };
     use std::fs;
 
@@ -1011,5 +1095,53 @@ mod tests {
 
         assert!(error.contains("不是有效的 DOCX 包"));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn computes_reference_docx_sha256() {
+        let path = std::env::temp_dir().join(format!(
+            "md-king-template-sha256-{}-{}.docx",
+            std::process::id(),
+            super::now_millis()
+        ));
+        fs::write(&path, b"abc").expect("hash fixture should be written");
+
+        assert_eq!(
+            template_sha256(&path).expect("hash should be computed"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn resolves_specific_template_before_default_fallback_across_roots() {
+        let fixture_root = std::env::temp_dir().join(format!(
+            "md-king-template-roots-{}-{}",
+            std::process::id(),
+            super::now_millis()
+        ));
+        let first_root = fixture_root.join("first");
+        let second_root = fixture_root.join("second");
+        let fallback = first_root.join("default-report").join("reference.docx");
+        let specific = second_root.join("official-document").join("reference.docx");
+        fs::create_dir_all(fallback.parent().expect("fallback parent"))
+            .expect("fallback directory should be created");
+        fs::create_dir_all(specific.parent().expect("specific parent"))
+            .expect("specific directory should be created");
+        fs::write(&fallback, b"fallback").expect("fallback fixture should be written");
+        fs::write(&specific, b"specific").expect("specific fixture should be written");
+
+        let resolved = resolve_built_in_reference_docx_path_from_roots(
+            "official-document",
+            &[first_root, second_root],
+        )
+        .expect("specific template should resolve");
+
+        assert_eq!(
+            fs::read(resolved).expect("resolved template should be readable"),
+            b"specific"
+        );
+        let _ = fs::remove_dir_all(fixture_root);
     }
 }
