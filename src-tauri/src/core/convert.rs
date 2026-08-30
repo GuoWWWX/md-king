@@ -1778,7 +1778,7 @@ fn inspect_exported_images(
     let relationships = image_relationships(&relationships_xml);
     let drawing_re = Regex::new(r#"(?s)<w:drawing\b[^>]*>.*?</w:drawing>"#)
         .expect("valid image inspection drawing regex");
-    let embed_re = Regex::new(r#"<a:blip\b[^>]*\br:embed=\"([^\"]+)\""#)
+    let embed_re = Regex::new(r#"<(?:a:blip|asvg:svgBlip)\b[^>]*\br:embed=\"([^\"]+)\""#)
         .expect("valid image inspection relationship regex");
     let mut media_cache = HashMap::<String, Vec<u8>>::new();
     let mut source_used = vec![false; source_images.len()];
@@ -1787,19 +1787,18 @@ fn inspect_exported_images(
 
     for drawing in drawing_re.find_iter(&document_xml) {
         let drawing = drawing.as_str();
-        let Some(relationship_id) = embed_re
-            .captures(drawing)
-            .and_then(|captures| captures.get(1))
-            .map(|value| value.as_str())
-        else {
+        let media_path = embed_re
+            .captures_iter(drawing)
+            .filter_map(|captures| captures.get(1))
+            .filter_map(|relationship_id| relationships.get(relationship_id.as_str()))
+            .find(|target| !target.eq_ignore_ascii_case("NULL"))
+            .cloned();
+        let Some(media_path) = media_path else {
             continue;
         };
-        let Some(media_path) = relationships.get(relationship_id) else {
-            continue;
-        };
-        if !media_cache.contains_key(media_path) {
+        if !media_cache.contains_key(&media_path) {
             let mut media = archive
-                .by_name(media_path)
+                .by_name(&media_path)
                 .map_err(|error| format!("读取图片 {media_path} 失败：{error}"))?;
             let mut bytes = Vec::new();
             media
@@ -1808,9 +1807,9 @@ fn inspect_exported_images(
             media_cache.insert(media_path.clone(), bytes);
         }
         let bytes = media_cache
-            .get(media_path)
+            .get(&media_path)
             .expect("cached DOCX image must exist");
-        let format = image_format(media_path, bytes);
+        let format = image_format(&media_path, bytes);
         let (embedded_width, embedded_height) = raster_image_dimensions(bytes, &format)
             .map(|(width, height)| (Some(width), Some(height)))
             .unwrap_or((None, None));
@@ -1876,7 +1875,7 @@ fn inspect_exported_images(
         details.push(ImageStatistic {
             index,
             source: source.map(|item| item.target.clone()),
-            media_path: media_path.clone(),
+            media_path,
             format,
             source_width_pixels: source.and_then(|item| item.width_pixels),
             source_height_pixels: source.and_then(|item| item.height_pixels),
@@ -9864,6 +9863,78 @@ mod tests {
         bytes.extend_from_slice(&width.to_be_bytes());
         bytes.extend_from_slice(&height.to_be_bytes());
         bytes
+    }
+
+    #[test]
+    fn uses_svg_fallback_when_office_sets_primary_image_target_to_null() {
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-svg-fallback-statistics-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let docx_path = directory.join("output.docx");
+        let file = fs::File::create(&docx_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("word/document.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(br#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><wp:extent cx="5270500" cy="626745"/><a:blip r:embed="rId9"><a:extLst><a:ext><asvg:svgBlip r:embed="rId10"/></a:ext></a:extLst></a:blip></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#)
+            .unwrap();
+        writer
+            .start_file(
+                "word/_rels/document.xml.rels",
+                SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer
+            .write_all(br#"<Relationships><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../NULL"/><Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.svg"/></Relationships>"#)
+            .unwrap();
+        writer
+            .start_file("word/media/image2.svg", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 120"></svg>"#)
+            .unwrap();
+        writer.finish().unwrap();
+
+        let request = ConvertRequest {
+            input: "```mermaid\nflowchart LR\nA-->B\n```".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: None,
+            output: Some(docx_path.to_string_lossy().to_string()),
+            template_id: None,
+            open_after_convert: Some(false),
+            overwrite: Some(true),
+            conflict_strategy: None,
+            heading_numbering: None,
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
+            mermaid_format: Some("svg".to_string()),
+            mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
+        };
+
+        let (details, diagnostics) = inspect_exported_images(&docx_path, &request, None).unwrap();
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].format, "svg");
+        assert_eq!(details[0].media_path, "word/media/image2.svg");
+        assert_eq!(details[0].display_width_cm, 14.64);
+
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

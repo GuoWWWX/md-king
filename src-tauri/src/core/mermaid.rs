@@ -402,6 +402,30 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     width=Math.max(1,Math.ceil(width)); height=Math.max(1,Math.ceil(height));
     svg.setAttribute('width',String(width)); svg.setAttribute('height',String(height));
     svg.style.width=width+'px'; svg.style.height=height+'px';
+    const officeSvgProperties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linecap','stroke-linejoin','opacity','color','font-family','font-size','font-weight','font-style','text-anchor','dominant-baseline'];
+    const inlineOfficeRule=rule=>{{
+      if(rule.cssRules){{for(const child of rule.cssRules) inlineOfficeRule(child);return;}}
+      if(!rule.selectorText||!rule.style) return;
+      let elements;
+      try{{elements=document.querySelectorAll(rule.selectorText);}}catch(_error){{return;}}
+      for(const element of elements){{
+        if(element!==svg&&!svg.contains(element)) continue;
+        for(const property of officeSvgProperties){{
+          const value=rule.style.getPropertyValue(property);
+          if(value) element.setAttribute(property,value);
+        }}
+      }}
+    }};
+    for(const sheet of document.styleSheets){{
+      try{{for(const rule of sheet.cssRules) inlineOfficeRule(rule);}}catch(_error){{}}
+    }}
+    for(const element of svg.querySelectorAll('[style]')){{
+      for(const property of officeSvgProperties){{
+        const value=element.style.getPropertyValue(property);
+        if(value){{element.setAttribute(property,value);element.style.removeProperty(property);}}
+      }}
+      if(!element.getAttribute('style')) element.removeAttribute('style');
+    }}
     const serialized=new XMLSerializer().serializeToString(svg);
     const bytes=new TextEncoder().encode(serialized); let binary='';
     for(let offset=0;offset<bytes.length;offset+=32768) binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
@@ -667,6 +691,10 @@ mod tests {
         assert!(html.contains("htmlLabels:false"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));
+        assert!(html.contains("inlineOfficeRule=rule=>"));
+        assert!(html.contains("document.querySelectorAll(rule.selectorText)"));
+        assert!(html.contains("element.setAttribute(property,value)"));
+        assert!(html.contains("element.style.removeProperty(property)"));
         assert!(html.contains("dataset.svgBase64"));
     }
 
