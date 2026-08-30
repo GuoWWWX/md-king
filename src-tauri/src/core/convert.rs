@@ -710,6 +710,7 @@ fn convert_existing_file(
                 warnings,
                 resolved_template_path,
                 template_sha256,
+                heading_numbering,
                 statistics,
             )
         }
@@ -968,6 +969,7 @@ fn convert_text_input(
                 warnings,
                 resolved_template_path,
                 template_sha256,
+                heading_numbering,
                 statistics,
             )
         }
@@ -1019,6 +1021,7 @@ fn success_result(
     mut warnings: Vec<String>,
     resolved_template_path: Option<String>,
     template_sha256: Option<String>,
+    heading_numbering: Option<HeadingNumberingConfig>,
     mut statistics: ConversionStatistics,
 ) -> ConvertResult {
     let mut diagnostics = collect_conversion_diagnostics(&request, output.as_deref());
@@ -1037,12 +1040,14 @@ fn success_result(
 
     if let Some(provider) = requested_field_update {
         field_update_provider = Some(provider.label().to_string());
-        match update_fields_safely(&output_path, provider) {
+        match update_fields_safely(&output_path, provider).and_then(|_| {
+            normalize_after_field_update(&output_path, &request, heading_numbering.as_ref())
+        }) {
             Ok(()) => {
                 field_update_status = "updated".to_string();
                 result_message = format!("转换完成，目录和页码域已由 {} 更新。", provider.label());
                 warnings.push(format!(
-                    "已使用 {} 更新目录、页码和交叉引用，并完成更新后结构校验。",
+                    "已使用 {} 更新目录、页码和交叉引用，并重新固化表格、图片和压缩设置。",
                     provider.label()
                 ));
             }
@@ -1112,6 +1117,28 @@ fn success_result(
         error_code: None,
         message: Some(result_message),
     }
+}
+
+fn normalize_after_field_update(
+    path: &Path,
+    request: &ConvertRequest,
+    heading_numbering: Option<&HeadingNumberingConfig>,
+) -> Result<(), String> {
+    normalize_docx(
+        path,
+        should_apply_default_template_postprocess(request),
+        heading_numbering,
+        &markdown_feature_config(request),
+        page_settings_config(request).as_ref(),
+        table_style_config(request).as_ref(),
+        image_style_config(request).as_ref(),
+        document_style_config(request).as_ref(),
+        block_style_config(request).as_ref(),
+        request.toc_page_numbers.as_deref(),
+        prevent_picture_compression(request),
+    )?;
+    validate_docx_package(path)?;
+    validate_updated_field_results(path)
 }
 
 fn failure_result(
@@ -1324,10 +1351,13 @@ fn validate_exported_tables(
         .map(page_content_width_twips)
         .or_else(|| document_content_width_twips(&xml))
         .unwrap_or_else(default_content_width_twips);
-    let table_re = Regex::new(r#"(?s)<w:tbl>.*?</w:tbl>"#).expect("valid table audit regex");
+    let table_re =
+        Regex::new(r#"(?s)<w:tbl\b[^>]*>.*?</w:tbl>"#).expect("valid table audit regex");
     let grid_re = Regex::new(r#"<w:gridCol\b([^>]*)/>"#).expect("valid table grid audit regex");
-    let row_re = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row audit regex");
-    let cell_re = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell audit regex");
+    let row_re =
+        Regex::new(r#"(?s)<w:tr\b[^>]*>.*?</w:tr>"#).expect("valid table row audit regex");
+    let cell_re =
+        Regex::new(r#"(?s)<w:tc\b[^>]*>.*?</w:tc>"#).expect("valid table cell audit regex");
     let mut diagnostics = Vec::new();
 
     for (table_index, table_match) in table_re.find_iter(&xml).enumerate() {
@@ -6407,7 +6437,7 @@ fn arrange_cover_toc_and_body_sections(
         return xml.to_string();
     };
     let section_break_after_toc = Regex::new(
-        r#"(?s)^\s*<w:p(?:\s[^>]*)?>\s*<w:pPr(?:\s[^>]*)?>.*?<w:sectPr\b[^>]*>.*?<w:type\b[^>]*w:val="nextPage"[^>]*/>.*?</w:sectPr>.*?</w:pPr>\s*</w:p>"#,
+        r#"(?s)^\s*<w:p(?:\s[^>]*)?>\s*<w:pPr(?:\s[^>]*)?>.*?<w:sectPr\b[^>]*>.*?</w:sectPr>.*?</w:pPr>\s*</w:p>"#,
     )
     .expect("valid TOC section break regex");
     if section_break_after_toc.is_match(&xml[toc_match.end()..]) {
@@ -8845,7 +8875,7 @@ fn default_table_style_config(content_width_twips: Option<u32>) -> TableStyleCon
 }
 
 fn normalize_table_cells(xml: &str, style: &TableStyleConfig) -> String {
-    let table = Regex::new(r#"(?s)<w:tbl>.*?</w:tbl>"#).expect("valid table regex");
+    let table = Regex::new(r#"(?s)<w:tbl\b[^>]*>.*?</w:tbl>"#).expect("valid table regex");
     table
         .replace_all(xml, |captures: &Captures| {
             normalize_table_xml(&captures[0], style)
@@ -8858,7 +8888,7 @@ fn normalize_table_xml(table_xml: &str, style: &TableStyleConfig) -> String {
     let column_widths = table_column_widths_for_xml(table_xml, column_count, style);
     let table_xml = normalize_table_properties(table_xml, &column_widths, style);
     let mut row_index = 0usize;
-    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
+    let row = Regex::new(r#"(?s)<w:tr\b[^>]*>.*?</w:tr>"#).expect("valid table row regex");
     row.replace_all(&table_xml, |captures: &Captures| {
         let normalized = normalize_table_row_xml(
             &captures[0],
@@ -8874,8 +8904,10 @@ fn normalize_table_xml(table_xml: &str, style: &TableStyleConfig) -> String {
 }
 
 fn count_table_columns(table_xml: &str) -> usize {
-    let first_row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid first row regex");
-    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
+    let first_row =
+        Regex::new(r#"(?s)<w:tr\b[^>]*>.*?</w:tr>"#).expect("valid first row regex");
+    let cell =
+        Regex::new(r#"(?s)<w:tc\b[^>]*>.*?</w:tc>"#).expect("valid table cell regex");
     first_row
         .find(table_xml)
         .map(|row| cell.find_iter(row.as_str()).count())
@@ -9031,8 +9063,9 @@ fn table_column_widths_for_xml(
     let count = column_count.max(1);
     let mut content_weights = vec![1.0_f64; count];
 
-    let row = Regex::new(r#"(?s)<w:tr>.*?</w:tr>"#).expect("valid table row regex");
-    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
+    let row = Regex::new(r#"(?s)<w:tr\b[^>]*>.*?</w:tr>"#).expect("valid table row regex");
+    let cell =
+        Regex::new(r#"(?s)<w:tc\b[^>]*>.*?</w:tc>"#).expect("valid table cell regex");
     for row_match in row.find_iter(table_xml) {
         for (column_index, cell_match) in cell.find_iter(row_match.as_str()).enumerate() {
             if column_index >= count {
@@ -9101,7 +9134,8 @@ fn normalize_table_row_xml(
         > u64::from(style.content_height_twips);
     let row_xml = normalize_table_row_properties(row_xml, style, is_header, allow_split);
     let mut cell_index = 0usize;
-    let cell = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid table cell regex");
+    let cell =
+        Regex::new(r#"(?s)<w:tc\b[^>]*>.*?</w:tc>"#).expect("valid table cell regex");
     cell.replace_all(&row_xml, |captures: &Captures| {
         let normalized = normalize_table_cell_xml(
             &captures[0],
@@ -9150,10 +9184,18 @@ fn normalize_table_row_properties(
             .to_string();
     }
 
-    row_xml.replace(
-        "<w:tr>",
-        &format!("<w:tr><w:trPr>{height_xml}{pagination_xml}</w:trPr>"),
-    )
+    let row_start = Regex::new(r#"<w:tr\b[^>]*>"#).expect("valid table row start regex");
+    row_start
+        .replace(
+            row_xml,
+            |captures: &Captures| {
+                format!(
+                    "{}<w:trPr>{height_xml}{pagination_xml}</w:trPr>",
+                    &captures[0]
+                )
+            },
+        )
+        .to_string()
 }
 
 fn estimated_table_row_height_twips(
@@ -9167,7 +9209,8 @@ fn estimated_table_row_height_twips(
     let vertical_padding = u64::from(px_to_twips(style.cell_padding_y.max(0.0) * 2.0));
     let line_height = (cell_style.font_size.max(1.0) * cell_style.line_height.max(1.0) * 20.0)
         .round() as u64;
-    let cell_re = Regex::new(r#"(?s)<w:tc>.*?</w:tc>"#).expect("valid row height cell regex");
+    let cell_re =
+        Regex::new(r#"(?s)<w:tc\b[^>]*>.*?</w:tc>"#).expect("valid row height cell regex");
     cell_re
         .find_iter(row_xml)
         .enumerate()
@@ -9240,7 +9283,12 @@ fn normalize_table_cell_properties(
     }
 
     if !cell_xml.contains("<w:tcPr>") {
-        return cell_xml.replace("<w:tc>", &format!("<w:tc>{cell_properties}"));
+        let cell_start = Regex::new(r#"<w:tc\b[^>]*>"#).expect("valid table cell start regex");
+        return cell_start
+            .replace(cell_xml, |captures: &Captures| {
+                format!("{}{cell_properties}", &captures[0])
+            })
+            .to_string();
     }
 
     let existing_cell_properties =
@@ -9528,6 +9576,7 @@ mod tests {
         inspect_exported_images,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
         migrate_default_report_style_baseline,
+        normalize_after_field_update,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
         normalize_emoji_runs, normalize_image_drawings,
@@ -10088,6 +10137,92 @@ mod tests {
         ] {
             assert!(diagnostics.iter().any(|item| item.code == code), "{code}");
         }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn restores_table_width_after_office_field_update() {
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-post-field-layout-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let docx_path = directory.join("updated.docx");
+        let file = fs::File::create(&docx_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        for (name, contents) in [
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:body><w:p><w:r><w:t>已更新目录页码 5</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="4300"/><w:gridCol w:w="4300"/></w:tblGrid><w:tr w14:paraId="12345678"><w:tc w14:paraId="11111111"><w:p><w:r><w:t>字段</w:t></w:r></w:p></w:tc><w:tc w14:paraId="22222222"><w:p><w:r><w:t>内容较长用于分配列宽</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:left="1803" w:right="1803"/></w:sectPr></w:body></w:document>"#,
+            ),
+            (
+                "word/styles.xml",
+                r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:styles>"#,
+            ),
+            (
+                "word/settings.xml",
+                r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:settings>"#,
+            ),
+        ] {
+            writer.start_file(name, SimpleFileOptions::default()).unwrap();
+            writer.write_all(contents.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+
+        let request = ConvertRequest {
+            input: "# 测试".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: None,
+            output: Some(docx_path.to_string_lossy().to_string()),
+            template_id: Some("default-report".to_string()),
+            open_after_convert: Some(false),
+            overwrite: Some(true),
+            conflict_strategy: None,
+            heading_numbering: Some("auto".to_string()),
+            toc_page_numbers: None,
+            update_fields: Some("wps".to_string()),
+            toc_depth: Some(3),
+            toc_position: Some("after-cover".to_string()),
+            body_page_start: Some(1),
+            front_page_number: Some("roman".to_string()),
+            mermaid_format: None,
+            mermaid_scale: None,
+            image_policy: Some("vector-preferred".to_string()),
+            no_compress_pictures: Some(true),
+            lint_only: None,
+            strict: None,
+        };
+
+        normalize_after_field_update(&docx_path, &request, None).unwrap();
+
+        let file = fs::File::open(&docx_path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut document = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut document)
+            .unwrap();
+        let widths = Regex::new(r#"<w:gridCol\b[^>]*w:w="(\d+)""#)
+            .unwrap()
+            .captures_iter(&document)
+            .filter_map(|captures| captures[1].parse::<u32>().ok())
+            .collect::<Vec<_>>();
+        assert_eq!(widths.len(), 2);
+        assert_eq!(widths.iter().sum::<u32>(), 8300);
+        assert!(widths[1] > widths[0]);
+        assert!(document.contains("已更新目录页码 5"));
+        assert!(!document.contains("w:hRule=\"exact\""));
+
+        drop(archive);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -11593,7 +11728,15 @@ mod tests {
         assert!(sections[2].contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
         assert!(sections[2].contains(r#"<w:pgNumType w:start="1" />"#));
 
-        let toc_end = output[toc..].find("</w:sdt>").unwrap() + toc;
+        let toc_end = output[toc..].find("</w:sdt>").unwrap() + toc + "</w:sdt>".len();
+        let wps_saved = format!(
+            "{}{}",
+            &output[..toc_end],
+            output[toc_end..].replacen(r#"<w:type w:val="nextPage" />"#, "", 1)
+        );
+        let normalized_again = apply_page_settings_to_document_xml(&wps_saved, Some(&settings));
+        assert_eq!(section.find_iter(&normalized_again).count(), 3);
+
         let toc_xml = &output[toc..toc_end];
         assert!(toc_xml.contains(r#"PAGEREF &quot;研究概述&quot; \h"#));
         assert!(toc_xml.contains("<w:t>1</w:t>"));
