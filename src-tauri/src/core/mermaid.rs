@@ -326,6 +326,7 @@ fn render_mermaid_image(
             .and_then(|value| value.parse::<f64>().ok())
             .filter(|value| *value > 0.0)
             .ok_or_else(|| browser_failure("Mermaid 渲染未返回有效高度", &inspect))?;
+        let mut svg_output = None;
         if prefer_svg {
             if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
                 if let Ok(svg_bytes) = BASE64_STANDARD.decode(svg_base64) {
@@ -333,7 +334,7 @@ fn render_mermaid_image(
                         if validate_svg(&svg) {
                             fs::write(&svg_path, svg.as_bytes())
                                 .map_err(|error| format!("写入 Mermaid SVG 失败：{error}"))?;
-                            return Ok(svg_path);
+                            svg_output = Some(svg_path.clone());
                         }
                     }
                 }
@@ -363,7 +364,7 @@ fn render_mermaid_image(
         if !capture.status.success() || !image_path.is_file() {
             return Err(browser_failure("Mermaid 截图生成失败", &capture));
         }
-        Ok(image_path)
+        Ok(svg_output.unwrap_or(image_path))
     })();
 
     if result.is_err() {

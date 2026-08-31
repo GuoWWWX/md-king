@@ -4,7 +4,7 @@ use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -649,6 +649,26 @@ fn convert_existing_file(
     if let Some(path) = prepared_input.temporary {
         let _ = fs::remove_file(path);
     }
+    if matches!(&conversion, Ok(execution) if execution.success) {
+        match embed_svg_png_fallbacks(&staged_output_path) {
+            Ok(count) if count > 0 => warnings.push(format!(
+                "已为 {count} 张 SVG 图片写入有效的 PNG 兼容回退。"
+            )),
+            Ok(_) => {}
+            Err(error) => {
+                cleanup_mermaid_paths(&prepared_input.mermaid_cleanup_paths);
+                let _ = fs::remove_file(&staged_output_path);
+                return failure_result(
+                    request,
+                    output_string,
+                    started_at,
+                    warnings,
+                    "DOCX_SVG_FALLBACK_FAILED",
+                    &format!("写入 SVG 的 PNG 回退失败：{error}"),
+                );
+            }
+        }
+    }
     cleanup_mermaid_paths(&prepared_input.mermaid_cleanup_paths);
 
     match conversion {
@@ -907,6 +927,27 @@ fn convert_text_input(
         template_resolution.reference_docx_path.as_deref(),
         &pandoc_options,
     );
+    if matches!(&conversion, Ok(execution) if execution.success) {
+        match embed_svg_png_fallbacks(&staged_output_path) {
+            Ok(count) if count > 0 => warnings.push(format!(
+                "已为 {count} 张 SVG 图片写入有效的 PNG 兼容回退。"
+            )),
+            Ok(_) => {}
+            Err(error) => {
+                let _ = fs::remove_file(&temp_input_path);
+                cleanup_mermaid_paths(&mermaid.cleanup_paths);
+                let _ = fs::remove_file(&staged_output_path);
+                return failure_result(
+                    request,
+                    output_string,
+                    started_at,
+                    warnings,
+                    "DOCX_SVG_FALLBACK_FAILED",
+                    &format!("写入 SVG 的 PNG 回退失败：{error}"),
+                );
+            }
+        }
+    }
     cleanup_mermaid_paths(&mermaid.cleanup_paths);
 
     match conversion {
@@ -1095,6 +1136,12 @@ fn success_result(
             warnings.push(diagnostic.message.clone());
         }
     }
+    let strict_field_update_failed =
+        request.strict.unwrap_or(false) && field_update_status == "failed";
+    if strict_field_update_failed {
+        result_message = "严格模式下域更新或更新后 DOCX 校验失败，已保留更新前的有效 DOCX。"
+            .to_string();
+    }
 
     if request.open_after_convert.unwrap_or(false) {
         if let Err(error) = open_path(&output_path) {
@@ -1103,7 +1150,7 @@ fn success_result(
     }
 
     ConvertResult {
-        ok: true,
+        ok: !strict_field_update_failed,
         input: request.input,
         output,
         template_id: request.template_id,
@@ -1115,7 +1162,7 @@ fn success_result(
         statistics,
         field_update_status,
         field_update_provider,
-        error_code: None,
+        error_code: strict_field_update_failed.then(|| "STRICT_FIELD_UPDATE_FAILED".to_string()),
         message: Some(result_message),
     }
 }
@@ -4033,6 +4080,215 @@ fn make_sibling_temp_path(output_path: &Path, prefix: &str, extension: &str) -> 
         .unwrap_or_else(|| make_temp_path(prefix, extension))
 }
 
+struct SvgPngFallback {
+    relationship_id: String,
+    relationship_target: String,
+    package_path: String,
+    bytes: Vec<u8>,
+}
+
+fn embed_svg_png_fallbacks(path: &Path) -> Result<usize, String> {
+    let original = fs::read(path).map_err(|error| format!("读取 DOCX 失败：{error}"))?;
+    let mut archive = ZipArchive::new(Cursor::new(original))
+        .map_err(|error| format!("打开 DOCX 包失败：{error}"))?;
+    let document_xml = read_docx_text_part(&mut archive, "word/document.xml")?;
+    if !document_xml.contains("<asvg:svgBlip") {
+        return Ok(0);
+    }
+    let relationships_xml =
+        read_docx_text_part(&mut archive, "word/_rels/document.xml.rels")?;
+    let content_types_xml = read_docx_text_part(&mut archive, "[Content_Types].xml")?;
+    let relationships = image_relationships(&relationships_xml);
+    let mut package_paths = archive.file_names().map(str::to_string).collect::<HashSet<_>>();
+    let mut relationship_ids = Regex::new(r#"\bId=\"([^\"]+)\""#)
+        .expect("valid relationship id regex")
+        .captures_iter(&relationships_xml)
+        .filter_map(|captures| captures.get(1))
+        .map(|value| value.as_str().to_string())
+        .collect::<HashSet<_>>();
+    let drawing_re = Regex::new(r#"(?s)<w:drawing\b[^>]*>.*?</w:drawing>"#)
+        .expect("valid SVG fallback drawing regex");
+    let svg_embed_re = Regex::new(r#"<asvg:svgBlip\b[^>]*\br:embed=\"([^\"]+)\""#)
+        .expect("valid SVG relationship regex");
+    let primary_blip_re = Regex::new(r#"<a:blip\b([^>]*)>"#)
+        .expect("valid primary image blip regex");
+    let primary_embed_re = Regex::new(r#"\br:embed=\"([^\"]+)\""#)
+        .expect("valid primary image relationship regex");
+    let description_re = Regex::new(r#"<pic:cNvPr\b[^>]*\bdescr=\"([^\"]+)\"[^>]*/>"#)
+        .expect("valid source image description regex");
+    let embed_attribute_re = Regex::new(r#"\s+r:embed=\"[^\"]*\""#)
+        .expect("valid primary image embed cleanup regex");
+    let mut fallbacks = Vec::<SvgPngFallback>::new();
+    let mut preparation_error = None;
+
+    let patched_document = drawing_re
+        .replace_all(&document_xml, |captures: &Captures| {
+            let drawing = captures.get(0).map(|value| value.as_str()).unwrap_or("");
+            let Some(svg_relationship_id) = svg_embed_re
+                .captures(drawing)
+                .and_then(|value| value.get(1))
+                .map(|value| value.as_str())
+            else {
+                return drawing.to_string();
+            };
+            if !relationships
+                .get(svg_relationship_id)
+                .is_some_and(|target| target.to_ascii_lowercase().ends_with(".svg"))
+            {
+                return drawing.to_string();
+            }
+            let Some(primary_blip) = primary_blip_re.captures(drawing) else {
+                return drawing.to_string();
+            };
+            if primary_blip
+                .get(1)
+                .and_then(|attributes| primary_embed_re.captures(attributes.as_str()))
+                .and_then(|value| value.get(1))
+                .and_then(|value| relationships.get(value.as_str()))
+                .is_some_and(|target| package_paths.contains(target))
+            {
+                return drawing.to_string();
+            }
+            let Some(svg_source) = description_re
+                .captures_iter(drawing)
+                .filter_map(|value| value.get(1))
+                .map(|value| decode_basic_xml_entities(value.as_str()))
+                .find(|value| value.to_ascii_lowercase().ends_with(".svg"))
+            else {
+                return drawing.to_string();
+            };
+            let png_source = PathBuf::from(svg_source.replace('/', "\\")).with_extension("png");
+            if !png_source.is_file() {
+                return drawing.to_string();
+            }
+            let bytes = match fs::read(&png_source) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    preparation_error = Some(format!(
+                        "读取 SVG 的 PNG 回退图失败（{}）：{error}",
+                        png_source.to_string_lossy()
+                    ));
+                    return drawing.to_string();
+                }
+            };
+            let sequence = fallbacks.len() + 1;
+            let relationship_id = (sequence..)
+                .map(|index| format!("rIdMdKingSvgFallback{index}"))
+                .find(|candidate| relationship_ids.insert(candidate.clone()))
+                .expect("fallback relationship id search must terminate");
+            let package_path = (sequence..)
+                .map(|index| format!("word/media/mdking-svg-fallback-{index}.png"))
+                .find(|candidate| package_paths.insert(candidate.clone()))
+                .expect("fallback package path search must terminate");
+            let relationship_target = package_path
+                .strip_prefix("word/")
+                .unwrap_or(package_path.as_str())
+                .to_string();
+            fallbacks.push(SvgPngFallback {
+                relationship_id: relationship_id.clone(),
+                relationship_target,
+                package_path,
+                bytes,
+            });
+            let attributes = primary_blip
+                .get(1)
+                .map(|value| embed_attribute_re.replace_all(value.as_str(), "").to_string())
+                .unwrap_or_default();
+            let replacement = format!(
+                r#"<a:blip{attributes} r:embed="{relationship_id}">"#
+            );
+            drawing.replacen(
+                primary_blip.get(0).map(|value| value.as_str()).unwrap_or("<a:blip>"),
+                &replacement,
+                1,
+            )
+        })
+        .to_string();
+    if let Some(error) = preparation_error {
+        return Err(error);
+    }
+    if fallbacks.is_empty() {
+        return Ok(0);
+    }
+
+    let relationship_additions = fallbacks
+        .iter()
+        .map(|fallback| {
+            format!(
+                r#"<Relationship Id="{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{}" />"#,
+                fallback.relationship_id, fallback.relationship_target
+            )
+        })
+        .collect::<String>();
+    let patched_relationships = relationships_xml.replacen(
+        "</Relationships>",
+        &format!("{relationship_additions}</Relationships>"),
+        1,
+    );
+    let content_type_additions = fallbacks
+        .iter()
+        .map(|fallback| {
+            format!(
+                r#"<Override PartName="/{}" ContentType="image/png" />"#,
+                fallback.package_path
+            )
+        })
+        .collect::<String>();
+    let patched_content_types = content_types_xml.replacen(
+        "</Types>",
+        &format!("{content_type_additions}</Types>"),
+        1,
+    );
+
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    for index in 0..archive.len() {
+        let file = archive
+            .by_index(index)
+            .map_err(|error| format!("读取 DOCX 条目失败：{error}"))?;
+        let name = file.name().to_string();
+        let replacement = match name.as_str() {
+            "word/document.xml" => Some(patched_document.as_bytes()),
+            "word/_rels/document.xml.rels" => Some(patched_relationships.as_bytes()),
+            "[Content_Types].xml" => Some(patched_content_types.as_bytes()),
+            _ => None,
+        };
+        if let Some(bytes) = replacement {
+            writer
+                .start_file(
+                    &name,
+                    SimpleFileOptions::default().compression_method(file.compression()),
+                )
+                .map_err(|error| format!("写入 DOCX 条目失败：{error}"))?;
+            writer
+                .write_all(bytes)
+                .map_err(|error| format!("写入 DOCX 内容失败：{error}"))?;
+        } else {
+            writer
+                .raw_copy_file(file)
+                .map_err(|error| format!("复制 DOCX 条目失败：{error}"))?;
+        }
+    }
+    for fallback in &fallbacks {
+        writer
+            .start_file(
+                &fallback.package_path,
+                SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated),
+            )
+            .map_err(|error| format!("写入 PNG 回退图片失败：{error}"))?;
+        writer
+            .write_all(&fallback.bytes)
+            .map_err(|error| format!("写入 PNG 回退图片内容失败：{error}"))?;
+    }
+    writer
+        .finish()
+        .map_err(|error| format!("完成 DOCX PNG 回退写入失败：{error}"))?;
+    fs::write(path, output.into_inner())
+        .map_err(|error| format!("保存带 PNG 回退的 DOCX 失败：{error}"))?;
+    Ok(fallbacks.len())
+}
+
 fn validate_docx_package(path: &Path) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|error| format!("读取生成的 DOCX 失败：{error}"))?;
     let mut archive =
@@ -4046,6 +4302,7 @@ fn validate_docx_package(path: &Path) -> Result<(), String> {
             .by_name(required)
             .map_err(|_| format!("生成的 DOCX 缺少必要内容：{required}"))?;
     }
+    let package_paths = archive.file_names().map(str::to_string).collect::<HashSet<_>>();
 
     for index in 0..archive.len() {
         let mut part = archive
@@ -4062,6 +4319,60 @@ fn validate_docx_package(path: &Path) -> Result<(), String> {
         part.read_to_end(&mut data)
             .map_err(|error| format!("读取 DOCX XML 部件失败（{name}）：{error}"))?;
         validate_xml_part(&name, &data)?;
+        if name.ends_with(".rels") {
+            validate_image_relationship_targets(&name, &data, &package_paths)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_image_relationship_targets(
+    relationship_part: &str,
+    data: &[u8],
+    package_paths: &HashSet<String>,
+) -> Result<(), String> {
+    let xml = String::from_utf8_lossy(data);
+    let relationship_re =
+        Regex::new(r#"<Relationship\b[^>]*/>"#).expect("valid relationship tag regex");
+    let type_re = Regex::new(r#"\bType=\"([^\"]+)\""#).expect("valid relationship type regex");
+    let id_re = Regex::new(r#"\bId=\"([^\"]+)\""#).expect("valid relationship id regex");
+    let target_re =
+        Regex::new(r#"\bTarget=\"([^\"]+)\""#).expect("valid relationship target regex");
+    let base = relationship_part
+        .split_once("/_rels/")
+        .map(|(base, _)| base)
+        .unwrap_or("");
+
+    for relationship in relationship_re.find_iter(&xml) {
+        let relationship = relationship.as_str();
+        let relationship_type = type_re
+            .captures(relationship)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str())
+            .unwrap_or("");
+        if !relationship_type.ends_with("/image") {
+            continue;
+        }
+        let id = id_re
+            .captures(relationship)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str())
+            .unwrap_or("未知关系");
+        let target = target_re
+            .captures(relationship)
+            .and_then(|captures| captures.get(1))
+            .map(|value| decode_basic_xml_entities(value.as_str()))
+            .unwrap_or_default();
+        let resolved = docx_relationship_target(base, &target);
+        if target.is_empty()
+            || target.eq_ignore_ascii_case("NULL")
+            || target.ends_with("/NULL")
+            || !package_paths.contains(&resolved)
+        {
+            return Err(format!(
+                "DOCX 图片关系无效（{relationship_part}，{id}，Target=\"{target}\"，解析为 {resolved}）。"
+            ));
+        }
     }
     Ok(())
 }
@@ -9749,7 +10060,8 @@ mod tests {
         detect_adjacent_image_caption_diagnostics, detect_adjacent_image_caption_warnings,
         detect_heading_level_jumps,
         detect_missing_local_images, detect_wide_markdown_tables, document_style_config_from_value,
-        ensure_no_picture_compression, ensure_toc_fields_update_on_open, footer_page_number_xml,
+        embed_svg_png_fallbacks, ensure_no_picture_compression, ensure_toc_fields_update_on_open,
+        footer_page_number_xml,
         has_supported_text_extension,
         filter_benign_pandoc_svg_fallback_warning,
         heading_numbering_config_from_value, image_style_config_from_value,
@@ -9769,7 +10081,7 @@ mod tests {
         page_settings_config, pandoc_document_options, pandoc_document_options_from_value,
         paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_heading_numbering,
-        preprocess_markdown_for_word, read_style_bold_key, read_style_fill,
+        preprocess_markdown_for_word, read_docx_text_part, read_style_bold_key, read_style_fill,
         resolve_heading_numbering_mode,
         table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
@@ -10118,6 +10430,129 @@ mod tests {
         assert_eq!(details[0].display_width_cm, 14.64);
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn embeds_png_fallback_for_mermaid_svg_before_office_updates_fields() {
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-svg-png-fallback-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let svg_path = directory.join("diagram.svg");
+        let png_path = directory.join("diagram.png");
+        let docx_path = directory.join("output.docx");
+        fs::write(
+            &svg_path,
+            br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 120"></svg>"#,
+        )
+        .unwrap();
+        let png = minimal_png_header(800, 120);
+        fs::write(&png_path, &png).unwrap();
+
+        let file = fs::File::create(&docx_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("[Content_Types].xml", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(br#"<Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/media/rId9.svg" ContentType="image/svg+xml"/></Types>"#)
+            .unwrap();
+        writer
+            .start_file("word/styles.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(br#"<w:styles xmlns:w="w"/>"#).unwrap();
+        writer
+            .start_file("word/document.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(
+                format!(
+                    r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Picture" descr="{}"/></pic:nvPicPr><pic:blipFill><a:blip><a:extLst><a:ext><asvg:svgBlip r:embed="rId9"/></a:ext></a:extLst></a:blip></pic:blipFill></pic:pic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#,
+                    svg_path.to_string_lossy().replace('\\', "/")
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        writer
+            .start_file(
+                "word/_rels/document.xml.rels",
+                SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer
+            .write_all(br#"<Relationships><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/rId9.svg"/></Relationships>"#)
+            .unwrap();
+        writer
+            .start_file("word/media/rId9.svg", SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 120"></svg>"#)
+            .unwrap();
+        writer.finish().unwrap();
+
+        assert_eq!(embed_svg_png_fallbacks(&docx_path).unwrap(), 1);
+        validate_docx_package(&docx_path).unwrap();
+
+        let file = fs::File::open(&docx_path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let document = read_docx_text_part(&mut archive, "word/document.xml").unwrap();
+        let relationships =
+            read_docx_text_part(&mut archive, "word/_rels/document.xml.rels").unwrap();
+        let content_types = read_docx_text_part(&mut archive, "[Content_Types].xml").unwrap();
+        let mut fallback = Vec::new();
+        archive
+            .by_name("word/media/mdking-svg-fallback-1.png")
+            .unwrap()
+            .read_to_end(&mut fallback)
+            .unwrap();
+        assert!(document.contains(r#"<a:blip r:embed="rIdMdKingSvgFallback1">"#));
+        assert!(document.contains(r#"<asvg:svgBlip r:embed="rId9""#));
+        assert!(relationships.contains(
+            r#"Id="rIdMdKingSvgFallback1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/mdking-svg-fallback-1.png""#
+        ));
+        assert!(content_types.contains(
+            r#"PartName="/word/media/mdking-svg-fallback-1.png" ContentType="image/png""#
+        ));
+        assert_eq!(fallback, png);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_docx_with_null_image_relationship_target() {
+        let path = std::env::temp_dir().join(format!(
+            "md-king-null-image-relationship-test-{}.docx",
+            std::process::id()
+        ));
+        let file = fs::File::create(&path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        for (name, data) in [
+            ("[Content_Types].xml", br#"<Types/>"#.as_slice()),
+            ("word/document.xml", br#"<w:document/>"#.as_slice()),
+            ("word/styles.xml", br#"<w:styles/>"#.as_slice()),
+            (
+                "word/_rels/document.xml.rels",
+                br#"<Relationships><Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../NULL"/></Relationships>"#
+                    .as_slice(),
+            ),
+        ] {
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+
+        let error = validate_docx_package(&path).unwrap_err();
+        assert!(error.contains("DOCX 图片关系无效"));
+        assert!(error.contains("Target=\"../NULL\""));
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
