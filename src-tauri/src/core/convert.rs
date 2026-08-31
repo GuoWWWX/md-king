@@ -40,6 +40,7 @@ const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
 const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 const UNNUMBERED_HEADING_MARKER: &str = "MD_KING_UNNUMBERED_HEADING:";
+const ORDERED_LIST_MARKER: &str = "<!--MD_KING_ORDERED_LIST-->";
 const MERMAID_WIDTH_TITLE_PREFIX: &str = "MD_KING_MERMAID_WIDTH_";
 const WORD_TEXT_CHARACTER_SPACING_TWIPS: u32 = 4;
 
@@ -2598,18 +2599,12 @@ fn resolve_heading_numbering_mode(
     }
 
     let mappings = heading_mappings_for_request(request);
-    let mode = if markdown_uses_manual_heading_numbering(markdown, &mappings) {
-        HeadingNumberingMode::Source
+    let message = if markdown_uses_manual_heading_numbering(markdown, &mappings) {
+        "检测到 Markdown 标题已包含连续章节号，已剥离手写前缀并改由 Word 多级自动编号接管。"
     } else {
-        HeadingNumberingMode::Word
+        "未检测到成组的手写章节号，已使用 Word 多级自动编号。"
     };
-    let message = match mode {
-        HeadingNumberingMode::Source => {
-            "检测到 Markdown 标题已包含连续章节号，已保留源码编号并关闭 Word 自动编号。"
-        }
-        _ => "未检测到成组的手写章节号，已使用 Word 多级自动编号。",
-    };
-    (mode, Some(message.to_string()))
+    (HeadingNumberingMode::Word, Some(message.to_string()))
 }
 
 fn heading_mappings_for_request(request: &ConvertRequest) -> [HeadingTarget; 6] {
@@ -4704,13 +4699,17 @@ fn ordered_list_num_ids_from_numbering_xml(xml: &str) -> HashMap<String, String>
         r#"<w:numFmt\b[^>]*\bw:val="(?:decimal|lowerLetter|upperLetter|lowerRoman|upperRoman|chineseCounting|chineseCountingThousand|hebrew2)"[^>]*/>"#,
     )
     .expect("valid ordered numbering format regex");
+    let heading_level_text =
+        Regex::new(r#"<w:lvlText\b[^>]*\bw:val="[^"]*%\d[^"]*%\d"#)
+            .expect("valid heading numbering level text regex");
     let mut ordered_abstract_ids = HashMap::new();
     for captures in abstract_num.captures_iter(xml) {
         let Some(id) = captures.get(1).map(|value| value.as_str().to_string()) else {
             continue;
         };
         let block = captures.get(0).map(|value| value.as_str()).unwrap_or("");
-        ordered_abstract_ids.insert(id, ordered_format.is_match(block));
+        let heading_numbering = id == "9100" || heading_level_text.is_match(block);
+        ordered_abstract_ids.insert(id, ordered_format.is_match(block) && !heading_numbering);
     }
 
     let num = Regex::new(
@@ -4718,7 +4717,6 @@ fn ordered_list_num_ids_from_numbering_xml(xml: &str) -> HashMap<String, String>
     )
     .expect("valid numbering instance regex");
     let mut replacements = HashMap::new();
-    let mut replacement_id = 10_000usize;
     for captures in num.captures_iter(xml) {
         let Some(num_id) = captures.get(1).map(|value| value.as_str().to_string()) else {
             continue;
@@ -4727,8 +4725,7 @@ fn ordered_list_num_ids_from_numbering_xml(xml: &str) -> HashMap<String, String>
             continue;
         };
         if ordered_abstract_ids.get(abstract_id).copied().unwrap_or(false) {
-            replacements.insert(num_id, replacement_id.to_string());
-            replacement_id += 1;
+            replacements.insert(num_id, abstract_id.to_string());
         }
     }
     replacements
@@ -4742,10 +4739,10 @@ fn mark_ordered_list_num_ids(xml: &str, replacements: &HashMap<String, String>) 
         .expect("valid numbering id regex");
     num_id
         .replace_all(xml, |captures: &Captures| {
-            let Some(target) = replacements.get(&captures[1]) else {
+            if !replacements.contains_key(&captures[1]) {
                 return captures[0].to_string();
-            };
-            format!(r#"<w:numId w:val="{target}" />"#)
+            }
+            format!("{ORDERED_LIST_MARKER}{}", &captures[0])
         })
         .to_string()
 }
@@ -4799,8 +4796,11 @@ fn normalize_docx(
         let rewrite = match name.as_str() {
             "word/document.xml" => true,
             "word/styles.xml" => apply_default_template_style || document_style.is_some(),
-            "word/numbering.xml" => heading_numbering
-                .is_some_and(|config| config.mode == HeadingNumberingMode::Word),
+            "word/numbering.xml" => {
+                !ordered_list_num_ids.is_empty()
+                    || heading_numbering
+                        .is_some_and(|config| config.mode == HeadingNumberingMode::Word)
+            }
             "word/settings.xml" => true,
             "[Content_Types].xml" | "word/_rels/document.xml.rels" => header_footer.is_some(),
             "word/header-mdking.xml" => header_footer.is_some_and(page_settings_has_header),
@@ -4861,13 +4861,21 @@ fn normalize_docx(
             )
             .into_bytes();
         } else if name == "word/numbering.xml" {
-            if let Some(heading_numbering) = heading_numbering
-                .filter(|config| config.mode == HeadingNumberingMode::Word)
-            {
-                let xml = String::from_utf8(data)
-                    .map_err(|error| format!("解析 numbering.xml 失败：{error}"))?;
-                data = ensure_heading_numbering_xml(&xml, heading_numbering).into_bytes();
+            let mut xml = String::from_utf8(data)
+                .map_err(|error| format!("解析 numbering.xml 失败：{error}"))?;
+            if !ordered_list_num_ids.is_empty() {
+                xml = normalize_ordered_list_numbering_xml(
+                    &xml,
+                    &ordered_list_num_ids,
+                    document_style,
+                );
             }
+            if let Some(heading_numbering) =
+                heading_numbering.filter(|config| config.mode == HeadingNumberingMode::Word)
+            {
+                xml = ensure_heading_numbering_xml(&xml, heading_numbering);
+            }
+            data = xml.into_bytes();
         } else if name == "word/settings.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 settings.xml 失败：{error}"))?;
@@ -8257,7 +8265,8 @@ fn insert_run_properties(run_xml: &str, properties: &str) -> String {
 }
 
 fn normalize_list_markers(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
-    let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
+    let paragraph =
+        Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
     let mut ordered_counters: HashMap<String, usize> = HashMap::new();
     let mut list_level_ordered = [false; 4];
 
@@ -8314,17 +8323,19 @@ fn normalize_list_paragraph(
     list_level_ordered: &mut [bool; 4],
     document_style: Option<&DocumentStyleConfig>,
 ) -> String {
-    if capture_heading_style_id(paragraph_xml).is_some() {
+    let marked_as_ordered = paragraph_xml.contains(ORDERED_LIST_MARKER);
+    let paragraph_xml = paragraph_xml.replace(ORDERED_LIST_MARKER, "");
+    if capture_heading_style_id(&paragraph_xml).is_some() {
         clear_restart_ordered_counters(ordered_counters, document_style);
-        return paragraph_xml.to_string();
+        return paragraph_xml;
     }
 
     let numbering =
         Regex::new(r#"(?s)<w:numPr><w:ilvl w:val="(\d+)" /><w:numId w:val="(\d+)" /></w:numPr>"#)
             .expect("valid paragraph numbering regex");
-    let Some(captures) = numbering.captures(paragraph_xml) else {
+    let Some(captures) = numbering.captures(&paragraph_xml) else {
         clear_restart_ordered_counters(ordered_counters, document_style);
-        return paragraph_xml.to_string();
+        return paragraph_xml;
     };
 
     let level = captures
@@ -8332,13 +8343,16 @@ fn normalize_list_paragraph(
         .and_then(|value| value.as_str().parse::<usize>().ok())
         .unwrap_or(0);
     let num_id = captures.get(2).map(|value| value.as_str()).unwrap_or("");
-    let task_marker = extract_task_list_marker(paragraph_xml);
+    let task_marker = extract_task_list_marker(&paragraph_xml);
     if num_id == "9100" {
         clear_restart_ordered_counters(ordered_counters, document_style);
-        return paragraph_xml.to_string();
+        return paragraph_xml;
     }
 
-    let raw_is_ordered = num_id.parse::<usize>().is_ok_and(|value| value >= 1003);
+    let raw_is_ordered = marked_as_ordered
+        || num_id
+            .parse::<usize>()
+            .is_ok_and(|value| value >= 1003);
     let inferred_is_ordered = if task_marker.is_some() {
         false
     } else if document_style.is_none() && level > 0 {
@@ -8381,6 +8395,19 @@ fn normalize_list_paragraph(
         .map(|value| value == "number")
         .unwrap_or(inferred_is_ordered)
         && task_marker.is_none();
+    if inferred_is_ordered {
+        let native_style = ordered_list_style(document_style, level);
+        let marker = ordered_list_marker(1, native_style, level);
+        let with_indent = apply_native_list_paragraph_properties(
+            &paragraph_xml,
+            native_style,
+            level,
+            &marker,
+        );
+        return native_style
+            .map(|style| apply_list_level_run_style(&with_indent, style, level))
+            .unwrap_or_else(|| apply_default_list_run_style(&with_indent));
+    }
     let marker = if let Some(task_marker) = task_marker {
         task_list_marker_text(task_marker).to_string()
     } else if marker_is_ordered {
@@ -8403,7 +8430,7 @@ fn normalize_list_paragraph(
         unordered_list_marker(list_style, "disc", level)
     };
 
-    let without_numbering = numbering.replace(paragraph_xml, "").to_string();
+    let without_numbering = numbering.replace(&paragraph_xml, "").to_string();
     let without_numbering = strip_task_list_marker(&without_numbering);
     let with_indent = if let Some(style) = list_style {
         apply_list_paragraph_properties(&without_numbering, style, level, &marker)
@@ -8580,13 +8607,7 @@ fn apply_default_list_paragraph_properties(
     level: usize,
     marker: &str,
 ) -> String {
-    let marker_left = ((2.0 + level.min(3) as f64 * 2.0) * 240.0).round() as u32;
-    let hanging = list_marker_and_gap_twips(marker, 1.0);
-    let text_left = marker_left.saturating_add(hanging);
-    let properties = format!(
-        r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" /><w:tabs><w:tab w:val="left" w:pos="{text_left}" /></w:tabs><w:ind w:left="{}" w:hanging="{hanging}" />"#,
-        text_left
-    );
+    let properties = default_list_paragraph_properties_xml(level, marker);
     let existing_properties =
         Regex::new(r#"(?s)<w:pPr>.*?</w:pPr>"#).expect("valid paragraph properties regex");
     if existing_properties.is_match(paragraph_xml) {
@@ -8596,6 +8617,39 @@ fn apply_default_list_paragraph_properties(
     }
 
     insert_paragraph_properties(paragraph_xml, &properties)
+}
+
+fn default_list_paragraph_properties_xml(level: usize, marker: &str) -> String {
+    let marker_left = ((2.0 + level.min(3) as f64 * 2.0) * 240.0).round() as u32;
+    let hanging = list_marker_and_gap_twips(marker, 1.0);
+    let text_left = marker_left.saturating_add(hanging);
+    format!(
+        r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" /><w:tabs><w:tab w:val="left" w:pos="{text_left}" /></w:tabs><w:ind w:left="{}" w:hanging="{hanging}" />"#,
+        text_left
+    )
+}
+
+fn apply_native_list_paragraph_properties(
+    paragraph_xml: &str,
+    style: Option<&TextStyleConfig>,
+    level: usize,
+    marker: &str,
+) -> String {
+    let properties = style
+        .map(|style| list_level_paragraph_properties_xml(style, level, marker))
+        .unwrap_or_else(|| default_list_paragraph_properties_xml(level, marker));
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph properties regex");
+    paragraph_properties
+        .replace(paragraph_xml, |captures: &Captures| {
+            let removable = Regex::new(
+                r#"(?s)<w:tabs>.*?</w:tabs>|<w:(?:spacing|jc|ind)\b[^>]*/>"#,
+            )
+            .expect("valid native list paragraph cleanup regex");
+            let inner = removable.replace_all(&captures[1], "");
+            format!("<w:pPr>{inner}{properties}</w:pPr>")
+        })
+        .to_string()
 }
 
 fn apply_list_paragraph_properties(
@@ -8705,7 +8759,8 @@ fn prefix_first_text_run_with_tab(paragraph_xml: &str, prefix: &str) -> String {
 }
 
 fn normalize_heading_numbering(xml: &str, heading_numbering: &HeadingNumberingConfig) -> String {
-    let paragraph = Regex::new(r#"(?s)<w:p>.*?</w:p>"#).expect("valid paragraph regex");
+    let paragraph =
+        Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
     paragraph
         .replace_all(xml, |captures: &Captures| {
             normalize_heading_paragraph(&captures[0], heading_numbering)
@@ -8741,7 +8796,10 @@ fn normalize_heading_paragraph(
         }
     };
 
-    let (paragraph_xml, unnumbered) = strip_unnumbered_heading_marker(&paragraph_xml);
+    let (mut paragraph_xml, unnumbered) = strip_unnumbered_heading_marker(&paragraph_xml);
+    if heading_numbering.mode == HeadingNumberingMode::Word {
+        paragraph_xml = strip_manual_heading_number_from_paragraph(&paragraph_xml);
+    }
     if unnumbered || heading_numbering.mode != HeadingNumberingMode::Word {
         return remove_paragraph_numbering(&paragraph_xml);
     }
@@ -9197,6 +9255,39 @@ fn normalize_table_row_properties(
         .to_string()
 }
 
+fn strip_manual_heading_number_from_paragraph(paragraph_xml: &str) -> String {
+    let text = paragraph_plain_text(paragraph_xml);
+    let trimmed = text.trim_start();
+    let Some(captures) = Regex::new(r#"^(\d+(?:\.\d+){0,5})(?:[.、][ \t]*|[ \t]+)(.+)$"#)
+        .expect("valid rendered heading number regex")
+        .captures(trimmed)
+    else {
+        return paragraph_xml.to_string();
+    };
+    let Some(title) = captures.get(2) else {
+        return paragraph_xml.to_string();
+    };
+    let leading_chars = text[..text.len().saturating_sub(trimmed.len())]
+        .chars()
+        .count();
+    let mut remaining = leading_chars + trimmed[..title.start()].chars().count();
+    let text_node = Regex::new(r#"(?s)(<w:t(?:\s+[^>]*)?>)(.*?)(</w:t>)"#)
+        .expect("valid rendered heading text regex");
+    text_node
+        .replace_all(paragraph_xml, |captures: &Captures| {
+            let content = decode_basic_xml_entities(&captures[2]);
+            if remaining == 0 {
+                return captures[0].to_string();
+            }
+            let available = content.chars().count();
+            let remove = remaining.min(available);
+            remaining -= remove;
+            let retained = content.chars().skip(remove).collect::<String>();
+            format!("{}{}{}", &captures[1], escape_xml_text(&retained), &captures[3])
+        })
+        .to_string()
+}
+
 fn estimated_table_row_height_twips(
     row_xml: &str,
     column_widths: &[u32],
@@ -9487,6 +9578,96 @@ fn ensure_heading_numbering_xml(xml: &str, heading_numbering: &HeadingNumberingC
     )
 }
 
+fn normalize_ordered_list_numbering_xml(
+    xml: &str,
+    ordered_list_num_ids: &HashMap<String, String>,
+    document_style: Option<&DocumentStyleConfig>,
+) -> String {
+    let abstract_num = Regex::new(
+        r#"(?s)<w:abstractNum\s+w:abstractNumId="([^"]+)">.*?</w:abstractNum>"#,
+    )
+    .expect("valid ordered abstract numbering regex");
+    abstract_num
+        .replace_all(xml, |captures: &Captures| {
+            let abstract_id = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+            if !ordered_list_num_ids
+                .values()
+                .any(|value| value == abstract_id)
+            {
+                return captures[0].to_string();
+            }
+            normalize_ordered_abstract_num(&captures[0], document_style)
+        })
+        .to_string()
+}
+
+fn normalize_ordered_abstract_num(
+    abstract_num_xml: &str,
+    document_style: Option<&DocumentStyleConfig>,
+) -> String {
+    let level = Regex::new(r#"(?s)<w:lvl\s+w:ilvl="(\d+)">.*?</w:lvl>"#)
+        .expect("valid ordered numbering level regex");
+    level
+        .replace_all(abstract_num_xml, |captures: &Captures| {
+            let level = captures
+                .get(1)
+                .and_then(|value| value.as_str().parse::<usize>().ok())
+                .unwrap_or(0);
+            let style = ordered_list_style(document_style, level);
+            let configured_format = style
+                .map(|style| style.list_level_number_formats[list_level_index(level)].as_str())
+                .unwrap_or("1.");
+            let (number_format, level_text) =
+                ordered_list_numbering_pattern(level, configured_format);
+            let marker = ordered_list_marker(1, style, level);
+            let paragraph_properties = style
+                .map(|style| list_level_paragraph_properties_xml(style, level, &marker))
+                .unwrap_or_else(|| default_list_paragraph_properties_xml(level, &marker));
+            let run_properties = style
+                .map(|style| list_level_run_properties_xml(style, level))
+                .unwrap_or_else(|| body_run_properties_xml().to_string());
+            format!(
+                r#"<w:lvl w:ilvl="{level}"><w:start w:val="1" /><w:numFmt w:val="{number_format}" /><w:lvlText w:val="{level_text}" /><w:suff w:val="tab" /><w:lvlJc w:val="left" /><w:pPr>{paragraph_properties}</w:pPr><w:rPr>{run_properties}</w:rPr></w:lvl>"#
+            )
+        })
+        .to_string()
+}
+
+fn ordered_list_style(
+    document_style: Option<&DocumentStyleConfig>,
+    _level: usize,
+) -> Option<&TextStyleConfig> {
+    document_style.and_then(|style| {
+        style
+            .styles
+            .get("numbered-list")
+            .or_else(|| style.styles.get("nested-list"))
+    })
+}
+
+fn ordered_list_numbering_pattern(level: usize, configured_format: &str) -> (&'static str, String) {
+    let placeholder = format!("%{}", level + 1);
+    match configured_format {
+        "1)" => ("decimal", format!("{placeholder})")),
+        "(1)" => ("decimal", format!("({placeholder})")),
+        "01." => ("decimalZero", format!("{placeholder}.")),
+        "A." => ("upperLetter", format!("{placeholder}.")),
+        "A)" => ("upperLetter", format!("{placeholder})")),
+        "a." => ("lowerLetter", format!("{placeholder}.")),
+        "a)" => ("lowerLetter", format!("{placeholder})")),
+        "I." => ("upperRoman", format!("{placeholder}.")),
+        "I)" => ("upperRoman", format!("{placeholder})")),
+        "i." => ("lowerRoman", format!("{placeholder}.")),
+        "i)" => ("lowerRoman", format!("{placeholder})")),
+        "一、" => ("chineseCountingThousand", format!("{placeholder}、")),
+        "（一）" => (
+            "chineseCountingThousand",
+            format!("（{placeholder}）"),
+        ),
+        _ => ("decimal", format!("{placeholder}.")),
+    }
+}
+
 fn remove_existing_heading_numbering(xml: &str) -> String {
     let abstract_num =
         Regex::new(r#"(?s)<w:abstractNum\s+w:abstractNumId="9100">.*?</w:abstractNum>"#)
@@ -9578,6 +9759,7 @@ mod tests {
         normalize_after_field_update,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
+        normalize_ordered_list_numbering_xml,
         normalize_emoji_runs, normalize_image_drawings,
         normalize_front_section_page_settings,
         normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
@@ -9588,6 +9770,7 @@ mod tests {
         paragraph_shading_xml,
         prepare_markdown_file_for_pandoc, preprocess_heading_numbering,
         preprocess_markdown_for_word, read_style_bold_key, read_style_fill,
+        resolve_heading_numbering_mode,
         table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
@@ -9595,7 +9778,7 @@ mod tests {
         runtime_diagnostics_from_warnings, validate_updated_field_results, FieldUpdateProvider,
         MarkdownFeatureConfig,
         MermaidPreprocessResult, TocPageNumber,
-        MERMAID_WIDTH_TITLE_PREFIX, UNNUMBERED_HEADING_MARKER,
+        MERMAID_WIDTH_TITLE_PREFIX, ORDERED_LIST_MARKER, UNNUMBERED_HEADING_MARKER,
     };
     use regex::Regex;
     use serde_json::json;
@@ -11128,9 +11311,11 @@ mod tests {
 
         assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#));
         assert!(output.contains("<w:b />"));
-        assert!(output.contains("<w:t>1.</w:t>"));
         assert!(output.contains("<w:t>加粗项目</w:t>"));
-        assert!(output.contains("<w:tab />"));
+        assert!(output.contains(
+            r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr>"#
+        ));
+        assert!(!output.contains("<w:t>1.</w:t>"));
     }
 
     #[test]
@@ -12065,6 +12250,32 @@ mod tests {
             markdown,
             &super::default_built_in_heading_mappings(),
         ));
+        let request = ConvertRequest {
+            input: markdown.to_string(),
+            input_kind: None,
+            source_path: None,
+            output: None,
+            template_id: Some("default-report".to_string()),
+            open_after_convert: Some(false),
+            overwrite: Some(false),
+            conflict_strategy: None,
+            heading_numbering: Some("auto".to_string()),
+            toc_page_numbers: None,
+            update_fields: None,
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
+        };
+        let (mode, warning) = resolve_heading_numbering_mode(&request, markdown);
+        assert_eq!(mode, HeadingNumberingMode::Word);
+        assert!(warning.is_some_and(|message| message.contains("Word 多级自动编号接管")));
     }
 
     #[test]
@@ -12088,7 +12299,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_heading_number_split_across_pandoc_runs() {
+    fn removes_heading_number_split_across_pandoc_runs() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t xml:space="preserve">1. </w:t></w:r><w:r><w:rPr><w:rFonts w:hint="eastAsia" /></w:rPr><w:t>项目 &amp; 范围</w:t></w:r></w:p></w:body></w:document>"#;
         let mut config = default_report_heading_numbering_config();
         config.mappings = default_heading_mappings();
@@ -12102,8 +12313,11 @@ mod tests {
             None,
         );
 
-        assert!(output.contains(">1. </w:t>"));
+        assert!(!output.contains(">1. </w:t>"));
         assert!(output.contains("项目 &amp; 范围"));
+        assert!(output.contains(
+            r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr>"#
+        ));
     }
 
     #[test]
@@ -12125,15 +12339,18 @@ mod tests {
         assert!(output.contains("<w:t>无序列表 A</w:t>"));
         assert!(output.contains("<w:t>◦</w:t>"));
         assert!(output.contains("<w:t>嵌套列表 B.1</w:t>"));
-        assert!(output.contains("<w:t>1.</w:t>"));
         assert!(output.contains("<w:t>有序列表第一项</w:t>"));
-        assert!(output.matches("<w:tab />").count() >= 3);
+        assert!(output.contains(
+            r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr>"#
+        ));
+        assert!(!output.contains("<w:t>1.</w:t>"));
+        assert!(output.matches("<w:tab />").count() >= 2);
         assert!(output.contains(
             r#"<w:tabs><w:tab w:val="left" w:pos="840" /></w:tabs><w:ind w:left="840" w:hanging="360" />"#
         ));
         assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
         assert!(output.contains(r#"<w:ind w:left="1320" w:hanging="360" />"#));
-        assert!(!output.contains("<w:numPr>"));
+        assert_eq!(output.matches("<w:numPr>").count(), 1);
     }
 
     #[test]
@@ -12201,18 +12418,24 @@ mod tests {
 
         assert!(output.contains("<w:t>▸</w:t>"));
         assert!(output.contains("<w:t>无序列表 A</w:t>"));
-        assert!(output.contains("<w:t>（一） 有序列表第一项</w:t>"));
+        assert!(output.contains("<w:t>有序列表第一项</w:t>"));
         assert!(output.contains("<w:tab />"));
         assert!(output.contains(r#"<w:ind w:left="840" w:hanging="360" />"#));
         assert!(output.contains(r#"<w:ind w:left="240" w:firstLine="0" />"#));
-        assert!(!output.contains("<w:numPr>"));
+        assert!(output.contains(
+            r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr>"#
+        ));
+        assert!(!output.contains("<w:t>（一）"));
     }
 
     #[test]
     fn classifies_ordered_lists_from_numbering_format_instead_of_num_id_threshold() {
         let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="99411"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /></w:lvl></w:abstractNum><w:num w:numId="1001"><w:abstractNumId w:val="99411" /></w:num></w:numbering>"#;
         let replacements = ordered_list_num_ids_from_numbering_xml(numbering);
-        assert_eq!(replacements.get("1001").map(String::as_str), Some("10000"));
+        assert_eq!(
+            replacements.get("1001").map(String::as_str),
+            Some("99411")
+        );
 
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr></w:pPr><w:r><w:t>第一项</w:t></w:r></w:p></w:body></w:document>"#;
         let marked = mark_ordered_list_num_ids(input, &replacements);
@@ -12226,10 +12449,77 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>1.</w:t>"));
         assert!(output.contains("<w:t>第一项</w:t>"));
-        assert!(output.contains("<w:tab />"));
+        assert!(output.contains(
+            r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr>"#
+        ));
+        assert!(!output.contains("<w:t>1.</w:t>"));
         assert!(!output.contains("• 第一项"));
+    }
+
+    #[test]
+    fn keeps_wps_heading_numbering_separate_from_body_ordered_lists() {
+        let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="decimal" /><w:lvlText w:val="%2." /></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1" /></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1.%2" /></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1" /></w:num><w:num w:numId="2"><w:abstractNumId w:val="0" /></w:num></w:numbering>"#;
+
+        let ordered_ids = ordered_list_num_ids_from_numbering_xml(numbering);
+
+        assert!(!ordered_ids.contains_key("1"));
+        assert_eq!(ordered_ids.get("2").map(String::as_str), Some("0"));
+    }
+
+    #[test]
+    fn preserves_native_ordered_list_after_wps_adds_paragraph_attributes() {
+        let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /></w:lvl></w:abstractNum><w:num w:numId="2"><w:abstractNumId w:val="0" /></w:num></w:numbering>"#;
+        let ordered_ids = ordered_list_num_ids_from_numbering_xml(numbering);
+        let input = r#"<w:document><w:body><w:p w14:paraId="12345678"><w:pPr><w:pStyle w:val="3" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="2" /></w:numPr></w:pPr><w:r><w:t>WPS 列表项</w:t></w:r></w:p></w:body></w:document>"#;
+        let marked = mark_ordered_list_num_ids(input, &ordered_ids);
+
+        let output = normalize_document_xml(
+            &marked,
+            true,
+            None,
+            &default_markdown_feature_config(),
+            None,
+            None,
+            None,
+        );
+
+        assert!(!output.contains(ORDERED_LIST_MARKER));
+        assert!(output.contains(r#"<w:p w14:paraId="12345678">"#));
+        assert!(output.contains(
+            r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="2" /></w:numPr>"#
+        ));
+        assert!(output.contains("<w:t>WPS 列表项</w:t>"));
+        assert!(!output.contains("<w:t>1.</w:t>"));
+    }
+
+    #[test]
+    fn normalizes_native_ordered_list_definition_without_destroying_restart_instances() {
+        let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="99411"><w:multiLevelType w:val="multilevel" /><w:lvl w:ilvl="0"><w:start w:val="1" /><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="720" w:hanging="360" /></w:pPr></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1" /><w:numFmt w:val="decimal" /><w:lvlText w:val="%2." /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="1440" w:hanging="360" /></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1001"><w:abstractNumId w:val="99411" /><w:lvlOverride w:ilvl="0"><w:startOverride w:val="1" /></w:lvlOverride></w:num><w:num w:numId="1002"><w:abstractNumId w:val="99411" /><w:lvlOverride w:ilvl="0"><w:startOverride w:val="5" /></w:lvlOverride></w:num></w:numbering>"#;
+        let ordered_ids = ordered_list_num_ids_from_numbering_xml(numbering);
+        let style = document_style_config_from_value(&json!({
+            "styles": {
+                "numbered-list": {
+                    "numberFormat": "（一）",
+                    "listLevel2NumberFormat": "A)",
+                    "listIndent": 1,
+                    "listTextIndent": 1.25,
+                    "nestedIndentStep": 2,
+                    "listWrapMode": "hanging"
+                }
+            }
+        }))
+        .unwrap();
+
+        let output = normalize_ordered_list_numbering_xml(numbering, &ordered_ids, Some(&style));
+
+        assert!(output.contains(r#"<w:numFmt w:val="chineseCountingThousand" /><w:lvlText w:val="（%1）" />"#));
+        assert!(output.contains(
+            r#"<w:numFmt w:val="upperLetter" /><w:lvlText w:val="%2)" />"#
+        ));
+        assert!(output.contains(r#"<w:num w:numId="1001">"#));
+        assert!(output.contains(r#"<w:num w:numId="1002">"#));
+        assert!(output.contains(r#"<w:startOverride w:val="5" />"#));
     }
 
     #[test]
@@ -12265,11 +12555,12 @@ mod tests {
         assert!(output.contains("<w:t>二级无序</w:t>"));
         assert!(output.contains("<w:t>✓</w:t>"));
         assert!(output.contains("<w:t>三级无序</w:t>"));
-        assert!(output.contains("<w:t>1)</w:t>"));
         assert!(output.contains("<w:t>二级有序</w:t>"));
-        assert!(output.contains("<w:t>(1)</w:t>"));
         assert!(output.contains("<w:t>三级有序</w:t>"));
-        assert!(output.matches("<w:tab />").count() >= 4);
+        assert_eq!(output.matches("<w:numPr>").count(), 2);
+        assert!(!output.contains("<w:t>1)</w:t>"));
+        assert!(!output.contains("<w:t>(1)</w:t>"));
+        assert!(output.matches("<w:tab />").count() >= 2);
         assert!(output.contains(r#"<w:ind w:left="1380" w:hanging="420" />"#));
         assert!(output.contains(r#"<w:ind w:left="1860" w:hanging="420" />"#));
     }
@@ -12311,10 +12602,11 @@ mod tests {
         assert!(output.contains("<w:t>一级原始无序</w:t>"));
         assert!(output.contains("<w:t>|||</w:t>"));
         assert!(output.contains("<w:t>二级原始无序</w:t>"));
-        assert!(output.contains("<w:t>i)</w:t>"));
         assert!(output.contains("<w:t>三级原始有序</w:t>"));
-        assert!(output.contains("<w:t>✓</w:t>"));
         assert!(output.contains("<w:t>四级原始有序</w:t>"));
+        assert_eq!(output.matches("<w:numPr>").count(), 2);
+        assert!(!output.contains("<w:t>i)</w:t>"));
+        assert!(!output.contains("<w:t>✓</w:t>"));
     }
 
     #[test]
@@ -12366,8 +12658,8 @@ mod tests {
     }
 
     #[test]
-    fn restarts_ordered_list_numbering_after_normal_paragraph_by_default() {
-        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第一组第一项</w:t></w:r></w:p><w:p><w:r><w:t>普通正文</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第二组第一项</w:t></w:r></w:p></w:body></w:document>"#;
+    fn keeps_distinct_native_numbering_instances_for_restarted_lists() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1003" /></w:numPr></w:pPr><w:r><w:t>第一组第一项</w:t></w:r></w:p><w:p><w:r><w:t>普通正文</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1004" /></w:numPr></w:pPr><w:r><w:t>第二组第一项</w:t></w:r></w:p></w:body></w:document>"#;
 
         let output = normalize_document_xml(
             input,
@@ -12379,10 +12671,11 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>1.</w:t>"));
         assert!(output.contains("<w:t>第一组第一项</w:t>"));
         assert!(output.contains("<w:t>第二组第一项</w:t>"));
-        assert!(!output.contains("<w:t>2.</w:t>"));
+        assert!(output.contains(r#"<w:numId w:val="1003" />"#));
+        assert!(output.contains(r#"<w:numId w:val="1004" />"#));
+        assert!(!output.contains("<w:t>1.</w:t>"));
     }
 
     #[test]
@@ -12408,10 +12701,10 @@ mod tests {
             None,
         );
 
-        assert!(output.contains("<w:t>1.</w:t>"));
-        assert!(output.contains("<w:t>2.</w:t>"));
         assert!(output.contains("<w:t>第一组第一项</w:t>"));
         assert!(output.contains("<w:t>第二组第一项</w:t>"));
+        assert_eq!(output.matches(r#"<w:numId w:val="1003" />"#).count(), 2);
+        assert!(!output.contains("<w:t>1.</w:t>"));
     }
 
     #[test]
@@ -12524,8 +12817,10 @@ mod tests {
         assert!(output.contains(
             r#"<w:pStyle w:val="Heading2" /><w:numPr><w:ilvl w:val="1" /><w:numId w:val="9100" />"#
         ));
-        assert!(output.contains("<w:t>1. 项目概览</w:t>"));
-        assert!(output.contains("<w:t>1.1 核心结论</w:t>"));
+        assert!(output.contains("<w:t>项目概览</w:t>"));
+        assert!(output.contains("<w:t>核心结论</w:t>"));
+        assert!(!output.contains("<w:t>1. 项目概览</w:t>"));
+        assert!(!output.contains("<w:t>1.1 核心结论</w:t>"));
     }
 
     #[test]
@@ -12584,7 +12879,8 @@ mod tests {
             .unwrap();
 
         assert!(document.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
-        assert!(document.contains("<w:t>1. 背景</w:t>"));
+        assert!(document.contains("<w:t>背景</w:t>"));
+        assert!(!document.contains("<w:t>1. 背景</w:t>"));
         assert!(numbering.contains(r#"<w:lvlText w:val="%1.%2" />"#));
 
         let _ = fs::remove_file(path);
