@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -25,6 +26,7 @@ pub struct MermaidPreprocessResult {
 struct MermaidBlock {
     start: usize,
     end: usize,
+    start_line: usize,
     source: String,
     attributes: MermaidAttributes,
 }
@@ -88,10 +90,16 @@ where
     for (index, block) in blocks.iter().enumerate() {
         output.push_str(&markdown[cursor..block.start]);
         let block_number = index + 1;
+        let title = mermaid_title(&block.source);
+        let (node_count, edge_count) = mermaid_complexity(&block.source);
+        let context = format!(
+            "第 {} 行，图名“{}”，约 {} 个节点/{} 条边",
+            block.start_line, title, node_count, edge_count
+        );
         if block_number > MAX_MERMAID_BLOCKS {
             failed += 1;
             warnings.push(format!(
-                "Mermaid 第 {block_number} 个代码块未渲染：单个文档最多处理 {MAX_MERMAID_BLOCKS} 张图"
+                "Mermaid 第 {block_number} 个代码块（{context}）未渲染：阶段=数量限制；单个文档最多处理 {MAX_MERMAID_BLOCKS} 张图"
             ));
             output.push_str(&markdown[block.start..block.end]);
             cursor = block.end;
@@ -115,14 +123,14 @@ where
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
                 {
                     warnings.push(format!(
-                        "Mermaid 第 {block_number} 个代码块未能保留为 SVG，已回退为高清 PNG。"
+                        "Mermaid 第 {block_number} 个代码块（{context}）未能保留为 SVG，已回退为高清 PNG。"
                     ));
                 }
                 if let Some((width, height)) = rendered_image_dimensions(&image_path) {
                     let aspect_ratio = width / height;
                     if !(0.2..=5.0).contains(&aspect_ratio) {
                         warnings.push(format!(
-                            "Mermaid 第 {block_number} 个代码块尺寸为 {:.0}×{:.0}，按页面等比例缩放后文字可能过小；建议拆分图或使用 layout=compact。",
+                            "Mermaid 第 {block_number} 个代码块（{context}）尺寸为 {:.0}×{:.0}，按页面等比例缩放后文字可能过小；建议拆分图或使用 layout=compact。",
                             width, height
                         ));
                     }
@@ -135,7 +143,7 @@ where
             Err(error) => {
                 failed += 1;
                 warnings.push(format!(
-                    "Mermaid 第 {block_number} 个代码块渲染失败：{error}"
+                    "Mermaid 第 {block_number} 个代码块（{context}）渲染失败：{error}"
                 ));
                 output.push_str(&markdown[block.start..block.end]);
             }
@@ -184,6 +192,7 @@ fn find_mermaid_blocks(markdown: &str) -> Vec<MermaidBlock> {
             blocks.push(MermaidBlock {
                 start: line_start,
                 end: close_end,
+                start_line: index + 1,
                 source: markdown[source_start..close_start].to_string(),
                 attributes,
             });
@@ -275,17 +284,61 @@ fn render_mermaid_image(
     compact: bool,
     prefer_svg: bool,
 ) -> Result<PathBuf, String> {
+    render_mermaid_with_retry(|| {
+        render_mermaid_image_once(
+            mermaid_script,
+            source,
+            block_index,
+            scale,
+            compact,
+            prefer_svg,
+        )
+    })
+}
+
+fn render_mermaid_with_retry<F>(mut render: F) -> Result<PathBuf, String>
+where
+    F: FnMut() -> Result<PathBuf, String>,
+{
+    let started = Instant::now();
+    let mut retries = 0;
+    loop {
+        match render() {
+            Ok(path) => return Ok(path),
+            Err(error) if retries == 0 && retryable_mermaid_error(&error) => {
+                retries += 1;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "{error}；耗时={}ms；重试={retries}次",
+                    started.elapsed().as_millis()
+                ))
+            }
+        }
+    }
+}
+
+fn render_mermaid_image_once(
+    mermaid_script: &Path,
+    source: &str,
+    block_index: usize,
+    scale: u32,
+    compact: bool,
+    prefer_svg: bool,
+) -> Result<PathBuf, String> {
     if !mermaid_script.is_file() {
         return Err(format!(
-            "内置 Mermaid 运行时不存在：{}",
+            "阶段=环境检查；内置 Mermaid 运行时不存在：{}",
             mermaid_script.to_string_lossy()
         ));
     }
     let browser = find_headless_browser().ok_or_else(|| {
-        "未找到 Microsoft Edge 或 Google Chrome，无法生成 Mermaid 图片".to_string()
+        "阶段=环境检查；未找到 Microsoft Edge 或 Google Chrome，无法生成 Mermaid 图片"
+            .to_string()
     })?;
     let work_dir = unique_temp_dir(&format!("mermaid-{block_index}"));
-    fs::create_dir_all(&work_dir).map_err(|error| format!("创建 Mermaid 临时目录失败：{error}"))?;
+    fs::create_dir_all(&work_dir)
+        .map_err(|error| format!("阶段=页面准备；创建 Mermaid 临时目录失败：{error}"))?;
     let result = (|| {
         let html_path = work_dir.join("render.html");
         let svg_path = work_dir.join("diagram.svg");
@@ -294,7 +347,7 @@ fn render_mermaid_image(
         let capture_profile = work_dir.join("profile-capture");
         let html = renderer_html(mermaid_script, source, compact);
         fs::write(&html_path, html)
-            .map_err(|error| format!("写入 Mermaid 渲染页面失败：{error}"))?;
+            .map_err(|error| format!("阶段=页面准备；写入 Mermaid 渲染页面失败：{error}"))?;
 
         let page_url = file_url(&html_path);
         let inspect = run_browser(
@@ -311,21 +364,35 @@ fn render_mermaid_image(
                 "--dump-dom".to_string(),
                 page_url.clone(),
             ],
-        )?;
+        )
+        .map_err(|error| format!("阶段=语法与布局检查；{error}"))?;
         let dom = String::from_utf8_lossy(&inspect.stdout);
         if dom.contains("data-state=\"error\"") {
             let detail = extract_html_attribute(&dom, "data-error")
                 .unwrap_or_else(|| "Mermaid 语法或渲染错误".to_string());
-            return Err(html_unescape(&detail));
+            let stage = extract_html_attribute(&dom, "data-stage")
+                .map(|value| mermaid_stage_label(&value))
+                .unwrap_or("语法与布局检查");
+            return Err(format!("阶段={stage}；{}", html_unescape(&detail)));
         }
         let width = extract_html_attribute(&dom, "data-width")
             .and_then(|value| value.parse::<f64>().ok())
             .filter(|value| *value > 0.0)
-            .ok_or_else(|| browser_failure("Mermaid 渲染未返回有效宽度", &inspect))?;
+            .ok_or_else(|| {
+                format!(
+                    "阶段=布局计算；{}",
+                    browser_failure("Mermaid 渲染未返回有效宽度", &inspect)
+                )
+            })?;
         let height = extract_html_attribute(&dom, "data-height")
             .and_then(|value| value.parse::<f64>().ok())
             .filter(|value| *value > 0.0)
-            .ok_or_else(|| browser_failure("Mermaid 渲染未返回有效高度", &inspect))?;
+            .ok_or_else(|| {
+                format!(
+                    "阶段=布局计算；{}",
+                    browser_failure("Mermaid 渲染未返回有效高度", &inspect)
+                )
+            })?;
         let mut svg_output = None;
         if prefer_svg {
             if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
@@ -333,7 +400,9 @@ fn render_mermaid_image(
                     if let Ok(svg) = String::from_utf8(svg_bytes) {
                         if validate_svg(&svg) {
                             fs::write(&svg_path, svg.as_bytes())
-                                .map_err(|error| format!("写入 Mermaid SVG 失败：{error}"))?;
+                                .map_err(|error| {
+                                    format!("阶段=SVG写入；写入 Mermaid SVG 失败：{error}")
+                                })?;
                             svg_output = Some(svg_path.clone());
                         }
                     }
@@ -360,9 +429,13 @@ fn render_mermaid_image(
                 format!("--screenshot={}", image_path.to_string_lossy()),
                 page_url,
             ],
-        )?;
+        )
+        .map_err(|error| format!("阶段=PNG回退生成；{error}"))?;
         if !capture.status.success() || !image_path.is_file() {
-            return Err(browser_failure("Mermaid 截图生成失败", &capture));
+            return Err(format!(
+                "阶段=PNG回退生成；{}",
+                browser_failure("Mermaid 截图生成失败", &capture)
+            ));
         }
         Ok(svg_output.unwrap_or(image_path))
     })();
@@ -371,6 +444,22 @@ fn render_mermaid_image(
         let _ = fs::remove_dir_all(&work_dir);
     }
     result
+}
+
+fn retryable_mermaid_error(error: &str) -> bool {
+    !error.contains("阶段=语法校验")
+        && !error.contains("阶段=环境检查")
+        && !error.contains("阶段=页面准备")
+        && !error.contains("阶段=SVG写入")
+}
+
+fn mermaid_stage_label(stage: &str) -> &'static str {
+    match stage.trim() {
+        "syntax" => "语法校验",
+        "layout" => "布局计算",
+        "serialize" => "SVG序列化",
+        _ => "语法与布局检查",
+    }
 }
 
 fn renderer_html(mermaid_script: &Path, source: &str, compact: bool) -> String {
@@ -393,6 +482,9 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
     mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:false,fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',flowchart:{{htmlLabels:false,useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}}}});
+    document.body.dataset.stage='syntax';
+    await mermaid.parse(source);
+    document.body.dataset.stage='layout';
     const rendered=await mermaid.render('mdking-mermaid',source);
     const host=document.getElementById('diagram'); host.innerHTML=rendered.svg;
     const svg=host.querySelector('svg');
@@ -427,6 +519,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
       }}
       if(!element.getAttribute('style')) element.removeAttribute('style');
     }}
+    document.body.dataset.stage='serialize';
     const serialized=new XMLSerializer().serializeToString(svg);
     const bytes=new TextEncoder().encode(serialized); let binary='';
     for(let offset=0;offset<bytes.length;offset+=32768) binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
@@ -550,6 +643,31 @@ fn run_browser(browser: &Path, args: &[String]) -> Result<Output, String> {
     }
 }
 
+fn mermaid_title(source: &str) -> String {
+    let title = regex::Regex::new(r#"(?im)^\s*(?:title|accTitle)\s*:\s*(.+?)\s*$"#)
+        .expect("valid Mermaid title regex")
+        .captures(source)
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str().trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("未命名");
+    title.chars().take(60).collect()
+}
+
+fn mermaid_complexity(source: &str) -> (usize, usize) {
+    let node_re = regex::Regex::new(r#"(?m)\b([A-Za-z_][A-Za-z0-9_-]*)\s*(?:\[|\(|\{)"#)
+        .expect("valid Mermaid node regex");
+    let nodes = node_re
+        .captures_iter(source)
+        .filter_map(|captures| captures.get(1))
+        .map(|value| value.as_str().to_string())
+        .collect::<HashSet<_>>()
+        .len();
+    let edge_re = regex::Regex::new(r#"-->|==>|-\.->|---|~~~"#)
+        .expect("valid Mermaid edge regex");
+    (nodes, edge_re.find_iter(source).count())
+}
+
 fn unique_temp_dir(prefix: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -637,17 +755,52 @@ mod tests {
 
     #[test]
     fn preserves_source_and_reports_block_number_when_rendering_fails() {
-        let markdown = "~~~mermaid\ngraph TD\n A --> B\n~~~";
+        let markdown = "正文\n\n~~~mermaid\ngraph TD\n A --> B\n~~~";
         let result = replace_mermaid_fences(markdown, true, |_source, _index, _attributes| {
-            Err("syntax error".to_string())
+            Err("阶段=语法校验；syntax error；耗时=12ms；重试=0次".to_string())
         });
         assert_eq!(result.markdown, markdown);
         assert_eq!(result.rendered, 0);
         assert_eq!(result.failed, 1);
-        assert_eq!(
-            result.warnings,
-            vec!["Mermaid 第 1 个代码块渲染失败：syntax error"]
-        );
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Mermaid 第 1 个代码块"));
+        assert!(result.warnings[0].contains("第 3 行"));
+        assert!(result.warnings[0].contains("图名“未命名”"));
+        assert!(result.warnings[0].contains("约 0 个节点/1 条边"));
+        assert!(result.warnings[0].contains("阶段=语法校验"));
+        assert!(result.warnings[0].contains("重试=0次"));
+    }
+
+    #[test]
+    fn retries_a_retryable_browser_failure_once_with_fresh_state() {
+        let mut attempts = 0;
+        let result = render_mermaid_with_retry(|| {
+            attempts += 1;
+            if attempts == 1 {
+                Err("阶段=布局计算；浏览器状态异常".to_string())
+            } else {
+                Ok(PathBuf::from(r"C:\Temp\diagram.svg"))
+            }
+        })
+        .unwrap();
+
+        assert_eq!(attempts, 2);
+        assert_eq!(result, PathBuf::from(r"C:\Temp\diagram.svg"));
+    }
+
+    #[test]
+    fn does_not_retry_a_mermaid_syntax_error() {
+        let mut attempts = 0;
+        let error = render_mermaid_with_retry(|| {
+            attempts += 1;
+            Err("阶段=语法校验；Parse error".to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(attempts, 1);
+        assert!(error.contains("阶段=语法校验"));
+        assert!(error.contains("耗时="));
+        assert!(error.contains("重试=0次"));
     }
 
     #[test]
@@ -692,6 +845,10 @@ mod tests {
         assert!(html.contains("htmlLabels:false"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));
+        assert!(html.contains("dataset.stage='syntax'"));
+        assert!(html.contains("await mermaid.parse(source)"));
+        assert!(html.contains("dataset.stage='layout'"));
+        assert!(html.contains("dataset.stage='serialize'"));
         assert!(html.contains("inlineOfficeRule=rule=>"));
         assert!(html.contains("document.querySelectorAll(rule.selectorText)"));
         assert!(html.contains("element.setAttribute(property,value)"));

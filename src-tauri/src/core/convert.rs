@@ -621,7 +621,7 @@ fn convert_existing_file(
             let _ = fs::remove_file(path);
         }
         cleanup_mermaid_paths(&prepared_input.mermaid_cleanup_paths);
-        return failure_result(
+        let mut result = failure_result(
             request,
             output_string,
             started_at,
@@ -629,6 +629,10 @@ fn convert_existing_file(
             "STRICT_MERMAID_FAILED",
             "严格模式下存在 Mermaid 渲染失败，已停止生成 DOCX。",
         );
+        result.statistics = statistics;
+        result.resolved_template_path = resolved_template_path;
+        result.template_sha256 = template_sha256;
+        return result;
     }
     let heading_numbering = effective_heading_numbering_config(
         &request,
@@ -884,7 +888,7 @@ fn convert_text_input(
     warnings.extend(mermaid.warnings.iter().cloned());
     if request.strict.unwrap_or(false) && statistics.mermaid_failed > 0 {
         cleanup_mermaid_paths(&mermaid.cleanup_paths);
-        return failure_result(
+        let mut result = failure_result(
             request,
             output_string,
             started_at,
@@ -892,6 +896,10 @@ fn convert_text_input(
             "STRICT_MERMAID_FAILED",
             "严格模式下存在 Mermaid 渲染失败，已停止生成 DOCX。",
         );
+        result.statistics = statistics;
+        result.resolved_template_path = resolved_template_path;
+        result.template_sha256 = template_sha256;
+        return result;
     }
     let numbered_input = preprocess_heading_numbering(
         &mermaid.markdown,
@@ -1096,8 +1104,9 @@ fn success_result(
             Err(error) => {
                 field_update_status = "failed".to_string();
                 let message = format!(
-                    "{} 域更新失败，已保留更新前的有效 DOCX：{error}",
-                    provider.label()
+                    "DOCX 已生成，但目录、页码和交叉引用尚未由 {} 更新；已保留更新前的有效 DOCX（{}）：{error}",
+                    provider.label(),
+                    output_path.to_string_lossy()
                 );
                 warnings.push(message.clone());
                 diagnostics.push(diagnostic_without_line(
@@ -1242,22 +1251,32 @@ fn runtime_diagnostics_from_warnings(warnings: &[String]) -> Vec<ConversionDiagn
             if warning.starts_with("Mermaid 第")
                 && (warning.contains("渲染失败") || warning.contains("未渲染"))
             {
-                Some(diagnostic_without_line(
-                    "MERMAID_RENDER_FAILED",
-                    "error",
-                    warning.clone(),
-                ))
+                Some(ConversionDiagnostic {
+                    code: "MERMAID_RENDER_FAILED".to_string(),
+                    severity: "error".to_string(),
+                    message: warning.clone(),
+                    line: mermaid_warning_line(warning),
+                })
             } else if warning.starts_with("Mermaid 第") && warning.contains("回退为高清 PNG") {
-                Some(diagnostic_without_line(
-                    "MERMAID_SVG_FALLBACK",
-                    "warning",
-                    warning.clone(),
-                ))
+                Some(ConversionDiagnostic {
+                    code: "MERMAID_SVG_FALLBACK".to_string(),
+                    severity: "warning".to_string(),
+                    message: warning.clone(),
+                    line: mermaid_warning_line(warning),
+                })
             } else {
                 None
             }
         })
         .collect()
+}
+
+fn mermaid_warning_line(warning: &str) -> Option<usize> {
+    Regex::new(r#"（第\s*(\d+)\s*行[，）]"#)
+        .expect("valid Mermaid warning line regex")
+        .captures(warning)
+        .and_then(|captures| captures.get(1))
+        .and_then(|value| value.as_str().parse::<usize>().ok())
 }
 
 fn request_expects_cover(request: &ConvertRequest, output: Option<&str>) -> bool {
@@ -1560,7 +1579,7 @@ fn conversion_statistics(
         mermaid_blocks: processed_mermaid_blocks.max(source_mermaid_blocks),
         mermaid_rendered,
         mermaid_failed,
-        image_count: count_markdown_images(markdown),
+        image_count: count_markdown_images(markdown).saturating_add(mermaid_rendered),
         table_count: tables.len(),
         multi_page_table_candidate_count: tables.iter().filter(|table| table.rows > 25).count(),
         table_width_risk_indices: tables
@@ -2268,14 +2287,15 @@ impl FieldUpdateProvider {
 }
 
 fn update_fields_safely(path: &Path, provider: FieldUpdateProvider) -> Result<(), String> {
-    let staged = make_sibling_temp_path(path, "fields-updated", "docx");
-    fs::copy(path, &staged).map_err(|error| format!("创建域更新副本失败：{error}"))?;
+    let path = normalized_existing_path(path)?;
+    let staged = make_sibling_temp_path(&path, "fields-updated", "docx");
+    fs::copy(&path, &staged).map_err(|error| format!("创建域更新副本失败：{error}"))?;
 
     let result = (|| {
         run_office_field_update(&staged, provider)?;
         validate_docx_package(&staged)?;
         validate_updated_field_results(&staged)?;
-        commit_staged_output(&staged, path).map(|_| ())
+        commit_staged_output(&staged, &path).map(|_| ())
     })();
     if result.is_err() {
         let _ = fs::remove_file(&staged);
@@ -2283,9 +2303,23 @@ fn update_fields_safely(path: &Path, provider: FieldUpdateProvider) -> Result<()
     result
 }
 
+fn normalized_existing_path(path: &Path) -> Result<PathBuf, String> {
+    let path = fs::canonicalize(path)
+        .map_err(|error| format!("解析域更新文件的绝对路径失败（{}）：{error}", path.to_string_lossy()))?;
+    #[cfg(windows)]
+    {
+        let value = path.to_string_lossy();
+        if let Some(path) = value.strip_prefix(r"\\?\") {
+            return Ok(PathBuf::from(path));
+        }
+    }
+    Ok(path)
+}
+
 #[cfg(windows)]
 fn run_office_field_update(path: &Path, provider: FieldUpdateProvider) -> Result<(), String> {
-    let script = office_field_update_script(path, provider);
+    let path = normalized_existing_path(path)?;
+    let script = office_field_update_script(&path, provider);
     let encoded = BASE64_STANDARD.encode(
         script
             .encode_utf16()
@@ -2302,6 +2336,7 @@ fn run_office_field_update(path: &Path, provider: FieldUpdateProvider) -> Result
             "-EncodedCommand",
             &encoded,
         ])
+        .current_dir(path.parent().unwrap_or_else(|| Path::new(".")))
         .creation_flags(CREATE_NO_WINDOW);
     let output = command
         .output()
@@ -2318,9 +2353,17 @@ fn run_office_field_update(path: &Path, provider: FieldUpdateProvider) -> Result
         stderr.trim()
     };
     Err(if detail.is_empty() {
-        format!("{} 域更新进程退出状态异常。", provider.label())
+        format!(
+            "{} 域更新进程退出状态异常（文件：{}）。",
+            provider.label(),
+            path.to_string_lossy()
+        )
     } else {
-        format!("{} 域更新进程失败：{detail}", provider.label())
+        format!(
+            "{} 域更新进程失败（文件：{}）：{detail}",
+            provider.label(),
+            path.to_string_lossy()
+        )
     })
 }
 
@@ -2333,25 +2376,43 @@ fn office_field_update_script(path: &Path, provider: FieldUpdateProvider) -> Str
     let path = path.to_string_lossy().replace('\'', "''");
     format!(
         r#"$ErrorActionPreference='Stop'
-$app=$null
-$doc=$null
-try {{
-  $app=New-Object -ComObject '{prog_id}'
-  $app.Visible=$false
-  try {{ $app.DisplayAlerts=0 }} catch {{}}
-  $doc=$app.Documents.Open('{path}',$false,$false)
-  try {{ $doc.Repaginate() }} catch {{}}
-  if($doc.Fields.Count -gt 0) {{ [void]$doc.Fields.Update() }}
-  for($index=1;$index -le $doc.TablesOfContents.Count;$index++) {{
-    [void]$doc.TablesOfContents.Item($index).Update()
+$path=[IO.Path]::GetFullPath('{path}')
+if(-not (Test-Path -LiteralPath $path)) {{ throw "未找到待更新的 DOCX：$path" }}
+$maxAttempts=2
+$lastError=$null
+for($mdKingAttempt=1;$mdKingAttempt -le $maxAttempts;$mdKingAttempt++) {{
+  $app=$null
+  $doc=$null
+  try {{
+    # CreateObject 始终创建本次自动化使用的隐藏实例，不读取用户正在使用的活动 WPS/Word 会话。
+    $app=New-Object -ComObject '{prog_id}'
+    $app.Visible=$false
+    try {{ $app.DisplayAlerts=0 }} catch {{}}
+    try {{ $app.UserControl=$false }} catch {{}}
+    $doc=$app.Documents.Open($path,$false,$false)
+    try {{ $doc.Repaginate() }} catch {{}}
+    if($doc.Fields.Count -gt 0) {{ [void]$doc.Fields.Update() }}
+    for($index=1;$index -le $doc.TablesOfContents.Count;$index++) {{
+      [void]$doc.TablesOfContents.Item($index).Update()
+    }}
+    try {{ $doc.Repaginate() }} catch {{}}
+    $doc.Save()
+    if(-not $doc.Saved) {{ throw '办公软件未确认文档已保存' }}
+    break
+  }} catch {{
+    $lastError=$_.Exception.Message
+    $retryable=$lastError -match '(?i)rpc|服务器不可用|server unavailable|0x800706ba'
+    if($retryable -and $mdKingAttempt -lt $maxAttempts) {{
+      Start-Sleep -Milliseconds 1200
+      continue
+    }}
+    throw "{label} 域更新失败（已尝试 $mdKingAttempt/$maxAttempts 次，文件：$path）：$lastError"
+  }} finally {{
+    if($doc -ne $null) {{ try {{ $doc.Close($false) }} catch {{}}; try {{ [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($doc) }} catch {{}} }}
+    if($app -ne $null) {{ try {{ $app.Quit() }} catch {{}}; try {{ [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($app) }} catch {{}} }}
   }}
-  try {{ $doc.Repaginate() }} catch {{}}
-  $doc.Save()
-  if(-not $doc.Saved) {{ throw '办公软件未确认文档已保存' }}
-}} finally {{
-  if($doc -ne $null) {{ $doc.Close($false) }}
-  if($app -ne $null) {{ $app.Quit() }}
 }}"#,
+        label = provider.label(),
         prog_id = provider.prog_id()
     )
 }
@@ -10071,6 +10132,7 @@ mod tests {
         normalize_after_field_update,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
+        normalized_existing_path,
         normalize_ordered_list_numbering_xml,
         normalize_emoji_runs, normalize_image_drawings,
         normalize_front_section_page_settings,
@@ -10261,12 +10323,14 @@ mod tests {
     #[test]
     fn promotes_mermaid_runtime_failure_to_structured_diagnostic() {
         let diagnostics = runtime_diagnostics_from_warnings(&[
-            "Mermaid 第 2 个代码块渲染失败：syntax error".to_string(),
+            "Mermaid 第 2 个代码块（第 18 行，图名“告警流程”，约 12 个节点/15 条边）渲染失败：阶段=布局计算；浏览器超时；耗时=30000ms；重试=1次".to_string(),
         ]);
 
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "MERMAID_RENDER_FAILED");
         assert_eq!(diagnostics[0].severity, "error");
+        assert_eq!(diagnostics[0].line, Some(18));
+        assert!(diagnostics[0].message.contains("阶段=布局计算"));
     }
 
     #[test]
@@ -10608,7 +10672,7 @@ mod tests {
 
         assert_eq!(statistics.mermaid_blocks, 1);
         assert_eq!(statistics.mermaid_rendered, 1);
-        assert_eq!(statistics.image_count, 1);
+        assert_eq!(statistics.image_count, 2);
         assert_eq!(statistics.table_count, 1);
         assert_eq!(statistics.multi_page_table_candidate_count, 1);
         assert_eq!(statistics.table_width_risk_indices, vec![1]);
@@ -10693,10 +10757,38 @@ mod tests {
         );
 
         assert!(script.contains("New-Object -ComObject 'kwps.Application'"));
-        assert!(script.contains(r#"Documents.Open('C:\Reports\O''Brien.docx'"#));
+        assert!(script.contains(r#"$path=[IO.Path]::GetFullPath('C:\Reports\O''Brien.docx')"#));
+        assert!(script.contains("Test-Path -LiteralPath $path"));
+        assert!(script.contains("$doc=$app.Documents.Open($path,$false,$false)"));
         assert!(script.contains("TablesOfContents.Item($index).Update()"));
         assert!(script.contains("$doc.Fields.Update()"));
         assert!(script.contains("$doc.Save()"));
+        assert!(script.contains("$maxAttempts=2"));
+        assert!(script.contains("服务器不可用"));
+        assert!(script.contains("$app.UserControl=$false"));
+        assert!(script.contains("FinalReleaseComObject"));
+        assert!(!script.contains("GetActiveObject"));
+    }
+
+    #[test]
+    fn normalizes_field_update_path_to_an_existing_absolute_file() {
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-field-update-path-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("fields-updated.docx");
+        fs::write(&path, b"docx").unwrap();
+
+        let normalized = normalized_existing_path(&path).unwrap();
+
+        assert!(normalized.is_absolute());
+        assert_eq!(fs::canonicalize(&normalized).unwrap(), fs::canonicalize(&path).unwrap());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
