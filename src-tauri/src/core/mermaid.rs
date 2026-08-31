@@ -1,8 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::collections::HashSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -457,6 +458,7 @@ fn mermaid_stage_label(stage: &str) -> &'static str {
     match stage.trim() {
         "syntax" => "语法校验",
         "layout" => "布局计算",
+        "style-inline" => "样式固化",
         "serialize" => "SVG序列化",
         _ => "语法与布局检查",
     }
@@ -509,7 +511,10 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
         }}
       }}
     }};
-    for(const sheet of document.styleSheets){{
+    document.body.dataset.stage='style-inline';
+    for(const styleElement of svg.querySelectorAll('style')){{
+      const sheet=styleElement.sheet;
+      if(!sheet) continue;
       try{{for(const rule of sheet.cssRules) inlineOfficeRule(rule);}}catch(_error){{}}
     }}
     for(const element of svg.querySelectorAll('[style]')){{
@@ -617,14 +622,30 @@ fn run_browser(browser: &Path, args: &[String]) -> Result<Output, String> {
     let mut child = command
         .spawn()
         .map_err(|error| format!("启动 Mermaid 无头浏览器失败：{error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法读取 Mermaid 无头浏览器标准输出。".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法读取 Mermaid 无头浏览器错误输出。".to_string())?;
+    // Mermaid 的 SVG（尤其包含多组 classDef 时）会使 --dump-dom 输出超过管道缓冲区。
+    // 必须在浏览器仍在运行时并发读取，否则浏览器会阻塞在写 stdout，外层误判为布局超时。
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = std::io::BufReader::new(stdout).read_to_end(&mut bytes);
+        bytes
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = std::io::BufReader::new(stderr).read_to_end(&mut bytes);
+        bytes
+    });
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                return child
-                    .wait_with_output()
-                    .map_err(|error| format!("读取 Mermaid 无头浏览器结果失败：{error}"));
-            }
+            Ok(Some(status)) => return collect_browser_output(status, stdout_reader, stderr_reader),
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
             Ok(None) => {
                 #[cfg(windows)]
@@ -636,11 +657,37 @@ fn run_browser(browser: &Path, args: &[String]) -> Result<Output, String> {
                 }
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
                 return Err("Mermaid 无头浏览器运行超过 30 秒，已终止本次渲染".to_string());
             }
-            Err(error) => return Err(format!("检查 Mermaid 无头浏览器状态失败：{error}")),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!("检查 Mermaid 无头浏览器状态失败：{error}"));
+            }
         }
     }
+}
+
+fn collect_browser_output(
+    status: ExitStatus,
+    stdout_reader: thread::JoinHandle<Vec<u8>>,
+    stderr_reader: thread::JoinHandle<Vec<u8>>,
+) -> Result<Output, String> {
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "读取 Mermaid 无头浏览器标准输出时发生异常。".to_string())?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "读取 Mermaid 无头浏览器错误输出时发生异常。".to_string())?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn mermaid_title(source: &str) -> String {
@@ -733,6 +780,27 @@ pub fn cleanup_mermaid_paths(paths: &[PathBuf]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CLASSDEF_BRANCHING_FLOWCHART: &str = r#"flowchart LR
+    A[商密服务异常] --> B{功能是否依赖密码服务}
+    B -->|否| C[保持基础生产通信]
+    B -->|是| D{是否满足受控连续条件}
+    D -->|是| E[受保护缓存或本地连续运行]
+    D -->|否| F[高风险操作失败关闭]
+    C --> G[告警并记录影响]
+    E --> G
+    F --> G
+    G --> H[恢复校验并重新认证]
+
+    classDef crypto fill:#F4CCCC,stroke:#C00000,color:#9C0006,stroke-width:2px;
+    classDef decision fill:#FFF2CC,stroke:#BF9000,color:#7F6000,stroke-width:1.5px;
+    classDef production fill:#FBE5D6,stroke:#C55A11,color:#843C0C,stroke-width:1.5px;
+    classDef action fill:#FCE4D6,stroke:#ED7D31,color:#843C0C,stroke-width:1.5px;
+    class A crypto;
+    class B,D decision;
+    class C production;
+    class E,F,G,H action;
+"#;
 
     #[test]
     fn replaces_case_insensitive_mermaid_fences_and_keeps_other_code() {
@@ -848,12 +916,32 @@ mod tests {
         assert!(html.contains("dataset.stage='syntax'"));
         assert!(html.contains("await mermaid.parse(source)"));
         assert!(html.contains("dataset.stage='layout'"));
+        assert!(html.contains("dataset.stage='style-inline'"));
         assert!(html.contains("dataset.stage='serialize'"));
         assert!(html.contains("inlineOfficeRule=rule=>"));
         assert!(html.contains("document.querySelectorAll(rule.selectorText)"));
+        assert!(html.contains("svg.querySelectorAll('style')"));
+        assert!(!html.contains("for(const sheet of document.styleSheets)"));
         assert!(html.contains("element.setAttribute(property,value)"));
         assert!(html.contains("element.style.removeProperty(property)"));
         assert!(html.contains("dataset.svgBase64"));
+    }
+
+    #[test]
+    fn keeps_classdef_branching_flowchart_as_a_renderer_regression_sample() {
+        let (nodes, edges) = mermaid_complexity(CLASSDEF_BRANCHING_FLOWCHART);
+        assert_eq!((nodes, edges), (8, 9));
+        assert_eq!(mermaid_title(CLASSDEF_BRANCHING_FLOWCHART), "未命名");
+
+        let html = renderer_html(
+            Path::new(r"C:\runtime\mermaid.min.js"),
+            CLASSDEF_BRANCHING_FLOWCHART,
+            false,
+        );
+        assert!(html.contains("classDef crypto"));
+        assert!(html.contains("classDef action"));
+        assert!(html.contains("flowchart LR"));
+        assert!(html.contains("svg.querySelectorAll('style')"));
     }
 
     #[test]
