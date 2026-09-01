@@ -11,7 +11,7 @@ export type ConvertRequest = {
   conflictStrategy?: "overwrite" | "rename" | "ask";
   headingNumbering?: "auto" | "source" | "word" | "none";
   tocPageNumbers?: Array<{ anchorId: string; page: number }>;
-  updateFields?: "none" | "wps" | "word";
+  updateFields?: "none" | "auto" | "wps" | "word";
   tocDepth?: 1 | 2 | 3 | 4 | 5 | 6;
   tocPosition?: "after-cover" | "before-body" | "none";
   bodyPageStart?: number;

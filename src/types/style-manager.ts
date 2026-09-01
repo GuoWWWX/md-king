@@ -177,6 +177,7 @@ export type StyleDraft = {
 export type PaperSize = "A3" | "A4" | "A5" | "A6" | "B4" | "B5" | "B6" | "Letter" | "Legal" | "Executive" | "Tabloid" | "K16" | "K32";
 export type FooterPageNumberFormat = "page" | "plain" | "page-total" | "plain-total" | "dash" | "none";
 export type TocLeaderStyle = "dot" | "cjk-dot" | "dot-spaced" | "dash" | "line" | "space";
+export type PageNumberStartAt = "body" | "document";
 
 export type PageSettingsDraft = {
   paperSize: PaperSize;
@@ -190,6 +191,8 @@ export type PageSettingsDraft = {
   footerEnabled: boolean;
   footerText: string;
   footerPageNumberFormat: FooterPageNumberFormat;
+  /** 页码从正文首页还是文档首页开始显示。缺省时保持报告模板的正文首页行为。 */
+  pageNumberStartAt: PageNumberStartAt;
   footerStartPage: number;
   tocEnabled: boolean;
   tocDepth: string;

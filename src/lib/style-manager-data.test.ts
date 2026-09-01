@@ -9,6 +9,7 @@ test("默认报告模板使用 Word 中文字号和表格排版规范", () => {
   const table = config.styles.table;
   const header = config.styles["table-header"];
   const body = config.styles["table-body"];
+  const caption = config.styles.caption;
 
   assert.equal(normal.chineseFont, "宋体");
   assert.equal(normal.fontSize, 12);
@@ -27,6 +28,7 @@ test("默认报告模板使用 Word 中文字号和表格排版规范", () => {
   assert.equal(defaultPageSettings.tocTitleLineHeight, "1.25");
   assert.equal(defaultPageSettings.tocTitleBeforeSpacing, 10);
   assert.equal(defaultPageSettings.tocTitleAfterSpacing, 5);
+  assert.equal(defaultPageSettings.pageNumberStartAt, "body");
 
   assert.equal(table.tableLayout, "auto");
   assert.equal(table.fitToPageWidth, true);
@@ -49,6 +51,13 @@ test("默认报告模板使用 Word 中文字号和表格排版规范", () => {
   assert.equal(body.bodyFontSize, 10.5);
   assert.equal(body.bodyVerticalAlign, "middle");
   assert.equal(body.bodyBorderColor, "#000000");
+
+  assert.equal(caption.chineseFont, "宋体");
+  assert.equal(caption.fontWeight, "700");
+  assert.equal(caption.lineHeight, "1.25");
+  assert.equal(caption.beforeSpacing, 0);
+  assert.equal(caption.afterSpacing, 0);
+  assert.equal(caption.captionAlign, "center");
 });
 
 test("默认报告模板会迁移旧版浅色表格边框", () => {
@@ -90,6 +99,26 @@ test("默认报告模板会迁移旧版标题和目录间距", () => {
   assert.equal(config.pageSettings.tocTitleLineHeight, "1.25");
   assert.equal(config.pageSettings.tocTitleBeforeSpacing, 10);
   assert.equal(config.pageSettings.tocTitleAfterSpacing, 5);
+});
+
+test("默认报告模板会迁移旧版图片题注样式", () => {
+  const stored = createDefaultTemplateStyleConfig("default-report");
+  stored.styles.caption = {
+    ...stored.styles.caption,
+    chineseFont: "微软雅黑",
+    fontWeight: "400",
+    lineHeight: "1.5",
+    beforeSpacing: 12,
+    afterSpacing: 6,
+  };
+
+  const caption = mergeTemplateStyleConfig("default-report", stored).styles.caption;
+
+  assert.equal(caption.chineseFont, "宋体");
+  assert.equal(caption.fontWeight, "700");
+  assert.equal(caption.lineHeight, "1.25");
+  assert.equal(caption.beforeSpacing, 0);
+  assert.equal(caption.afterSpacing, 0);
 });
 
 test("旧版标题编号格式会恢复二到四级的编号开关", () => {

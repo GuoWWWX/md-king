@@ -55,7 +55,7 @@ pub fn handle_startup_context_action(app: AppHandle) {
             conflict_strategy: Some(config.default_conflict_strategy),
             heading_numbering: None,
             toc_page_numbers: None,
-            update_fields: None,
+            update_fields: Some("auto".to_string()),
             toc_depth: None,
             toc_position: None,
             body_page_start: None,

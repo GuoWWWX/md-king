@@ -1,9 +1,10 @@
-import { ChevronRight, ClipboardPaste, Files, FileText, FileType2, FileUp, ImageIcon, Plus, X, Copy, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, ClipboardPaste, Files, FileText, FileType2, FileUp, ImageIcon, Plus, X, Copy, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ContextMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { collectOverflowedTabKeys, tabWheelScrollDelta } from "@/lib/document-tab-overflow";
 import { isTauriEnvironment } from "@/lib/tauri";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,18 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
   } | null>(null);
   const suppressTabClickRef = useRef(false);
   const [draggedTabId, setDraggedTabId] = useState<string>();
+  const [overflowedTabKeys, setOverflowedTabKeys] = useState<string[]>([]);
+  const tabLayoutKey = useMemo(
+    () => [
+      ...tabs.map((tab) => `document:${tab.id}:${tab.title}`),
+      ...pageTabs.map((tab) => `page:${tab.id}:${tab.label}`),
+    ].join("\n"),
+    [pageTabs, tabs],
+  );
+  const overflowedTabKeySet = useMemo(() => new Set(overflowedTabKeys), [overflowedTabKeys]);
+  const overflowedDocumentTabs = tabs.filter((tab) => overflowedTabKeySet.has(`document:${tab.id}`));
+  const overflowedPageTabs = pageTabs.filter((tab) => overflowedTabKeySet.has(`page:${tab.id}`));
+  const hasOverflowedTabs = overflowedDocumentTabs.length > 0 || overflowedPageTabs.length > 0;
 
   // 切到被滚动条挡住的文档或工作页时把它带回视野。
   useEffect(() => {
@@ -70,6 +83,51 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     const node = listRef.current?.querySelector(selector);
     node?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activePage, activeTabId]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return undefined;
+
+    let frame = 0;
+    const updateOverflowedTabs = () => {
+      frame = 0;
+      const viewport = list.getBoundingClientRect();
+      const next = collectOverflowedTabKeys(
+        { left: viewport.left, right: viewport.right },
+        Array.from(list.querySelectorAll<HTMLElement>("[data-tab-overflow-key]")).map((tab) => {
+          const bounds = tab.getBoundingClientRect();
+          return {
+            key: tab.dataset.tabOverflowKey ?? "",
+            left: bounds.left,
+            right: bounds.right,
+          };
+        }),
+      ).filter(Boolean);
+      setOverflowedTabKeys((current) => (
+        current.length === next.length && current.every((key, index) => key === next[index])
+          ? current
+          : next
+      ));
+    };
+    const scheduleUpdate = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(updateOverflowedTabs);
+    };
+
+    scheduleUpdate();
+    list.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleUpdate);
+    observer?.observe(list);
+    list.querySelectorAll<HTMLElement>("[data-tab-overflow-key]").forEach((tab) => observer?.observe(tab));
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      list.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      observer?.disconnect();
+    };
+  }, [tabLayoutKey]);
 
   async function requestClose(tab: DocumentTab) {
     if (tab.dirty && onBeforeClose) {
@@ -253,6 +311,35 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     void getCurrentWindow().toggleMaximize().catch(() => undefined);
   }
 
+  function handleTabListWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    const list = event.currentTarget;
+    if (event.ctrlKey || list.scrollWidth <= list.clientWidth + 1) return;
+    const delta = tabWheelScrollDelta(
+      event.deltaX,
+      event.deltaY,
+      event.deltaMode,
+      list.clientWidth,
+    );
+    if (!delta) return;
+    event.preventDefault();
+    event.stopPropagation();
+    list.scrollLeft += delta;
+  }
+
+  function selectOverflowedDocumentTab(tabId: string) {
+    setActiveTab(tabId);
+    onSelectDocument?.();
+    revealOverflowedTab(`document:${tabId}`);
+  }
+
+  function revealOverflowedTab(tabKey: string) {
+    requestAnimationFrame(() => {
+      const tab = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-tab-overflow-key]") ?? [])
+        .find((node) => node.dataset.tabOverflowKey === tabKey);
+      tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  }
+
   return (
     <div className={cn("mk-document-tab-bar flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
       <span className="mx-1 h-4 w-px shrink-0 bg-slate-200 dark:bg-zinc-700" aria-hidden />
@@ -267,6 +354,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
         onPointerCancel={finishTabListPointerDrag}
         onClickCapture={suppressClickAfterTabDrag}
         onDoubleClick={handleTabListDoubleClick}
+        onWheel={handleTabListWheel}
       >
         {tabs.length === 0 && pageTabs.length === 0 ? (
           <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或通过 + 导入</span>
@@ -306,6 +394,54 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
         )}
         <span className="min-w-0 flex-1 self-stretch" aria-hidden />
       </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={!hasOverflowedTabs}
+            className="h-9 w-7 shrink-0 rounded-none border-0 bg-transparent shadow-none text-slate-500 hover:bg-transparent hover:text-slate-950 active:bg-transparent aria-expanded:bg-transparent data-[state=open]:bg-transparent focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
+            title={hasOverflowedTabs ? "查看隐藏的标签" : "没有隐藏的标签"}
+            tooltipSide="bottom"
+            aria-label="查看隐藏的标签"
+          >
+            <ChevronDown className="size-4" strokeWidth={2.25} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="max-h-80 min-w-60 max-w-80 overflow-y-auto p-1.5">
+          {overflowedDocumentTabs.map((tab) => {
+            const Icon = tab.kind === "scratch" ? FileType2 : tab.kind === "image" ? ImageIcon : FileText;
+            return (
+              <DropdownMenuItem
+                key={`document:${tab.id}`}
+                title={tab.path ?? tab.title}
+                onSelect={() => selectOverflowedDocumentTab(tab.id)}
+              >
+                <Icon className="size-4 shrink-0 text-slate-500 dark:text-zinc-400" />
+                <span className="min-w-0 flex-1 truncate">{tab.title}</span>
+                {tab.dirty ? <span className="size-1.5 shrink-0 rounded-full bg-current" aria-label="未保存" /> : null}
+              </DropdownMenuItem>
+            );
+          })}
+          {overflowedPageTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <DropdownMenuItem
+                key={`page:${tab.id}`}
+                onSelect={() => {
+                  onSelectPage?.(tab.id);
+                  revealOverflowedTab(`page:${tab.id}`);
+                }}
+              >
+                <Icon className="size-4 shrink-0 text-slate-500 dark:text-zinc-400" />
+                <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -373,6 +509,7 @@ function PageTabItem({ tab, active, tabCount, onSelect, onClose, onCloseOthers, 
       <ContextMenu.Trigger asChild>
         <div
           data-page-tab-id={tab.id}
+          data-tab-overflow-key={`page:${tab.id}`}
           data-mk-context-menu
           role="tab"
           aria-selected={active}
@@ -477,6 +614,7 @@ function DocumentTabItem({ tab, active, tabCount, showDirtyIndicator, onSelect, 
       <ContextMenu.Trigger asChild>
         <div
           data-tab-id={tab.id}
+          data-tab-overflow-key={`document:${tab.id}`}
           role="tab"
           aria-selected={active}
           tabIndex={0}

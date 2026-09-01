@@ -472,6 +472,7 @@ export const defaultPageSettings: PageSettingsDraft = {
   footerEnabled: true,
   footerText: "",
   footerPageNumberFormat: "page",
+  pageNumberStartAt: "body",
   footerStartPage: 1,
   tocEnabled: true,
   tocDepth: "1-3",
@@ -683,9 +684,14 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
     const isTableCaption = styleId === "table-caption";
     return {
       ...draft,
+      chineseFont: isTableCaption ? draft.chineseFont : "宋体",
+      latinFont: "Times New Roman",
       fontSize: 10,
-      fontWeight: "400",
+      fontWeight: isTableCaption ? "400" : "700",
       color: "#334155",
+      lineHeight: isTableCaption ? draft.lineHeight : "1.25",
+      beforeSpacing: isTableCaption ? draft.beforeSpacing : 0,
+      afterSpacing: isTableCaption ? draft.afterSpacing : 0,
       align: "center",
       firstLineIndent: 0,
       captionAlign: "center",
@@ -992,6 +998,15 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
           afterSpacing: defaults.styles[styleId].afterSpacing,
         };
       }
+    }
+
+    const caption = styles.caption;
+    if (caption?.chineseFont === "微软雅黑"
+      && caption.fontWeight === "400"
+      && caption.lineHeight === "1.5"
+      && caption.beforeSpacing === 12
+      && caption.afterSpacing === 6) {
+      styles.caption = defaults.styles.caption;
     }
 
     // 旧版本默认报告模板使用浅灰/蓝灰边框；仅迁移这组精确的旧默认值，

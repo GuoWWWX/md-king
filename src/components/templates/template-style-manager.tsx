@@ -1265,7 +1265,7 @@ function StyleProperties({
               ) : null}
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-zinc-400">
-              默认“铺满正文宽度”会按纸张去掉页边距后的内容宽度导出；题注文字在“图片题注”里单独配置。
+              默认“铺满正文宽度”会按纸张去掉页边距后的内容宽度导出；题注文字在“图片题注”里单独配置。图题请直接写在图片的 Markdown 替代文本中：<code>![图 2-1 网络结构图](图片路径)</code>；空替代文本则不生成题注。
             </p>
           </PropertyCard>
         ) : null}
@@ -1941,7 +1941,18 @@ function HeaderFooterSettingsPanel({ pageSettings, patchPageSettings }: { pageSe
             </Field>
           </div>
         ) : null}
-        <Field label="起始页码（目录/页脚）"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={999} step={1} value={pageSettings.footerStartPage} onChange={(event) => patchPageSettings({ footerStartPage: Number(event.target.value) })} /></Field>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="页码开始位置">
+            <Select value={pageSettings.pageNumberStartAt} onValueChange={(value) => patchPageSettings({ pageNumberStartAt: value as PageSettingsDraft["pageNumberStartAt"] })}>
+              <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="body">正文首页（目录后）</SelectItem>
+                <SelectItem value="document">文档首页</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="起始显示页码"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={999} step={1} value={pageSettings.footerStartPage} onChange={(event) => patchPageSettings({ footerStartPage: Number(event.target.value) })} /></Field>
+        </div>
       </PropertyCard>
     </div>
   );
@@ -1997,7 +2008,7 @@ function TableOfContentsSettingsPanel({ pageSettings, patchPageSettings }: { pag
         <SettingSwitch label="显示目录页码" checked={pageSettings.tocShowPageNumbers} disabled={!pageSettings.tocEnabled} onCheckedChange={(checked) => patchPageSettings({ tocShowPageNumbers: checked })} />
       </PropertyCard>
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500 dark:border-zinc-700/70 dark:bg-zinc-900/72 dark:text-zinc-400">
-        目录会插入在正文开头；目录页码从第 {Math.max(1, Math.trunc(pageSettings.footerStartPage || 1))} 页开始。
+        目录页码与页脚保持同步：当前从{pageSettings.pageNumberStartAt === "document" ? "文档首页" : "正文首页（目录后）"}开始，起始显示页码为 {Math.max(1, Math.trunc(pageSettings.footerStartPage || 1))}。
       </div>
     </div>
   );

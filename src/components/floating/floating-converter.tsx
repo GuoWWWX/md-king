@@ -578,6 +578,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       templateId: activeTemplateId,
       openAfterConvert: appConfig?.openAfterConvert ?? true,
       conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
+      updateFields: "auto",
     });
     updateTask(task.id, {
       status: result.ok ? "success" : "failed",

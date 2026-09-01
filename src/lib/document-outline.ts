@@ -1,3 +1,5 @@
+import { parseUnnumberedHeadingText } from "./markdown-heading-attributes.ts";
+
 export type MarkdownOutlineItem = {
   level: number;
   text: string;
@@ -35,7 +37,7 @@ export function parseMarkdownOutline(markdown: string): MarkdownOutlineItem[] {
 
     const heading = line.match(/^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*\s*$/);
     if (!heading) continue;
-    const text = heading[2].trim();
+    const text = parseUnnumberedHeadingText(heading[2]).text;
     if (text) outline.push({ level: heading[1].length, text, line: index + 1 });
   }
 

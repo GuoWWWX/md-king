@@ -3,6 +3,11 @@ export type PreviewMermaidSize = {
   height: number;
 };
 
+export type PreviewImageSize = {
+  width: number;
+  height: number;
+};
+
 export type PreviewBlockSplit<T> = {
   head: T;
   tail: T;
@@ -240,4 +245,36 @@ export function estimateMermaidBlockHeight({
   const scale = Math.min(1, availableWidth / size.width);
   const renderedHeight = size.height * scale + verticalPadding + borderWidth * 2;
   return marginHeight + Math.min(maxBlockHeight, renderedHeight);
+}
+
+type EstimateImageBlockHeightOptions = {
+  size?: PreviewImageSize;
+  contentWidth: number;
+  widthPercent: number;
+  captionHeight?: number;
+  verticalMargin?: number;
+  maxImageHeight?: number;
+  fallbackImageHeight?: number;
+};
+
+// 图片完成加载后按实际宽高重排页面。此前一律按 132px 估算，宽幅网络图会被
+// 错放在页尾，后续正文便会越过页脚显示在下边距内。
+export function estimateImageBlockHeight({
+  size,
+  contentWidth,
+  widthPercent,
+  captionHeight = 0,
+  verticalMargin = 24,
+  maxImageHeight = 520,
+  fallbackImageHeight = 220,
+}: EstimateImageBlockHeightOptions) {
+  if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+    return verticalMargin + fallbackImageHeight + captionHeight;
+  }
+
+  const targetWidth = Math.max(1, contentWidth * Math.min(100, Math.max(1, widthPercent)) / 100);
+  // 预览图片使用 width: 100%，小图也会随容器放大；这里不能把缩放比例封顶为 1，
+  // 否则会低估小尺寸图片实际占用的纵向空间。
+  const scaledHeight = size.height * targetWidth / size.width;
+  return verticalMargin + Math.min(maxImageHeight, scaledHeight) + captionHeight;
 }

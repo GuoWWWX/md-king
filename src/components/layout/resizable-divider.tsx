@@ -21,6 +21,8 @@ type ResizableDividerProps = {
   collapseThreshold?: number;
   onCollapsedChange?: (collapsed: boolean) => void;
   className?: string;
+  /** 覆盖实际拖拽命中区；侧栏紧邻滚动条时可把命中区限制在卡片缝隙内。 */
+  handleClassName?: string;
 };
 
 export const RESIZABLE_PANEL_COLLAPSE_THRESHOLD = 24;
@@ -41,6 +43,7 @@ export function ResizableDivider({
   collapseThreshold = RESIZABLE_PANEL_COLLAPSE_THRESHOLD,
   onCollapsedChange,
   className,
+  handleClassName,
 }: ResizableDividerProps) {
   const isDraggingRef = useRef(false);
   const dragDisabled = collapsed && !allowCollapsedDrag;
@@ -130,6 +133,7 @@ export function ResizableDivider({
             ? "inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize"
             : "inset-x-0 top-1/2 h-4 -translate-y-1/2 cursor-row-resize",
           dragDisabled && "pointer-events-none cursor-default",
+          handleClassName,
         )}
         onPointerDown={dragDisabled ? undefined : handlePointerDown}
         aria-disabled={dragDisabled || undefined}

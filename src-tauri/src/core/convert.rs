@@ -38,6 +38,7 @@ use crate::system::open_file::open_path;
 
 const CODE_LANGUAGE_MARKER_PREFIX: &str = "MD_KING_CODE_LANG:";
 const CODE_INDENT_MARKER_PREFIX: &str = "MD_KING_CODE_INDENT_PT:";
+const BLOCK_CAPTION_MARKER_PREFIX: &str = "MD_KING_BLOCK_CAPTION:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 const UNNUMBERED_HEADING_MARKER: &str = "MD_KING_UNNUMBERED_HEADING:";
 const ORDERED_LIST_MARKER: &str = "<!--MD_KING_ORDERED_LIST-->";
@@ -197,6 +198,7 @@ struct PageSettingsConfig {
     footer_enabled: bool,
     footer_text: String,
     footer_page_number_format: String,
+    page_number_start_at: String,
     footer_start_page: u32,
     toc_enabled: bool,
     toc_depth: String,
@@ -1078,7 +1080,7 @@ fn success_result(
     diagnostics.extend(runtime_diagnostics_from_warnings(&warnings));
     let page_settings = page_settings_config(&request);
     let toc_enabled = page_settings.as_ref().is_some_and(|settings| settings.toc_enabled);
-    let requested_field_update = FieldUpdateProvider::from_request(&request);
+    let requested_field_updates = FieldUpdateProvider::candidates_from_request(&request);
     let mut field_update_status = if toc_enabled {
         "pendingOnOpen"
     } else {
@@ -1088,33 +1090,59 @@ fn success_result(
     let mut field_update_provider = None;
     let mut result_message = "Pandoc 转换完成。".to_string();
 
-    if let Some(provider) = requested_field_update {
-        field_update_provider = Some(provider.label().to_string());
-        match update_fields_safely(&output_path, provider).and_then(|_| {
-            normalize_after_field_update(&output_path, &request, heading_numbering.as_ref())
-        }) {
-            Ok(()) => {
-                field_update_status = "updated".to_string();
-                result_message = format!("转换完成，目录和页码域已由 {} 更新。", provider.label());
-                warnings.push(format!(
-                    "已使用 {} 更新目录、页码和交叉引用，并重新固化表格、图片和压缩设置。",
-                    provider.label()
-                ));
+    if !requested_field_updates.is_empty() {
+        let mut update_errors = Vec::new();
+        let mut updated_provider = None;
+        for provider in requested_field_updates {
+            match update_fields_safely(&output_path, provider) {
+                Ok(()) => {
+                    updated_provider = Some(provider);
+                    break;
+                }
+                Err(error) => update_errors.push(format!("{}：{error}", provider.label())),
             }
-            Err(error) => {
-                field_update_status = "failed".to_string();
-                let message = format!(
-                    "DOCX 已生成，但目录、页码和交叉引用尚未由 {} 更新；已保留更新前的有效 DOCX（{}）：{error}",
-                    provider.label(),
-                    output_path.to_string_lossy()
-                );
-                warnings.push(message.clone());
-                diagnostics.push(diagnostic_without_line(
-                    "FIELD_UPDATE_FAILED",
-                    "error",
-                    message,
-                ));
+        }
+
+        if let Some(provider) = updated_provider {
+            field_update_provider = Some(provider.label().to_string());
+            match normalize_after_field_update(&output_path, &request, heading_numbering.as_ref()) {
+                Ok(()) => {
+                    field_update_status = "updated".to_string();
+                    result_message =
+                        format!("转换完成，目录和页码域已由 {} 更新。", provider.label());
+                    warnings.push(format!(
+                        "已使用 {} 更新目录、页码和交叉引用，并重新固化表格、图片和压缩设置。",
+                        provider.label()
+                    ));
+                }
+                Err(error) => {
+                    field_update_status = "failed".to_string();
+                    let message = format!(
+                        "DOCX 已由 {} 更新域，但更新后的结构校验失败（{}）：{error}",
+                        provider.label(),
+                        output_path.to_string_lossy()
+                    );
+                    warnings.push(message.clone());
+                    diagnostics.push(diagnostic_without_line(
+                        "FIELD_UPDATE_FAILED",
+                        "error",
+                        message,
+                    ));
+                }
             }
+        } else {
+            field_update_status = "failed".to_string();
+            let message = format!(
+                "DOCX 已生成，但所选办公软件未能更新目录、页码和交叉引用（{}）：{}",
+                output_path.to_string_lossy(),
+                update_errors.join("；")
+            );
+            warnings.push(message.clone());
+            diagnostics.push(diagnostic_without_line(
+                "FIELD_UPDATE_FAILED",
+                "error",
+                message,
+            ));
         }
     } else if toc_enabled {
         warnings.push(
@@ -1148,8 +1176,8 @@ fn success_result(
     let strict_field_update_failed =
         request.strict.unwrap_or(false) && field_update_status == "failed";
     if strict_field_update_failed {
-        result_message = "严格模式下域更新或更新后 DOCX 校验失败，已保留更新前的有效 DOCX。"
-            .to_string();
+        result_message =
+            "严格模式下域更新或更新后 DOCX 校验失败，已保留生成的 DOCX。".to_string();
     }
 
     if request.open_after_convert.unwrap_or(false) {
@@ -1354,19 +1382,29 @@ fn validate_export_structure(
             ));
         }
     }
-    if let Some(body_section) = sections.last() {
+    let page_start_section = if page_number_starts_at_document(page_settings) {
+        sections.first()
+    } else {
+        sections.last()
+    };
+    if let Some(page_start_section) = page_start_section {
         let expected = page_settings.footer_start_page.max(1);
         let page_start = Regex::new(r#"<w:pgNumType\b[^>]*w:start="(\d+)"[^>]*/>"#)
             .expect("valid exported page start regex")
-            .captures(body_section.as_str())
+            .captures(page_start_section.as_str())
             .and_then(|captures| captures.get(1))
             .and_then(|value| value.as_str().parse::<u32>().ok());
         if page_start != Some(expected) {
+            let section_name = if page_number_starts_at_document(page_settings) {
+                "文档首页节"
+            } else {
+                "正文节"
+            };
             diagnostics.push(diagnostic_without_line(
                 "BODY_PAGE_START_MISMATCH",
                 "error",
                 format!(
-                    "正文节页码起始值应为 {expected}，实际为 {}。",
+                    "{section_name}页码起始值应为 {expected}，实际为 {}。",
                     page_start
                         .map(|value| value.to_string())
                         .unwrap_or_else(|| "未设置".to_string())
@@ -2257,7 +2295,7 @@ enum FieldUpdateProvider {
 }
 
 impl FieldUpdateProvider {
-    fn from_request(request: &ConvertRequest) -> Option<Self> {
+    fn candidates_from_request(request: &ConvertRequest) -> Vec<Self> {
         match request
             .update_fields
             .as_deref()
@@ -2265,9 +2303,10 @@ impl FieldUpdateProvider {
             .map(str::to_ascii_lowercase)
             .as_deref()
         {
-            Some("word") => Some(Self::Word),
-            Some("wps") => Some(Self::Wps),
-            _ => None,
+            Some("word") => vec![Self::Word],
+            Some("wps") => vec![Self::Wps],
+            Some("auto") => vec![Self::Wps, Self::Word],
+            _ => Vec::new(),
         }
     }
 
@@ -2846,6 +2885,7 @@ fn default_page_settings_config() -> PageSettingsConfig {
         footer_enabled: true,
         footer_text: String::new(),
         footer_page_number_format: "page".to_string(),
+        page_number_start_at: "body".to_string(),
         footer_start_page: 1,
         toc_enabled: true,
         toc_depth: "1-3".to_string(),
@@ -2892,6 +2932,36 @@ fn migrate_default_report_style_baseline(config: &mut Value) {
                 style.insert("lineHeight".to_string(), Value::String("1.25".to_string()));
                 style.insert("beforeSpacing".to_string(), Value::from(10.0));
                 style.insert("afterSpacing".to_string(), Value::from(5.0));
+            }
+        }
+
+        if let Some(caption) = styles.get_mut("caption").and_then(Value::as_object_mut) {
+            let is_legacy = caption
+                .get("chineseFont")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "微软雅黑")
+                && caption
+                    .get("fontWeight")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value == "400")
+                && caption
+                    .get("lineHeight")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value == "1.5")
+                && caption
+                    .get("beforeSpacing")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (value - 12.0).abs() < f64::EPSILON)
+                && caption
+                    .get("afterSpacing")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (value - 6.0).abs() < f64::EPSILON);
+            if is_legacy {
+                caption.insert("chineseFont".to_string(), Value::String("宋体".to_string()));
+                caption.insert("fontWeight".to_string(), Value::String("700".to_string()));
+                caption.insert("lineHeight".to_string(), Value::String("1.25".to_string()));
+                caption.insert("beforeSpacing".to_string(), Value::from(0.0));
+                caption.insert("afterSpacing".to_string(), Value::from(0.0));
             }
         }
     }
@@ -3114,6 +3184,12 @@ fn page_settings_config_from_value(config: &Value) -> Option<PageSettingsConfig>
             .get("footerPageNumberFormat")
             .and_then(Value::as_str)
             .unwrap_or("page")
+            .to_string(),
+        page_number_start_at: settings
+            .get("pageNumberStartAt")
+            .and_then(Value::as_str)
+            .filter(|value| matches!(*value, "body" | "document"))
+            .unwrap_or("body")
             .to_string(),
         footer_start_page: read_page_number("footerStartPage", 1),
         toc_enabled: settings
@@ -3904,7 +3980,7 @@ fn preprocess_mermaid_for_runtime(
     markdown: &str,
     request: &ConvertRequest,
 ) -> MermaidPreprocessResult {
-    let format = request.mermaid_format.as_deref().unwrap_or("svg");
+    let format = mermaid_export_format(request);
     let scale = request.mermaid_scale.unwrap_or(4).clamp(1, 4);
     let mut result = preprocess_mermaid_for_word(
         markdown,
@@ -3913,9 +3989,15 @@ fn preprocess_mermaid_for_runtime(
         format,
     );
     if result.rendered > 0 {
-        result
-            .warnings
-            .push(format!("已将 {} 个 Mermaid 代码块渲染为矢量图或高清图片。", result.rendered));
+        let image_kind = if format == "png" {
+            "高清 PNG 图片"
+        } else {
+            "SVG（含 PNG 兼容回退）"
+        };
+        result.warnings.push(format!(
+            "已将 {} 个 Mermaid 代码块渲染为{}。",
+            result.rendered, image_kind
+        ));
     }
     if result.failed > 0 {
         result.warnings.push(format!(
@@ -3924,6 +4006,21 @@ fn preprocess_mermaid_for_runtime(
         ));
     }
     result
+}
+
+fn mermaid_export_format(request: &ConvertRequest) -> &'static str {
+    if request
+        .mermaid_format
+        .as_deref()
+        .is_some_and(|format| format.trim().eq_ignore_ascii_case("svg"))
+    {
+        "svg"
+    } else {
+        // Word/WPS 对 Mermaid SVG 中的样式、连线路径和 marker 支持并不一致。
+        // 默认使用浏览器完整栅格化后的高清 PNG，保证 DOCX 与预览一致；只有
+        // CLI 明确指定 SVG 时才保留旧的矢量输出能力。
+        "png"
+    }
 }
 
 fn default_heading_number_format(level: usize) -> &'static str {
@@ -4728,7 +4825,7 @@ fn remove_unnumbered_heading_attribute(content: &str) -> (String, bool) {
     let retained = values
         .split_whitespace()
         .filter(|value| {
-            let is_unnumbered = matches!(*value, ".unnumbered" | "unnumbered");
+            let is_unnumbered = matches!(*value, "-" | ".unnumbered" | "unnumbered");
             unnumbered |= is_unnumbered;
             !is_unnumbered
         })
@@ -4787,8 +4884,9 @@ fn is_conventional_unnumbered_heading(text: &str) -> bool {
 }
 
 fn preprocess_markdown_for_word(markdown: &str) -> String {
+    let normalized_captions = normalize_adjacent_bold_captions(markdown);
     let mut output = Vec::new();
-    let mut lines = markdown.lines();
+    let mut lines = normalized_captions.lines();
 
     while let Some(line) = lines.next() {
         if let Some(fence) = parse_markdown_fence_start(line) {
@@ -4832,14 +4930,135 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
             continue;
         }
 
+        if let Some(caption) = line.strip_prefix(BLOCK_CAPTION_MARKER_PREFIX) {
+            let target = output.iter().rev().find(|value| !value.trim().is_empty());
+            if target.is_some_and(|value| markdown_image_only_line(value)) {
+                if output.last().is_some_and(|value| !value.trim().is_empty()) {
+                    output.push(String::new());
+                }
+                output.push("::: {custom-style=\"Image Caption\"}".to_string());
+                output.push(caption.to_string());
+                output.push(":::".to_string());
+                output.push(String::new());
+                continue;
+            }
+            if target.is_some_and(|value| markdown_table_row_line(value)) {
+                output.push(format!("Table: {caption}"));
+                continue;
+            }
+            output.push(line.to_string());
+            continue;
+        }
+
         output.push(preprocess_wikilinks_for_word(line));
     }
 
     let mut prepared = output.join("\n");
-    if markdown.ends_with('\n') {
+    if normalized_captions.ends_with('\n') {
         prepared.push('\n');
     }
     prepared
+}
+
+/// 整行加粗只有与图片或表格直接相邻时才是题注。统一把前置、后置写法
+/// 归一为对象后的内部指令，后续转换链就不需要分别处理两种方向。
+fn normalize_adjacent_bold_captions(markdown: &str) -> String {
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut objects = Vec::<(usize, usize)>::new();
+    let mut index = 0;
+
+    while index < lines.len() {
+        if let Some(fence) = parse_markdown_fence_start(lines[index]) {
+            index += 1;
+            while index < lines.len() {
+                let closed = is_fence_end(lines[index], fence.marker, fence.length);
+                index += 1;
+                if closed {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if markdown_image_only_line(lines[index]) {
+            objects.push((index, index));
+            index += 1;
+            continue;
+        }
+
+        if index + 1 < lines.len()
+            && markdown_table_row_line(lines[index])
+            && markdown_table_delimiter_line(lines[index + 1])
+        {
+            let start = index;
+            index += 2;
+            while index < lines.len() && markdown_table_row_line(lines[index]) {
+                index += 1;
+            }
+            objects.push((start, index - 1));
+            continue;
+        }
+
+        index += 1;
+    }
+
+    let mut consumed = vec![false; lines.len()];
+    let mut insert_after = HashMap::<usize, String>::new();
+    for (start, end) in objects {
+        let after = end
+            .checked_add(1)
+            .filter(|candidate| *candidate < lines.len())
+            .filter(|candidate| !consumed[*candidate])
+            .and_then(|candidate| markdown_bold_caption(lines[candidate]).map(|caption| (candidate, caption)));
+        let before = start
+            .checked_sub(1)
+            .filter(|candidate| !consumed[*candidate])
+            .and_then(|candidate| markdown_bold_caption(lines[candidate]).map(|caption| (candidate, caption)));
+        if let Some((caption_line, caption)) = after.or(before) {
+            consumed[caption_line] = true;
+            insert_after.insert(end, caption.to_string());
+        }
+    }
+
+    let mut output = Vec::with_capacity(lines.len());
+    for (line_index, line) in lines.iter().enumerate() {
+        if !consumed[line_index] {
+            output.push((*line).to_string());
+        }
+        if let Some(caption) = insert_after.get(&line_index) {
+            output.push(format!("{BLOCK_CAPTION_MARKER_PREFIX}{caption}"));
+        }
+    }
+    let mut normalized = output.join("\n");
+    if markdown.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
+fn markdown_bold_caption(line: &str) -> Option<&str> {
+    line.trim()
+        .strip_prefix("**")?
+        .strip_suffix("**")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn markdown_image_only_line(line: &str) -> bool {
+    Regex::new(r"^\s*!\[[^\]]*\]\([^)]*\)(?:\{[^}]*\})?\s*$")
+        .expect("valid Markdown image-only regex")
+        .is_match(line)
+}
+
+fn markdown_table_row_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.contains('|') && (trimmed.starts_with('|') || trimmed.ends_with('|'))
+}
+
+fn markdown_table_delimiter_line(line: &str) -> bool {
+    Regex::new(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
+        .expect("valid Markdown table delimiter regex")
+        .is_match(line)
 }
 
 /// Pandoc 不识别 Obsidian 的 `[[目标|显示名]]`。导出时保留真实目标而不是
@@ -5951,7 +6170,17 @@ fn detect_adjacent_image_caption_diagnostics(markdown: &str) -> Vec<ConversionDi
         while next < lines.len() && lines[next].trim().is_empty() {
             next += 1;
         }
-        if next < lines.len() && explicit_caption.is_match(lines[next].trim()) {
+        let adjacent_bold_caption = index
+            .checked_sub(1)
+            .and_then(|previous| markdown_bold_caption(lines[previous]))
+            .is_some()
+            || lines
+                .get(index + 1)
+                .and_then(|line| markdown_bold_caption(line))
+                .is_some();
+        if adjacent_bold_caption
+            || (next < lines.len() && explicit_caption.is_match(lines[next].trim()))
+        {
             diagnostics.push(diagnostic(
                 "DUPLICATE_IMAGE_CAPTION",
                 format!(
@@ -6352,6 +6581,7 @@ fn apply_page_settings_to_document_xml_with_heading_numbering(
         heading_numbering,
         toc_page_numbers,
     );
+    let xml = normalize_cover_metadata_alignment(&xml);
 
     let section = Regex::new(
         r#"(?s)<w:sectPr\b[^>]*/>|<w:sectPr\b[^>]*>.*?</w:sectPr>"#,
@@ -6363,7 +6593,15 @@ fn apply_page_settings_to_document_xml_with_heading_numbering(
         return section
             .replace_all(&xml, |captures: &Captures| {
                 section_index += 1;
-                if section_index == section_count {
+                if page_number_starts_at_document(page_settings) {
+                    // 目录/封面通过分节换页时，只有第一个节显式重置页码；后续节
+                    // 继承连续页码。否则每个节都会从起始值重新计数，目录页码会全是 1。
+                    if section_index == 1 {
+                        normalize_section_page_settings(&captures[0], page_settings)
+                    } else {
+                        normalize_continuing_section_page_settings(&captures[0], page_settings)
+                    }
+                } else if section_index == section_count {
                     normalize_section_page_settings(&captures[0], page_settings)
                 } else {
                     normalize_front_section_page_settings(&captures[0], page_settings)
@@ -6974,6 +7212,126 @@ fn normalize_front_section_page_settings(
     )
 }
 
+fn normalize_cover_metadata_alignment(xml: &str) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
+        .expect("valid cover paragraph regex");
+    let title_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Title"[^>]*/>"#)
+        .expect("valid cover title style regex");
+    let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading[1-6]"[^>]*/>"#)
+        .expect("valid cover heading style regex");
+    let toc = Regex::new(
+        r#"(?s)<w:sdt\b[^>]*>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>"#,
+    )
+    .expect("valid cover TOC regex");
+
+    let toc_match = toc.find(xml);
+    let title = paragraph
+        .find_iter(xml)
+        .find(|paragraph| title_style.is_match(paragraph.as_str()))
+        .or_else(|| {
+            let toc_start = toc_match.as_ref()?.start();
+            paragraph.find_iter(&xml[..toc_start]).find(|paragraph| {
+                let paragraph = paragraph.as_str();
+                !paragraph_plain_text(paragraph).trim().is_empty()
+                    && !paragraph.contains("<w:sectPr")
+                    && !paragraph.contains("<w:drawing")
+            })
+        });
+    let Some(title) = title else {
+        return xml.to_string();
+    };
+    let suffix = &xml[title.end()..];
+    let boundary = [
+        toc.find(suffix).map(|value| value.start()),
+        paragraph
+            .find_iter(suffix)
+            .find(|paragraph| heading_style.is_match(paragraph.as_str()))
+            .map(|value| value.start()),
+    ]
+    .into_iter()
+    .flatten()
+    .min();
+    let Some(boundary) = boundary else {
+        return xml.to_string();
+    };
+
+    let metadata = paragraph
+        .replace_all(&suffix[..boundary], |captures: &Captures| {
+            let paragraph = &captures[0];
+            if paragraph_plain_text(paragraph).trim().is_empty()
+                || paragraph.contains("<w:sectPr")
+                || paragraph.contains("<w:drawing")
+            {
+                paragraph.to_string()
+            } else {
+                ensure_paragraph_alignment_only(paragraph, "left")
+            }
+        })
+        .to_string();
+    format!(
+        "{}{}{}",
+        &xml[..title.end()],
+        metadata,
+        &suffix[boundary..]
+    )
+}
+
+fn ensure_paragraph_alignment_only(paragraph: &str, align: &str) -> String {
+    let paragraph_properties =
+        Regex::new(r#"(?s)<w:pPr\b[^>]*/>|<w:pPr\b([^>]*)>(.*?)</w:pPr>"#)
+            .expect("valid cover paragraph properties regex");
+    if paragraph_properties.is_match(paragraph) {
+        return paragraph_properties
+            .replace(paragraph, |captures: &Captures| {
+                let properties = &captures[0];
+                let self_closing = Regex::new(r#"(?s)^<w:pPr\b([^>]*)/>$"#)
+                    .expect("valid self closing cover paragraph properties regex");
+                if let Some(self_closing) = self_closing.captures(properties) {
+                    let attrs = self_closing.get(1).map(|value| value.as_str()).unwrap_or("");
+                    return format!(r#"<w:pPr{attrs}><w:jc w:val="{align}" /></w:pPr>"#);
+                }
+                let jc = Regex::new(r#"<w:jc\b[^>]*/>"#)
+                    .expect("valid cover paragraph alignment regex");
+                jc.replace_all(properties, "")
+                    .replacen(
+                        "</w:pPr>",
+                        &format!(r#"<w:jc w:val="{align}" /></w:pPr>"#),
+                        1,
+                    )
+                    .to_string()
+            })
+            .to_string();
+    }
+
+    let paragraph_start = Regex::new(r#"<w:p\b[^>]*>"#).expect("valid cover paragraph start regex");
+    paragraph_start
+        .replace(
+            paragraph,
+            |captures: &Captures| format!(r#"{}<w:pPr><w:jc w:val="{align}" /></w:pPr>"#, &captures[0]),
+        )
+        .to_string()
+}
+
+fn page_number_starts_at_document(page_settings: &PageSettingsConfig) -> bool {
+    page_settings
+        .page_number_start_at
+        .trim()
+        .eq_ignore_ascii_case("document")
+}
+
+fn normalize_continuing_section_page_settings(
+    section_xml: &str,
+    page_settings: &PageSettingsConfig,
+) -> String {
+    Regex::new(r#"(?s)<w:pgNumType\b[^>]*/>"#)
+        .expect("valid continuing section page number regex")
+        .replace_all(
+            &normalize_section_page_settings(section_xml, page_settings),
+            "",
+        )
+        .to_string()
+}
+
 fn page_settings_has_header_footer(page_settings: &PageSettingsConfig) -> bool {
     page_settings_has_header(page_settings) || page_settings_needs_footer_part(page_settings)
 }
@@ -7323,6 +7681,7 @@ fn normalize_default_report_style_xml(
             normalize_body_style_xml(style_xml, true)
         }
         Some("Compact") => normalize_body_style_xml(style_xml, false),
+        Some("ImageCaption") => normalize_default_image_caption_style_xml(style_xml),
         Some("VerbatimChar") if markdown_features.inline_code => {
             normalize_inline_code_style_xml(style_xml)
         }
@@ -8596,6 +8955,13 @@ fn ensure_no_picture_compression(xml: &str) -> String {
         "<w:doNotAutoCompressPictures w:val=\"true\" /></w:settings>",
         1,
     )
+}
+
+fn normalize_default_image_caption_style_xml(style_xml: &str) -> String {
+    let paragraph_properties = r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="center" /><w:ind w:firstLine="0" /></w:pPr>"#;
+    let run_properties = r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" /><w:color w:val="334155" /><w:sz w:val="20" /><w:szCs w:val="20" /><w:b w:val="1" /><w:bCs w:val="1" />"#;
+    let style_xml = ensure_style_paragraph_properties_xml(style_xml, paragraph_properties);
+    ensure_style_run_properties(&style_xml, run_properties)
 }
 
 fn configure_picture_compression(xml: &str, prevent_compression: bool) -> String {
@@ -10128,7 +10494,7 @@ mod tests {
         heading_numbering_config_from_value, image_style_config_from_value,
         inspect_exported_images,
         mark_task_list_paragraphs, markdown_feature_config_from_value,
-        migrate_default_report_style_baseline,
+        migrate_default_report_style_baseline, mermaid_export_format,
         normalize_after_field_update,
         normalize_default_report_styles_xml, normalize_document_captions,
         normalize_document_images, normalize_document_xml, normalize_docx,
@@ -10148,7 +10514,7 @@ mod tests {
         table_column_widths,
         table_column_widths_for_xml, table_style_config_from_value,
         task_list_markers_from_numbering_xml, ConvertRequest, HeadingNumberingConfig,
-        validate_docx_package, validate_exported_tables, validate_xml_part, HeadingNumberingMode, HeadingTarget,
+        validate_docx_package, validate_export_structure, validate_exported_tables, validate_xml_part, HeadingNumberingMode, HeadingTarget,
         runtime_diagnostics_from_warnings, validate_updated_field_results, FieldUpdateProvider,
         MarkdownFeatureConfig,
         MermaidPreprocessResult, TocPageNumber,
@@ -10161,6 +10527,22 @@ mod tests {
     use std::path::Path;
     use zip::write::SimpleFileOptions;
     use zip::{ZipArchive, ZipWriter};
+
+    #[test]
+    fn defaults_word_mermaid_export_to_png_and_keeps_svg_opt_in() {
+        let default_request: ConvertRequest = serde_json::from_value(json!({
+            "input": "```mermaid\nflowchart TD\nA-->B\n```"
+        }))
+        .unwrap();
+        assert_eq!(mermaid_export_format(&default_request), "png");
+
+        let svg_request: ConvertRequest = serde_json::from_value(json!({
+            "input": "```mermaid\nflowchart TD\nA-->B\n```",
+            "mermaidFormat": "svg"
+        }))
+        .unwrap();
+        assert_eq!(mermaid_export_format(&svg_request), "svg");
+    }
 
     #[test]
     fn accepts_txt_input_and_stages_it_as_markdown() {
@@ -10311,7 +10693,7 @@ mod tests {
 
     #[test]
     fn reports_each_duplicate_image_caption_with_its_line() {
-        let markdown = "![网络图](network.png)\n\n::: {custom-style=\"Image Caption\"}\n**图1 网络图**\n:::";
+        let markdown = "![网络图](network.png)\n**图1 网络图**";
 
         let diagnostics = detect_adjacent_image_caption_diagnostics(markdown);
 
@@ -10768,6 +11150,38 @@ mod tests {
         assert!(script.contains("$app.UserControl=$false"));
         assert!(script.contains("FinalReleaseComObject"));
         assert!(!script.contains("GetActiveObject"));
+    }
+
+    #[test]
+    fn automatic_field_update_prefers_wps_and_falls_back_to_word() {
+        let request = ConvertRequest {
+            input: "# 标题".to_string(),
+            input_kind: Some("text".to_string()),
+            source_path: None,
+            output: None,
+            template_id: None,
+            open_after_convert: Some(false),
+            overwrite: Some(false),
+            conflict_strategy: None,
+            heading_numbering: None,
+            toc_page_numbers: None,
+            update_fields: Some("auto".to_string()),
+            toc_depth: None,
+            toc_position: None,
+            body_page_start: None,
+            front_page_number: None,
+            mermaid_format: None,
+            mermaid_scale: None,
+            image_policy: None,
+            no_compress_pictures: None,
+            lint_only: None,
+            strict: None,
+        };
+
+        assert_eq!(
+            FieldUpdateProvider::candidates_from_request(&request),
+            vec![FieldUpdateProvider::Wps, FieldUpdateProvider::Word]
+        );
     }
 
     #[test]
@@ -11645,6 +12059,23 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_default_image_caption_to_shared_word_style() {
+        let input = r#"<w:styles><w:style w:type="paragraph" w:styleId="ImageCaption"><w:name w:val="Image Caption" /><w:pPr><w:spacing w:before="240" w:after="120" w:line="360" w:lineRule="auto" /><w:jc w:val="left" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:sz w:val="20" /><w:b w:val="0" /></w:rPr></w:style></w:styles>"#;
+
+        let output = normalize_default_report_styles_xml(input, &default_markdown_feature_config());
+
+        assert!(output.contains(
+            r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" />"#
+        ));
+        assert!(output.contains(r#"<w:jc w:val="center" />"#));
+        assert!(output.contains(
+            r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" />"#
+        ));
+        assert!(output.contains(r#"<w:b w:val="1" /><w:bCs w:val="1" />"#));
+        assert!(!output.contains("微软雅黑"));
+    }
+
+    #[test]
     fn exports_each_explicit_text_line_with_the_paragraph_indent() {
         let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr><w:r><w:t>版本</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>日期</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>范围</w:t></w:r></w:p></w:body></w:document>"#;
 
@@ -12263,7 +12694,14 @@ mod tests {
             "styles": {
                 "heading-1": { "lineHeight": "1.35", "beforeSpacing": 18, "afterSpacing": 10 },
                 "heading-2": { "lineHeight": "1.35", "beforeSpacing": 18, "afterSpacing": 10 },
-                "heading-3": { "lineHeight": "1.35", "beforeSpacing": 12, "afterSpacing": 6 }
+                "heading-3": { "lineHeight": "1.35", "beforeSpacing": 12, "afterSpacing": 6 },
+                "caption": {
+                    "chineseFont": "微软雅黑",
+                    "fontWeight": "400",
+                    "lineHeight": "1.5",
+                    "beforeSpacing": 12,
+                    "afterSpacing": 6
+                }
             },
             "pageSettings": {
                 "tocTitleFontWeight": "400",
@@ -12282,6 +12720,12 @@ mod tests {
             assert_eq!(style.before_spacing, 10.0);
             assert_eq!(style.after_spacing, 5.0);
         }
+        let caption = document.image_caption.as_ref().unwrap();
+        assert_eq!(caption.text.chinese_font, "宋体");
+        assert!(caption.text.bold);
+        assert_eq!(caption.text.line_height, 1.25);
+        assert_eq!(caption.text.before_spacing, 0.0);
+        assert_eq!(caption.text.after_spacing, 0.0);
         let page = page_settings_config_from_value(&config).unwrap();
         assert_eq!(page.toc_title_font_weight, "700");
         assert_eq!(page.toc_title_line_height, 1.25);
@@ -12482,6 +12926,62 @@ mod tests {
     }
 
     #[test]
+    fn keeps_page_numbers_continuous_when_started_from_document_first_page() {
+        let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Title" /></w:pPr><w:r><w:t>封面标题</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>正文标题</w:t></w:r></w:p><w:sectPr /></w:body></w:document>"#;
+        let settings = page_settings_config_from_value(&json!({
+            "pageSettings": {
+                "footerEnabled": true,
+                "footerPageNumberFormat": "page",
+                "footerStartPage": 2,
+                "pageNumberStartAt": "document",
+                "tocEnabled": true
+            }
+        }))
+        .unwrap();
+
+        let output = apply_page_settings_to_document_xml(input, Some(&settings));
+        let section = Regex::new(
+            r#"(?s)<w:sectPr\b[^>]*/>|<w:sectPr\b[^>]*>.*?</w:sectPr>"#,
+        )
+        .unwrap();
+        let sections = section
+            .find_iter(&output)
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(settings.page_number_start_at, "document");
+        assert_eq!(sections.len(), 3, "{output}");
+        assert!(sections[0].contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
+        assert!(sections[0].contains(r#"<w:pgNumType w:start="2" />"#));
+        assert!(sections[1].contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
+        assert!(sections[2].contains(r#"<w:footerReference w:type="default" r:id="rIdMdKingFooter" />"#));
+        assert!(!sections[1].contains("pgNumType"));
+        assert!(!sections[2].contains("pgNumType"));
+
+        let directory = std::env::temp_dir().join(format!(
+            "md-king-document-page-start-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let docx_path = directory.join("document-page-start.docx");
+        let file = fs::File::create(&docx_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("word/document.xml", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(output.as_bytes()).unwrap();
+        writer.finish().unwrap();
+
+        let diagnostics = validate_export_structure(&docx_path, Some(&settings), false);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|item| item.code != "BODY_PAGE_START_MISMATCH")
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn orders_cover_toc_and_body_into_independent_sections() {
         let input = r#"<w:document><w:body><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>目录</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin" /><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate" /><w:fldChar w:fldCharType="end" /></w:r></w:p></w:sdtContent></w:sdt><w:bookmarkStart w:id="1" w:name="报告" /><w:p><w:pPr><w:pStyle w:val="Title" /></w:pPr><w:r><w:t>研究报告</w:t></w:r></w:p><w:p><w:r><w:t>文档状态：评审稿</w:t></w:r></w:p><w:bookmarkStart w:id="2" w:name="摘要" /><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>摘要</w:t></w:r></w:p><w:bookmarkEnd w:id="2" /><w:bookmarkStart w:id="3" w:name="研究概述" /><w:p><w:pPr><w:pStyle w:val="Heading1" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr></w:pPr><w:r><w:t>研究概述</w:t></w:r></w:p><w:bookmarkEnd w:id="3" /><w:bookmarkEnd w:id="1" /><w:sectPr /></w:body></w:document>"#;
         let settings = default_page_settings_config();
@@ -12523,6 +13023,75 @@ mod tests {
         let toc_xml = &output[toc..toc_end];
         assert!(toc_xml.contains(r#"PAGEREF &quot;研究概述&quot; \h"#));
         assert!(toc_xml.contains("<w:t>1</w:t>"));
+    }
+
+    #[test]
+    fn keeps_cover_metadata_left_aligned_without_changing_body_justification() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Title" /><w:jc w:val="center" /></w:pPr><w:r><w:t>研究报告</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="FirstParagraph" /><w:ind w:firstLine="480" /><w:jc w:val="both" /></w:pPr><w:r><w:t>文档状态：研究报告修订稿</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>编制日期：2026年8月</w:t></w:r><w:r><w:br /></w:r><w:r><w:t>适用阶段：仿真测试与上线验证</w:t></w:r></w:p><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents" /></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOCHeading" /></w:pPr><w:r><w:t>目录</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Heading1" /></w:pPr><w:r><w:t>摘要</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="BodyText" /><w:jc w:val="both" /></w:pPr><w:r><w:t>正文仍然使用两端对齐。</w:t></w:r></w:p><w:sectPr /></w:body></w:document>"#;
+        let settings = default_page_settings_config();
+
+        let output = apply_page_settings_to_document_xml(input, Some(&settings));
+        let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#).unwrap();
+        let metadata = paragraph
+            .find_iter(&output)
+            .find(|paragraph| paragraph.as_str().contains("文档状态：研究报告修订稿"))
+            .unwrap()
+            .as_str();
+        let body = paragraph
+            .find_iter(&output)
+            .find(|paragraph| paragraph.as_str().contains("正文仍然使用两端对齐"))
+            .unwrap()
+            .as_str();
+
+        assert!(metadata.contains(r#"<w:jc w:val="left" />"#));
+        assert!(!metadata.contains(r#"<w:jc w:val="both" />"#));
+        assert!(metadata.contains(r#"<w:ind w:firstLine="480" />"#));
+        assert!(body.contains(r#"<w:jc w:val="both" />"#));
+
+        let wps_metadata = metadata.replace(
+            r#"<w:jc w:val="left" />"#,
+            r#"<w:jc w:val="both" />"#,
+        );
+        let wps_saved = output.replacen(metadata, &wps_metadata, 1);
+        let normalized_again = apply_page_settings_to_document_xml(&wps_saved, Some(&settings));
+        let metadata_again = paragraph
+            .find_iter(&normalized_again)
+            .find(|paragraph| paragraph.as_str().contains("文档状态：研究报告修订稿"))
+            .unwrap()
+            .as_str();
+        assert!(metadata_again.contains(r#"<w:jc w:val="left" />"#));
+        assert!(!metadata_again.contains(r#"<w:jc w:val="both" />"#));
+
+        let wps_numeric_styles = normalized_again
+            .replace(r#"w:val="Title""#, r#"w:val="20""#)
+            .replace(r#"w:val="FirstParagraph""#, r#"w:val="29""#)
+            .replace(r#"w:val="Heading1""#, r#"w:val="17""#)
+            .replace(
+                r#"<w:jc w:val="left" />"#,
+                r#"<w:jc w:val="both" />"#,
+            );
+        let normalized_numeric_styles =
+            apply_page_settings_to_document_xml(&wps_numeric_styles, Some(&settings));
+        let numeric_metadata = paragraph
+            .find_iter(&normalized_numeric_styles)
+            .find(|paragraph| paragraph.as_str().contains("文档状态：研究报告修订稿"))
+            .unwrap()
+            .as_str();
+        let numeric_title = paragraph
+            .find_iter(&normalized_numeric_styles)
+            .find(|paragraph| paragraph.as_str().contains("研究报告"))
+            .unwrap()
+            .as_str();
+        let numeric_body = paragraph
+            .find_iter(&normalized_numeric_styles)
+            .find(|paragraph| paragraph.as_str().contains("正文仍然使用两端对齐"))
+            .unwrap()
+            .as_str();
+
+        assert!(numeric_metadata.contains(r#"<w:jc w:val="left" />"#));
+        assert!(!numeric_metadata.contains(r#"<w:jc w:val="both" />"#));
+        assert!(numeric_title.contains(r#"<w:jc w:val="center" />"#));
+        assert!(numeric_body.contains(r#"<w:jc w:val="both" />"#));
     }
 
     #[test]
@@ -12680,6 +13249,17 @@ mod tests {
     }
 
     #[test]
+    fn converts_adjacent_bold_captions_for_images_and_tables() {
+        let input = "**图2-1 前置图片题注**\n![网络结构](network.png)\n\n| 设备 | 状态 |\n| --- | --- |\n| PLC | 正常 |\n**表2-1 后置表格题注**\n\n![普通图片](plain.png)\n\n**普通加粗正文**\n";
+        let output = preprocess_markdown_for_word(input);
+
+        assert!(output.contains("::: {custom-style=\"Image Caption\"}\n图2-1 前置图片题注\n:::"));
+        assert!(output.contains("Table: 表2-1 后置表格题注"));
+        assert!(output.contains("**普通加粗正文**"));
+        assert!(!output.contains("MD_KING_BLOCK_CAPTION:"));
+    }
+
+    #[test]
     fn exports_obsidian_wikilinks_as_their_actual_addresses() {
         let input = "外链 [[https://example.com/docs|技术说明]]\n文档 [[笔记/说明.md#安装|安装说明]]\n嵌入 ![[图片.png]]\n行内代码 `[[保留.md|保留]]`\n转义 \\[[保留.md|保留]]\n";
         let output = preprocess_markdown_for_word(input);
@@ -12768,6 +13348,20 @@ mod tests {
         assert!(output.contains(r#"<w:ilvl w:val="1" /><w:numId w:val="9100" />"#));
         assert!(!output.contains("<w:t>1 研究概述</w:t>"));
         assert!(!output.contains("<w:t>1.1 研究背景</w:t>"));
+    }
+
+    #[test]
+    fn supports_pandoc_short_unnumbered_heading_attribute() {
+        let markdown = "## 致谢 {-}\n\n## 1 正文章节\n";
+        let prepared = preprocess_heading_numbering(
+            markdown,
+            HeadingNumberingMode::Word,
+            &super::default_built_in_heading_mappings(),
+        );
+
+        assert!(prepared.contains("## MD_KING_UNNUMBERED_HEADING:致谢"));
+        assert!(prepared.contains("## 正文章节"));
+        assert!(!prepared.contains("{-}"));
     }
 
     #[test]

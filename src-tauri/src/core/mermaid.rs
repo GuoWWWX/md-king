@@ -32,10 +32,11 @@ struct MermaidBlock {
     attributes: MermaidAttributes,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct MermaidAttributes {
     width_percent: Option<u32>,
     compact: bool,
+    caption: Option<String>,
 }
 
 /// Render Mermaid fences before Pandoc sees the Markdown. This is deliberately
@@ -107,7 +108,7 @@ where
             continue;
         }
 
-        match render(&block.source, block_number, block.attributes) {
+        match render(&block.source, block_number, block.attributes.clone()) {
             Ok(image_path) => {
                 let markdown_path = encode_markdown_image_path(&image_path);
                 if let Some(width) = block.attributes.width_percent {
@@ -116,6 +117,11 @@ where
                     ));
                 } else {
                     output.push_str(&format!("![]({markdown_path})\n\n"));
+                }
+                if let Some(caption) = block.attributes.caption.as_deref() {
+                    output.push_str("::: {custom-style=\"Image Caption\"}\n");
+                    output.push_str(caption);
+                    output.push_str("\n:::\n\n");
                 }
                 if warn_png_fallback
                     && image_path
@@ -168,6 +174,7 @@ where
 fn find_mermaid_blocks(markdown: &str) -> Vec<MermaidBlock> {
     let lines = lines_with_offsets(markdown);
     let mut blocks = Vec::new();
+    let mut consumed_caption_lines = HashSet::new();
     let mut index = 0;
 
     while index < lines.len() {
@@ -190,20 +197,81 @@ fn find_mermaid_blocks(markdown: &str) -> Vec<MermaidBlock> {
         }
 
         if let Some((close_start, close_end)) = found_end {
+            let mut attributes = attributes;
+            let mut block_start = line_start;
+            let mut block_end = close_end;
+            let mut next_index = closing + 1;
+            if let Some((caption, caption_start)) = preceding_markdown_caption(&lines, index)
+                .filter(|_| index.checked_sub(1).is_some_and(|line| !consumed_caption_lines.contains(&line)))
+            {
+                if attributes.caption.is_none()
+                    || attributes.caption.as_deref() == Some(caption.as_str())
+                {
+                    attributes.caption.get_or_insert(caption);
+                    block_start = caption_start;
+                    consumed_caption_lines.insert(index - 1);
+                }
+            }
+            if let Some((caption, caption_end, caption_line)) =
+                following_markdown_caption(&lines, closing)
+            {
+                if attributes.caption.is_none()
+                    || attributes.caption.as_deref() == Some(caption.as_str())
+                {
+                    attributes.caption.get_or_insert(caption);
+                    block_end = caption_end;
+                    next_index = caption_line + 1;
+                    consumed_caption_lines.insert(caption_line);
+                }
+            }
             blocks.push(MermaidBlock {
-                start: line_start,
-                end: close_end,
+                start: block_start,
+                end: block_end,
                 start_line: index + 1,
                 source: markdown[source_start..close_start].to_string(),
                 attributes,
             });
-            index = closing + 1;
+            index = next_index;
         } else {
             index += 1;
         }
     }
 
     blocks
+}
+
+fn preceding_markdown_caption(
+    lines: &[(usize, usize, &str)],
+    opening_line: usize,
+) -> Option<(String, usize)> {
+    let (line_start, _, line) = *lines.get(opening_line.checked_sub(1)?)?;
+    markdown_caption_text(line).map(|caption| (caption.to_string(), line_start))
+}
+
+fn following_markdown_caption(
+    lines: &[(usize, usize, &str)],
+    closing_line: usize,
+) -> Option<(String, usize, usize)> {
+    let candidate = closing_line + 1;
+    let (_, line_end, line) = *lines.get(candidate)?;
+    if let Some(caption) = markdown_caption_text(line) {
+        return Some((caption.to_string(), line_end, candidate));
+    }
+    None
+}
+
+fn markdown_caption_text(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if let Some(caption) = trimmed
+        .strip_prefix("**")
+        .and_then(|value| value.strip_suffix("**"))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(caption);
+    }
+
+    None
 }
 
 fn lines_with_offsets(markdown: &str) -> Vec<(usize, usize, &str)> {
@@ -249,12 +317,32 @@ fn mermaid_fence_start(line: &str) -> Option<(char, usize, MermaidAttributes)> {
     let compact = regex::Regex::new(r#"(?i)\blayout\s*=\s*[\"']?compact(?:[\"'\s}]|$)"#)
         .expect("valid Mermaid layout regex")
         .is_match(rest);
+    let caption = regex::Regex::new(
+        r#"(?i)\bcaption\s*=\s*(?:\"((?:\\.|[^\"])*)\"|'((?:\\.|[^'])*)'|([^\s}]+))"#,
+    )
+    .expect("valid Mermaid caption regex")
+    .captures(rest)
+    .and_then(|captures| {
+        captures
+            .get(1)
+            .or_else(|| captures.get(2))
+            .or_else(|| captures.get(3))
+    })
+    .map(|value| {
+        regex::Regex::new(r#"\\([\\\"'])"#)
+            .expect("valid Mermaid caption escape regex")
+            .replace_all(value.as_str(), "$1")
+            .trim()
+            .to_string()
+    })
+    .filter(|value| !value.is_empty());
     Some((
         marker,
         fence_len,
         MermaidAttributes {
             width_percent,
             compact,
+            caption,
         },
     ))
 }
@@ -346,7 +434,7 @@ fn render_mermaid_image_once(
         let image_path = work_dir.join("diagram.png");
         let inspect_profile = work_dir.join("profile-inspect");
         let capture_profile = work_dir.join("profile-capture");
-        let html = renderer_html(mermaid_script, source, compact);
+        let html = renderer_html(mermaid_script, source, compact, prefer_svg);
         fs::write(&html_path, html)
             .map_err(|error| format!("阶段=页面准备；写入 Mermaid 渲染页面失败：{error}"))?;
 
@@ -399,7 +487,10 @@ fn render_mermaid_image_once(
             if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
                 if let Ok(svg_bytes) = BASE64_STANDARD.decode(svg_base64) {
                     if let Ok(svg) = String::from_utf8(svg_bytes) {
-                        if validate_svg(&svg) {
+                        if validate_svg(&svg)
+                            && svg_has_office_compatible_edges(&svg)
+                            && svg_has_office_compatible_text_rows(&svg)
+                        {
                             fs::write(&svg_path, svg.as_bytes())
                                 .map_err(|error| {
                                     format!("阶段=SVG写入；写入 Mermaid SVG 失败：{error}")
@@ -464,7 +555,12 @@ fn mermaid_stage_label(stage: &str) -> &'static str {
     }
 }
 
-fn renderer_html(mermaid_script: &Path, source: &str, compact: bool) -> String {
+fn renderer_html(
+    mermaid_script: &Path,
+    source: &str,
+    compact: bool,
+    prefer_svg: bool,
+) -> String {
     let source_json = serde_json::to_string(source)
         .unwrap_or_else(|_| "\"\"".to_string())
         .replace('<', "\\u003c")
@@ -473,6 +569,10 @@ fn renderer_html(mermaid_script: &Path, source: &str, compact: bool) -> String {
     let script_url = file_url(mermaid_script);
     let node_spacing = if compact { 20 } else { 50 };
     let rank_spacing = if compact { 25 } else { 50 };
+    // PNG 由浏览器直接截图，保留 Mermaid 原生 HTML 标签可获得最完整的
+    // Markdown 标签、自动换行和水平/垂直居中效果。仅在显式导出 SVG 时关闭
+    // HTML 标签，避免 Word/WPS 无法显示 foreignObject。
+    let html_labels = if prefer_svg { "false" } else { "true" };
     format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;height:max-content}}
@@ -483,7 +583,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:false,fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',flowchart:{{htmlLabels:false,useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}}}});
+    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:{html_labels},fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',flowchart:{{htmlLabels:{html_labels},useMaxWidth:false,wrappingWidth:180,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}}}});
     document.body.dataset.stage='syntax';
     await mermaid.parse(source);
     document.body.dataset.stage='layout';
@@ -497,6 +597,10 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     width=Math.max(1,Math.ceil(width)); height=Math.max(1,Math.ceil(height));
     svg.setAttribute('width',String(width)); svg.setAttribute('height',String(height));
     svg.style.width=width+'px'; svg.style.height=height+'px';
+    // Office 兼容处理会重写多行文本坐标。它只应影响序列化出的 SVG，
+    // 不能污染随后用于 PNG 截图的 Mermaid 原生 DOM，否则多行文字会贴到
+    // 节点上边缘。先保留原生副本，序列化完成后再放回页面截图。
+    const pngSvg=svg.cloneNode(true);
     const officeSvgProperties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linecap','stroke-linejoin','opacity','color','font-family','font-size','font-weight','font-style','text-anchor','dominant-baseline'];
     const inlineOfficeRule=rule=>{{
       if(rule.cssRules){{for(const child of rule.cssRules) inlineOfficeRule(child);return;}}
@@ -524,10 +628,41 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
       }}
       if(!element.getAttribute('style')) element.removeAttribute('style');
     }}
+    const normalizeOfficeTextRows=text=>{{
+      const rows=Array.from(text.children).filter(child=>child.tagName.toLowerCase()==='tspan'&&child.classList.contains('row'));
+      if(rows.length===0) return;
+      const fontSize=parseFloat(getComputedStyle(text).fontSize)||16;
+      const lineHeight=fontSize*1.25;
+      const baseline=fontSize*0.35;
+      text.setAttribute('y','0');
+      rows.forEach((row,index)=>{{
+        const content=row.textContent||'';
+        row.textContent=content;
+        row.setAttribute('x','0');
+        row.setAttribute('y',String((index-(rows.length-1)/2)*lineHeight+baseline));
+        row.removeAttribute('dy');
+      }});
+    }};
+    for(const text of svg.querySelectorAll('text')) normalizeOfficeTextRows(text);
+    for(const element of svg.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse,text,tspan')){{
+      const computed=getComputedStyle(element);
+      for(const property of officeSvgProperties){{
+        const current=element.getAttribute(property);
+        if(current&&current!=='inherit'&&current!=='currentColor'&&!current.includes('var(')) continue;
+        const value=computed.getPropertyValue(property).trim();
+        if(value&&value!=='normal') element.setAttribute(property,value);
+      }}
+    }}
+    for(const edge of svg.querySelectorAll('path.flowchart-link,.edgePath path')){{
+      if(!edge.hasAttribute('stroke')) edge.setAttribute('stroke','#333333');
+      if(!edge.hasAttribute('stroke-width')) edge.setAttribute('stroke-width','1px');
+      if(!edge.hasAttribute('fill')) edge.setAttribute('fill','none');
+    }}
     document.body.dataset.stage='serialize';
     const serialized=new XMLSerializer().serializeToString(svg);
     const bytes=new TextEncoder().encode(serialized); let binary='';
     for(let offset=0;offset<bytes.length;offset+=32768) binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
+    host.replaceChildren(pngSvg);
     document.documentElement.style.width=width+'px'; document.documentElement.style.height=height+'px';
     document.body.style.width=width+'px'; document.body.style.height=height+'px';
     document.body.dataset.width=String(width); document.body.dataset.height=String(height); document.body.dataset.svgBase64=btoa(binary); document.body.dataset.state='ready';
@@ -672,6 +807,53 @@ fn run_browser(browser: &Path, args: &[String]) -> Result<Output, String> {
     }
 }
 
+fn svg_has_office_compatible_edges(svg: &str) -> bool {
+    let edge = regex::Regex::new(
+        r#"(?i)<path\b[^>]*\bclass="[^"]*\bflowchart-link\b[^"]*"[^>]*>"#,
+    )
+    .expect("valid Mermaid edge regex");
+    let stroke = regex::Regex::new(r#"(?i)\bstroke="([^"]+)""#)
+        .expect("valid Mermaid edge stroke regex");
+
+    let compatible = edge.find_iter(svg).all(|edge| {
+        stroke
+            .captures(edge.as_str())
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str().trim().to_ascii_lowercase())
+            .is_some_and(|value| {
+                value != "none"
+                    && value != "transparent"
+                    && value != "rgba(0, 0, 0, 0)"
+                    && value != "rgba(0,0,0,0)"
+            })
+    });
+    compatible
+}
+
+fn svg_has_office_compatible_text_rows(svg: &str) -> bool {
+    let nested_row = regex::Regex::new(
+        r#"(?is)<tspan\b[^>]*\bclass="[^"]*\brow\b[^"]*"[^>]*>\s*<tspan\b"#,
+    )
+    .expect("valid nested Mermaid text row regex");
+    if nested_row.is_match(svg) {
+        return false;
+    }
+
+    let row = regex::Regex::new(
+        r#"(?i)<tspan\b[^>]*\bclass="[^"]*\brow\b[^"]*"[^>]*>"#,
+    )
+    .expect("valid Mermaid text row regex");
+    let x = regex::Regex::new(r#"(?i)\bx="[^"]+""#).expect("valid Mermaid text x regex");
+    let y = regex::Regex::new(r#"(?i)\by="[^"]+""#).expect("valid Mermaid text y regex");
+    let dy = regex::Regex::new(r#"(?i)\bdy="[^"]+""#).expect("valid Mermaid text dy regex");
+
+    let compatible = row.find_iter(svg).all(|row| {
+        let row = row.as_str();
+        x.is_match(row) && y.is_match(row) && !dy.is_match(row)
+    });
+    compatible
+}
+
 fn collect_browser_output(
     status: ExitStatus,
     stdout_reader: thread::JoinHandle<Vec<u8>>,
@@ -801,6 +983,10 @@ mod tests {
     class C production;
     class E,F,G,H action;
 "#;
+    const LONG_CHINESE_LABEL_LR: &str =
+        "flowchart LR\n  A[核心生产业务交换机] --> B[操作员站、工程师站与生产服务器]\n";
+    const LONG_CHINESE_LABEL_TB: &str =
+        "flowchart TB\n  A[安全管理平台] --> B[跨安全域访问控制、审计记录与异常处置服务器]\n";
 
     #[test]
     fn replaces_case_insensitive_mermaid_fences_and_keeps_other_code() {
@@ -885,12 +1071,16 @@ mod tests {
 
     #[test]
     fn supports_fence_attributes_and_ignores_unclosed_blocks() {
-        let markdown = "```mermaid {width=80% layout=compact}\ngraph LR\n A-->B\n```\n\n```mermaid\nunclosed";
+        let markdown = "```mermaid {width=80% layout=compact caption=\"图9-1 商密服务异常下的受控处置流程\"}\ngraph LR\n A-->B\n```\n\n```mermaid\nunclosed";
         let blocks = find_mermaid_blocks(markdown);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].source, "graph LR\n A-->B\n");
         assert_eq!(blocks[0].attributes.width_percent, Some(80));
         assert!(blocks[0].attributes.compact);
+        assert_eq!(
+            blocks[0].attributes.caption.as_deref(),
+            Some("图9-1 商密服务异常下的受控处置流程")
+        );
 
         let result = replace_mermaid_fences(markdown, true, |_source, _index, _attributes| {
             Ok(PathBuf::from(r"C:\Temp\diagram.svg"))
@@ -898,6 +1088,40 @@ mod tests {
         assert!(result.markdown.contains(
             r#"![](C:/Temp/diagram.svg "MD_KING_MERMAID_WIDTH_80"){ width=80% }"#
         ));
+        assert!(result.markdown.contains(
+            "::: {custom-style=\"Image Caption\"}\n图9-1 商密服务异常下的受控处置流程\n:::"
+        ));
+        assert!(!result.markdown.contains("caption="));
+    }
+
+    #[test]
+    fn converts_adjacent_bold_captions_before_and_after_without_duplicate_text() {
+        let markdown = "**图9-1 前置题注**\n```mermaid\ngraph LR\n A-->B\n```\n\n正文\n\n```mermaid\ngraph TB\n C-->D\n```\n**图9-2 后置题注**\n\n结尾";
+        let blocks = find_mermaid_blocks(markdown);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(
+            blocks[0].attributes.caption.as_deref(),
+            Some("图9-1 前置题注")
+        );
+        assert_eq!(
+            blocks[1].attributes.caption.as_deref(),
+            Some("图9-2 后置题注")
+        );
+
+        let result = replace_mermaid_fences(markdown, false, |_source, _index, _attributes| {
+            Ok(PathBuf::from(r"C:\Temp\diagram.png"))
+        });
+        assert_eq!(result.markdown.matches("图9-1 前置题注").count(), 1);
+        assert_eq!(result.markdown.matches("图9-2 后置题注").count(), 1);
+        assert!(result.markdown.ends_with("\n\n结尾"));
+    }
+
+    #[test]
+    fn does_not_attach_bold_text_across_a_blank_line() {
+        let markdown = "```mermaid\ngraph LR\n A-->B\n```\n\n**普通加粗正文**";
+        let blocks = find_mermaid_blocks(markdown);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].attributes.caption, None);
     }
 
     #[test]
@@ -906,11 +1130,13 @@ mod tests {
             Path::new(r"C:\runtime\mermaid.min.js"),
             "A[</script>]",
             true,
+            true,
         );
         assert!(!html.contains("A[</script>]"));
         assert!(html.contains("\\u003c/script\\u003e"));
         assert!(html.contains("securityLevel:'strict'"));
         assert!(html.contains("htmlLabels:false"));
+        assert!(html.contains("wrappingWidth:180"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));
         assert!(html.contains("dataset.stage='syntax'"));
@@ -921,6 +1147,10 @@ mod tests {
         assert!(html.contains("inlineOfficeRule=rule=>"));
         assert!(html.contains("document.querySelectorAll(rule.selectorText)"));
         assert!(html.contains("svg.querySelectorAll('style')"));
+        assert!(html.contains("getComputedStyle(element)"));
+        assert!(html.contains("normalizeOfficeTextRows=text=>"));
+        assert!(html.contains("row.removeAttribute('dy')"));
+        assert!(html.contains("path.flowchart-link,.edgePath path"));
         assert!(!html.contains("for(const sheet of document.styleSheets)"));
         assert!(html.contains("element.setAttribute(property,value)"));
         assert!(html.contains("element.style.removeProperty(property)"));
@@ -937,11 +1167,53 @@ mod tests {
             Path::new(r"C:\runtime\mermaid.min.js"),
             CLASSDEF_BRANCHING_FLOWCHART,
             false,
+            false,
         );
         assert!(html.contains("classDef crypto"));
         assert!(html.contains("classDef action"));
         assert!(html.contains("flowchart LR"));
+        assert!(html.contains("htmlLabels:true"));
+        assert!(html.contains("const pngSvg=svg.cloneNode(true)"));
+        assert!(html.contains("host.replaceChildren(pngSvg)"));
         assert!(html.contains("svg.querySelectorAll('style')"));
+    }
+
+    #[test]
+    fn rejects_svg_edges_that_rely_only_on_embedded_css() {
+        let css_only = r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.flowchart-link{stroke:#333;fill:none}</style><path class="flowchart-link" d="M0 0 L10 10" /></svg>"#;
+        let inlined = r#"<svg xmlns="http://www.w3.org/2000/svg"><path class="flowchart-link" d="M0 0 L10 10" stroke="rgb(51, 51, 51)" stroke-width="1px" fill="none" /></svg>"#;
+
+        assert!(!svg_has_office_compatible_edges(css_only));
+        assert!(svg_has_office_compatible_edges(inlined));
+    }
+
+    #[test]
+    fn keeps_long_chinese_labels_wrapped_for_lr_and_tb_layouts() {
+        for (source, label) in [
+            (LONG_CHINESE_LABEL_LR, "操作员站、工程师站与生产服务器"),
+            (LONG_CHINESE_LABEL_TB, "跨安全域访问控制、审计记录与异常处置服务器"),
+        ] {
+            let html = renderer_html(
+                Path::new(r"C:\runtime\mermaid.min.js"),
+                source,
+                false,
+                false,
+            );
+            assert!(html.contains("wrappingWidth:180"));
+            assert!(html.contains("htmlLabels:true"));
+            assert!(html.contains("normalizeOfficeTextRows=text=>"));
+            assert!(html.contains("host.replaceChildren(pngSvg)"));
+            assert!(html.contains(label));
+        }
+    }
+
+    #[test]
+    fn rejects_nested_or_relative_mermaid_text_rows_for_office() {
+        let nested = r#"<svg><text><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan class="text-inner-tspan">操作员站、工程师站与生产服务器</tspan></tspan></text></svg>"#;
+        let flattened = r#"<svg><text y="0"><tspan class="text-outer-tspan row" x="0" y="-4.4">操作员站、工程师站与生产</tspan><tspan class="text-outer-tspan row" x="0" y="15.6">服务器</tspan></text></svg>"#;
+
+        assert!(!svg_has_office_compatible_text_rows(nested));
+        assert!(svg_has_office_compatible_text_rows(flattened));
     }
 
     #[test]

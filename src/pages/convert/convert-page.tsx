@@ -1220,6 +1220,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         templateId,
         openAfterConvert: appConfig?.openAfterConvert ?? true,
         conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
+        // DOCX 的目录页码必须由办公软件完成分页后更新；自动模式会优先使用
+        // WPS，并在 WPS 不可用时回退到 Word。
+        updateFields: "auto",
         tocPageNumbers: previewOutline.map(({ id, page }) => ({ anchorId: id, page })),
       });
       const isCurrentConversion = conversionVersion === conversionVersionRef.current;
@@ -1297,6 +1300,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           templateId,
           openAfterConvert: false,
           conflictStrategy: appConfig?.defaultConflictStrategy ?? "overwrite",
+          updateFields: "auto",
         });
         results.push(result);
       }
@@ -1837,7 +1841,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       <div
         ref={splitPaneRef}
         className="grid min-h-0 min-w-0 gap-0 overflow-hidden"
-        style={{ gridTemplateColumns: layoutTooNarrow || !isDocumentWorkspace ? "minmax(0,1fr)" : showPreviewPanel ? `minmax(${editorMinWidth}px,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` : "minmax(0,1fr) 5px" }}
+        style={{ gridTemplateColumns: layoutTooNarrow || !isDocumentWorkspace || !showPreviewPanel ? "minmax(0,1fr)" : `minmax(${editorMinWidth}px,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` }}
         >
           <div className="min-h-0 min-w-0 overflow-hidden">
             {isWorkspacePage ? (
@@ -1936,16 +1940,6 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
               {renderConvertFooter("col-span-full shrink-0", "responsive")}
             </div>
           </>
-        ) : isDocumentWorkspace && !layoutTooNarrow ? (
-          <div className="relative z-20 min-h-0 w-0">
-            <div
-              className="group absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 cursor-col-resize touch-none"
-              onPointerDown={(event) => handlePreviewResizeStart(event, true)}
-              style={{ touchAction: "none" }}
-              role="separator"
-              aria-label="拖动展开 Word 预览"
-            />
-          </div>
         ) : null}
       </div>
 

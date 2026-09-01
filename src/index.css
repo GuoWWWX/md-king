@@ -2340,6 +2340,15 @@ select {
     height: auto;
   }
 
+.mk-cm-mermaid-caption {
+    margin: 0;
+    color: #111827;
+    font-family: "SimSun", "宋体", serif;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+  }
+
   .mk-cm-mermaid[data-state="loading"] .mk-cm-mermaid-canvas,
   .mk-cm-mermaid[data-state="error"] .mk-cm-mermaid-canvas {
     justify-content: flex-start;
@@ -3594,6 +3603,10 @@ select {
   .dark .mk-cm-mermaid {
     border-color: rgba(212, 212, 216, 0.18);
     background: rgba(24, 24, 27, 0.6);
+  }
+
+.dark .mk-cm-mermaid-caption {
+    color: #f4f4f5;
   }
 
   .dark .mk-cm-mermaid[data-state="error"] {

@@ -17,19 +17,32 @@ const inflight = new Map<string, Promise<RenderResult>>();
 
 let mermaidReady: Promise<typeof import("mermaid").default> | undefined;
 let currentTheme: "default" | "dark" = "default";
+const MERMAID_FONT_FAMILY = "Microsoft YaHei, Segoe UI Emoji, sans-serif";
+
+function mermaidConfig(theme: "default" | "dark") {
+  return {
+    startOnLoad: false,
+    theme,
+    // securityLevel 保持 strict：图里的文本来自用户文档，
+    // 放开会让 mermaid 允许内联脚本和外部资源。
+    securityLevel: "strict" as const,
+    htmlLabels: true,
+    fontFamily: MERMAID_FONT_FAMILY,
+    flowchart: {
+      htmlLabels: true,
+      useMaxWidth: false,
+      wrappingWidth: 180,
+      nodeSpacing: 50,
+      rankSpacing: 50,
+    },
+  };
+}
 
 async function loadMermaid(dark: boolean) {
   const wanted = dark ? "dark" : "default";
   if (!mermaidReady) {
     mermaidReady = import("mermaid").then(({ default: mermaid }) => {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: wanted,
-        // securityLevel 保持 strict：图里的文本来自用户文档，
-        // 放开会让 mermaid 允许内联脚本和外部资源。
-        securityLevel: "strict",
-        fontFamily: "inherit",
-      });
+      mermaid.initialize(mermaidConfig(wanted));
       currentTheme = wanted;
       return mermaid;
     });
@@ -38,7 +51,7 @@ async function loadMermaid(dark: boolean) {
   const mermaid = await mermaidReady;
   if (currentTheme !== wanted) {
     // 主题变了要重新初始化并清缓存，否则深色模式下拿到的还是浅色图。
-    mermaid.initialize({ startOnLoad: false, theme: wanted, securityLevel: "strict", fontFamily: "inherit" });
+    mermaid.initialize(mermaidConfig(wanted));
     currentTheme = wanted;
     svgCache.clear();
     pngCache.clear();

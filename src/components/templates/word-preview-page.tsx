@@ -17,10 +17,14 @@ import { isExternalDocumentLink, nextMarkdownHeadingAnchor, normalizeBareExterna
 import { obsidianWikilinkPlugin } from "@/lib/obsidian-wikilinks";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
+import { calculatePreviewContentHeight, estimateImageBlockHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewImageSize, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { svgDataUrl } from "@/lib/svg-image";
 import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
+import { extractExplicitImageCaptions } from "@/lib/markdown-image-caption";
+import { normalizeAdjacentBoldTableCaptions } from "@/lib/markdown-block-caption";
+import { isConventionalUnnumberedHeading, parseUnnumberedHeadingText } from "@/lib/markdown-heading-attributes";
+import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
 import { relaxedStrongPlugin } from "@/lib/relaxed-strong";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
@@ -59,11 +63,11 @@ export type PreviewOutlineItem = {
 };
 
 type PreviewBlock =
-  | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean }
+  | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean; unnumbered?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
   | { type: "paragraph"; segments: PreviewTextSegment[]; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
-  | { type: "code"; text: string; language?: string; indentPt: number; continuedFromPrevious?: boolean; continuesNext?: boolean }
+  | { type: "code"; text: string; language?: string; indentPt: number; caption?: string; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "math"; text: string }
   | { type: "hr" }
   | { type: "list"; items: PreviewListItem[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
@@ -966,6 +970,7 @@ function annotateHeadingNumbers(blocks: PreviewBlock[], drafts: Record<string, S
   return blocks.map((block) => {
     if (block.type !== "heading") return block;
     if (block.isDocumentTitle) return { ...block, number: undefined };
+    if (block.unnumbered) return { ...block, number: undefined };
     counters[block.level - 1] += 1;
     for (let index = block.level; index < counters.length; index += 1) counters[index] = 0;
 
@@ -1089,11 +1094,14 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
 
 function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metadata?: MarkdownFrontmatter } {
   const frontmatter = splitYamlFrontmatter(markdown);
-  const previewMarkdown = separateMarkdownCallouts(frontmatter.markdown);
+  const extractedCaptions = extractExplicitImageCaptions(frontmatter.markdown);
+  const previewMarkdown = separateMarkdownCallouts(normalizeAdjacentBoldTableCaptions(extractedCaptions.markdown));
   const tokens = markdownParser.parse(previewMarkdown, {});
   const markdownLines = previewMarkdown.replace(/\r\n?/g, "\n").split("\n");
   const blocks: PreviewBlock[] = [];
   const headingAnchorCounts = new Map<string, number>();
+  let pendingTableCaption: string | undefined;
+  let pendingMermaidCaption: string | undefined;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -1102,15 +1110,34 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
     if (token.type === "heading_open" && next?.type === "inline") {
       const level = Number(token.tag.slice(1));
       const normalizedLevel = Math.min(6, Math.max(1, level)) as HeadingLevel;
-      const text = plainText(inlineSegmentsFromToken(next));
-      blocks.push({ type: "heading", level: normalizedLevel, text, anchorId: nextMarkdownHeadingAnchor(text, headingAnchorCounts) });
+      const parsedHeading = parseUnnumberedHeadingText(plainText(inlineSegmentsFromToken(next)));
+      const text = parsedHeading.text;
+      const unnumbered = parsedHeading.unnumbered || isConventionalUnnumberedHeading(text);
+      blocks.push({ type: "heading", level: normalizedLevel, text, unnumbered, anchorId: nextMarkdownHeadingAnchor(text, headingAnchorCounts) });
       index += 2;
       continue;
     }
 
     if (token.type === "paragraph_open" && next?.type === "inline") {
+      const adjacentCaption = markdownCaptionText(next.content);
+      const adjacentBlock = tokens[index + 3];
+      const directlyBeforeBlock = token.map && adjacentBlock?.map && token.map[1] === adjacentBlock.map[0];
+      if (adjacentCaption && directlyBeforeBlock && adjacentBlock.type === "table_open") {
+        pendingTableCaption = adjacentCaption;
+        index += 2;
+        continue;
+      }
+      if (adjacentCaption && directlyBeforeBlock && adjacentBlock.type === "fence" && isMermaidLanguage(normalizeCodeLanguage(adjacentBlock.info))) {
+        pendingMermaidCaption = adjacentCaption;
+        index += 2;
+        continue;
+      }
       if (isImageOnlyInline(next)) {
-        blocks.push(...inlineImageBlocks(next));
+        const imageIndex = blocks.filter((block) => block.type === "image").length;
+        blocks.push(...inlineImageBlocks(next).map((block, offset) => ({
+          ...block,
+          caption: extractedCaptions.captionsByImageIndex.get(imageIndex + offset),
+        })));
         index += 2;
         continue;
       }
@@ -1127,12 +1154,31 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
     if (token.type === "fence" || token.type === "code_block") {
       const language = token.type === "fence" ? normalizeCodeLanguage(token.info) : undefined;
       const indentPt = token.type === "fence" ? codeBlockIndentPtFromInfo(token.info) : 0;
+      let caption = token.type === "fence" && isMermaidLanguage(language)
+        ? mermaidFenceCaption(token.info) ?? pendingMermaidCaption
+        : undefined;
+      if (token.type === "fence" && isMermaidLanguage(language)) {
+        const captionParagraph = tokens[index + 1];
+        const captionInline = tokens[index + 2];
+        const captionClose = tokens[index + 3];
+        const followingCaption = captionParagraph?.type === "paragraph_open"
+          && captionInline?.type === "inline"
+          && captionClose?.type === "paragraph_close"
+          && token.map && captionParagraph.map && token.map[1] === captionParagraph.map[0]
+          ? markdownCaptionText(captionInline.content)
+          : undefined;
+        if (followingCaption && (!caption || caption === followingCaption)) {
+          caption ??= followingCaption;
+          index += 3;
+        }
+        pendingMermaidCaption = undefined;
+      }
       // ```math / ```latex 等围栏在导出时会被 Rust 端转成 $$...$$，预览必须同样按公式渲染。
       if (language && mathFenceLanguages.has(language)) {
         blocks.push({ type: "math", text: token.content.trim() });
         continue;
       }
-      blocks.push({ type: "code", text: token.content.trimEnd(), language, indentPt });
+      blocks.push({ type: "code", text: token.content.trimEnd(), language, indentPt, caption });
       continue;
     }
 
@@ -1170,8 +1216,16 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         : null;
       if (sourceTable) {
         const [header, ...rows] = sourceTable.rows.map((row) => row.map((cell) => ({ segments: inlineSegmentsFromMarkdown(cell) })));
-        if (header) blocks.push({ type: "table", header, rows });
         while (index < tokens.length && tokens[index].type !== "table_close") index += 1;
+        const followingCaption = tokens[index + 1]?.type === "paragraph_open"
+          && tokens[index + 2]?.type === "inline"
+          && tokens[index + 3]?.type === "paragraph_close"
+          && token.map && tokens[index + 1].map && token.map[1] === tokens[index + 1].map![0]
+          ? markdownCaptionText(tokens[index + 2].content)
+          : undefined;
+        if (followingCaption) index += 3;
+        if (header) blocks.push({ type: "table", caption: pendingTableCaption ?? followingCaption, header, rows });
+        pendingTableCaption = undefined;
         continue;
       }
 
@@ -1189,9 +1243,17 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         }
         index += 1;
       }
+      const followingCaption = tokens[index + 1]?.type === "paragraph_open"
+        && tokens[index + 2]?.type === "inline"
+        && tokens[index + 3]?.type === "paragraph_close"
+        && token.map && tokens[index + 1].map && token.map[1] === tokens[index + 1].map![0]
+        ? markdownCaptionText(tokens[index + 2].content)
+        : undefined;
+      if (followingCaption) index += 3;
       if (rows.length > 0) {
         const [header, ...bodyRows] = rows;
-        blocks.push({ type: "table", header, rows: bodyRows });
+        blocks.push({ type: "table", caption: pendingTableCaption ?? followingCaption, header, rows: bodyRows });
+        pendingTableCaption = undefined;
       }
     }
   }
@@ -1382,7 +1444,7 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
   return { before: 0, after: 0 };
 }
 
-function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number) {
+function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     const lineHeight = resolveLineHeightPx(draft);
@@ -1410,7 +1472,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
       const dark = Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
       const size = mermaidSizes?.[mermaidSizeKey(block.text, dark)] ?? getCachedMermaidSvg(block.text, dark);
       const marginHeight = ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing);
-      return estimateMermaidBlockHeight({
+      const diagramHeight = estimateMermaidBlockHeight({
         size,
         contentWidth: contentWidth - ptToPx(block.indentPt),
         horizontalPadding: Math.max(0, drafts.code.codePaddingX) * 2,
@@ -1418,6 +1480,11 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
         marginHeight,
         maxBlockHeight: pageContentHeight === undefined ? undefined : Math.max(1, pageContentHeight - marginHeight),
       });
+      const captionDraft = drafts.caption;
+      const captionHeight = block.caption && captionDraft
+        ? resolveLineHeightPx(captionDraft) + ptToPx(captionDraft.beforeSpacing + captionDraft.afterSpacing)
+        : 0;
+      return diagramHeight + captionHeight;
     }
     // 语言标签是绝对定位，只需要一小段顶部留白；预览估高必须和实际
     // padding 保持一致，否则代码块尾行会被错误推到下一页。
@@ -1458,7 +1525,14 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   if (block.type === "image") {
     const captionDraft = drafts.caption;
-    return 132 + (block.caption && captionDraft ? resolveLineHeightPx(captionDraft) + ptToPx(captionDraft.beforeSpacing + captionDraft.afterSpacing) : 0);
+    return estimateImageBlockHeight({
+      size: block.src ? imageSizes?.[block.src] : undefined,
+      contentWidth,
+      // “原始尺寸”的容器当前使用 block 的 auto 宽度，实际会占满正文区；
+      // 分页估算必须采用相同宽度，否则会低估图片高度并把正文挤进页脚。
+      widthPercent: drafts.image.imageWidthMode === "original" ? 100 : imageWidthPercent(drafts.image),
+      captionHeight: block.caption && captionDraft ? resolveLineHeightPx(captionDraft) + ptToPx(captionDraft.beforeSpacing + captionDraft.afterSpacing) : 0,
+    });
   }
 
   const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
@@ -1483,9 +1557,9 @@ function splitTextByLength(text: string, maxChars: number) {
   return chunks;
 }
 
-function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
+function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
   return blocks.flatMap((block) => {
-    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight) <= pageContentHeight) return [block];
+    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes) <= pageContentHeight) return [block];
 
     if (block.type === "paragraph") {
       return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth, paragraphDraft(block, drafts)) * 24).map((text) => ({ ...block, segments: textSegments(text) }));
@@ -1532,8 +1606,8 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
   });
 }
 
-function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>) {
-  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight);
+function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes);
 
   const minimumFollowingHeight = (block: PreviewBlock, following: PreviewBlock) => {
     if (block.type !== "heading") return 0;
@@ -1694,11 +1768,13 @@ function PreviewImage({
   alt,
   markdownSourcePath,
   className,
+  onSize,
 }: {
   src?: string;
   alt?: string;
   markdownSourcePath?: string;
   className?: string;
+  onSize?: (src: string, size: PreviewImageSize) => void;
 }) {
   const [resolvedSrc, setResolvedSrc] = useState<string>();
   const [failed, setFailed] = useState(false);
@@ -1742,7 +1818,7 @@ function PreviewImage({
     return (
       <>
         <div className={cn("group relative", className)}>
-          <img src={resolvedSrc} alt={alt ?? ""} className="block h-auto w-full max-h-[520px] object-contain" onError={() => setFailed(true)} />
+          <img src={resolvedSrc} alt={alt ?? ""} className="block h-auto w-full max-h-[520px] object-contain" onLoad={(event) => onSize?.(src, { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setFailed(true)} />
           <TooltipButton
             variant="ghost"
             size="icon-xs"
@@ -1776,6 +1852,7 @@ function renderMarkdownBlocks({
   markdownSourcePath,
   onOpenLink,
   onMermaidSize,
+  onImageSize,
   pageContentHeight,
   previewDark = false,
   renderAsThumbnail = false,
@@ -1788,6 +1865,7 @@ function renderMarkdownBlocks({
   markdownSourcePath?: string;
   onOpenLink: (target: string) => void;
   onMermaidSize?: (source: string, dark: boolean, size: PreviewMermaidSize) => void;
+  onImageSize?: (src: string, size: PreviewImageSize) => void;
   pageContentHeight: number;
   previewDark?: boolean;
   renderAsThumbnail?: boolean;
@@ -1963,9 +2041,8 @@ function renderMarkdownBlocks({
           1,
           pageContentHeight - mermaidMarginHeight - Math.max(0, drafts.code.codePaddingY) * 2 - 2,
         );
-        rendered.push(
+        const diagram = (
           <div
-            key={index}
             className={cn("relative", selectedRing(selectedStyle, "source-code"))}
             style={{
               backgroundColor: mermaidBackgroundColor,
@@ -1981,7 +2058,19 @@ function renderMarkdownBlocks({
             }}
           >
             <MermaidBlock source={block.text} dark={mermaidDark} maxHeight={mermaidImageMaxHeight} onSize={onMermaidSize} />
-          </div>,
+          </div>
+        );
+        const caption = block.caption ? (
+          <div className={cn(selectedRing(selectedStyle, "caption"))} style={tableStyle.figureCaptionStyle}>
+            {block.caption}
+          </div>
+        ) : null;
+        rendered.push(
+          <figure key={index} className="m-0">
+            {tableStyle.figureCaptionPosition === "above" ? caption : null}
+            {diagram}
+            {tableStyle.figureCaptionPosition === "below" ? caption : null}
+          </figure>,
         );
         return;
       }
@@ -2098,7 +2187,7 @@ function renderMarkdownBlocks({
         <figure key={index} className={cn("my-3", selectedRing(selectedStyle, "caption"))}>
           {tableStyle.figureCaptionPosition === "above" ? caption : null}
           <div className={cn("overflow-hidden", selectedRing(selectedStyle, "image"))} style={tableStyle.imageStyle}>
-            <PreviewImage src={block.src} alt={block.alt} markdownSourcePath={markdownSourcePath} />
+            <PreviewImage src={block.src} alt={block.alt} markdownSourcePath={markdownSourcePath} onSize={onImageSize} />
           </div>
           {tableStyle.figureCaptionPosition === "below" ? caption : null}
         </figure>,
@@ -2160,12 +2249,20 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const [viewportWidth, setViewportWidth] = useState(0);
   const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const [mermaidSizes, setMermaidSizes] = useState<Record<string, PreviewMermaidSize>>({});
+  const [imageSizes, setImageSizes] = useState<Record<string, PreviewImageSize>>({});
   const handleMermaidSize = useCallback((source: string, dark: boolean, size: PreviewMermaidSize) => {
     const key = mermaidSizeKey(source, dark);
     setMermaidSizes((current) => {
       const previous = current[key];
       if (previous?.width === size.width && previous.height === size.height) return current;
       return { ...current, [key]: size };
+    });
+  }, []);
+  const handleImageSize = useCallback((src: string, size: PreviewImageSize) => {
+    setImageSizes((current) => {
+      const previous = current[src];
+      if (previous?.width === size.width && previous.height === size.height) return current;
+      return { ...current, [src]: size };
     });
   }, []);
   const requestedScale = zoom / 100;
@@ -2179,6 +2276,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const headerText = pageSettings?.headerText?.trim() ?? "";
   const footerText = pageSettings?.footerText?.trim() ?? "";
   const footerStartPage = Number.isFinite(pageSettings?.footerStartPage) ? Math.max(1, Math.trunc(pageSettings?.footerStartPage ?? 1)) : 1;
+  const pageNumberStartAt = pageSettings?.pageNumberStartAt ?? "body";
   const pageMargins = {
     top: cmToPx(pageSettings?.marginTop ?? 2.54),
     right: cmToPx(pageSettings?.marginRight ?? 3.18),
@@ -2310,7 +2408,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     ...(markdownPreview?.metadata?.author ? [{ type: "paragraph" as const, metadata: "author" as const, segments: textSegments(markdownPreview.metadata.author) }] : []),
     ...(markdownPreview?.metadata?.date ? [{ type: "paragraph" as const, metadata: "date" as const, segments: textSegments(markdownPreview.metadata.date) }] : []),
   ];
-  const metadataHeight = metadataBlocks.reduce((total, block) => total + estimateBlockHeight(block, previewDrafts, table, contentWidth, mermaidSizes), 0);
+  const metadataHeight = metadataBlocks.reduce((total, block) => total + estimateBlockHeight(block, previewDrafts, table, contentWidth, mermaidSizes, undefined, imageSizes), 0);
   const tocPages = shouldPaginate && showTocPage
     ? createPreviewTocPages(numberedBlocks, pageSettings?.tocEnabled ?? false, pageSettings?.tocDepth, pageContentHeight, previewDrafts, contentWidth, metadataHeight, {
       fontSize: pageSettings?.tocTitleFontSize ?? 18,
@@ -2320,11 +2418,12 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     })
     : [];
   const documentBlocks = tocPages.length > 0 ? blocksWithTableColumnWidths : [...metadataBlocks, ...blocksWithTableColumnWidths];
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : documentBlocks;
-  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes) : [previewBlocks];
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes) : documentBlocks;
+  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes) : [previewBlocks];
+  const documentPageNumberOffset = footerStartPage + (pageNumberStartAt === "document" ? tocPages.length : 0);
   const previewOutline = documentPages.flatMap((pageBlocks, pageIndex) => pageBlocks.flatMap((block) => {
     if (block.type !== "heading" || block.isDocumentTitle || !block.anchorId) return [];
-    return [{ id: block.anchorId, level: block.level, text: block.text, number: block.number, page: tocPages.length + pageIndex + 1 }];
+    return [{ id: block.anchorId, level: block.level, text: block.text, number: block.number, page: documentPageNumberOffset + pageIndex }];
   }));
   const pageByHeadingId = new Map(previewOutline.map((item) => [item.id, item.page]));
   const tocPagesWithPageNumbers = tocPages.map((pageBlocks, pageIndex) => [
@@ -2357,7 +2456,10 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
 
   function renderPreviewPage(pageBlocks: PreviewBlock[], pageIndex: number, thumbnail = false) {
     const isTocPage = pageIndex < tocPages.length;
-    const pageNumber = footerStartPage + pageIndex;
+    const pageHasFooter = pageNumberStartAt === "document" || !isTocPage;
+    const pageNumber = pageNumberStartAt === "document"
+      ? footerStartPage + pageIndex
+      : footerStartPage + pageIndex - tocPages.length;
     const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber);
     const footerContent = [footerText, pageNumberText].filter(Boolean).join(" · ");
 
@@ -2385,12 +2487,13 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
             markdownSourcePath,
             onOpenLink,
             onMermaidSize: handleMermaidSize,
+            onImageSize: handleImageSize,
             pageContentHeight,
             previewDark: paperTheme === "dark",
             renderAsThumbnail: thumbnail,
             tableStyle: markdownTableStyle,
           })}
-          {footerEnabled && footerContent ? <div className="absolute left-0 right-0 px-8 text-center text-[9pt] text-black" style={{ bottom: 48 }}>{footerContent}</div> : null}
+          {footerEnabled && pageHasFooter && footerContent ? <div className="absolute left-0 right-0 px-8 text-center text-[9pt] text-black" style={{ bottom: 48 }}>{footerContent}</div> : null}
         </div>
       </div>
     );

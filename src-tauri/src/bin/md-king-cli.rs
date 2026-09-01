@@ -60,7 +60,7 @@ enum Commands {
         #[arg(
             long = "update-fields",
             default_value = "none",
-            value_parser = ["none", "wps", "word"]
+            value_parser = ["none", "auto", "wps", "word"]
         )]
         update_fields: String,
 
@@ -80,8 +80,8 @@ enum Commands {
         #[arg(long = "front-page-number", value_parser = ["none", "roman"])]
         front_page_number: Option<String>,
 
-        /// Mermaid image format. SVG stays sharp; PNG uses the selected scale.
-        #[arg(long = "mermaid-format", default_value = "svg", value_parser = ["svg", "png"])]
+        /// Mermaid image format. PNG is the Word/WPS-compatible default; SVG is opt-in.
+        #[arg(long = "mermaid-format", default_value = "png", value_parser = ["svg", "png"])]
         mermaid_format: String,
 
         /// Device scale factor used when Mermaid is exported as PNG.

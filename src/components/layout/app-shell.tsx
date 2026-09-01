@@ -31,7 +31,6 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
   const { activePage, setActivePage, appConfig, setAppConfig } = useAppStore();
   const fileTreeVisible = useVaultStore((state) => state.fileTreeVisible);
   const fileTreeWidth = useVaultStore((state) => state.fileTreeWidth);
-  const previewVisible = useVaultStore((state) => state.previewVisible);
   const vaultRoot = useVaultStore((state) => state.vaultRoot);
   const setFileTreeVisible = useVaultStore((state) => state.setFileTreeVisible);
   const setFileTreeWidth = useVaultStore((state) => state.setFileTreeWidth);
@@ -152,7 +151,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
           pageZoomPercent={pageZoomPercent}
           onPageZoomChange={handlePageZoomChange}
-          documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 126) : 0}
+          documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 174) : 0}
         />
         <GlobalSearchDialog
           open={globalSearchOpen}
@@ -228,7 +227,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
               // 同上：collapsed=true 表示刚收起，对应 open=false。
               onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
               ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
-              className={previewVisible ? "-ml-[5px]" : "-ml-[10px]"}
+              className="-mx-0.5"
+              handleClassName="w-1"
             />
             {documentDrawerOpen ? (
               <DocumentSideDrawer

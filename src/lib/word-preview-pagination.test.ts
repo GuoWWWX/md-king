@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculatePreviewContentHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows } from "./word-preview-pagination.ts";
+import { calculatePreviewContentHeight, estimateImageBlockHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows } from "./word-preview-pagination.ts";
 
 test("Word 自动行距按字体单倍行高估算，而不是直接按 CSS 字号倍数", () => {
   // 12pt * 1.25 in Word's Chinese mixed-text layout is about 19.5pt = 26px.
@@ -41,6 +41,28 @@ test("纵向 Mermaid 按页面可用高度等比缩放而不是裁剪", () => {
   });
 
   assert.equal(height, pageContentHeight);
+});
+
+test("图片加载后按实际比例参与分页，不再固定按占位图高度计算", () => {
+  const height = estimateImageBlockHeight({
+    size: { width: 1600, height: 1200 },
+    contentWidth: 640,
+    widthPercent: 100,
+    captionHeight: 28,
+  });
+
+  // 640 / 1600 * 1200 + figure 上下外边距 + 题注。
+  assert.equal(height, 532);
+});
+
+test("预览放大小图时分页高度与实际容器宽度保持一致", () => {
+  const height = estimateImageBlockHeight({
+    size: { width: 320, height: 160 },
+    contentWidth: 640,
+    widthPercent: 100,
+  });
+
+  assert.equal(height, 344);
 });
 
 test("分页会把可拆块的一部分放进当前页剩余空间", () => {

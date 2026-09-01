@@ -117,7 +117,7 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
         conflict_strategy: Some("overwrite".to_string()),
         heading_numbering: None,
         toc_page_numbers: None,
-        update_fields: None,
+        update_fields: Some("auto".to_string()),
         toc_depth: None,
         toc_position: None,
         body_page_start: None,

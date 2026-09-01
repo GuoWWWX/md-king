@@ -95,13 +95,19 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
       className="mk-titlebar flex h-9 shrink-0 select-none items-center border-b border-white/70 bg-white/72 text-slate-700 backdrop-blur-xl"
       data-tauri-drag-region
     >
-      <div className="flex h-full w-[176px] items-center gap-2 px-3" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
+      <div className="flex h-full w-[224px] items-center gap-1 px-2" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
         {onToggleFileTree ? (
           <TitlebarButton
             label={fileTreeVisible ? "收起文件树" : "展开文件树"}
             onClick={onToggleFileTree}
           >
             {fileTreeVisible ? <PanelStateIcon side="left" /> : <PanelLeft className="size-4" />}
+          </TitlebarButton>
+        ) : null}
+        {onPageZoomChange ? <PageZoomControls percent={pageZoomPercent} onChange={onPageZoomChange} /> : null}
+        {onOpenGlobalSearch ? (
+          <TitlebarButton label="全局搜索" onClick={onOpenGlobalSearch}>
+            <Search className="size-4" />
           </TitlebarButton>
         ) : null}
       </div>
@@ -113,12 +119,6 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
       />
 
       <div className="flex h-full shrink-0 items-center">
-        {onPageZoomChange ? <PageZoomControls percent={pageZoomPercent} onChange={onPageZoomChange} /> : null}
-        {onOpenGlobalSearch ? (
-          <TitlebarButton label="全局搜索" onClick={onOpenGlobalSearch}>
-            <Search className="size-4" />
-          </TitlebarButton>
-        ) : null}
         {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <>
             <TitlebarButton
@@ -129,7 +129,7 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
             </TitlebarButton>
           </>
         ) : null}
-        {onOpenGlobalSearch || (showDocumentDrawerControl && onToggleDocumentDrawer) ? (
+        {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <span className="mx-1 h-4 w-px bg-slate-200 dark:bg-zinc-700" aria-hidden />
         ) : null}
         <TitlebarButton disabled={!canControlWindow} label="最小化" onClick={() => handleWindowAction("minimize")}>

@@ -230,6 +230,7 @@ export class MermaidWidget extends WidgetType {
     private readonly dark: boolean,
     private readonly blockFrom: number,
     private readonly editable: boolean,
+    private readonly caption?: string,
   ) {
     super();
   }
@@ -238,7 +239,8 @@ export class MermaidWidget extends WidgetType {
     return other.source === this.source
       && other.dark === this.dark
       && other.blockFrom === this.blockFrom
-      && other.editable === this.editable;
+      && other.editable === this.editable
+      && other.caption === this.caption;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -286,6 +288,13 @@ export class MermaidWidget extends WidgetType {
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", "Mermaid 图表");
     host.append(canvas);
+
+    if (this.caption) {
+      const caption = document.createElement("div");
+      caption.className = "mk-cm-mermaid-caption";
+      caption.textContent = this.caption;
+      host.append(caption);
+    }
 
     const cached = getCachedMermaidSvg(this.source, this.dark);
     if (cached) {

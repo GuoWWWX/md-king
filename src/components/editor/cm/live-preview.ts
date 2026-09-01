@@ -1,5 +1,6 @@
 import { forceParsing, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { isMermaidLanguage } from "@/lib/mermaid";
+import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
 import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink, isMarkdownWikilinkTarget } from "@/lib/document-links";
 import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
@@ -242,6 +243,14 @@ function handleHeading(collector: DecorationCollector, ref: SyntaxNodeRef, level
       hide(collector, start, mark.to);
     }
   }
+
+  // Pandoc 的 `{-}` 与旧版 `{.unnumbered}` 只控制 Word 编号，阅读态不显示。
+  const source = state.doc.sliceString(ref.from, ref.to);
+  const attribute = source.match(/\s*\{([^{}]*)\}\s*$/);
+  const unnumbered = attribute?.[1]
+    .split(/\s+/)
+    .some((value) => value === "-" || value === ".unnumbered" || value === "unnumbered");
+  if (unnumbered && attribute?.index !== undefined) hide(collector, ref.from + attribute.index, ref.to);
 }
 
 /** 加粗 / 斜体 / 删除线 / 行内代码共用一套：整体加 mark 类，两端的标记按内联粒度显隐。 */
@@ -858,21 +867,40 @@ function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: 
       const info = infoNode ? state.doc.sliceString(infoNode.from, infoNode.to).trim() : "";
       const language = codeFenceLanguageFromInfo(info);
       if (!isMermaidLanguage(language)) return false;
+      let caption = mermaidFenceCaption(info);
 
       const first = state.doc.lineAt(ref.from);
       const last = state.doc.lineAt(Math.min(ref.to, state.doc.length));
-      if (sourceBlockFrom !== null && sourceBlockFrom >= first.from && sourceBlockFrom <= last.to) return false;
+      let replaceFrom = first.from;
+      let replaceTo = last.to;
+      if (!caption && first.number > 1) {
+        const captionLine = state.doc.line(first.number - 1);
+        const precedingCaption = markdownCaptionText(captionLine.text);
+        if (precedingCaption) {
+          caption = precedingCaption;
+          replaceFrom = captionLine.from;
+        }
+      }
+      if (!caption && last.number < state.doc.lines) {
+        const captionLine = state.doc.line(last.number + 1);
+        const followingCaption = markdownCaptionText(captionLine.text);
+        if (followingCaption) {
+          caption = followingCaption;
+          replaceTo = captionLine.to;
+        }
+      }
+      if (sourceBlockFrom !== null && sourceBlockFrom >= replaceFrom && sourceBlockFrom <= replaceTo) return false;
       // Mermaid 是块级 replace，源码平时不在 DOM 里。非空选区经过该块时先撤销
       // replace，才能和普通 Markdown 一样显示完整源码并继续修改。
-      if (editable && selectionIntersectsRange(state, first.from, last.to)) return false;
+      if (editable && selectionIntersectsRange(state, replaceFrom, replaceTo)) return false;
 
       const body = extractFenceBody(state, ref.from, ref.to);
       if (!body.trim()) return false;
 
       builder.add(
-        first.from,
-        last.to,
-        Decoration.replace({ widget: new MermaidWidget(body, dark, first.from, editable), block: true }),
+        replaceFrom,
+        replaceTo,
+        Decoration.replace({ widget: new MermaidWidget(body, dark, first.from, editable, caption), block: true }),
       );
       return false;
     },
@@ -1029,9 +1057,7 @@ function buildTableBlocks(
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
 
-      const first = state.doc.lineAt(ref.from);
-      const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
-      const last = state.doc.lineAt(lastPos);
+      const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
 
       // 只有 Widget 内的专用按钮能进入源码态；普通 selection 变化不再拆掉整张表。
       if (sourceTableFrom !== null && sourceTableFrom >= first.from && sourceTableFrom <= last.to) return false;
@@ -1071,9 +1097,7 @@ function documentSelectedTableRows(state: EditorState): ReadonlyMap<number, read
   syntaxTree(state).iterate({
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
-      const first = state.doc.lineAt(ref.from);
-      const lastPos = Math.max(ref.from, Math.min(ref.to - 1, state.doc.length - 1));
-      const last = state.doc.lineAt(lastPos);
+      const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
       const rows = selectedMarkdownTableRows(state, first.from, last.to);
       if (rows.length > 0) selected.set(first.from, rows);
       return false;
@@ -1110,13 +1134,14 @@ function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number)
   syntaxTree(state).iterate({
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
-      if (sourceTableFrom < ref.from || sourceTableFrom >= ref.to) return false;
+      const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
+      if (sourceTableFrom < first.from || sourceTableFrom > last.to) return false;
       const selection = state.selection.main;
       // 表格源码整体被选中时必须继续保留源码态；但折叠光标恰好落在
       // 表格末尾已经属于下一处插入点，不能让粘贴后的表格永久停在源码态。
       inside = selection.empty
-        ? selection.head >= ref.from && selection.head < ref.to
-        : selection.from < ref.to && selection.to > ref.from;
+        ? selection.head >= first.from && selection.head <= last.to
+        : selection.from <= last.to && selection.to > first.from;
       return false;
     },
   });
@@ -1222,6 +1247,16 @@ class TableSyntaxRefreshPlugin {
       this.schedule(view);
     });
   }
+}
+
+function markdownTableBlockLines(state: EditorState, from: number, to: number) {
+  const first = state.doc.lineAt(from);
+  const lastPos = Math.max(from, Math.min(to - 1, state.doc.length - 1));
+  let last = state.doc.lineAt(lastPos);
+  if (last.number > first.number && markdownCaptionText(last.text)) {
+    last = state.doc.line(last.number - 1);
+  }
+  return { first, last };
 }
 
 export const tableSyntaxRefreshPlugin = ViewPlugin.fromClass(TableSyntaxRefreshPlugin);
