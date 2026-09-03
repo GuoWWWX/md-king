@@ -31,7 +31,11 @@ const sharedTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily: "var(--font-sans, 'Geist Variable', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif)",
     lineHeight: "1.75",
-    overflow: "auto",
+    // 编辑器已启用 lineWrapping，横向滚动只会来自表格等块级 widget 的
+    // 瞬时固有宽度。表格需要滚动时由自己的 .mk-cm-table-scroll 承担，
+    // 不能把整个文档页面撑出横向滚动条。
+    overflowX: "hidden",
+    overflowY: "auto",
   },
   ".cm-content": {
     width: "100%",
@@ -300,8 +304,8 @@ const lightTheme = EditorView.theme(
 const darkTheme = EditorView.theme(
   {
     "&": { color: "#f8fafc" },
-    ".cm-content": { caretColor: "#93c5fd" },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#93c5fd" },
+    ".cm-content": { caretColor: "#e4e4e7" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#e4e4e7" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
       backgroundColor: "rgba(96, 165, 250, 0.26)",
     },
