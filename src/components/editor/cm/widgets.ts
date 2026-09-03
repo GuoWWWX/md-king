@@ -3,6 +3,7 @@ import { redo, undo } from "@codemirror/commands";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import katex from "katex";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -64,6 +65,54 @@ const imageWidthModes = new Map<string, ImageWidthMode>();
 
 const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+/** KaTeX 公式预览；点击公式时把光标放回源码，保持实时预览可编辑。 */
+export class MarkdownMathWidget extends WidgetType {
+  constructor(
+    private readonly source: string,
+    private readonly display: boolean,
+    private readonly editPosition: number,
+    private readonly editable: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownMathWidget): boolean {
+    return other.source === this.source
+      && other.display === this.display
+      && other.editPosition === this.editPosition
+      && other.editable === this.editable;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const host = document.createElement(this.display ? "div" : "span");
+    host.className = this.display ? "mk-cm-math-block" : "mk-cm-math-inline";
+    try {
+      host.innerHTML = katex.renderToString(this.source, {
+        displayMode: this.display,
+        throwOnError: true,
+        output: "html",
+        strict: false,
+      });
+    } catch {
+      host.classList.add("is-invalid");
+      host.textContent = this.source;
+    }
+    if (this.editable) {
+      host.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        view.dispatch({ selection: { anchor: this.editPosition }, scrollIntoView: true });
+        view.focus();
+      });
+    }
+    return host;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
 
 /**
  * 代码块右上角的复制按钮。

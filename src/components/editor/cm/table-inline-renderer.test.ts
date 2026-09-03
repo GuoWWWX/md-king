@@ -23,6 +23,31 @@ test("解析闭合星号后紧邻正文的宽松加粗", () => {
   ]);
 });
 
+test("表格单元格将行内公式作为独立节点且不把方括号识别为链接", () => {
+  assert.deepEqual(
+    parseTableInlineMarkdown("命中率 $R=N_{\\mathrm{hit}}/N_{\\mathrm{alarm}}$，区间 $[a,b]$"),
+    [
+      { type: "text", value: "命中率 " },
+      { type: "math", value: "R=N_{\\mathrm{hit}}/N_{\\mathrm{alarm}}", source: "$R=N_{\\mathrm{hit}}/N_{\\mathrm{alarm}}$" },
+      { type: "text", value: "，区间 " },
+      { type: "math", value: "[a,b]", source: "$[a,b]$" },
+    ],
+  );
+});
+
+test("表格单元格支持反斜杠行内公式并保留外层加粗", () => {
+  assert.deepEqual(parseTableInlineMarkdown("**公式 \\(a \\le b\\)**"), [
+    {
+      type: "element",
+      tag: "strong",
+      children: [
+        { type: "text", value: "公式 " },
+        { type: "math", value: "a \\le b", source: "\\(a \\le b\\)" },
+      ],
+    },
+  ]);
+});
+
 test("HTML 与危险链接不会成为可执行节点", () => {
   const nodes = parseTableInlineMarkdown("<img src=x onerror=alert(1)> [危险](javascript:alert(1))");
   assert.equal(JSON.stringify(nodes).includes("img"), true);

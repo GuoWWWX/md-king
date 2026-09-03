@@ -4,6 +4,7 @@ import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
 import { findBareExternalLinks, findObsidianWikilinks, isExternalDocumentLink, isMarkdownWikilinkTarget } from "@/lib/document-links";
 import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
+import { findBlockMarkdownMath, findInlineMarkdownMath } from "@/lib/markdown-math";
 import { findRelaxedStrongRanges } from "@/lib/relaxed-strong";
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
@@ -27,7 +28,7 @@ import {
   type TableDisplaySettings,
   type TableWidthMode,
 } from "./table-display-settings";
-import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownFrontmatterWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownFrontmatterWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownMathWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -113,6 +114,7 @@ type DecorationCollector = {
   readonly focused: boolean;
   readonly decorations: Range<Decoration>[];
   readonly atomics: Range<Decoration>[];
+  readonly mathRanges: Array<{ from: number; to: number }>;
 };
 
 // 列表标记和复选框专用：pad 不跨行，避免光标停在上一行末尾误触发下一行源码展开。
@@ -291,6 +293,7 @@ function addRelaxedStrong(collector: DecorationCollector, lineFrom: number, tree
   for (const range of findRelaxedStrongRanges(line.text)) {
     const from = line.from + range.from;
     const to = line.from + range.to;
+    if (collector.mathRanges.some((math) => from < math.to && to > math.from)) continue;
     const contentFrom = line.from + range.contentFrom;
     const contentNode = tree.resolveInner(contentFrom, 1);
     if (hasSyntaxAncestor(contentNode, relaxedStrongExcludedNodes)) continue;
@@ -352,6 +355,7 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
   for (const link of wikilinks) {
     const from = line.from + link.from;
     const to = line.from + link.to;
+    if (collector.mathRanges.some((math) => from < math.to && to > math.from)) continue;
     if (insideProtectedInlineSource(collector.state, from)) continue;
 
     const kind = isExternalDocumentLink(link.target) ? "external" : "document";
@@ -366,6 +370,7 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
     if (wikilinks.some((wikilink) => link.from < wikilink.to && link.to > wikilink.from)) continue;
     const from = line.from + link.from;
     const to = line.from + link.to;
+    if (collector.mathRanges.some((math) => from < math.to && to > math.from)) continue;
     if (insideProtectedInlineSource(collector.state, from)) continue;
     if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
     const attributes = { "data-mk-link-target": link.target };
@@ -379,6 +384,36 @@ function insideFencedCode(state: EditorState, position: number): boolean {
     if (node.name === "FencedCode") return true;
   }
   return false;
+}
+
+function addInlineMath(collector: DecorationCollector, lineFrom: number): void {
+  const line = collector.state.doc.lineAt(lineFrom);
+  if (insideFencedCode(collector.state, line.from)) return;
+
+  for (const range of findInlineMarkdownMath(line.text)) {
+    const from = line.from + range.from;
+    const to = line.from + range.to;
+    const contentFrom = line.from + range.contentFrom;
+    const contentTo = line.from + range.contentTo;
+    collector.mathRanges.push({ from, to });
+    if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) {
+      // 公式源码内的 `[...]` 会被 Markdown 语法树识别成引用链接。公式优先级
+      // 更高：编辑源码时只保留普通文本外观，不能让内部方括号表现成文件链接。
+      addMark(collector, from, to, "mk-cm-math-source");
+      continue;
+    }
+    replaceInline(
+      collector,
+      from,
+      to,
+      new MarkdownMathWidget(
+        collector.state.doc.sliceString(contentFrom, contentTo),
+        false,
+        contentFrom,
+        !collector.state.readOnly,
+      ),
+    );
+  }
 }
 
 function addRenderedSourceIndent(collector: DecorationCollector, lineFrom: number): void {
@@ -665,6 +700,9 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
     focused: view.hasFocus && !state.readOnly,
     decorations: [],
     atomics: [],
+    // 块级公式的内容行仍会进入 Markdown 语法树。先登记完整范围，确保其中
+    // 的 `[...]`、`[[...]]` 等字符不会再被链接装饰层隐藏或变成可跳转对象。
+    mathRanges: findBlockMarkdownMath(state.doc.toString()).map(({ from, to }) => ({ from, to })),
   };
   const tree = syntaxTree(state);
 
@@ -673,6 +711,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
     const lastLine = state.doc.lineAt(to);
     for (let lineNumber = firstLine.number; lineNumber <= lastLine.number; lineNumber += 1) {
       const lineFrom = state.doc.line(lineNumber).from;
+      addInlineMath(collector, lineFrom);
       addRenderedSourceIndent(collector, lineFrom);
       addFallbackSourceList(collector, lineFrom);
       addObsidianAndBareLinks(collector, lineFrom);
@@ -689,6 +728,9 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
           handleHeading(collector, ref, Number(heading[1]));
           return;
         }
+
+        if (collector.mathRanges.some((math) => ref.from < math.to && ref.to > math.from)
+          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link")) return;
 
         switch (name) {
           case "StrongEmphasis":
@@ -806,6 +848,42 @@ export const livePreviewPlugin: Extension = [
   calloutCollapseState,
   livePreviewViewPlugin,
 ];
+
+function buildMathBlocks(state: EditorState): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const editable = !state.readOnly;
+  const source = state.doc.toString();
+
+  for (const range of findBlockMarkdownMath(source)) {
+    if (editable && selectionOnLines(state, range.from, range.to)) {
+      builder.add(range.from, range.to, Decoration.mark({ class: "mk-cm-math-source" }));
+      continue;
+    }
+    const formula = source.slice(range.contentFrom, range.contentTo).trim();
+    if (!formula) continue;
+    builder.add(
+      range.from,
+      range.to,
+      Decoration.replace({
+        widget: new MarkdownMathWidget(formula, true, range.contentFrom, editable),
+        block: true,
+      }),
+    );
+  }
+
+  return builder.finish();
+}
+
+/** 独占行的 `$$...$$` / `\[...\]` 使用块级装饰，避免跨行 replace 在 ViewPlugin 中失效。 */
+export const markdownMathBlockExtension = StateField.define<{ decorations: DecorationSet; readOnly: boolean }>({
+  create: (state) => ({ decorations: buildMathBlocks(state), readOnly: state.readOnly }),
+  update: (value, transaction) => {
+    const readOnly = transaction.state.readOnly;
+    if (!transaction.docChanged && !transaction.selection && readOnly === value.readOnly) return value;
+    return { decorations: buildMathBlocks(transaction.state), readOnly };
+  },
+  provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
+});
 
 function buildFrontmatterBlock(state: EditorState, editable: boolean, forceRender = false): DecorationSet {
   const frontmatter = parseYamlFrontmatter(state.doc.toString());

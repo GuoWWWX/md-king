@@ -6,12 +6,13 @@ import { closeSearchPanel, getSearchQuery, highlightSelectionMatches, openSearch
 import { Annotation, Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, placeholder as cmPlaceholder, rectangularSelection } from "@codemirror/view";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Search, X } from "lucide-react";
+import "katex/dist/katex.min.css";
 import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { isSupportedImagePath } from "@/lib/image-files";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { cn } from "@/lib/utils";
-import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, mermaidBlockExtension, renderFrontmatterEffect, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
+import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, markdownMathBlockExtension, mermaidBlockExtension, renderFrontmatterEffect, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
 import { documentTitleExtension } from "./cm/document-title";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
@@ -563,6 +564,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
         () => viewRef.current?.dispatch({ effects: renderFrontmatterEffect.of() }),
       )),
       frontmatterCompartment.of(frontmatterBlockExtension(!readOnly)),
+      markdownMathBlockExtension,
       mermaidCompartment.of(mermaidBlockExtension(isDark, !readOnly)),
       imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
       tableBlockExtension,

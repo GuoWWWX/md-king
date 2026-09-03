@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
+import katex from "katex";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FileText, Globe2 } from "lucide-react";
@@ -9,11 +10,13 @@ import {
   normalizeBareExternalLink,
 } from "../../../lib/document-links.ts";
 import { obsidianWikilinkPlugin } from "../../../lib/obsidian-wikilinks.ts";
+import { findInlineMarkdownMath } from "../../../lib/markdown-math.ts";
 import { relaxedStrongPlugin } from "../../../lib/relaxed-strong.ts";
 
 export type TableInlineNode =
   | { type: "text"; value: string }
   | { type: "code"; value: string }
+  | { type: "math"; value: string; source: string }
   | { type: "break" }
   | { type: "image"; src: string; alt: string; title?: string }
   | {
@@ -25,7 +28,28 @@ export type TableInlineNode =
     children: TableInlineNode[];
   };
 
+function tableInlineMathPlugin(md: MarkdownIt) {
+  md.inline.ruler.before("escape", "table_math_inline", (state, silent) => {
+    const start = state.pos;
+    const possibleOpener = state.src[start] === "$"
+      || (state.src[start] === "\\" && state.src[start + 1] === "(");
+    if (!possibleOpener) return false;
+
+    const [range] = findInlineMarkdownMath(state.src.slice(start));
+    if (!range || range.from !== 0) return false;
+    if (!silent) {
+      const token = state.push("math_inline", "math", 0);
+      token.content = state.src.slice(start + range.contentFrom, start + range.contentTo);
+      token.markup = state.src.slice(start, start + range.contentFrom);
+      token.meta = { source: state.src.slice(start, start + range.to) };
+    }
+    state.pos = start + range.to;
+    return true;
+  });
+}
+
 const parser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(tableInlineMathPlugin)
   .use(obsidianWikilinkPlugin)
   .use(relaxedStrongPlugin);
 
@@ -67,6 +91,11 @@ export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
     }
     if (token.type === "code_inline") {
       target().push({ type: "code", value: token.content });
+      continue;
+    }
+    if (token.type === "math_inline") {
+      const source = typeof token.meta?.source === "string" ? token.meta.source : `$${token.content}$`;
+      target().push({ type: "math", value: token.content, source });
       continue;
     }
     if (token.type === "softbreak" || token.type === "hardbreak") {
@@ -156,6 +185,22 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       const code = document.createElement("code");
       code.textContent = node.value;
       parent.append(code);
+    } else if (node.type === "math") {
+      const math = document.createElement("span");
+      math.className = "mk-cm-math-inline mk-cm-table-math-inline";
+      math.setAttribute("aria-label", node.value);
+      try {
+        math.innerHTML = katex.renderToString(node.value, {
+          displayMode: false,
+          throwOnError: true,
+          output: "html",
+          strict: false,
+        });
+      } catch {
+        math.classList.add("is-invalid");
+        math.textContent = node.source;
+      }
+      parent.append(math);
     } else if (node.type === "break") {
       parent.append(document.createElement("br"));
     } else if (node.type === "image") {

@@ -1762,6 +1762,48 @@ select {
     padding: 4px 0;
   }
 
+  .mk-cm-math-inline {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    color: inherit;
+    vertical-align: middle;
+    cursor: text;
+  }
+
+  .mk-cm-math-inline .katex {
+    font-size: 1em;
+  }
+
+  /* 公式源码优先于 Markdown 链接语法，避免其中的 `[...]` 显示为文件链接。 */
+  .mk-cm-math-source,
+  .mk-cm-math-source * {
+    color: var(--foreground) !important;
+    text-decoration: none !important;
+    cursor: text !important;
+  }
+
+  .mk-cm-math-block {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 8px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    color: inherit;
+    text-align: center;
+    cursor: text;
+    overscroll-behavior-inline: contain;
+  }
+
+  .mk-cm-math-block.is-invalid,
+  .mk-cm-math-inline.is-invalid {
+    color: #e11d48;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+
   .mk-cm-link--document {
     color: #0f766e;
   }
