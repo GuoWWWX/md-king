@@ -19,17 +19,39 @@ try {
         return style.backgroundColor !== 'rgba(0, 0, 0, 0)' || style.backgroundImage !== 'none'
           || (node.tagName === 'rect' && !['none', 'rgba(0, 0, 0, 0)'].includes(style.fill));
       }).map((node) => ({ tag: node.tagName, class: node.getAttribute('class'), background: getComputedStyle(node).backgroundColor }));
-      return { text: labels.map((node) => node.textContent), painted };
+      return { text: labels.map((node) => node.textContent), painted,
+        colors: labels.map((node) => getComputedStyle(node).color),
+        shadows: labels.map((node) => getComputedStyle(node).textShadow) };
     });
     assert.equal(styles.text.length, 4, 'the exact ThreadLocal sample must have four relationship labels');
     assert.deepEqual(styles.painted, [], `${theme}: relationship labels must not paint any rectangular background`);
+    assert.ok(styles.shadows.every((shadow) => shadow === 'none'), 'labels must not have a halo');
+    assert.equal(styles.colors.filter((color) => color === 'rgb(255, 255, 255)').length, theme === 'dark' ? 1 : 0,
+      'only the label over the dark canvas should be white; three labels over the pale cluster must be dark');
+    assert.equal(styles.colors.filter((color) => color === 'rgb(34, 34, 34)').length, theme === 'dark' ? 3 : 4,
+      'labels over a light background must remain visible without an outline');
     await page.locator('#out').screenshot({ path: `.codex/mermaid-edge-labels-${theme}.png` });
     // The same CSS must survive serialization/rasterization for preview/export.
-    const imageLoaded = await page.evaluate(async () => {
+    const darkPixels = await page.evaluate(async () => {
       const image = new Image(); image.src = window.png;
-      await image.decode(); return image.naturalWidth > 0 && image.naturalHeight > 0;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+      const bounds = document.querySelector('#out svg').getBoundingClientRect();
+      const scale = canvas.width / bounds.width;
+      return [...document.querySelectorAll('.edgeLabel p')].map((label) => {
+        const b = label.getBoundingClientRect();
+        const pixels = context.getImageData(Math.round((b.left - bounds.left) * scale),
+          Math.round((b.top - bounds.top) * scale), Math.ceil(b.width * scale), Math.ceil(b.height * scale)).data;
+        let count = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (pixels[i] < 80 && pixels[i + 1] < 80 && pixels[i + 2] < 80 && pixels[i + 3] > 200) count++;
+        }
+        return count;
+      });
     });
-    assert.ok(imageLoaded, 'the diagram must remain rasterizable');
+    assert.ok(darkPixels.every((count) => count > 30), `all four labels must have visible text on the white PNG canvas: ${darkPixels}`);
   }
   console.log('PASS: ThreadLocal flowchart labels have no background in light/dark rendering.');
 } finally {

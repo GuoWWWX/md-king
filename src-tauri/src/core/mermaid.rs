@@ -583,7 +583,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:{html_labels},fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',fontSize:14,markdownAutoWrap:true,themeVariables:{{fontSize:'14px'}},themeCSS:'.nodeLabel{{display:inline-block;max-width:160px;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;text-align:center}}.nodeLabel p{{margin:0}}.edgeLabel,.edgeLabel *,.edgeLabel p,.edgeLabel span,.edgeLabel foreignObject,.edgeLabel foreignObject>div{{background:transparent!important;background-color:transparent!important}}.edgeLabel rect{{fill:transparent!important;stroke:none!important}}.edgeLabel text,.edgeLabel tspan{{fill:#fff!important;paint-order:normal;stroke:none!important}}.edgeLabel span,.edgeLabel p{{color:#fff!important;text-shadow:none!important}}',flowchart:{{htmlLabels:{html_labels},useMaxWidth:false,wrappingWidth:160,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing},padding:8}}}});
+    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:{html_labels},fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',fontSize:14,markdownAutoWrap:true,themeVariables:{{fontSize:'14px'}},themeCSS:'.nodeLabel{{display:inline-block;max-width:160px;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;text-align:center}}.nodeLabel p{{margin:0}}.edgeLabel,.edgeLabel *,.edgeLabel p,.edgeLabel span,.edgeLabel foreignObject,.edgeLabel foreignObject>div{{background:transparent!important;background-color:transparent!important}}.edgeLabel rect{{fill:transparent!important;stroke:none!important}}.edgeLabel text,.edgeLabel tspan{{fill:#222!important;paint-order:normal;stroke:none!important}}.edgeLabel span,.edgeLabel p{{color:#222!important;text-shadow:none!important}}',flowchart:{{htmlLabels:{html_labels},useMaxWidth:false,wrappingWidth:160,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing},padding:8}}}});
     document.body.dataset.stage='syntax';
     await mermaid.parse(source);
     document.body.dataset.stage='layout';
@@ -1145,6 +1145,9 @@ mod tests {
         assert!(html.contains(".edgeLabel,.edgeLabel *"));
         assert!(html.contains("background:transparent!important"));
         assert!(html.contains("fill:transparent!important"));
+        // 导出画布是白色，标签不能强制使用白字，也不能添加描边掩盖问题。
+        assert!(html.contains("fill:#222!important;paint-order:normal;stroke:none!important"));
+        assert!(html.contains("color:#222!important;text-shadow:none!important"));
         assert!(html.contains("padding:8"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));

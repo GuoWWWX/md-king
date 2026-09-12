@@ -40,6 +40,8 @@ const MERMAID_THEME_CSS = `
 .edgeLabel foreignObject,
 .edgeLabel foreignObject > div { background: transparent !important; background-color: transparent !important; }
 .edgeLabel rect { fill: transparent !important; stroke: none !important; }
+.edgeLabel, .edgeLabel * { text-shadow: none !important; }
+.edgeLabel text, .edgeLabel tspan { paint-order: normal; stroke: none !important; }
 `;
 
 function mermaidConfig(theme: "default" | "dark") {
@@ -56,13 +58,9 @@ function mermaidConfig(theme: "default" | "dark") {
     markdownAutoWrap: true,
     themeVariables: {
       fontSize: `${MERMAID_FONT_SIZE}px`,
-      ...(theme === "dark" ? { lineColor: "#a1a1aa", edgeLabelBackground: "#27272a" } : {}),
+      ...(theme === "dark" ? { lineColor: "#a1a1aa" } : {}),
     },
     themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
-.edgeLabel, .edgeLabel p, .edgeLabel span,
-.edgeLabel foreignObject > div { color: #ffffff !important; }
-.edgeLabel span, .edgeLabel p { text-shadow: none !important; }
-.edgeLabel text, .edgeLabel tspan { fill: #ffffff !important; paint-order: normal; stroke: none !important; }
 .relation { stroke: #a1a1aa !important; }
 /* classDiagram 的默认节点略微加深紫色，避免深色背景下发白；文字仍保持深色对比度。 */
 .node[id*="classId-"] .outer-path path:first-child { fill: #ccd2f2 !important; }
@@ -131,7 +129,7 @@ export async function renderMermaid(source: string, dark: boolean): Promise<Rend
     // 重复 id 会让同一页里的多张图互相串。
     const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, trimmed);
     const size = measureSvg(svg);
-    const result = { svg, ...size };
+    const result = { svg: readableEdgeLabels(svg, size, dark), ...size };
     svgCache.set(key, result);
     return result;
   })();
@@ -141,6 +139,58 @@ export async function renderMermaid(source: string, dark: boolean): Promise<Rend
     return await task;
   } finally {
     inflight.delete(key);
+  }
+}
+
+/** 标签背景透明后，要按标签实际落点的底色选字色，而不是对整张图强制白字。 */
+function readableEdgeLabels(svg: string, size: { width: number; height: number }, dark: boolean): string {
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:0;top:0;visibility:hidden;pointer-events:none";
+  host.innerHTML = svg;
+  const root = host.querySelector("svg")!;
+  const originalSize = [root.getAttribute("width"), root.getAttribute("height")];
+  root.setAttribute("width", String(size.width));
+  root.setAttribute("height", String(size.height));
+  document.body.append(host);
+  try {
+    // 同级分组按 SVG 绘制顺序覆盖；嵌套分组会覆盖外层分组底色。
+    const clusters = Array.from(root.querySelectorAll<SVGRectElement>(".cluster > rect")).map((rect) => ({
+      bounds: rect.getBoundingClientRect(), style: getComputedStyle(rect),
+    }));
+    for (const label of root.querySelectorAll<SVGGElement>("g.edgeLabel")) {
+      const bounds = label.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) continue;
+      const x = bounds.x + bounds.width / 2;
+      const y = bounds.y + bounds.height / 2;
+      let rgb = dark ? [34, 34, 34] : [255, 255, 255];
+      for (const cluster of clusters) {
+        const b = cluster.bounds;
+        if (x < b.left || x > b.right || y < b.top || y > b.bottom) continue;
+        const channels = cluster.style.fill.match(/[\d.]+/g)?.map(Number);
+        if (!channels || channels.length < 3) continue; // fill:none 不覆盖画布
+        const alpha = (channels[3] ?? 1) * Number(cluster.style.fillOpacity) * Number(cluster.style.opacity);
+        rgb = rgb.map((channel, i) => channels[i] * alpha + channel * (1 - alpha));
+      }
+      const linear = rgb.map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+      const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#222222" : "#ffffff";
+      // 内联到文字本身，SVG 单独展示和 PNG 栅格化时也能保留，不依赖页面 CSS。
+      for (const element of [label, ...label.querySelectorAll<SVGElement | HTMLElement>("div,span,p,text,tspan")]) {
+        element.style.setProperty("color", color, "important");
+        if (element.matches("text,tspan")) element.style.setProperty("fill", color, "important");
+      }
+    }
+    ["width", "height"].forEach((name, i) => {
+      const value = originalSize[i];
+      if (value === null) root.removeAttribute(name);
+      else root.setAttribute(name, value);
+    });
+    return root.outerHTML;
+  } finally {
+    host.remove();
   }
 }
 
@@ -180,7 +230,8 @@ export async function mermaidToPngDataUrl(source: string, dark: boolean, scale =
   if (cached) return cached;
 
   const { svg, width, height } = await renderMermaid(trimmed, dark);
-  const dataUrl = await svgToPng(svg, width, height, scale);
+  // PNG 导出使用白色画布，不能把深色编辑器画布上的白字直接带过去。
+  const dataUrl = await svgToPng(readableEdgeLabels(svg, { width, height }, false), width, height, scale);
   pngCache.set(key, dataUrl);
   return dataUrl;
 }
