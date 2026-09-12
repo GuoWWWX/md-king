@@ -226,6 +226,7 @@ type EstimateMermaidHeightOptions = {
   marginHeight: number;
   borderWidth?: number;
   maxBlockHeight?: number;
+  fallbackBlockHeight?: number;
 };
 
 export function estimateMermaidBlockHeight({
@@ -236,9 +237,12 @@ export function estimateMermaidBlockHeight({
   marginHeight,
   borderWidth = 1,
   maxBlockHeight = 480,
+  fallbackBlockHeight = 240,
 }: EstimateMermaidHeightOptions) {
   if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
-    return marginHeight + maxBlockHeight;
+    // Mermaid 是异步渲染的。未知尺寸时只保留一个中等高度占位，不能直接
+    // 把整页高度当成图高，否则图会在真实尺寸返回前被错误地单独分页。
+    return marginHeight + Math.min(maxBlockHeight, Math.max(1, fallbackBlockHeight));
   }
 
   const availableWidth = Math.max(1, contentWidth - horizontalPadding - borderWidth * 2);

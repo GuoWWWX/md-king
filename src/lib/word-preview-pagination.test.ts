@@ -19,13 +19,13 @@ test("Mermaid 分页使用 SVG 实际高度且不预留语言标签空间", () =
   assert.ok(height > 221 && height < 223);
 });
 
-test("Mermaid 尺寸未知时保留加载阶段的最大高度兜底", () => {
+test("Mermaid 尺寸未知时使用中等高度占位，避免初始渲染强制独占一页", () => {
   assert.equal(estimateMermaidBlockHeight({
     contentWidth: 554,
     horizontalPadding: 28,
     verticalPadding: 46,
     marginHeight: 18,
-  }), 498);
+  }), 258);
 });
 
 test("纵向 Mermaid 按页面可用高度等比缩放而不是裁剪", () => {
@@ -96,6 +96,23 @@ test("不可拆块放不下时才整体移到下一页", () => {
   assert.deepEqual(pages.map((page) => page.map((block) => block.id)), [
     ["code"],
     ["diagram"],
+  ]);
+});
+
+test("Mermaid 换页后会继续使用新页剩余空间", () => {
+  const pages = paginateByEstimatedHeight({
+    blocks: [
+      { id: "paragraph", height: 75 },
+      { id: "mermaid", height: 45 },
+      { id: "following", height: 30 },
+    ],
+    pageHeight: 100,
+    estimateHeight: (block) => block.height,
+  });
+
+  assert.deepEqual(pages.map((page) => page.map((block) => block.id)), [
+    ["paragraph"],
+    ["mermaid", "following"],
   ]);
 });
 
