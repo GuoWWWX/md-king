@@ -1,0 +1,13 @@
+<!doctype html>
+<html class="dark"><body style="margin:0;background:#18181b;color:#f4f4f5;padding:24px"><div id="out"></div>
+<script type="module">
+import { renderMermaid } from '/src/lib/mermaid.ts';
+const source = `classDiagram
+Lock <|.. ReentrantLock : 实现
+ReentrantLock *-- Sync : 组合内部类
+AbstractQueuedSynchronizer <|-- Sync : 继承
+Sync <|-- NonfairSync : 派生默认实现
+Sync <|-- FairSync : 派生公平实现`;
+window.result = await renderMermaid(source, true);
+document.querySelector('#out').innerHTML = window.result.svg;
+</script></body></html>

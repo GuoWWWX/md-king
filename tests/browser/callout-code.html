@@ -1,0 +1,60 @@
+<!doctype html>
+<html class="dark">
+  <head><meta charset="utf-8"><title>Callout code regression</title></head>
+  <body>
+    <button id="outside">移开编辑焦点</button>
+    <main id="editor" style="width: 740px; height: 850px; margin: 16px auto"></main>
+    <script type="module">
+      import "/src/index.css";
+      import { EditorState, Compartment } from "@codemirror/state";
+      import { EditorView, keymap } from "@codemirror/view";
+      import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
+      import { markdown } from "@codemirror/lang-markdown";
+      import { livePreviewMarkdownLanguage } from "/src/components/editor/cm/markdown-language.ts";
+      import { livePreviewPlugin } from "/src/components/editor/cm/live-preview.ts";
+      import { markdownEditorTheme } from "/src/components/editor/cm/theme.ts";
+
+      const source = [
+        '> [!CAUTION] 引用内的代码必须完整内缩',
+        '> ',
+        '> ```java',
+        '> try {',
+        '>     lock.lock(); // ' + '中文注释用于验证自动换行后的文字仍留在卡片里面。'.repeat(5),
+        '>     doBusiness();',
+        '> } finally {',
+        '>     lock.unlock();',
+        '> }',
+        '> ```',
+        '> ',
+        '> 引用参照：符号应保持可编辑，并与正文的引用符号一样大小。',
+        '',
+        '普通代码不受影响：',
+        '```text',
+        '> 这是代码内容，不是引用符号',
+        '```',
+      ].join('\n');
+      const theme = new Compartment();
+      const readOnly = new Compartment();
+      const view = new EditorView({
+        parent: document.querySelector('#editor'),
+        state: EditorState.create({
+          doc: source,
+          extensions: [
+            markdown({ base: livePreviewMarkdownLanguage }),
+            history(), keymap.of([...defaultKeymap, ...historyKeymap]),
+            EditorView.lineWrapping, theme.of(markdownEditorTheme(true)),
+            readOnly.of(EditorState.readOnly.of(false)), livePreviewPlugin,
+          ],
+        }),
+      });
+      window.fixture = {
+        view, source,
+        setDark(dark) {
+          document.documentElement.classList.toggle('dark', dark);
+          view.dispatch({ effects: theme.reconfigure(markdownEditorTheme(dark)) });
+        },
+        setReadOnly(value) { view.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(value)) }); },
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+<!doctype html><html class="dark"><body style="margin:0;background:#18181b"><div id="out"></div><script type="module">
+import { renderMermaid } from '/src/lib/mermaid.ts';
+window.result=await renderMermaid(`flowchart TD
+subgraph G1["第一代：Hashtable / Collections.synchronizedMap (暴力封路)"]
+H1["所有方法全部无脑加上 synchronized 大锁！<br/>不管是看商品还是买商品，整条街全部清场封锁！<br/>性能惨不忍睹，已被历史淘汰！"]
+end
+subgraph G2["第二代：JDK 1.7 的 ConcurrentHashMap (分段商铺)"]
+S1["把一条街拆成 16 个独立商铺 (Segment 数组)<br/>每个商铺是一把 ReentrantLock 锁。<br/>买米的去 1 号店，买水的去 2 号店，实现分段并发！<br/>缺点：并发度被写死（默认 16），结构太厚重。"]
+end
+subgraph G3["第三代：JDK 1.8+ 的 ConcurrentHashMap (精准货架锁)"]
+N1["彻底废除 Segment！回归单层 Node 数组。<br/>1. 货架空着：直接用 CAS 无锁写入 (极速零竞争)<br/>2. 货架有人：仅对该货架的【头节点】加 synchronized 锁！<br/>其他几千个货架完全自由并行，锁粒度细到极致！"]
+end
+G1 --> G2 --> G3`,true);
+out.innerHTML=window.result.svg;
+</script></body></html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html class="dark">
+  <head><meta charset="utf-8"><title>Markdown cursor regression</title></head>
+  <body>
+    <button id="outside">移开焦点</button>
+    <main id="editor" style="width:740px;height:650px;margin:16px auto;display:flex"></main>
+    <script type="module">
+      import "/src/index.css";
+      import { createElement, createRef } from "react";
+      import { createRoot } from "react-dom/client";
+      import { LiveMarkdownEditor } from "/src/components/editor/live-markdown-editor.tsx";
+      const source = [
+        '普通正文：光标比原来稍粗、稍短。', '', '# 标题光标', '',
+        '> 引用正文测试', '', '```java', 'lock.lock();', '```', '',
+        '换行定位测试，'.repeat(40), '', '末行',
+      ].join('\n');
+      const ref = createRef();
+      const root = createRoot(document.querySelector('#editor'));
+      const settings = { isDark: true, readOnly: false };
+      function render() {
+        document.documentElement.classList.toggle('dark', settings.isDark);
+        root.render(createElement(LiveMarkdownEditor, {
+          ref, documentKey: 'cursor-fixture', initialContent: source,
+          ...settings, onDocChanged() {},
+        }));
+      }
+      window.fixture = {
+        get view() { return ref.current?.getView(); }, source,
+        configure(next) { Object.assign(settings, next); render(); },
+      };
+      render();
+    </script>
+  </body>
+</html>

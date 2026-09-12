@@ -18,22 +18,59 @@ const inflight = new Map<string, Promise<RenderResult>>();
 let mermaidReady: Promise<typeof import("mermaid").default> | undefined;
 let currentTheme: "default" | "dark" = "default";
 const MERMAID_FONT_FAMILY = "Microsoft YaHei, Segoe UI Emoji, sans-serif";
+const MERMAID_FONT_SIZE = 14;
+const MERMAID_LABEL_WRAP_WIDTH = 160;
+const MERMAID_THEME_CSS = `
+.nodeLabel {
+  display: inline-block;
+  max-width: ${MERMAID_LABEL_WRAP_WIDTH}px;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
+  text-align: center;
+}
+.nodeLabel p { margin: 0; }
+.cluster-label .nodeLabel { max-width: 320px; }
+`;
 
 function mermaidConfig(theme: "default" | "dark") {
   return {
     startOnLoad: false,
-    theme,
+    // 保留节点的原始配色，避免 dark 主题把浅色自定义节点的文字改成浅色。
+    theme: "default" as const,
     // securityLevel 保持 strict：图里的文本来自用户文档，
     // 放开会让 mermaid 允许内联脚本和外部资源。
     securityLevel: "strict" as const,
     htmlLabels: true,
     fontFamily: MERMAID_FONT_FAMILY,
+    fontSize: MERMAID_FONT_SIZE,
+    markdownAutoWrap: true,
+    themeVariables: {
+      fontSize: `${MERMAID_FONT_SIZE}px`,
+      ...(theme === "dark" ? { lineColor: "#a1a1aa", edgeLabelBackground: "#27272a" } : {}),
+    },
+    themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
+.edgeLabel, .edgeLabel p, .edgeLabel span,
+.edgeLabel foreignObject > div { color: #f4f4f5 !important; }
+.edgeLabel .labelBkg,
+.edgeLabel foreignObject > div { background: #27272a !important; background-color: #27272a !important; }
+.edgeLabel text, .edgeLabel tspan { fill: #f4f4f5 !important; }
+.relation { stroke: #a1a1aa !important; }
+/* classDiagram 的默认节点略微加深紫色，避免深色背景下发白；文字仍保持深色对比度。 */
+.node[id*="classId-"] .outer-path path:first-child { fill: #ccd2f2 !important; }
+/* flowchart 的矩形/菱形节点使用同一套浅蓝紫色，避免深色模式出现白色卡片。 */
+.node[id*="-flowchart-"] rect,
+.node[id*="-flowchart-"] polygon { fill: #ccd2f2 !important; }
+` : ""),
     flowchart: {
       htmlLabels: true,
       useMaxWidth: false,
-      wrappingWidth: 180,
-      nodeSpacing: 50,
-      rankSpacing: 50,
+      wrappingWidth: MERMAID_LABEL_WRAP_WIDTH,
+      nodeSpacing: 40,
+      rankSpacing: 40,
+      padding: 8,
+      subGraphTitleMargin: { top: 8, bottom: 16 },
     },
   };
 }

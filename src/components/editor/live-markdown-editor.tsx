@@ -14,6 +14,7 @@ import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { cn } from "@/lib/utils";
 import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, markdownMathBlockExtension, mermaidBlockExtension, renderFrontmatterEffect, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
 import { documentTitleExtension } from "./cm/document-title";
+import { markdownCursorExtension } from "./cm/cursor";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
@@ -288,6 +289,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
+  const cursorCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
   const documentTitleCompartment = useRef(new Compartment()).current;
   const livePreviewCompartment = useRef(new Compartment()).current;
@@ -493,6 +495,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // drawSelection() 去掉：它把每行选区背景填满整行宽度直到容器右边缘，
       // 导致选区右侧无边距而文字右侧有 24px 边距，视觉上左右不对称。
       // 改用浏览器原生 ::selection，选区只包裹被选中的字符宽度，和文字边距一致。
+      cursorCompartment.of(markdownCursorExtension(isDark)),
       rectangularSelection(),
       EditorView.lineWrapping,
       linkInteractionCompartment.of(createLinkInteractionExtension()),
@@ -692,11 +695,12 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     viewRef.current?.dispatch({
       effects: [
         themeCompartment.reconfigure(markdownEditorTheme(isDark)),
+        cursorCompartment.reconfigure(markdownCursorExtension(isDark)),
         frontmatterCompartment.reconfigure(frontmatterBlockExtension(!readOnly)),
         mermaidCompartment.reconfigure(mermaidBlockExtension(isDark, !readOnly)),
       ],
     });
-  }, [frontmatterCompartment, isDark, mermaidCompartment, readOnly, themeCompartment]);
+  }, [cursorCompartment, frontmatterCompartment, isDark, mermaidCompartment, readOnly, themeCompartment]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
