@@ -11,6 +11,8 @@ use crate::system::vault_watcher::VaultWatcherState;
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use std::process::Command;
+#[cfg(windows)]
+use std::io::Write;
 use tauri::{AppHandle, State};
 
 #[cfg(windows)]
@@ -261,6 +263,53 @@ pub fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+pub fn copy_text_to_clipboard(text: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let script = format!(
+            "$ErrorActionPreference='Stop'; Set-Clipboard -Value {}",
+            powershell_single_quoted(&text)
+        );
+        let output = hidden_powershell_command()
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .map_err(|error| format!("写入剪贴板失败：{error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+
+        // PowerShell 的 Set-Clipboard 在部分 WebView/系统会话中会无声失败，
+        // 使用系统自带 clip.exe 作为可靠回退，覆盖文件树右键菜单的所有入口。
+        use std::process::Stdio;
+        let mut clip = Command::new("clip.exe")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|error| format!("写入剪贴板失败：{error}"))?;
+        clip.stdin
+            .take()
+            .ok_or_else(|| "写入剪贴板失败：无法打开剪贴板输入".to_string())?
+            .write_all(text.as_bytes())
+            .map_err(|error| format!("写入剪贴板失败：{error}"))?;
+        let fallback = clip
+            .wait_with_output()
+            .map_err(|error| format!("写入剪贴板失败：{error}"))?;
+        if fallback.status.success() {
+            return Ok(());
+        }
+        return Err(format!("写入剪贴板失败：{}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        Err("文本复制剪贴板当前仅支持 Windows。".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn set_vault_entry_clipboard(root: String, paths: Vec<String>) -> Result<(), String> {
     let root = resolve_root(&root)?;
     if paths.is_empty() {
@@ -275,7 +324,7 @@ pub fn set_vault_entry_clipboard(root: String, paths: Vec<String>) -> Result<(),
     {
         let escaped_paths = absolutes
             .iter()
-            .map(|path| format!("'{}'", path.to_string_lossy().replace('\'', "''")))
+            .map(|path| powershell_single_quoted(&path.to_string_lossy()))
             .collect::<Vec<_>>()
             .join(", ");
         let script =
@@ -301,10 +350,27 @@ pub fn set_vault_entry_clipboard(root: String, paths: Vec<String>) -> Result<(),
 }
 
 #[cfg(windows)]
+fn powershell_single_quoted(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+#[cfg(windows)]
 fn hidden_powershell_command() -> Command {
     let mut command = Command::new("powershell.exe");
     command.creation_flags(CREATE_NO_WINDOW);
     command
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(windows)]
+    #[test]
+    fn quotes_text_for_powershell_clipboard_command() {
+        assert_eq!(
+            super::powershell_single_quoted("C:\\用户\\O'Brien.md"),
+            "'C:\\用户\\O''Brien.md'"
+        );
+    }
 }
 
 #[tauri::command]

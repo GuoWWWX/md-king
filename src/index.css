@@ -1778,7 +1778,7 @@ select {
   /* 公式源码优先于 Markdown 链接语法，避免其中的 `[...]` 显示为文件链接。 */
   .mk-cm-math-source,
   .mk-cm-math-source * {
-    color: var(--foreground) !important;
+    color: inherit !important;
     text-decoration: none !important;
     cursor: text !important;
   }
@@ -2498,6 +2498,69 @@ select {
     opacity: 1 !important;
   }
 
+  /* CM 的代码行与引用正文是兄弟节点，没有可透出的父级引用背景。
+     行本身绘制完整引用底色/边线；内缩的伪元素只在本行内绘制代码卡片。
+     禁用外扩阴影，避免相邻行互相遮挡；文字和工具栏使用同一内缩量。 */
+  .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    --mk-nested-code-bg: #f8fafc;
+    --mk-nested-code-border: rgba(226, 232, 240, 0.95);
+    position: relative;
+    isolation: isolate;
+    box-sizing: border-box;
+    margin-inline: 0;
+    width: auto;
+    padding-inline: 32px !important;
+    border-radius: 0;
+    background: var(--mk-callout-bg);
+    box-shadow:
+      inset 3px 0 0 var(--mk-callout-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
+  }
+
+  .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
+    content: "";
+    position: absolute;
+    inset: 0 20px;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--mk-nested-code-bg);
+    border-inline: 1px solid var(--mk-nested-code-border);
+  }
+
+  .cm-line.mk-cm-callout-line:is(.mk-cm-code-first, .mk-cm-code-fence-first)::after {
+    border-top: 1px solid var(--mk-nested-code-border);
+    border-radius: 4px 4px 0 0;
+  }
+
+  .cm-line.mk-cm-callout-line:is(.mk-cm-code-last, .mk-cm-code-fence-last)::after {
+    border-bottom: 1px solid var(--mk-nested-code-border);
+    border-radius: 0 0 4px 4px;
+  }
+
+  .cm-line.mk-cm-callout-line[data-code-language]::before {
+    left: 32px;
+  }
+
+  .cm-line.mk-cm-callout-line .mk-cm-copy-code {
+    right: 28px;
+  }
+
+  .cm-line.mk-cm-callout-code-source {
+    /* 只让首行的源码前缀占用黄色边栏；续行和代码正文始终从卡片内部开始。 */
+    text-indent: -26px;
+  }
+
+  .mk-cm-callout-code-prefix {
+    display: inline-block;
+    width: 26px;
+    text-indent: 0;
+    font-family: var(--font-sans, sans-serif);
+    /* 代码为正文的 0.88 倍，引用前缀恢复为正文大小，且不改变代码行高。 */
+    font-size: calc(1em / 0.88);
+    line-height: 0;
+    font-weight: 400;
+  }
+
   /* GFM 表格渲染态 widget */
   .mk-cm-table-wrapper {
     position: relative;
@@ -3209,6 +3272,26 @@ select {
     background: rgba(82, 82, 82, 0.46) !important;
   }
 
+  /* 项目列表的悬浮与当前项统一使用浅蓝选中态，避免深蓝底在深色界面过于突兀。 */
+  .dark .mk-vault-recent-item:hover,
+  .dark .mk-vault-recent-item[data-highlighted],
+  .dark .mk-vault-recent-item-active {
+    background: #dbeafe !important;
+    color: #1e3a8a !important;
+  }
+
+  .dark .mk-vault-recent-item:hover .mk-vault-recent-path,
+  .dark .mk-vault-recent-item[data-highlighted] .mk-vault-recent-path,
+  .dark .mk-vault-recent-item-active .mk-vault-recent-path {
+    color: #64748b !important;
+  }
+
+  .dark .mk-vault-recent-item:hover .mk-vault-recent-remove,
+  .dark .mk-vault-recent-item[data-highlighted] .mk-vault-recent-remove,
+  .dark .mk-vault-recent-item-active .mk-vault-recent-remove {
+    color: #1e3a8a !important;
+  }
+
   .dark .mk-file-tree-tool {
     color: #a1a1aa !important;
   }
@@ -3383,6 +3466,15 @@ select {
 
   .dark .mk-convert-control:hover {
     background: #2a2a2a !important;
+  }
+
+  /* 深色界面的转换操作使用低饱和蓝灰，保留主操作层级而不显得刺眼。 */
+  .dark .mk-convert-submit {
+    background: #4f7199 !important;
+  }
+
+  .dark .mk-convert-submit:hover:not(:disabled) {
+    background: #5d7fa7 !important;
   }
 
   .dark .mk-titlebar .text-slate-950,
@@ -3617,6 +3709,15 @@ select {
     color: #a1a1aa;
   }
 
+  .dark .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    --mk-nested-code-bg: #18181b;
+    --mk-nested-code-border: rgba(212, 212, 216, 0.18);
+    background: color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
+    box-shadow:
+      inset 3px 0 0 var(--mk-callout-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;
+  }
+
   .dark .mk-cm-image[data-state="error"] .mk-cm-image-canvas {
     color: #fca5a5;
   }
@@ -3702,7 +3803,7 @@ select {
 
   .dark .mk-cm-table th {
     background: rgba(39, 39, 42, 0.8);
-    color: #f4f4f5;
+    color: #e4e4e7;
   }
 
   .dark .mk-cm-mermaid-source {
@@ -3798,7 +3899,7 @@ select {
 
   .dark .mk-cm-table-cell-content code {
     background: #3f3f46;
-    color: #f4f4f5;
+    color: #e4e4e7;
   }
 
   .dark .mk-cm-table-cell-content a {

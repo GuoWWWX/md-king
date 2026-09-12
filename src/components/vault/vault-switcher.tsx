@@ -54,21 +54,21 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
               <DropdownMenuItem
                 key={root}
                 className={cn(
-                  "min-h-0 items-center gap-2 py-1",
-                  isActive && "bg-blue-50 text-blue-950 focus:bg-blue-100 focus:text-blue-950 dark:bg-blue-500/15 dark:text-blue-100 dark:focus:bg-blue-500/25 dark:focus:text-blue-50",
+                  "mk-vault-recent-item min-h-0 items-center gap-2 py-1",
+                  isActive && "mk-vault-recent-item-active",
                 )}
                 onSelect={() => { if (!isActive) onSelectVault(root); }}
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{vaultDisplayName(root)}</span>
-                  <span className="block truncate text-[11px] text-slate-500 dark:text-zinc-400">{root}</span>
+                  <span className="mk-vault-recent-path block truncate text-[11px] text-slate-500 dark:text-zinc-400">{root}</span>
                 </span>
                 {onRemoveRecent ? (
                   <span
                     role="button"
                     tabIndex={-1}
                     aria-label={`从最近列表移除 ${root}`}
-                    className="shrink-0 rounded-[6px] p-0.5 text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+                    className="mk-vault-recent-remove shrink-0 rounded-[6px] p-0.5 text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
                     // 阻止冒泡，否则点删除会连带触发 DropdownMenuItem 的切换。
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => { event.stopPropagation(); onRemoveRecent(root); }}

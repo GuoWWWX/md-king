@@ -1405,6 +1405,10 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
               if (source) void handleMoveEntry(source, null, "root");
             }}
             onContextMenu={(event) => {
+              clearMarqueeCandidate();
+              pointerFileDragCandidateRef.current = undefined;
+              updatePointerFileDragState(undefined);
+              setMarqueeRect(undefined);
               if (event.target instanceof Element && event.target.closest("[role='treeitem']")) return;
               replaceSelectedEntries([]);
             }}

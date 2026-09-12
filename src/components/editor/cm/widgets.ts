@@ -137,6 +137,14 @@ export class CopyCodeWidget extends WidgetType {
     btn.dataset.tooltip = "复制代码";
     btn.innerHTML = COPY_ICON;
 
+    // 在 click 之前阻止编辑器移动选区和按钮抢焦点，避免围栏切换到源码态。
+    const keepEditorSelection = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    btn.addEventListener("pointerdown", keepEditorSelection);
+    btn.addEventListener("mousedown", keepEditorSelection);
+
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -154,7 +162,7 @@ export class CopyCodeWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
 }
 

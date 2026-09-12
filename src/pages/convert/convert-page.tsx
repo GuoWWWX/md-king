@@ -1,7 +1,8 @@
 import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Trash2 } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { basename, dirname } from "@tauri-apps/api/path";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { ConversionInputCard, type ConversionInputCardHandle, type EditorContentWidthMode } from "@/components/convert/conversion-input-card";
@@ -23,7 +24,7 @@ import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { actionableConversionWarnings, buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readMarkdownFileFromPath, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles, selectMarkdownSavePath } from "@/lib/tauri";
+import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles, selectMarkdownSavePath } from "@/lib/tauri";
 import { parseVaultError, userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -38,14 +39,16 @@ import { vaultAbsolutePath } from "@/lib/vault-clipboard";
 import { useVaultStore } from "@/stores/vault-store";
 import { importVaultImageData, importVaultImageFromPath, readVaultFile, renameVaultEntry, resolveVaultImageSource, showInExplorer, writeVaultFile } from "@/lib/vault";
 import { DocumentTabBar, type DocumentPageTab } from "@/components/editor/document-tab-bar";
+import { SaveConflictDialog, type SaveConflictChoice } from "@/components/vault/vault-dialogs";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { documentLinkFragment, findMarkdownHeadingLine, isExternalDocumentLink, resolveVaultDocumentLink } from "@/lib/document-links";
+import { externalDocumentSyncDecision } from "@/lib/external-document-sync";
 import { createDocumentSession, documentSessionStorageKey, loadDocumentSession, saveDocumentSession, type PersistedDocumentTab } from "@/lib/document-session";
 import { markdownOutlineRevealEvent } from "@/lib/document-outline";
 import { vaultProjectWindowRoot } from "@/lib/vault-window";
 import type { ConvertResult, HistoryItem, Template, TemplateStyleConfig } from "@/types";
-import type { VaultEol } from "@/types/vault";
+import type { VaultEol, VaultFileContent } from "@/types/vault";
 import type { RestorableDocumentTab } from "@/stores/document-tabs-store";
 
 type PreviewSidebarView = "pages" | "outline";
@@ -176,7 +179,7 @@ async function restorePersistedDocumentTab(tab: PersistedDocumentTab, vaultRoot:
 
   const absolutePath = tab.absolutePath ?? (tab.path && isAbsoluteFilePath(tab.path) ? tab.path : undefined);
   if (!absolutePath) return undefined;
-  const diskContent = await readMarkdownFileFromPath(absolutePath);
+  const disk = await readExternalDocumentFile(absolutePath);
   const restoreUnsavedContent = tab.dirty && tab.content !== undefined;
   return {
     kind: "vault",
@@ -184,11 +187,11 @@ async function restorePersistedDocumentTab(tab: PersistedDocumentTab, vaultRoot:
     absolutePath,
     title: tab.title,
     titleEdited: tab.titleEdited,
-    content: restoreUnsavedContent ? tab.content! : diskContent,
+    content: restoreUnsavedContent ? tab.content! : disk.content,
     dirty: restoreUnsavedContent,
-    eol: tab.eol,
-    hasBom: tab.hasBom,
-    modifiedMs: tab.modifiedMs,
+    eol: restoreUnsavedContent ? tab.eol ?? disk.eol : disk.eol,
+    hasBom: restoreUnsavedContent ? tab.hasBom ?? disk.hasBom : disk.hasBom,
+    modifiedMs: restoreUnsavedContent ? tab.modifiedMs ?? disk.modifiedMs : disk.modifiedMs,
     viewState: tab.viewState,
   };
 }
@@ -214,6 +217,19 @@ type SaveableExternalTab = DocumentTab & {
   kind: "vault";
   absolutePath: string;
 };
+
+type ExternalDocumentChange = {
+  tabId: string;
+  filePath: string;
+  disk?: VaultFileContent;
+  deleted: boolean;
+};
+
+async function readExternalDocumentFile(path: string) {
+  const root = await dirname(path);
+  const fileName = await basename(path);
+  return readVaultFile(root, fileName);
+}
 
 function canSaveVaultTab(tab: DocumentTab | undefined, vaultRoot: string | undefined): tab is SaveableVaultTab {
   return Boolean(
@@ -418,6 +434,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const activeTabId = useDocumentTabsStore((state) => state.activeTabId);
   const openScratchTab = useDocumentTabsStore((state) => state.openScratchTab);
   const updateTabContent = useDocumentTabsStore((state) => state.updateTabContent);
+  const replaceTabContent = useDocumentTabsStore((state) => state.replaceTabContent);
+  const updateTabDiskVersion = useDocumentTabsStore((state) => state.updateTabDiskVersion);
+  const detachMissingTab = useDocumentTabsStore((state) => state.detachMissingTab);
+  const closeDocumentTab = useDocumentTabsStore((state) => state.closeTab);
   const markTabClean = useDocumentTabsStore((state) => state.markTabClean);
   const markTabSavedAs = useDocumentTabsStore((state) => state.markTabSavedAs);
   const openVaultTab = useDocumentTabsStore((state) => state.openVaultTab);
@@ -479,6 +499,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const [documentSessionReady, setDocumentSessionReady] = useState(false);
   const restoredSessionKeyRef = useRef<string | undefined>(undefined);
   const latestDocumentSessionRef = useRef<ReturnType<typeof createDocumentSession> | undefined>(undefined);
+  const [externalDocumentChanges, setExternalDocumentChanges] = useState<ExternalDocumentChange[]>([]);
+  const externalSyncInFlightRef = useRef(false);
+  const externalSyncQueuedRef = useRef(false);
 
   useEffect(() => {
     if (!isImageTab || !vaultRoot || !activeTab?.path) {
@@ -600,6 +623,225 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     });
     setSaveState(activeTab.dirty ? "dirty" : "clean");
   }, [activeTab?.dirty, activeTab?.eol, activeTab?.hasBom, activeTab?.id, activeTab?.kind, activeTab?.modifiedMs, activeTab?.path, setSaveState]);
+
+  const dismissExternalDocumentChange = useCallback((tabId: string) => {
+    setExternalDocumentChanges((changes) => changes.filter((change) => change.tabId !== tabId));
+  }, []);
+
+  const queueExternalDocumentChange = useCallback((change: ExternalDocumentChange) => {
+    setExternalDocumentChanges((changes) => {
+      const existingIndex = changes.findIndex((item) => item.tabId === change.tabId);
+      if (existingIndex < 0) return [...changes, change];
+      const next = [...changes];
+      next[existingIndex] = change;
+      return next;
+    });
+  }, []);
+
+  const reconcileOpenDocuments = useCallback(async (scope: "vault" | "external" | "all") => {
+    if (!isTauriEnvironment()) return;
+    if (externalSyncInFlightRef.current) {
+      externalSyncQueuedRef.current = true;
+      return;
+    }
+
+    externalSyncInFlightRef.current = true;
+    let nextScope = scope;
+    try {
+      do {
+        externalSyncQueuedRef.current = false;
+        const root = useVaultStore.getState().vaultRoot;
+        const openTabs = useDocumentTabsStore.getState().tabs.filter((tab) => {
+          if (tab.kind !== "vault" || !tab.path) return false;
+          const external = isAbsoluteFilePath(tab.path);
+          if (nextScope === "vault") return !external && Boolean(root);
+          if (nextScope === "external") return external;
+          return external || Boolean(root);
+        });
+
+        await Promise.all(openTabs.map(async (snapshotTab) => {
+          const readDisk = () => isAbsoluteFilePath(snapshotTab.path!)
+            ? readExternalDocumentFile(snapshotTab.absolutePath ?? snapshotTab.path!)
+            : readVaultFile(root!, snapshotTab.path!);
+          let disk: VaultFileContent;
+          try {
+            disk = await readDisk();
+          } catch (error) {
+            const firstError = parseVaultError(error, "读取外部修改失败");
+            if (firstError.code !== "NOT_FOUND") return;
+            // git checkout、同步盘和部分编辑器会先删除旧文件再原子替换，短暂缺失不应误报。
+            await new Promise((resolve) => window.setTimeout(resolve, 160));
+            try {
+              disk = await readDisk();
+            } catch (retryError) {
+              if (parseVaultError(retryError, "读取外部修改失败").code !== "NOT_FOUND") return;
+              const current = useDocumentTabsStore.getState().tabs.find((tab) => tab.id === snapshotTab.id);
+              if (!current || current.kind !== "vault") return;
+              queueExternalDocumentChange({
+                tabId: current.id,
+                filePath: current.absolutePath ?? current.path ?? current.title,
+                deleted: true,
+              });
+              if (useDocumentTabsStore.getState().activeTabId === current.id) {
+                setSaveState("conflict", "文件已被外部删除，请选择保留当前内容或关闭标签。");
+              }
+              return;
+            }
+          }
+
+          const current = useDocumentTabsStore.getState().tabs.find((tab) => tab.id === snapshotTab.id);
+          if (!current || current.kind !== "vault") return;
+          const diskVersion = {
+            content: disk.content,
+            eol: disk.eol,
+            hasBom: disk.hasBom,
+            modifiedMs: disk.modifiedMs,
+          };
+          const decision = externalDocumentSyncDecision(current, disk);
+          if (decision === "ignore") return;
+          if (decision === "align") {
+            if (current.dirty) {
+              replaceTabContent(current.id, diskVersion);
+            } else {
+              updateTabDiskVersion(current.id, diskVersion);
+            }
+            dismissExternalDocumentChange(current.id);
+            if (useDocumentTabsStore.getState().activeTabId === current.id) {
+              setActiveFileModifiedMs(disk.modifiedMs);
+              setSaveState("clean");
+            }
+            return;
+          }
+
+          if (decision === "conflict") {
+            queueExternalDocumentChange({
+              tabId: current.id,
+              filePath: current.absolutePath ?? current.path ?? current.title,
+              disk,
+              deleted: false,
+            });
+            if (useDocumentTabsStore.getState().activeTabId === current.id) {
+              setSaveState("conflict", "磁盘内容已变化，请选择保留、重载或合并。");
+            }
+            return;
+          }
+
+          replaceTabContent(current.id, diskVersion);
+          dismissExternalDocumentChange(current.id);
+          if (useDocumentTabsStore.getState().activeTabId === current.id) {
+            setActiveFileModifiedMs(disk.modifiedMs);
+            setSaveState("clean");
+          }
+        }));
+
+      // 干净文档的外部变更静默重载，避免文件监控频繁打断阅读；未保存文档仍进入冲突处理。
+        nextScope = "all";
+      } while (externalSyncQueuedRef.current);
+    } finally {
+      externalSyncInFlightRef.current = false;
+    }
+  }, [dismissExternalDocumentChange, queueExternalDocumentChange, replaceTabContent, setActiveFileModifiedMs, setSaveState, updateTabDiskVersion]);
+
+  useEffect(() => {
+    if (!vaultRoot || !isTauriEnvironment()) return undefined;
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    void listen<{ root?: string }>("vault://changed", (event) => {
+      if (!active) return;
+      const changedRoot = event.payload.root;
+      if (changedRoot && !sameVaultRoot(changedRoot, vaultRoot)) return;
+      void reconcileOpenDocuments("vault");
+    }).then((cleanup) => {
+      if (!active) cleanup();
+      else unlisten = cleanup;
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [reconcileOpenDocuments, vaultRoot]);
+
+  useEffect(() => {
+    if (!isTauriEnvironment()) return undefined;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void reconcileOpenDocuments("external");
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [reconcileOpenDocuments]);
+
+  useEffect(() => {
+    const openTabIds = new Set(tabs.map((tab) => tab.id));
+    setExternalDocumentChanges((changes) => {
+      const next = changes.filter((change) => openTabIds.has(change.tabId));
+      return next.length === changes.length ? changes : next;
+    });
+  }, [tabs]);
+
+  const externalDocumentChange = externalDocumentChanges[0];
+  const externalDocumentChangeTab = tabs.find((tab) => tab.id === externalDocumentChange?.tabId);
+  const activeTabHasExternalChange = externalDocumentChanges.some((change) => change.tabId === activeTabId);
+
+  async function handleExternalDocumentChoice(choice: SaveConflictChoice, mergedContent?: string) {
+    const change = externalDocumentChanges[0];
+    if (!change) return;
+    const tab = useDocumentTabsStore.getState().tabs.find((item) => item.id === change.tabId);
+    if (!tab) {
+      dismissExternalDocumentChange(change.tabId);
+      return;
+    }
+
+    if (choice === "close") {
+      closeDocumentTab(tab.id);
+      dismissExternalDocumentChange(tab.id);
+      return;
+    }
+    if (change.deleted) {
+      detachMissingTab(tab.id);
+      dismissExternalDocumentChange(tab.id);
+      if (useDocumentTabsStore.getState().activeTabId === tab.id) setSaveState("dirty");
+      toast.info(`已保留为未保存文档：${tab.title}`);
+      return;
+    }
+
+    const disk = change.disk;
+    if (!disk) {
+      dismissExternalDocumentChange(tab.id);
+      return;
+    }
+    const diskVersion = {
+      eol: disk.eol,
+      hasBom: disk.hasBom,
+      modifiedMs: disk.modifiedMs,
+    };
+    if (choice === "reload") {
+      replaceTabContent(tab.id, { ...diskVersion, content: disk.content });
+      if (useDocumentTabsStore.getState().activeTabId === tab.id) {
+        setActiveFileModifiedMs(disk.modifiedMs);
+        setSaveState("clean");
+      }
+      toast.info(`已重载磁盘内容：${tab.title}`);
+    } else if (choice === "merge") {
+      const merged = mergedContent ?? tab.content;
+      if (merged === disk.content) {
+        replaceTabContent(tab.id, { ...diskVersion, content: disk.content });
+        if (useDocumentTabsStore.getState().activeTabId === tab.id) setSaveState("clean");
+      } else {
+        updateTabDiskVersion(tab.id, diskVersion);
+        updateTabContent(tab.id, merged);
+        if (useDocumentTabsStore.getState().activeTabId === tab.id) setSaveState("dirty");
+      }
+      setActiveFileModifiedMs(disk.modifiedMs);
+      toast.success(`已应用合并结果：${tab.title}`);
+    } else {
+      updateTabDiskVersion(tab.id, diskVersion);
+      if (useDocumentTabsStore.getState().activeTabId === tab.id) {
+        setActiveFileModifiedMs(disk.modifiedMs);
+        setSaveState("dirty");
+      }
+      toast.info(`已保留编辑器内容：${tab.title}`);
+    }
+    dismissExternalDocumentChange(tab.id);
+  }
 
   function cycleContentWidthMode() {
     setContentWidthMode((current) => {
@@ -766,6 +1008,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     } catch (error) {
       const { code, message } = parseVaultError(error, "保存文档失败");
       if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
+      if (code === "CONFLICT") void reconcileOpenDocuments("all");
       toast.error(message);
       return false;
     } finally {
@@ -811,6 +1054,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     } catch (error) {
       const { code, message } = parseVaultError(error, "保存文档失败");
       if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
+      if (code === "CONFLICT") void reconcileOpenDocuments("all");
       toast.error(message);
       return false;
     } finally {
@@ -884,11 +1128,11 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   }
 
   useEffect(() => {
-    if (!appConfig?.autoSave || !activeTab?.dirty || !canAutoSaveActiveDocument) return undefined;
+    if (!appConfig?.autoSave || !activeTab?.dirty || !canAutoSaveActiveDocument || activeTabHasExternalChange) return undefined;
     const delay = Math.min(10_000, Math.max(300, appConfig.autoSaveDelayMs || 1000));
     const timer = window.setTimeout(() => void saveActiveDocument(true), delay);
     return () => window.clearTimeout(timer);
-  }, [activeTab?.dirty, activeTab?.id, activeTab?.path, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canAutoSaveActiveDocument, markdown]);
+  }, [activeTab?.dirty, activeTab?.id, activeTab?.path, activeTabHasExternalChange, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canAutoSaveActiveDocument, markdown]);
 
   async function copyActiveDocumentPath(path: string | undefined) {
     if (!path) return;
@@ -1017,11 +1261,11 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     // 从而触发 cleanup —— 那时再排队回去就成了死循环。
     let cancelled = false;
     const path = paths[0];
-    void readMarkdownFileFromPath(path)
-      .then((text) => {
+    void readExternalDocumentFile(path)
+      .then((file) => {
         if (cancelled) return;
         clearPendingImportPaths();
-        openExternalDocument(path, text);
+        openExternalDocument(path, file);
         toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
       })
       .catch((error) => {
@@ -1123,8 +1367,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
     for (const path of paths) {
       try {
-        const text = await readMarkdownFileFromPath(path);
-        lastId = openExternalDocument(path, text);
+        const file = await readExternalDocumentFile(path);
+        lastId = openExternalDocument(path, file);
       } catch {
         failed += 1;
       }
@@ -1165,13 +1409,16 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   /// 从磁盘路径载入的文档。若这个路径已经在某个标签里开着就复用它，
   /// 否则新开一个——和文件树点击走同一套去重逻辑，避免同一个文件开出两个标签。
-  function openExternalDocument(path: string, content: string) {
+  function openExternalDocument(path: string, file: VaultFileContent) {
     const normalized = path.replace(/\\/g, "/");
     const id = openVaultTab({
       path: normalized,
       absolutePath: path,
       title: normalized.split("/").pop() ?? normalized,
-      content,
+      content: file.content,
+      eol: file.eol,
+      hasBom: file.hasBom,
+      modifiedMs: file.modifiedMs,
     });
     setOutputNameEdited(false);
     return id;
@@ -1332,8 +1579,8 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       const path = await selectMarkdownFile();
       if (!path) return;
-      const text = await readMarkdownFileFromPath(path);
-      openExternalDocument(path, text);
+      const file = await readExternalDocumentFile(path);
+      openExternalDocument(path, file);
       toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "读取文件失败"));
@@ -1808,6 +2055,15 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SaveConflictDialog
+        open={Boolean(externalDocumentChange && externalDocumentChangeTab)}
+        filePath={externalDocumentChange?.filePath}
+        localContent={externalDocumentChangeTab?.content ?? ""}
+        externalContent={externalDocumentChange?.disk?.content}
+        deleted={externalDocumentChange?.deleted}
+        onChoose={handleExternalDocumentChoice}
+      />
 
       <Dialog open={Boolean(closingDocumentTab)} onOpenChange={(open) => { if (!open) resolveCloseDocument(false); }}>
         <DialogContent className="sm:max-w-md">

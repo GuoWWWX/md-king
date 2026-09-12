@@ -567,8 +567,8 @@ fn renderer_html(
         .replace('>', "\\u003e")
         .replace('&', "\\u0026");
     let script_url = file_url(mermaid_script);
-    let node_spacing = if compact { 20 } else { 50 };
-    let rank_spacing = if compact { 25 } else { 50 };
+    let node_spacing = if compact { 20 } else { 40 };
+    let rank_spacing = if compact { 25 } else { 40 };
     // PNG 由浏览器直接截图，保留 Mermaid 原生 HTML 标签可获得最完整的
     // Markdown 标签、自动换行和水平/垂直居中效果。仅在显式导出 SVG 时关闭
     // HTML 标签，避免 Word/WPS 无法显示 foreignObject。
@@ -583,7 +583,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:{html_labels},fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',flowchart:{{htmlLabels:{html_labels},useMaxWidth:false,wrappingWidth:180,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}}}});
+    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:{html_labels},fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',fontSize:14,markdownAutoWrap:true,themeVariables:{{fontSize:'14px'}},themeCSS:'.nodeLabel{{display:inline-block;max-width:160px;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;text-align:center}}.nodeLabel p{{margin:0}}',flowchart:{{htmlLabels:{html_labels},useMaxWidth:false,wrappingWidth:160,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing},padding:8}}}});
     document.body.dataset.stage='syntax';
     await mermaid.parse(source);
     document.body.dataset.stage='layout';
@@ -1136,7 +1136,13 @@ mod tests {
         assert!(html.contains("\\u003c/script\\u003e"));
         assert!(html.contains("securityLevel:'strict'"));
         assert!(html.contains("htmlLabels:false"));
-        assert!(html.contains("wrappingWidth:180"));
+        assert!(html.contains("fontSize:14"));
+        assert!(html.contains("markdownAutoWrap:true"));
+        assert!(html.contains("wrappingWidth:160"));
+        assert!(html.contains("white-space:normal!important"));
+        assert!(html.contains("overflow-wrap:anywhere"));
+        assert!(html.contains("word-break:break-word"));
+        assert!(html.contains("padding:8"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));
         assert!(html.contains("dataset.stage='syntax'"));
@@ -1199,7 +1205,13 @@ mod tests {
                 false,
                 false,
             );
-            assert!(html.contains("wrappingWidth:180"));
+            assert!(html.contains("fontSize:14"));
+            assert!(html.contains("markdownAutoWrap:true"));
+            assert!(html.contains("wrappingWidth:160"));
+            assert!(html.contains("white-space:normal!important"));
+            assert!(html.contains("overflow-wrap:anywhere"));
+            assert!(html.contains("word-break:break-word"));
+            assert!(html.contains("padding:8"));
             assert!(html.contains("htmlLabels:true"));
             assert!(html.contains("normalizeOfficeTextRows=text=>"));
             assert!(html.contains("host.replaceChildren(pngSvg)"));

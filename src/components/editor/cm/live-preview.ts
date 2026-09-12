@@ -530,6 +530,23 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
     : "mk-cm-quote-line";
   addLine(collector, line.from, classes);
 
+  // 围栏首行的 QuoteMark 是 FencedCode 的前一个兄弟，其余行在 FencedCode 内。
+  // 代码块进入源码态时统一保留真实引用前缀，不让普通引用的逐行 hide 再将它隐藏。
+  const next = ref.node.nextSibling;
+  const code = ref.node.parent?.name === "FencedCode"
+    ? ref.node.parent
+    : next?.name === "FencedCode" && state.doc.lineAt(next.from).from === line.from ? next : null;
+  if (callout && code) {
+    const prefixTo = ref.to + trailingSpaceCount(state, ref.to, 1);
+    if (cursorLine(collector, code.from, code.to) || sourceSelected(collector, code.from, code.to)) {
+      addLine(collector, line.from, "mk-cm-callout-code-source");
+      collector.decorations.push(markDecoration("mk-cm-callout-code-prefix").range(ref.from, ref.to));
+    } else {
+      hide(collector, ref.from, prefixTo);
+    }
+    return;
+  }
+
   // 选中引用正文时同样露出 `>`，避免选区中混入渲染符号而无法直接修改。
   if (cursorLine(collector, ref.from, ref.to) || sourceSelected(collector, line.from, line.to)) return;
   hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
@@ -625,6 +642,22 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   const indentClass = codeBlockIndentClass(codeBlockIndentPtFromInfo(info));
   const indented = indentClass ? ` ${indentClass}` : "";
   const indentAttribute = infoNode ? codeBlockIndentAttributeRange(doc.sliceString(infoNode.from, infoNode.to)) : null;
+  // 代码行保留外层引用背景；QuoteMark 的显隐和可编辑前缀由 handleQuoteMark 处理。
+  let calloutClass = "";
+  const fenceLine = doc.lineAt(ref.from);
+  const fencePrefix = fenceLine.text.match(/^\s*>[ \t]?/);
+  if (fencePrefix) {
+    for (let number = fenceLine.number; number >= 1; number -= 1) {
+      const line = doc.line(number);
+      const prefix = line.text.match(/^\s*>[ \t]?/);
+      if (!prefix) break;
+      const header = parseMarkdownCalloutHeader(line.text.slice(prefix[0].length));
+      if (header) {
+        calloutClass = ` mk-cm-callout-line mk-cm-callout-line--${header.tone}`;
+        break;
+      }
+    }
+  }
   if (infoNode && indentAttribute) {
     hide(collector, infoNode.from + indentAttribute.from, infoNode.from + indentAttribute.to);
   }
@@ -649,9 +682,9 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
       // 整行 replace 掉围栏。跨行装饰必须由 StateField 提供，所以这里只能
       // 逐行处理：把这一行的字符全部隐藏，行本身仍然存在（高度靠 CSS 压到 0）。
       hide(collector, line.from, line.to);
-      addLine(collector, line.from, isFirst
+      addLine(collector, line.from, `${isFirst
         ? `mk-cm-code-fence mk-cm-code-fence-first${indented}`
-        : `mk-cm-code-fence mk-cm-code-fence-last${indented}`);
+        : `mk-cm-code-fence mk-cm-code-fence-last${indented}`}${calloutClass}`);
       continue;
     }
 
@@ -659,7 +692,7 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
     // 光标进出代码块时不会跳。编辑态下围栏行不再隐藏文字，直接显示 ``` 源码，
     // 首尾行仍然套 first/last 拿圆角。
     const edge = isFirst ? " mk-cm-code-first" : isLast ? " mk-cm-code-last" : "";
-    addLine(collector, line.from, `mk-cm-code-line${edge}${indented}`);
+    addLine(collector, line.from, `mk-cm-code-line${edge}${indented}${calloutClass}`);
   }
 
   // 只有渲染态才挂语言标签和复制按钮：编辑态首行显示的就是 ```java 本身，

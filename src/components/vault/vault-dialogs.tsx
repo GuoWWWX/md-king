@@ -337,56 +337,104 @@ export function OpenVaultLocationDialog({ open, currentRoot, targetRoot, canOpen
   );
 }
 
-export type SaveConflictChoice = "overwrite" | "reload" | "cancel";
+export type SaveConflictChoice = "keep-local" | "reload" | "merge" | "close";
 
 type SaveConflictDialogProps = {
   open: boolean;
   filePath?: string;
-  onOpenChange: (open: boolean) => void;
-  onChoose: (choice: SaveConflictChoice) => Promise<void> | void;
+  localContent: string;
+  externalContent?: string;
+  deleted?: boolean;
+  onChoose: (choice: SaveConflictChoice, mergedContent?: string) => Promise<void> | void;
 };
 
-/// 三选一而非静默覆盖：磁盘上那份可能是另一个编辑器刚写进去的，谁赢必须由用户决定。
-export function SaveConflictDialog({ open, filePath, onOpenChange, onChoose }: SaveConflictDialogProps) {
+/// 外部修改不能静默覆盖编辑器里的未保存内容。默认只给出处理方向，
+/// 用户需要比较时再展开正文，避免大文档一有冲突就渲染三份文本。
+export function SaveConflictDialog({ open, filePath, localContent, externalContent, deleted = false, onChoose }: SaveConflictDialogProps) {
   const [busy, setBusy] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const [mergedContent, setMergedContent] = useState(localContent);
 
   useEffect(() => {
-    if (open) setBusy(false);
-  }, [open]);
+    if (!open) return;
+    setBusy(false);
+    setComparing(false);
+    setMergedContent(localContent);
+  }, [deleted, externalContent, filePath, localContent, open]);
 
-  async function choose(choice: SaveConflictChoice) {
+  async function choose(choice: SaveConflictChoice, content?: string) {
     setBusy(true);
     try {
-      await onChoose(choice);
-      onOpenChange(false);
+      await onChoose(choice, content);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) void choose("cancel"); }}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
+    <Dialog open={open} onOpenChange={() => undefined}>
+      <DialogContent className={`gap-0 overflow-hidden p-0 ${comparing ? "sm:max-w-5xl" : "sm:max-w-lg"}`} showCloseButton={false}>
         <DialogHeader className="border-b border-slate-200 px-5 py-4 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             <AlertTriangle className="size-4 text-amber-500" />
-            文件已被其他程序修改
+            {deleted ? "文件已被外部删除" : "文件已被其他程序修改"}
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            {filePath ? <span className="font-semibold text-slate-700 dark:text-zinc-200">{filePath}</span> : "当前文件"} 在你编辑期间被外部改动。请选择保留哪一份，两份内容无法自动合并。
+            {filePath ? <span className="font-semibold text-slate-700 dark:text-zinc-200">{filePath}</span> : "当前文件"}
+            {deleted
+              ? " 已不在磁盘上。你可以保留当前正文并另存，或关闭该标签。"
+              : " 的磁盘内容已变化。请选择保留本地内容、重载外部内容，或比较后合并。"}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2 px-5 py-4 text-xs leading-5 text-slate-600 dark:text-zinc-300">
-          <p><span className="font-bold text-slate-800 dark:text-zinc-100">覆盖磁盘版本</span>：用编辑器里的内容写回，磁盘上的外部改动会丢失。</p>
-          <p><span className="font-bold text-slate-800 dark:text-zinc-100">放弃本地改动</span>：重新读取磁盘内容，编辑器里未保存的改动会丢失。</p>
-          <p><span className="font-bold text-slate-800 dark:text-zinc-100">稍后处理</span>：暂停自动保存，先手动把内容复制出来。</p>
-        </div>
+        {comparing && externalContent !== undefined ? (
+          <div className="grid min-h-0 gap-3 px-5 py-4 lg:grid-cols-2">
+            <label className="flex min-h-0 flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200">
+              编辑器中的内容
+              <textarea readOnly value={localContent} className="h-44 resize-y rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-normal leading-5 text-slate-800 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
+            </label>
+            <label className="flex min-h-0 flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200">
+              磁盘中的内容
+              <textarea readOnly value={externalContent} className="h-44 resize-y rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-normal leading-5 text-slate-800 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
+            </label>
+            <label className="flex min-h-0 flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200 lg:col-span-2">
+              合并结果（可编辑）
+              <textarea value={mergedContent} onChange={(event) => setMergedContent(event.target.value)} className="h-52 resize-y rounded-md border border-slate-300 bg-white p-3 font-mono text-xs font-normal leading-5 text-slate-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-blue-500" />
+            </label>
+          </div>
+        ) : (
+          <div className="space-y-2 px-5 py-4 text-xs leading-5 text-slate-600 dark:text-zinc-300">
+            {deleted ? (
+              <p>保留后，该标签会变成未保存文档，按 Ctrl+S 可选择新的保存位置。</p>
+            ) : (
+              <>
+                <p><span className="font-bold text-slate-800 dark:text-zinc-100">保留本地内容</span>：继续编辑当前内容；下次保存时会覆盖已确认的磁盘版本。</p>
+                <p><span className="font-bold text-slate-800 dark:text-zinc-100">重载外部内容</span>：放弃当前未保存修改，并载入磁盘中的最新正文。</p>
+                <p><span className="font-bold text-slate-800 dark:text-zinc-100">比较并合并</span>：同时查看两份正文，并编辑最终合并结果。</p>
+              </>
+            )}
+          </div>
+        )}
 
         <DialogFooter className="m-0 flex-wrap gap-2 rounded-none border-x-0 border-b-0 px-5 py-3">
-          <Button variant="ghost" onClick={() => void choose("cancel")} disabled={busy}>稍后处理</Button>
-          <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>放弃本地改动并重载</Button>
-          <Button variant="destructive" onClick={() => void choose("overwrite")} disabled={busy}>覆盖磁盘版本</Button>
+          {deleted ? (
+            <>
+              <Button variant="destructive" onClick={() => void choose("close")} disabled={busy}>关闭标签</Button>
+              <PrimaryActionButton onClick={() => void choose("keep-local")} disabled={busy}>保留并另存</PrimaryActionButton>
+            </>
+          ) : comparing ? (
+            <>
+              <Button variant="ghost" onClick={() => setComparing(false)} disabled={busy}>返回</Button>
+              <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>重载外部内容</Button>
+              <PrimaryActionButton onClick={() => void choose("merge", mergedContent)} disabled={busy}>应用合并结果</PrimaryActionButton>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => setComparing(true)} disabled={busy || externalContent === undefined}>比较并合并</Button>
+              <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>重载外部内容</Button>
+              <PrimaryActionButton onClick={() => void choose("keep-local")} disabled={busy}>保留本地内容</PrimaryActionButton>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

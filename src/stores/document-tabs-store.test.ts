@@ -246,3 +246,96 @@ test("异步恢复会话时不覆盖启动参数已经打开的文件", () => {
     resetTabs();
   }
 });
+
+test("干净标签收到外部修改时替换正文并保留视图位置", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openVaultTab({
+      path: "报告.md",
+      absolutePath: "D:/仓库/报告.md",
+      title: "报告.md",
+      content: "旧内容",
+      eol: "lf",
+      hasBom: false,
+      modifiedMs: 1,
+    });
+    useDocumentTabsStore.getState().setTabViewState(id, { scrollTop: 640, anchor: 3, head: 3 });
+
+    useDocumentTabsStore.getState().replaceTabContent(id, {
+      content: "外部新内容",
+      eol: "crlf",
+      hasBom: true,
+      modifiedMs: 2,
+    });
+
+    const tab = useDocumentTabsStore.getState().tabs[0];
+    assert.equal(tab?.content, "外部新内容");
+    assert.equal(tab?.dirty, false);
+    assert.equal(tab?.revision, 1);
+    assert.equal(tab?.modifiedMs, 2);
+    assert.equal(tab?.eol, "crlf");
+    assert.equal(tab?.hasBom, true);
+    assert.deepEqual(tab?.viewState, { scrollTop: 640, anchor: 3, head: 3 });
+  } finally {
+    resetTabs();
+  }
+});
+
+test("保留本地修改时只更新磁盘版本基准", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openVaultTab({
+      path: "报告.md",
+      absolutePath: "D:/仓库/报告.md",
+      title: "报告.md",
+      content: "磁盘旧内容",
+      eol: "lf",
+      hasBom: false,
+      modifiedMs: 1,
+    });
+    useDocumentTabsStore.getState().updateTabContent(id, "本地未保存内容");
+
+    useDocumentTabsStore.getState().updateTabDiskVersion(id, {
+      eol: "crlf",
+      hasBom: true,
+      modifiedMs: 2,
+    });
+
+    const tab = useDocumentTabsStore.getState().tabs[0];
+    assert.equal(tab?.content, "本地未保存内容");
+    assert.equal(tab?.dirty, true);
+    assert.equal(tab?.revision, 0);
+    assert.equal(tab?.modifiedMs, 2);
+    assert.equal(tab?.eol, "crlf");
+    assert.equal(tab?.hasBom, true);
+  } finally {
+    resetTabs();
+  }
+});
+
+test("外部删除文件后保留正文并转成可另存的临时标签", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openVaultTab({
+      path: "报告.md",
+      absolutePath: "D:/仓库/报告.md",
+      title: "报告.md",
+      content: "需要保留的内容",
+      eol: "lf",
+      hasBom: false,
+      modifiedMs: 1,
+    });
+
+    useDocumentTabsStore.getState().detachMissingTab(id);
+
+    const tab = useDocumentTabsStore.getState().tabs[0];
+    assert.equal(tab?.kind, "scratch");
+    assert.equal(tab?.content, "需要保留的内容");
+    assert.equal(tab?.dirty, true);
+    assert.equal(tab?.path, undefined);
+    assert.equal(tab?.absolutePath, undefined);
+    assert.equal(tab?.modifiedMs, undefined);
+  } finally {
+    resetTabs();
+  }
+});

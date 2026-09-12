@@ -563,11 +563,8 @@ export function showInExplorer(path: string) {
 
 export async function copyTextToClipboard(text: string) {
   if (isTauriEnvironment()) {
-    // Tauri 环境使用 Clipboard API 或 writeText plugin
-    if (navigator.clipboard?.writeText) {
-      return navigator.clipboard.writeText(text);
-    }
-    return Promise.reject(new Error("剪贴板 API 不可用"));
+    // 桌面版不能依赖 WebView 的 Clipboard Permissions；由原生端统一写入。
+    return invoke<void>("copy_text_to_clipboard", { text });
   }
 
   // 浏览器环境

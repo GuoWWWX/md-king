@@ -64,7 +64,11 @@ type DocumentTabsState = {
   /// 用户编辑：只改内容和脏标记，不动 revision（动了会打断输入）。
   updateTabContent: (id: string, content: string) => void;
   /// 外部替换内容（重新载入、冲突后重载），递增 revision 让编辑器全量刷新。
-  replaceTabContent: (id: string, content: string) => void;
+  replaceTabContent: (id: string, file: { content: string; eol?: VaultEol; hasBom?: boolean; modifiedMs?: number }) => void;
+  /// 确认磁盘版本但保留本地正文；后续保存可基于新的磁盘版本继续写回。
+  updateTabDiskVersion: (id: string, file: { eol?: VaultEol; hasBom?: boolean; modifiedMs?: number }) => void;
+  /// 磁盘文件被删除后保留正文，并转成需要另存的临时标签。
+  detachMissingTab: (id: string) => void;
   markTabClean: (id: string, modifiedMs?: number) => void;
   markTabSavedAs: (id: string, file: { path: string; absolutePath: string; title: string; eol: VaultEol; hasBom: boolean; modifiedMs: number }) => void;
   closeTab: (id: string) => void;
@@ -231,9 +235,33 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
     }),
   })),
 
-  replaceTabContent: (id, content) => set((state) => ({
+  replaceTabContent: (id, file) => set((state) => ({
     tabs: state.tabs.map((tab) => tab.id === id
-      ? { ...tab, content, dirty: false, revision: tab.revision + 1 }
+      ? {
+          ...tab,
+          ...file,
+          dirty: false,
+          revision: tab.content === file.content ? tab.revision : tab.revision + 1,
+        }
+      : tab),
+  })),
+
+  updateTabDiskVersion: (id, file) => set((state) => ({
+    tabs: state.tabs.map((tab) => tab.id === id ? { ...tab, ...file } : tab),
+  })),
+
+  detachMissingTab: (id) => set((state) => ({
+    tabs: state.tabs.map((tab) => tab.id === id
+      ? {
+          ...tab,
+          kind: "scratch",
+          path: undefined,
+          absolutePath: undefined,
+          eol: undefined,
+          hasBom: undefined,
+          modifiedMs: undefined,
+          dirty: true,
+        }
       : tab),
   })),
 
