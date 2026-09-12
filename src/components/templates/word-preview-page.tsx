@@ -1444,7 +1444,7 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
   return { before: 0, after: 0 };
 }
 
-function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>, previewDark = false) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     const lineHeight = resolveLineHeightPx(draft);
@@ -1469,7 +1469,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   if (block.type === "code") {
     if (isMermaidLanguage(block.language)) {
       const backgroundColor = drafts.code.backgroundColor === "transparent" ? undefined : drafts.code.backgroundColor;
-      const dark = Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
+      const dark = previewDark || Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
       const size = mermaidSizes?.[mermaidSizeKey(block.text, dark)] ?? getCachedMermaidSvg(block.text, dark);
       const marginHeight = ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing);
       const diagramHeight = estimateMermaidBlockHeight({
@@ -1557,9 +1557,9 @@ function splitTextByLength(text: string, maxChars: number) {
   return chunks;
 }
 
-function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>, previewDark = false) {
   return blocks.flatMap((block) => {
-    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes) <= pageContentHeight) return [block];
+    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes, previewDark) <= pageContentHeight) return [block];
 
     if (block.type === "paragraph") {
       return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth, paragraphDraft(block, drafts)) * 24).map((text) => ({ ...block, segments: textSegments(text) }));
@@ -1606,8 +1606,8 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
   });
 }
 
-function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
-  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes);
+function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>, previewDark = false) {
+  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes, previewDark);
 
   const minimumFollowingHeight = (block: PreviewBlock, following: PreviewBlock) => {
     if (block.type !== "heading") return 0;
@@ -2418,8 +2418,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     })
     : [];
   const documentBlocks = tocPages.length > 0 ? blocksWithTableColumnWidths : [...metadataBlocks, ...blocksWithTableColumnWidths];
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes) : documentBlocks;
-  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes) : [previewBlocks];
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes, paperTheme === "dark") : documentBlocks;
+  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes, paperTheme === "dark") : [previewBlocks];
   const documentPageNumberOffset = footerStartPage + (pageNumberStartAt === "document" ? tocPages.length : 0);
   const previewOutline = documentPages.flatMap((pageBlocks, pageIndex) => pageBlocks.flatMap((block) => {
     if (block.type !== "heading" || block.isDocumentTitle || !block.anchorId) return [];

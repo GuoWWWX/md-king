@@ -1,20 +1,28 @@
 <!doctype html><html><body><main id="app"></main><script type="module">
-import { createElement, createRef } from 'react';
+import '/src/index.css';
+import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WordPreviewPage } from '/src/components/templates/word-preview-page.tsx';
-const ref = createRef();
-const markdown = `前置正文：${'这是一段用于占据页面剩余空间的正文。'.repeat(20)}
+const params = new URLSearchParams(location.search);
+const scenario = params.get('scenario') || 'move';
+const repeat = scenario === 'move' ? 12 : 2;
+const nodes = scenario === 'large' ? 6 : 3;
+function diagram(prefix, count) {
+  return '```mermaid\nflowchart TD\n' + Array.from({length: count - 1}, (_, i) => `${prefix}${i}[步骤${i}] --> ${prefix}${i+1}[步骤${i+1}]`).join('\n') + '\n```';
+}
+const markdown = `前置正文：${'这是一段用于占据页面剩余空间的正文。'.repeat(repeat)}
 
-\`\`\`mermaid
-flowchart TD
-  A[开始] --> B[处理]
-  B --> C[结束]
-\`\`\`
+${diagram('A', nodes)}
 
-后续正文：这段文字应该在图表同页有剩余空间时继续排在图表后面。`;
+后续正文：这段文字应该在图表同页有剩余空间时继续排在图表后面。
+
+> 后续引用：引用也应继续使用剩余空间。
+
+${scenario === 'consecutive' ? diagram('B', 5) + '\n\n第二图后文' : ''}`;
 createRoot(document.querySelector('#app')).render(createElement(WordPreviewPage, {
-  ref, markdown, paginate: true, showHeader: false, showPageFooter: false,
+  markdown, paginate: true, showHeader: false, showPageFooter: false,
+  paperTheme: params.get('theme') || 'light',
   pageWidth: 600, pageMinHeight: 760, zoom: 100, interactiveViewport: false,
 }));
-window.fixture = { markdown, ref };
+window.fixture = { markdown };
 </script></body></html>
