@@ -60,9 +60,9 @@ function mermaidConfig(theme: "default" | "dark") {
     },
     themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
 .edgeLabel, .edgeLabel p, .edgeLabel span,
-.edgeLabel foreignObject > div { color: #f4f4f5 !important; }
-.edgeLabel span, .edgeLabel p { text-shadow: -1px -1px 0 #27272a, 1px -1px 0 #27272a, -1px 1px 0 #27272a, 1px 1px 0 #27272a; }
-.edgeLabel text, .edgeLabel tspan { fill: #f4f4f5 !important; paint-order: stroke; stroke: #27272a; stroke-width: 2px; stroke-opacity: .8; }
+.edgeLabel foreignObject > div { color: #ffffff !important; }
+.edgeLabel span, .edgeLabel p { text-shadow: none !important; }
+.edgeLabel text, .edgeLabel tspan { fill: #ffffff !important; paint-order: normal; stroke: none !important; }
 .relation { stroke: #a1a1aa !important; }
 /* classDiagram 的默认节点略微加深紫色，避免深色背景下发白；文字仍保持深色对比度。 */
 .node[id*="classId-"] .outer-path path:first-child { fill: #ccd2f2 !important; }

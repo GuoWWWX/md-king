@@ -11,12 +11,12 @@ try {
       .filter((node) => node.querySelector(".labelBkg"))
       .map((node) => {
         const label = node.querySelector(".labelBkg");
-        return { color: getComputedStyle(label).color, background: getComputedStyle(label).backgroundColor };
+        return { color: getComputedStyle(label).color, background: getComputedStyle(label).backgroundColor, shadow: getComputedStyle(label).textShadow };
       }),
     nodeFill: getComputedStyle(document.querySelector('.node[id*="classId-"] .outer-path path')).fill,
   }));
   if (result.labels.length !== 5) throw new Error(`expected 5 edge labels, got ${result.labels.length}`);
-  if (result.labels.some(({ color, background }) => color !== "rgb(244, 244, 245)" || background !== "rgba(0, 0, 0, 0)")) {
+  if (result.labels.some(({ color, background, shadow }) => color !== "rgb(255, 255, 255)" || background !== "rgba(0, 0, 0, 0)" || shadow !== "none")) {
     throw new Error(`dark edge-label styles are not applied: ${JSON.stringify(result.labels)}`);
   }
   if (result.nodeFill !== "rgb(204, 210, 242)") throw new Error(`unexpected class node fill: ${result.nodeFill}`);
