@@ -21,11 +21,11 @@ try {
       }).map((node) => ({ tag: node.tagName, class: node.getAttribute('class'), background: getComputedStyle(node).backgroundColor }));
       return { text: labels.map((node) => node.textContent), painted,
         colors: labels.map((node) => getComputedStyle(node).color),
-        shadows: labels.map((node) => getComputedStyle(node).textShadow) };
+        shadows: labels.map((node) => ({ text: getComputedStyle(node).textShadow, stroke: getComputedStyle(node).webkitTextStrokeColor })) };
     });
     assert.equal(styles.text.length, 4, 'the exact ThreadLocal sample must have four relationship labels');
     assert.deepEqual(styles.painted, [], `${theme}: relationship labels must not paint any rectangular background`);
-    assert.ok(styles.shadows.every((shadow) => shadow === 'none'), 'labels must not have a halo');
+    assert.ok(styles.shadows.every(({ text }) => !text.includes('rgb(39, 39, 42)')), 'labels must not have the old black text shadow');
     assert.equal(styles.colors.filter((color) => color === 'rgb(255, 255, 255)').length, theme === 'dark' ? 1 : 0,
       'only the label over the dark canvas should be white; three labels over the pale cluster must be dark');
     assert.equal(styles.colors.filter((color) => color === 'rgb(34, 34, 34)').length, theme === 'dark' ? 3 : 4,

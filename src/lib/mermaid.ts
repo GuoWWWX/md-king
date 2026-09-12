@@ -177,10 +177,19 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       });
       const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
       const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#222222" : "#ffffff";
+      const background = `rgb(${rgb.map((channel) => Math.round(channel)).join(", ")})`;
       // 内联到文字本身，SVG 单独展示和 PNG 栅格化时也能保留，不依赖页面 CSS。
       for (const element of [label, ...label.querySelectorAll<SVGElement | HTMLElement>("div,span,p,text,tspan")]) {
         element.style.setProperty("color", color, "important");
-        if (element.matches("text,tspan")) element.style.setProperty("fill", color, "important");
+        if (element.matches("text,tspan")) {
+          element.style.setProperty("fill", color, "important");
+          element.style.setProperty("stroke", background, "important");
+          element.style.setProperty("stroke-width", "3px", "important");
+          element.style.setProperty("paint-order", "stroke", "important");
+        } else if (element.matches("div,span,p")) {
+          // foreignObject 文本没有 SVG stroke，用同色文字描边擦掉连线。
+          element.style.setProperty("text-shadow", `1.5px 0 ${background}, -1.5px 0 ${background}, 0 1.5px ${background}, 0 -1.5px ${background}`, "important");
+        }
       }
     }
     ["width", "height"].forEach((name, i) => {
