@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><style>
+body { margin: 0; padding: 24px; }
+#out svg { display: block; width: 100%; height: auto; }
+</style></head><body><div id="out"></div>
+<script type="module">
+import { renderMermaid, mermaidToPngDataUrl } from '/src/lib/mermaid.ts';
+const dark = new URLSearchParams(location.search).get('theme') !== 'light';
+document.documentElement.classList.toggle('dark', dark);
+document.body.style.background = dark ? '#222222' : '#ffffff';
+const source = `flowchart LR
+    subgraph Stack["Java 栈帧"]
+        Ref["ThreadLocalRef<br/>(强引用指针)"]
+        CurThread["CurrentThreadRef<br/>(当前运行的线程)"]
+    end
+    subgraph Heap["Java 堆内存"]
+        TLObj["ThreadLocal 实例对象"]
+        MapObj["Thread.currentThread().threadLocals<br/>(ThreadLocalMap)"]
+        EntryObj["Entry 节点"]
+        ValObj["实际存储的业务大对象 Value<br/>(比如 10MB 缓存)"]
+    end
+    Ref ==>|强引用| TLObj
+    CurThread ==>|强引用| MapObj
+    MapObj --> EntryObj
+    EntryObj -.->|"🚨 弱引用 (WeakReference)"| TLObj
+    EntryObj ==>|🚨 强引用| ValObj`;
+window.result = await renderMermaid(source, dark);
+document.querySelector('#out').innerHTML = window.result.svg;
+window.png = await mermaidToPngDataUrl(source, dark);
+</script></body></html>

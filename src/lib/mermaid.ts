@@ -33,9 +33,13 @@ const MERMAID_THEME_CSS = `
 .nodeLabel p { margin: 0; }
 .cluster-label .nodeLabel { max-width: 320px; }
 /* 连线标签只显示文字，不绘制 Mermaid 默认的背景块。 */
-.edgeLabel .labelBkg,
+.edgeLabel,
+.edgeLabel *,
+.edgeLabel p,
+.edgeLabel span,
+.edgeLabel foreignObject,
 .edgeLabel foreignObject > div { background: transparent !important; background-color: transparent !important; }
-.edgeLabel .labelBkg { fill: transparent !important; stroke: none !important; }
+.edgeLabel rect { fill: transparent !important; stroke: none !important; }
 `;
 
 function mermaidConfig(theme: "default" | "dark") {
