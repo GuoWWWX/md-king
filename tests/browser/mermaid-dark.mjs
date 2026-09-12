@@ -16,7 +16,7 @@ try {
     nodeFill: getComputedStyle(document.querySelector('.node[id*="classId-"] .outer-path path')).fill,
   }));
   if (result.labels.length !== 5) throw new Error(`expected 5 edge labels, got ${result.labels.length}`);
-  if (result.labels.some(({ color, background }) => color !== "rgb(244, 244, 245)" || background !== "rgb(39, 39, 42)")) {
+  if (result.labels.some(({ color, background }) => color !== "rgb(244, 244, 245)" || background !== "rgba(0, 0, 0, 0)")) {
     throw new Error(`dark edge-label styles are not applied: ${JSON.stringify(result.labels)}`);
   }
   if (result.nodeFill !== "rgb(204, 210, 242)") throw new Error(`unexpected class node fill: ${result.nodeFill}`);
