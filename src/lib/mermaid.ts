@@ -32,6 +32,10 @@ const MERMAID_THEME_CSS = `
 }
 .nodeLabel p { margin: 0; }
 .cluster-label .nodeLabel { max-width: 320px; }
+/* 连线标签只显示文字，不绘制 Mermaid 默认的背景块。 */
+.edgeLabel .labelBkg,
+.edgeLabel foreignObject > div { background: transparent !important; background-color: transparent !important; }
+.edgeLabel .labelBkg { fill: transparent !important; stroke: none !important; }
 `;
 
 function mermaidConfig(theme: "default" | "dark") {
@@ -53,8 +57,6 @@ function mermaidConfig(theme: "default" | "dark") {
     themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
 .edgeLabel, .edgeLabel p, .edgeLabel span,
 .edgeLabel foreignObject > div { color: #f4f4f5 !important; }
-.edgeLabel .labelBkg,
-.edgeLabel foreignObject > div { background: transparent !important; background-color: transparent !important; }
 .edgeLabel span, .edgeLabel p { text-shadow: -1px -1px 0 #27272a, 1px -1px 0 #27272a, -1px 1px 0 #27272a, 1px 1px 0 #27272a; }
 .edgeLabel text, .edgeLabel tspan { fill: #f4f4f5 !important; paint-order: stroke; stroke: #27272a; stroke-width: 2px; stroke-opacity: .8; }
 .relation { stroke: #a1a1aa !important; }
