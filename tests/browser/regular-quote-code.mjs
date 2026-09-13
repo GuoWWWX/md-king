@@ -21,10 +21,14 @@ async function inspect(sourceMode) {
       .filter((element) => element.matches(".mk-cm-code-line, .mk-cm-code-fence"));
     const failures = [];
     let codeTextLeft;
+    let cardWidth;
     const indent = view.state.doc.toString().includes('data-md-king-indent-pt="48"') ? 64 : 0;
     for (const line of lines) {
       const box = line.getBoundingClientRect();
       const card = getComputedStyle(line, "::after");
+      const currentCardWidth = box.width - Number.parseFloat(card.left) - Number.parseFloat(card.right);
+      if (cardWidth === undefined) cardWidth = currentCardWidth;
+      if (Math.abs(currentCardWidth - cardWidth) > 1) failures.push("code card width differs between rows");
       const prefix = line.querySelector(".mk-cm-quote-code-prefix");
       if (card.display === "none" || parseFloat(card.left) !== 32 + indent || card.right !== "32px") {
         failures.push("code card inset");
@@ -63,6 +67,7 @@ async function inspect(sourceMode) {
       count: lines.length,
       failures,
       codeTextLeft,
+      cardWidth,
       prefixCount: view.dom.querySelectorAll(".mk-cm-quote-code-line .mk-cm-quote-code-prefix").length,
       source: view.state.doc.toString(),
       outerBackground: outer ? getComputedStyle(outer).backgroundColor : "",
@@ -103,6 +108,23 @@ try {
     assert.equal(editing.prefixCount, 3, "every quoted code line keeps an editable quote prefix");
     assert.equal(editing.source, rendered.source);
     assert.equal(editing.codeTextLeft, rendered.codeTextLeft, 'source arrow must not shift the code');
+
+    // 拖选代码内容时，源码前缀会在选区更新的同一轮从隐藏态变为可见态。
+    // 选区重排后仍要保持和普通源码态相同的箭头位置与卡片几何，不能把首行
+    // 的 `>` 推进选区，也不能让代码卡片按选中文本收窄。
+    await page.evaluate(() => {
+      const { view, source } = window.fixture;
+      const from = source.indexOf("thread -n 3");
+      view.dispatch({ selection: { anchor: from, head: from + "thread -n 3".length } });
+      view.focus();
+    });
+    await frame();
+    const selecting = await inspect(true);
+    assert.deepEqual(selecting.failures, [], `${dark ? "dark" : "light"} selecting code`);
+    assert.equal(selecting.codeTextLeft, rendered.codeTextLeft, 'selecting code must not move the source arrow or card');
+    assert.ok(Math.abs(selecting.cardWidth - rendered.cardWidth) <= 1, 'selecting code must not shrink the card');
+    assert.equal(selecting.prefixCount, 3, 'selected quoted code keeps every editable quote prefix');
+
     const quoteClick = await page.evaluate(() => {
       const { view } = window.fixture;
       const prefix = view.dom.querySelector('.mk-cm-quote-code-prefix');

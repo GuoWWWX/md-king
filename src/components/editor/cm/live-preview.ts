@@ -870,6 +870,10 @@ class LivePreviewPlugin {
       const built = buildDecorations(update.view);
       this.decorations = built.decorations;
       this.atomics = built.atomics;
+      // 选区触发源码态时，QuoteMark 的 inline decoration 会在同一轮更新里从
+      // replace 切换为可见前缀。主动排一次 measure，避免浏览器沿用切换前的
+      // 原生选区矩形，导致 `>` 看起来跑进选区、代码卡片短暂收窄。
+      if (update.selectionSet || update.focusChanged || readOnlyChanged) update.view.requestMeasure();
     }
   }
 }

@@ -2517,6 +2517,8 @@ select {
     /* 额外缩进只移动内层卡片，不能移动引用边线或可编辑的 >。 */
     margin-inline: 0;
     width: auto;
+    /* 选区切换源码态时，行宽仍固定为编辑器内容宽度，避免卡片按选中文本收缩。 */
+    min-width: 100%;
     padding-inline: calc(44px + var(--mk-code-indent, 0px)) 44px !important;
     border-radius: 0;
   }
@@ -2594,6 +2596,9 @@ select {
   .mk-cm-callout-code-prefix {
     display: inline-block;
     width: auto;
+    white-space: nowrap;
+    /* 引用箭头是独立的可点击编辑槽，不应被代码文本的原生选区背景带走。 */
+    user-select: none;
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     /* 代码为正文的 0.88 倍，引用前缀恢复为正文大小，且不改变代码行高。 */
@@ -2605,6 +2610,9 @@ select {
   .mk-cm-quote-code-prefix {
     display: inline-block;
     width: auto;
+    white-space: nowrap;
+    /* 保持箭头固定在引用沟槽；点击仍由编辑器事件映射到真实源码位置。 */
+    user-select: none;
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     font-size: calc(1em / 0.88);
