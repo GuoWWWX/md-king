@@ -1,0 +1,22 @@
+<!doctype html><html><body style="margin:0;background:#18181b;color:#f4f4f5;padding:24px"><div id="out"></div>
+<script type="module">
+import { renderMermaid } from '/src/lib/mermaid.ts';
+const source = `sequenceDiagram
+    autonumber
+    participant T1 as 线程 1
+    participant T2 as 线程 2 (最后到达)
+    participant Lock as ReentrantLock
+    participant Cond as Condition trip
+
+    T1->>Lock: 1. 获取锁并执行 --count (count=1)
+    T1->>Cond: 2. trip.await() 释放锁并挂起
+    T2->>Lock: 3. 获取锁并执行 --count (count=0，全员到齐!)
+    Note over T2: 4. 执行 barrierAction 回调任务
+    T2->>Cond: 5. 调用 trip.signalAll()
+    T2->>T2: 6. 开启 nextGeneration()，重置 count=2
+    Cond-->>T1: 7. 唤醒线程 1
+    Note over T1,T2: 8. 所有线程同时跨越栅栏，进入下一阶段！`;
+const result = await renderMermaid(source, true);
+document.querySelector('#out').innerHTML = result.svg;
+window.result = result;
+</script></body></html>

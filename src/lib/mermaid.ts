@@ -62,6 +62,11 @@ function mermaidConfig(theme: "default" | "dark") {
     },
     themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
 .relation { stroke: #a1a1aa !important; }
+/* 时序图消息文字、生命线和箭头使用浅灰，避免深色模式下默认 #333 隐入背景。 */
+.messageText { fill: #d4d4d8 !important; }
+.messageLine0, .messageLine1, .actor-line, .innerArc { stroke: #a1a1aa !important; }
+.messageLine0, .messageLine1 { fill: none !important; }
+[id$="-arrowhead"] path, [id$="-crosshead"] path { fill: #d4d4d8 !important; stroke: #d4d4d8 !important; }
 /* classDiagram 的默认节点略微加深紫色，避免深色背景下发白；文字仍保持深色对比度。 */
 .node[id*="classId-"] .outer-path path:first-child { fill: #ccd2f2 !important; }
 /* flowchart 的矩形/菱形节点使用同一套浅蓝紫色，避免深色模式出现白色卡片。 */
