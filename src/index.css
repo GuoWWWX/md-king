@@ -2509,7 +2509,7 @@ select {
     position: relative;
     isolation: isolate;
     box-sizing: border-box;
-    margin-inline: 0;
+    margin-right: 0;
     width: auto;
     padding-inline: 32px !important;
     border-radius: 0;
@@ -2562,12 +2562,27 @@ select {
     text-indent: -26px;
   }
 
+  .cm-line.mk-cm-quote-code-source {
+    /* 普通引用的源码前缀与正文引用标记同列，同时保持代码内容的起点不变。 */
+    text-indent: -18px;
+  }
+
   .mk-cm-callout-code-prefix {
     display: inline-block;
     width: 26px;
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     /* 代码为正文的 0.88 倍，引用前缀恢复为正文大小，且不改变代码行高。 */
+    font-size: calc(1em / 0.88);
+    line-height: 0;
+    font-weight: 400;
+  }
+
+  .mk-cm-quote-code-prefix {
+    display: inline-block;
+    width: 18px;
+    text-indent: 0;
+    font-family: var(--font-sans, sans-serif);
     font-size: calc(1em / 0.88);
     line-height: 0;
     font-weight: 400;

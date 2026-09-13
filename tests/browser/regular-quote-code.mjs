@@ -23,15 +23,22 @@ async function inspect(sourceMode) {
     for (const line of lines) {
       const box = line.getBoundingClientRect();
       const card = getComputedStyle(line, "::after");
-      const prefix = line.querySelector(".mk-cm-callout-code-prefix");
+      const prefix = line.querySelector(".mk-cm-quote-code-prefix");
       if (card.display === "none" || card.left !== "20px" || card.right !== "20px") {
         failures.push("code card inset");
       }
       if (Boolean(prefix) !== sourceMode) failures.push("source prefix visibility");
+      if (prefix) {
+        if (Math.abs(prefix.getBoundingClientRect().left - box.left - 14) > 1) failures.push("prefix alignment");
+        if (Math.abs(prefix.getBoundingClientRect().width - 18) > 1) failures.push("prefix width");
+      }
+      if (line.classList.contains("mk-cm-code-line") && Math.abs(parseFloat(getComputedStyle(line).marginLeft) - 64) > 0.1) {
+        failures.push("code block indent");
+      }
       const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
-        if (!node.textContent.trim() || node.parentElement.closest(".mk-cm-callout-code-prefix, .mk-cm-copy-code")) continue;
+        if (!node.textContent.trim() || node.parentElement.closest(".mk-cm-callout-code-prefix, .mk-cm-quote-code-prefix, .mk-cm-copy-code")) continue;
         const range = document.createRange();
         range.selectNodeContents(node);
         for (const rect of range.getClientRects()) {
@@ -46,7 +53,7 @@ async function inspect(sourceMode) {
     return {
       count: lines.length,
       failures,
-      prefixCount: view.dom.querySelectorAll(".mk-cm-quote-code-line .mk-cm-callout-code-prefix").length,
+      prefixCount: view.dom.querySelectorAll(".mk-cm-quote-code-line .mk-cm-quote-code-prefix").length,
       source: view.state.doc.toString(),
       outerBackground: outer ? getComputedStyle(outer).backgroundColor : "",
       codeBackground: code ? getComputedStyle(code).backgroundColor : "",

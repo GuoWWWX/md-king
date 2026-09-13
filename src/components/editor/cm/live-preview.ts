@@ -539,8 +539,8 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   if (code) {
     const prefixTo = ref.to + trailingSpaceCount(state, ref.to, 1);
     if (cursorLine(collector, code.from, code.to) || sourceSelected(collector, code.from, code.to)) {
-      addLine(collector, line.from, "mk-cm-callout-code-source");
-      collector.decorations.push(markDecoration("mk-cm-callout-code-prefix").range(ref.from, ref.to));
+      addLine(collector, line.from, callout ? "mk-cm-callout-code-source" : "mk-cm-quote-code-source");
+      collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, ref.to));
     } else {
       hide(collector, ref.from, prefixTo);
     }
