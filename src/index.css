@@ -2501,7 +2501,7 @@ select {
   /* CM 的代码行与引用正文是兄弟节点，没有可透出的父级引用背景。
      行本身绘制完整引用底色/边线；内缩的伪元素只在本行内绘制代码卡片。
      禁用外扩阴影，避免相邻行互相遮挡；文字和工具栏使用同一内缩量。 */
-  .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
     --mk-nested-code-bg: #f8fafc;
     --mk-nested-code-border: rgba(226, 232, 240, 0.95);
     position: relative;
@@ -2516,13 +2516,13 @@ select {
       linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) 20px 0 / 1px 100% no-repeat,
       linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) calc(100% - 20px) 0 / 1px 100% no-repeat,
       linear-gradient(var(--mk-nested-code-bg), var(--mk-nested-code-bg)) 21px 0 / calc(100% - 41px) 100% no-repeat,
-      var(--mk-callout-bg);
+      var(--mk-callout-bg, var(--mk-quote-bg, transparent));
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
   }
 
-  .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
     display: none;
   }
 
@@ -3708,14 +3708,14 @@ select {
     color: #a1a1aa;
   }
 
-  .dark .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+  .dark .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
     --mk-nested-code-bg: #18181b;
     --mk-nested-code-border: rgba(212, 212, 216, 0.18);
     background:
       linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) 20px 0 / 1px 100% no-repeat,
       linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) calc(100% - 20px) 0 / 1px 100% no-repeat,
       linear-gradient(var(--mk-nested-code-bg), var(--mk-nested-code-bg)) 21px 0 / calc(100% - 41px) 100% no-repeat,
-      color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
+      color-mix(in srgb, var(--mk-callout-accent, #64748b) 16%, #202020) !important;
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;

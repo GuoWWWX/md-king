@@ -646,6 +646,7 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   let calloutClass = "";
   const fenceLine = doc.lineAt(ref.from);
   const fencePrefix = fenceLine.text.match(/^\s*>[ \t]?/);
+  const quoteClass = fencePrefix ? " mk-cm-quote-line" : "";
   if (fencePrefix) {
     for (let number = fenceLine.number; number >= 1; number -= 1) {
       const line = doc.line(number);
@@ -684,7 +685,7 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
       hide(collector, line.from, line.to);
       addLine(collector, line.from, `${isFirst
         ? `mk-cm-code-fence mk-cm-code-fence-first${indented}`
-        : `mk-cm-code-fence mk-cm-code-fence-last${indented}`}${calloutClass}`);
+        : `mk-cm-code-fence mk-cm-code-fence-last${indented}`}${quoteClass}${calloutClass}`);
       continue;
     }
 
@@ -692,7 +693,7 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
     // 光标进出代码块时不会跳。编辑态下围栏行不再隐藏文字，直接显示 ``` 源码，
     // 首尾行仍然套 first/last 拿圆角。
     const edge = isFirst ? " mk-cm-code-first" : isLast ? " mk-cm-code-last" : "";
-    addLine(collector, line.from, `mk-cm-code-line${edge}${indented}${calloutClass}`);
+    addLine(collector, line.from, `mk-cm-code-line${edge}${indented}${quoteClass}${calloutClass}`);
   }
 
   // 只有渲染态才挂语言标签和复制按钮：编辑态首行显示的就是 ```java 本身，
