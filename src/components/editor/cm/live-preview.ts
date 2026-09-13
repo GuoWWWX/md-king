@@ -544,7 +544,8 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
     if (cursorLine(collector, code.from, code.to)
       || sourceSelected(collector, code.from, code.to)
       || (collector.focused && (selectionOnLines(state, firstLine.from, lastLine.to)
-        || selectionOnLineNumber(state, line.number)))) {
+        || selectionOnLineNumber(state, line.number)
+        || selectionIntersectsRange(state, line.from, line.to)))) {
       addLine(collector, line.from, callout ? "mk-cm-callout-code-source" : "mk-cm-quote-code-source");
       collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, ref.to));
     } else {
