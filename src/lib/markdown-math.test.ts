@@ -40,6 +40,12 @@ test("块公式范围完整包含可能被误认成链接的方括号", () => {
   );
 });
 
+test("识别带缩进的单行块公式", () => {
+  const source = "  $$\\text{核心线程数} = \\text{CPU 核心数} \\times 2$$";
+  const [range] = findBlockMarkdownMath(source);
+  assert.equal(source.slice(range.contentFrom, range.contentTo), "\\text{核心线程数} = \\text{CPU 核心数} \\times 2");
+});
+
 test("支持反斜杠块公式并忽略代码围栏中的分隔符", () => {
   const source = "```text\n$$\nnot math\n$$\n```\n\n\\[\na+b\n\\]";
   const ranges = findBlockMarkdownMath(source);

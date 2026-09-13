@@ -161,6 +161,19 @@ export function findBlockMarkdownMath(source: string): MarkdownMathRange[] {
       continue;
     }
 
+    // Pandoc/Obsidian 文档里常见缩进后的单行显示公式：`  $$...$$`。
+    // 它不是行内 `$...$`，但也不满足独占行分隔符的多行形式；单独识别后交给
+    // 块公式渲染，避免四空格或列表缩进让公式原样显示。
+    const trimmed = line.text.trim();
+    if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) {
+      const contentFrom = line.from + line.text.indexOf("$$") + 2;
+      const contentTo = line.from + line.text.lastIndexOf("$$");
+      if (contentTo > contentFrom) {
+        ranges.push({ from: line.from, to: line.to, contentFrom, contentTo, display: true });
+        continue;
+      }
+    }
+
     const delimiter = displayDelimiter(line.text);
     if (!delimiter) continue;
     for (let closeIndex = index + 1; closeIndex < lines.length; closeIndex += 1) {
