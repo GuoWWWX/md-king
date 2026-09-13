@@ -884,6 +884,20 @@ const livePreviewViewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
 export const livePreviewPlugin: Extension = [
   calloutCollapseState,
   livePreviewViewPlugin,
+  EditorView.domEventHandlers({
+    mousedown(event, view) {
+      const eventTarget = event.target instanceof Element
+        ? event.target.closest(".mk-cm-quote-code-prefix, .mk-cm-callout-code-prefix")
+        : null;
+      if (!eventTarget) return false;
+      // 负 text-indent 会让浏览器按“代码正文”命中；把前缀区域显式映射回 `>` 的真实位置。
+      const from = view.posAtDOM(eventTarget, 0);
+      view.dispatch({ selection: { anchor: from }, userEvent: "select.pointer" });
+      view.focus();
+      event.preventDefault();
+      return true;
+    },
+  }),
 ];
 
 function buildMathBlocks(state: EditorState): DecorationSet {
