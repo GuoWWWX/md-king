@@ -904,6 +904,19 @@ export const livePreviewPlugin: Extension = [
           return true;
         }
       }
+      // 某些 WebView 会把点击空白沟槽的 target 直接交给编辑器根节点；再用坐标反查源码行。
+      if (!eventTarget) {
+        const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (position !== null) {
+          const sourceLine = view.state.doc.lineAt(position);
+          if (/^\s*>[ \t]?/.test(sourceLine.text)) {
+            view.dispatch({ selection: { anchor: sourceLine.from }, userEvent: "select.pointer" });
+            view.focus();
+            event.preventDefault();
+            return true;
+          }
+        }
+      }
       if (!eventTarget) return false;
       // 负 text-indent 会让浏览器按“代码正文”命中；把前缀区域显式映射回 `>` 的真实位置。
       const from = view.posAtDOM(eventTarget, 0);
