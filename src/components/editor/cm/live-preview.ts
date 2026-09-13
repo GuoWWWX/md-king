@@ -889,6 +889,21 @@ export const livePreviewPlugin: Extension = [
       const eventTarget = event.target instanceof Element
         ? event.target.closest(".mk-cm-quote-code-prefix, .mk-cm-callout-code-prefix")
         : null;
+      const line = event.target instanceof Element
+        ? event.target.closest(".cm-line.mk-cm-quote-code-line, .cm-line.mk-cm-callout-line")
+        : null;
+      // 箭头右侧到代码卡片左边是可编辑的引用沟槽，即使点在空白处也应定位到 `>`。
+      if (!eventTarget && line) {
+        const lineBox = line.getBoundingClientRect();
+        const cardLeft = Number.parseFloat(getComputedStyle(line, "::after").left) + lineBox.left;
+        if (event.clientX >= lineBox.left && event.clientX < cardLeft) {
+          const from = view.posAtDOM(line, 0);
+          view.dispatch({ selection: { anchor: from }, userEvent: "select.pointer" });
+          view.focus();
+          event.preventDefault();
+          return true;
+        }
+      }
       if (!eventTarget) return false;
       // 负 text-indent 会让浏览器按“代码正文”命中；把前缀区域显式映射回 `>` 的真实位置。
       const from = view.posAtDOM(eventTarget, 0);
