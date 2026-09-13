@@ -24,7 +24,7 @@ async function inspect(sourceMode) {
       const box = line.getBoundingClientRect();
       const card = getComputedStyle(line, "::after");
       const prefix = line.querySelector(".mk-cm-quote-code-prefix");
-      if (card.display === "none" || card.left !== "20px" || card.right !== "20px") {
+      if (card.display === "none" || card.left !== "28px" || card.right !== "32px") {
         failures.push("code card inset");
       }
       if (Boolean(prefix) !== sourceMode) failures.push("source prefix visibility");

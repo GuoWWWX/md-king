@@ -2532,6 +2532,11 @@ select {
     box-shadow:
       inset 3px 0 0 var(--mk-quote-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-quote-accent) 38%, transparent);
+    padding-inline: 40px 32px !important;
+  }
+
+  .cm-line.mk-cm-quote-code-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
+    inset: 0 32px 0 28px !important;
   }
 
   .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
@@ -2568,8 +2573,8 @@ select {
   }
 
   .cm-line.mk-cm-quote-code-source {
-    /* 普通引用的源码前缀与正文引用标记同列，同时保持代码内容的起点不变。 */
-    text-indent: -18px;
+    /* 普通引用的源码前缀与正文引用标记同列；代码正文另留出更宽的右侧起始位。 */
+    text-indent: -26px;
   }
 
   .mk-cm-callout-code-prefix {
