@@ -538,7 +538,12 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
     : next?.name === "FencedCode" && state.doc.lineAt(next.from).from === line.from ? next : null;
   if (code) {
     const prefixTo = ref.to + trailingSpaceCount(state, ref.to, 1);
-    if (cursorLine(collector, code.from, code.to) || sourceSelected(collector, code.from, code.to)) {
+    // 选中首行时，选区通常只覆盖围栏文本；FencedCode 节点从围栏内容起算，
+    // 仅按节点区间判断会把 QuoteMark 误判为渲染态，导致隐藏的 `>` 被原生选区
+    // 临时绘制到代码卡片里。按实际代码首尾行判断，保证前缀和首行同步进入源码态。
+    if (cursorLine(collector, code.from, code.to)
+      || sourceSelected(collector, code.from, code.to)
+      || (collector.focused && selectionOnLines(state, firstLine.from, lastLine.to))) {
       addLine(collector, line.from, callout ? "mk-cm-callout-code-source" : "mk-cm-quote-code-source");
       collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, ref.to));
     } else {
@@ -640,7 +645,8 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   // Mermaid 被选中时与其他 Markdown 对象一样回退到源码；源码显示后继续
   // 保留整块行装饰，避免选区变化时背景卡片闪退。
   const editing = cursorLine(collector, ref.from, ref.to)
-    || sourceSelected(collector, ref.from, ref.to);
+    || sourceSelected(collector, ref.from, ref.to)
+    || (collector.focused && selectionOnLines(state, firstLine.from, lastLine.to));
   const indentClass = codeBlockIndentClass(codeBlockIndentPtFromInfo(info));
   const indented = indentClass ? ` ${indentClass}` : "";
   const indentAttribute = infoNode ? codeBlockIndentAttributeRange(doc.sliceString(infoNode.from, infoNode.to)) : null;
