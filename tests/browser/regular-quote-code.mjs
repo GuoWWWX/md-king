@@ -102,6 +102,35 @@ try {
     assert.equal(editing.prefixCount, 3, "every quoted code line keeps an editable quote prefix");
     assert.equal(editing.source, rendered.source);
     assert.equal(editing.codeTextLeft, rendered.codeTextLeft, 'source arrow must not shift the code');
+    const quoteClick = await page.evaluate(() => {
+      const { view } = window.fixture;
+      const prefix = view.dom.querySelector('.mk-cm-quote-code-prefix');
+      const line = prefix.closest('.cm-line');
+      const lineFrom = view.posAtDOM(line, 0);
+      const rect = prefix.getBoundingClientRect();
+      return { x: rect.left + 3, y: rect.top + rect.height / 2, expected: lineFrom + 1 };
+    });
+    await page.mouse.click(quoteClick.x, quoteClick.y);
+    assert.equal(await page.evaluate(() => window.fixture.view.state.selection.main.head), quoteClick.expected, 'quote arrow click maps to the right of >');
+    const gutterClick = await page.evaluate(() => {
+      const { view } = window.fixture;
+      const prefix = view.dom.querySelector('.mk-cm-quote-code-prefix');
+      const line = prefix.closest('.cm-line');
+      const lineBox = line.getBoundingClientRect();
+      const prefixBox = prefix.getBoundingClientRect();
+      const cardLeft = Number.parseFloat(getComputedStyle(line, '::after').left);
+      return {
+        // 点在 `>` 右侧的引用沟槽，而不是代码卡片正文。
+        x: prefixBox.left + 12,
+        y: lineBox.top + lineBox.height / 2,
+        expected: view.posAtDOM(line, 0) + 1,
+        cardX: lineBox.left + cardLeft + 16,
+      };
+    });
+    await page.mouse.click(gutterClick.x, gutterClick.y);
+    assert.equal(await page.evaluate(() => window.fixture.view.state.selection.main.head), gutterClick.expected, 'gutter click maps to the right of >');
+    await page.mouse.click(gutterClick.cardX, gutterClick.y);
+    assert.ok(await page.evaluate(() => window.fixture.view.state.selection.main.head) > gutterClick.expected, 'code card click remains in code');
     await page.screenshot({ path: `.codex/regular-quote-regression/${dark ? "dark" : "light"}-${indented ? "indented" : "plain"}-editing.png` });
 
     await page.evaluate(() => window.fixture.setReadOnly(true));

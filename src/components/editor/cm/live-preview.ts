@@ -897,7 +897,7 @@ export const livePreviewPlugin: Extension = [
         const lineBox = line.getBoundingClientRect();
         const cardLeft = Number.parseFloat(getComputedStyle(line, "::after").left) + lineBox.left;
         if (event.clientX >= lineBox.left && event.clientX < cardLeft) {
-          const from = view.posAtDOM(line, 0);
+          const from = view.posAtDOM(line, 0) + 1;
           view.dispatch({ selection: { anchor: from }, userEvent: "select.pointer" });
           view.focus();
           event.preventDefault();
@@ -909,8 +909,16 @@ export const livePreviewPlugin: Extension = [
         const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
         if (position !== null) {
           const sourceLine = view.state.doc.lineAt(position);
-          if (/^\s*>[ \t]?/.test(sourceLine.text)) {
-            view.dispatch({ selection: { anchor: sourceLine.from }, userEvent: "select.pointer" });
+          const domAtPosition = view.domAtPos(position).node;
+          const sourceLineElement = domAtPosition instanceof Element
+            ? domAtPosition.closest(".cm-line.mk-cm-quote-code-line, .cm-line.mk-cm-callout-line")
+            : domAtPosition.parentElement?.closest(".cm-line.mk-cm-quote-code-line, .cm-line.mk-cm-callout-line");
+          const lineBox = sourceLineElement?.getBoundingClientRect();
+          const cardLeft = sourceLineElement
+            ? Number.parseFloat(getComputedStyle(sourceLineElement, "::after").left) + (lineBox?.left ?? 0)
+            : Number.POSITIVE_INFINITY;
+          if (sourceLineElement && /^\s*>[ \t]?/.test(sourceLine.text) && event.clientX < cardLeft) {
+            view.dispatch({ selection: { anchor: sourceLine.from + 1 }, userEvent: "select.pointer" });
             view.focus();
             event.preventDefault();
             return true;
@@ -919,7 +927,7 @@ export const livePreviewPlugin: Extension = [
       }
       if (!eventTarget) return false;
       // 负 text-indent 会让浏览器按“代码正文”命中；把前缀区域显式映射回 `>` 的真实位置。
-      const from = view.posAtDOM(eventTarget, 0);
+      const from = view.posAtDOM(eventTarget, 0) + 1;
       view.dispatch({ selection: { anchor: from }, userEvent: "select.pointer" });
       view.focus();
       event.preventDefault();

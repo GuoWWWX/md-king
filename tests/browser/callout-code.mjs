@@ -94,8 +94,7 @@ try {
       return { pos, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     });
     await page.mouse.click(target.x, target.y);
-    assert.ok(await page.evaluate(() => window.fixture.view.state.selection.main.head) >= target.pos
-      && await page.evaluate(() => window.fixture.view.state.selection.main.head) <= target.pos + 2, 'click maps to editable prefix');
+    assert.equal(await page.evaluate(() => window.fixture.view.state.selection.main.head), target.pos + 1, 'click maps to the right of the editable prefix');
     await page.evaluate((pos) => window.fixture.view.dispatch({ changes: { from: pos, to: pos + 1, insert: '' } }), target.pos);
     const changed = await page.evaluate(() => window.fixture.view.state.doc.toString());
     assert.equal(changed, editing.source.slice(0, target.pos) + editing.source.slice(target.pos + 1));
