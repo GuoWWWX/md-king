@@ -2564,17 +2564,36 @@ select {
   }
 
   .cm-line.mk-cm-callout-code-source {
-    /* 前缀固定在引用正文列；卡片从 32px 开始，正文从 44px 开始。 */
-    text-indent: calc(-30px - var(--mk-code-indent, 0px));
+    text-indent: 0;
   }
 
   .cm-line.mk-cm-quote-code-source {
-    text-indent: calc(-30px - var(--mk-code-indent, 0px));
+    text-indent: 0;
+  }
+
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line).mk-cm-callout-code-source:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence),
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line).mk-cm-quote-code-source:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    /* 源码态让 > 正常参与排版，额外缩进放到前缀后的间距，保证光标有真实落点。 */
+    padding-inline: calc(44px + var(--mk-code-indent, 0px)) 44px !important;
+    text-indent: 0 !important;
+  }
+
+  .cm-line.mk-cm-callout-code-source .mk-cm-callout-code-prefix,
+  .cm-line.mk-cm-quote-code-source .mk-cm-quote-code-prefix {
+    width: auto;
+    margin-left: calc(-30px - var(--mk-code-indent, 0px));
+    margin-right: 0;
+  }
+
+  .cm-line.mk-cm-callout-code-source .mk-cm-callout-code-prefix + *,
+  .cm-line.mk-cm-quote-code-source .mk-cm-quote-code-prefix + * {
+    /* 间距放在 > 后面的内容上，不能放在前缀本身上，否则 > 后的光标会跳过整段间距。 */
+    margin-right: calc(14.5625px + var(--mk-code-indent, 0px));
   }
 
   .mk-cm-callout-code-prefix {
     display: inline-block;
-    width: calc(30px + var(--mk-code-indent, 0px));
+    width: auto;
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     /* 代码为正文的 0.88 倍，引用前缀恢复为正文大小，且不改变代码行高。 */
@@ -2585,7 +2604,7 @@ select {
 
   .mk-cm-quote-code-prefix {
     display: inline-block;
-    width: calc(30px + var(--mk-code-indent, 0px));
+    width: auto;
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     font-size: calc(1em / 0.88);

@@ -32,7 +32,8 @@ async function inspect(sourceMode) {
       if (Boolean(prefix) !== sourceMode) failures.push("source prefix visibility");
       if (prefix) {
         if (Math.abs(prefix.getBoundingClientRect().left - box.left - 14) > 1) failures.push("prefix alignment");
-        if (Math.abs(prefix.getBoundingClientRect().width - 30 - indent) > 1) failures.push("prefix width");
+        const prefixWidth = prefix.getBoundingClientRect().width;
+        if (prefixWidth < 4 || prefixWidth > 16) failures.push("prefix width");
         const glyph = document.createRange();
         glyph.setStart(prefix.firstChild, 0);
         glyph.setEnd(prefix.firstChild, 1);
@@ -108,10 +109,11 @@ try {
       const line = prefix.closest('.cm-line');
       const lineFrom = view.posAtDOM(line, 0);
       const rect = prefix.getBoundingClientRect();
-      return { x: rect.left + 3, y: rect.top + rect.height / 2, expected: lineFrom + 1 };
+      return { x: rect.left + 3, y: rect.top + rect.height / 2, expected: lineFrom + 1, expectedX: rect.right };
     });
     await page.mouse.click(quoteClick.x, quoteClick.y);
     assert.equal(await page.evaluate(() => window.fixture.view.state.selection.main.head), quoteClick.expected, 'quote arrow click maps to the right of >');
+    assert.ok(Math.abs((await page.evaluate(() => window.fixture.view.coordsAtPos(window.fixture.view.state.selection.main.head).left)) - quoteClick.expectedX) <= 1, 'caret is visibly beside >');
     const gutterClick = await page.evaluate(() => {
       const { view } = window.fixture;
       const prefix = view.dom.querySelector('.mk-cm-quote-code-prefix');
