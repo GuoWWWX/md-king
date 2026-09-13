@@ -2511,20 +2511,19 @@ select {
     width: auto;
     padding-inline: 32px !important;
     border-radius: 0;
-    background: var(--mk-callout-bg);
+    /* 用行本身的多重背景绘制内缩代码卡片，避免负层级伪元素被 CodeMirror 行背景盖住。 */
+    background:
+      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) 20px 0 / 1px 100% no-repeat,
+      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) calc(100% - 20px) 0 / 1px 100% no-repeat,
+      linear-gradient(var(--mk-nested-code-bg), var(--mk-nested-code-bg)) 21px 0 / calc(100% - 41px) 100% no-repeat,
+      var(--mk-callout-bg);
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
   }
 
   .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
-    content: "";
-    position: absolute;
-    inset: 0 20px;
-    z-index: -1;
-    pointer-events: none;
-    background: var(--mk-nested-code-bg);
-    border-inline: 1px solid var(--mk-nested-code-border);
+    display: none;
   }
 
   .cm-line.mk-cm-callout-line:is(.mk-cm-code-first, .mk-cm-code-fence-first)::after {
@@ -3712,7 +3711,11 @@ select {
   .dark .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
     --mk-nested-code-bg: #18181b;
     --mk-nested-code-border: rgba(212, 212, 216, 0.18);
-    background: color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
+    background:
+      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) 20px 0 / 1px 100% no-repeat,
+      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) calc(100% - 20px) 0 / 1px 100% no-repeat,
+      linear-gradient(var(--mk-nested-code-bg), var(--mk-nested-code-bg)) 21px 0 / calc(100% - 41px) 100% no-repeat,
+      color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;

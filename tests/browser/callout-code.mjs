@@ -25,8 +25,8 @@ async function inspect(sourceMode) {
     for (const line of lines) {
       const box = line.getBoundingClientRect();
       const prefix = line.querySelector('.mk-cm-callout-code-prefix');
-      const bg = getComputedStyle(line, '::after');
-      if (bg.left !== '20px' || bg.right !== '20px') failures.push('code card inset');
+      const bg = getComputedStyle(line).backgroundImage;
+      if (!bg.includes('linear-gradient')) failures.push('code card inset');
       if (Boolean(prefix) !== sourceMode) failures.push('source prefix visibility');
       if (prefix) {
         const p = prefix.getBoundingClientRect();
