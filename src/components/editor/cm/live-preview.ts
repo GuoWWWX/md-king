@@ -16,7 +16,7 @@ import {
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
-import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
+import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
 import {
   applyTableWidthMode,
@@ -543,7 +543,8 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
     // 临时绘制到代码卡片里。按实际代码首尾行判断，保证前缀和首行同步进入源码态。
     if (cursorLine(collector, code.from, code.to)
       || sourceSelected(collector, code.from, code.to)
-      || (collector.focused && selectionOnLines(state, firstLine.from, lastLine.to))) {
+      || (collector.focused && (selectionOnLines(state, firstLine.from, lastLine.to)
+        || selectionOnLineNumber(state, line.number)))) {
       addLine(collector, line.from, callout ? "mk-cm-callout-code-source" : "mk-cm-quote-code-source");
       collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, ref.to));
     } else {
