@@ -2579,7 +2579,7 @@ select {
     font-family: var(--font-sans, sans-serif);
     /* 代码为正文的 0.88 倍，引用前缀恢复为正文大小，且不改变代码行高。 */
     font-size: calc(1em / 0.88);
-    line-height: 0;
+    line-height: inherit;
     font-weight: 400;
   }
 
@@ -2589,7 +2589,7 @@ select {
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     font-size: calc(1em / 0.88);
-    line-height: 0;
+    line-height: inherit;
     font-weight: 400;
     position: relative;
     z-index: 1;
