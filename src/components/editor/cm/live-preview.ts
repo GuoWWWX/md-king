@@ -540,7 +540,8 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
     const prefixTo = ref.to + trailingSpaceCount(state, ref.to, 1);
     if (cursorLine(collector, code.from, code.to) || sourceSelected(collector, code.from, code.to)) {
       addLine(collector, line.from, callout ? "mk-cm-callout-code-source" : "mk-cm-quote-code-source");
-      collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, ref.to));
+      // 包含前缀后的空格，避免源码态额外占一个字符宽度而使代码左右跳动。
+      collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, prefixTo));
     } else {
       hide(collector, ref.from, prefixTo);
     }

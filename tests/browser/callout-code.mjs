@@ -22,15 +22,20 @@ async function inspect(sourceMode) {
       .filter(el => el.matches('.mk-cm-code-line, .mk-cm-code-fence'));
     const failures = [];
     const positions = [];
+    let codeTextLeft;
     for (const line of lines) {
       const box = line.getBoundingClientRect();
       const prefix = line.querySelector('.mk-cm-callout-code-prefix');
       const bg = getComputedStyle(line, '::after');
-      if (bg.display === 'none' || bg.left !== '20px' || bg.right !== '20px') failures.push('code card inset');
+      if (bg.display === 'none' || bg.left !== '32px' || bg.right !== '32px') failures.push('code card inset');
       if (Boolean(prefix) !== sourceMode) failures.push('source prefix visibility');
       if (prefix) {
         const p = prefix.getBoundingClientRect();
-        if (Math.abs(p.left - box.left - 6) > 1) failures.push('prefix gutter position');
+        if (Math.abs(p.left - box.left - 14) > 1) failures.push('prefix gutter position');
+        const glyph = document.createRange();
+        glyph.setStart(prefix.firstChild, 0);
+        glyph.setEnd(prefix.firstChild, 1);
+        if (glyph.getBoundingClientRect().right > box.left + 28) failures.push('arrow overlaps card');
         const reference = view.dom.querySelector('.mk-cm-callout-first');
         if (Math.abs(parseFloat(getComputedStyle(prefix).fontSize) - parseFloat(getComputedStyle(reference).fontSize)) > 0.1) failures.push('prefix font size');
       }
@@ -40,15 +45,16 @@ async function inspect(sourceMode) {
         if (!node.textContent.trim() || node.parentElement.closest('.mk-cm-callout-code-prefix, .mk-cm-copy-code')) continue;
         const range = document.createRange();
         range.selectNodeContents(node);
+        if (node.textContent.includes('doBusiness')) codeTextLeft = range.getBoundingClientRect().left - box.left;
         for (const rect of range.getClientRects()) {
           if (rect.width === 0) continue;
-          if (rect.left < box.left + 31 || rect.right > box.right - 20 + 1) failures.push('code text outside card');
+          if (rect.left < box.left + 43 || rect.right > box.right - 43) failures.push('code text outside card');
           positions.push(rect.left - box.left);
         }
       }
     }
     if (view.dom.querySelectorAll('.mk-cm-callout-code-prefix').length !== (sourceMode ? 8 : 0)) failures.push('prefix count');
-    return { failures, positions, count: lines.length, source: view.state.doc.toString() };
+    return { failures, positions, codeTextLeft, count: lines.length, source: view.state.doc.toString() };
   }, sourceMode);
 }
 
@@ -73,6 +79,7 @@ try {
     const editing = await inspect(true);
     assert.deepEqual(editing.failures, [], `${dark ? 'dark' : 'light'} editing`);
     assert.equal(editing.source, rendered.source);
+    assert.equal(editing.codeTextLeft, rendered.codeTextLeft, 'source arrow must not shift the code');
     await page.screenshot({ path: `.codex/callout-regression/${dark ? 'dark' : 'light'}-editing.png` });
 
     // Click the real character in the gutter, delete it, then undo. A painted/atomic
@@ -81,7 +88,7 @@ try {
       const { view, source } = window.fixture;
       const pos = source.indexOf('> } finally');
       const prefix = [...view.dom.querySelectorAll('.mk-cm-callout-code-prefix')]
-        .find((element) => element.textContent === '>' && element.parentElement.textContent.includes('finally'));
+        .find((element) => element.textContent.trim() === '>' && element.parentElement.textContent.includes('finally'));
       if (!prefix) throw new Error('source prefix not rendered');
       const rect = prefix.getBoundingClientRect();
       return { pos, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
