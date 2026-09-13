@@ -1849,6 +1849,8 @@ select {
   /* 引用的左边框走 box-shadow 而不是 border-left：border 会挤压行内容的可用宽度，
      导致光标进出引用块时整行文字左右跳动。 */
   .mk-cm-quote-line {
+    --mk-quote-accent: rgba(148, 163, 184, 0.66);
+    --mk-quote-bg: rgba(248, 250, 252, 0.7);
     padding-left: 14px !important;
     box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.66);
     background: rgba(248, 250, 252, 0.7);
@@ -2501,7 +2503,7 @@ select {
   /* CM 的代码行与引用正文是兄弟节点，没有可透出的父级引用背景。
      行本身绘制完整引用底色/边线；内缩的伪元素只在本行内绘制代码卡片。
      禁用外扩阴影，避免相邻行互相遮挡；文字和工具栏使用同一内缩量。 */
-  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
     --mk-nested-code-bg: #f8fafc;
     --mk-nested-code-border: rgba(226, 232, 240, 0.95);
     position: relative;
@@ -2511,36 +2513,47 @@ select {
     width: auto;
     padding-inline: 32px !important;
     border-radius: 0;
-    /* 用行本身的多重背景绘制内缩代码卡片，避免负层级伪元素被 CodeMirror 行背景盖住。 */
-    background:
-      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) 20px 0 / 1px 100% no-repeat,
-      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) calc(100% - 20px) 0 / 1px 100% no-repeat,
-      linear-gradient(var(--mk-nested-code-bg), var(--mk-nested-code-bg)) 21px 0 / calc(100% - 41px) 100% no-repeat,
-      var(--mk-callout-bg, var(--mk-quote-bg, transparent));
+  }
+
+  .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    background: var(--mk-callout-bg);
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
   }
 
-  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
-    display: none;
+  .cm-line.mk-cm-quote-code-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    background: var(--mk-quote-bg);
+    box-shadow:
+      inset 3px 0 0 var(--mk-quote-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-quote-accent) 38%, transparent);
   }
 
-  .cm-line.mk-cm-callout-line:is(.mk-cm-code-first, .mk-cm-code-fence-first)::after {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence)::after {
+    content: "";
+    position: absolute;
+    inset: 0 20px;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--mk-nested-code-bg);
+    border-inline: 1px solid var(--mk-nested-code-border);
+  }
+
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line):is(.mk-cm-code-first, .mk-cm-code-fence-first)::after {
     border-top: 1px solid var(--mk-nested-code-border);
     border-radius: 4px 4px 0 0;
   }
 
-  .cm-line.mk-cm-callout-line:is(.mk-cm-code-last, .mk-cm-code-fence-last)::after {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line):is(.mk-cm-code-last, .mk-cm-code-fence-last)::after {
     border-bottom: 1px solid var(--mk-nested-code-border);
     border-radius: 0 0 4px 4px;
   }
 
-  .cm-line.mk-cm-callout-line[data-code-language]::before {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line)[data-code-language]::before {
     left: 32px;
   }
 
-  .cm-line.mk-cm-callout-line .mk-cm-copy-code {
+  .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-code-line) .mk-cm-copy-code {
     right: 28px;
   }
 
@@ -3561,6 +3574,8 @@ select {
   }
 
   .dark .mk-cm-quote-line {
+    --mk-quote-accent: rgba(148, 163, 184, 0.5);
+    --mk-quote-bg: rgba(63, 63, 70, 0.28);
     box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.5) !important;
     background: rgba(63, 63, 70, 0.28) !important;
     color: #cbd5e1 !important;
@@ -3708,17 +3723,22 @@ select {
     color: #a1a1aa;
   }
 
-  .dark .cm-line:is(.mk-cm-callout-line, .mk-cm-quote-line):is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+  .dark .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
     --mk-nested-code-bg: #18181b;
     --mk-nested-code-border: rgba(212, 212, 216, 0.18);
-    background:
-      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) 20px 0 / 1px 100% no-repeat,
-      linear-gradient(var(--mk-nested-code-border), var(--mk-nested-code-border)) calc(100% - 20px) 0 / 1px 100% no-repeat,
-      linear-gradient(var(--mk-nested-code-bg), var(--mk-nested-code-bg)) 21px 0 / calc(100% - 41px) 100% no-repeat,
-      color-mix(in srgb, var(--mk-callout-accent, #64748b) 16%, #202020) !important;
+    background: color-mix(in srgb, var(--mk-callout-accent) 16%, #202020) !important;
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;
+  }
+
+  .dark .cm-line.mk-cm-quote-code-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    --mk-nested-code-bg: #18181b;
+    --mk-nested-code-border: rgba(212, 212, 216, 0.18);
+    background: var(--mk-quote-bg) !important;
+    box-shadow:
+      inset 3px 0 0 var(--mk-quote-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-quote-accent) 48%, transparent) !important;
   }
 
   .dark .mk-cm-image[data-state="error"] .mk-cm-image-canvas {

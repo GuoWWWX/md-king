@@ -1,0 +1,52 @@
+<!doctype html>
+<html class="dark">
+  <head><meta charset="utf-8"><title>Regular quote code regression</title></head>
+  <body>
+    <button id="outside">移开编辑焦点</button>
+    <main id="editor" style="width: 1300px; height: 600px; margin: 16px auto"></main>
+    <script type="module">
+      import "/src/index.css";
+      import { EditorState, Compartment } from "@codemirror/state";
+      import { EditorView } from "@codemirror/view";
+      import { markdown } from "@codemirror/lang-markdown";
+      import { livePreviewMarkdownLanguage } from "/src/components/editor/cm/markdown-language.ts";
+      import { livePreviewPlugin } from "/src/components/editor/cm/live-preview.ts";
+      import { markdownEditorTheme } from "/src/components/editor/cm/theme.ts";
+
+      const source = [
+        '> 🌟 **极速神器：Arthas（阿里开源阿尔萨斯）**',
+        '> 生产环境装了 Arthas，只需一条命令秒杀：',
+        '> ```bash',
+        '> thread -n 3',
+        '> ```',
+        '> Arthas 会直接列出当前占用 CPU 最高的前 3 个线程及其完整调用栈，一秒抓出罪魁祸首！',
+      ].join('\n');
+      const theme = new Compartment();
+      const readOnly = new Compartment();
+      const view = new EditorView({
+        parent: document.querySelector('#editor'),
+        state: EditorState.create({
+          doc: source,
+          extensions: [
+            markdown({ base: livePreviewMarkdownLanguage }),
+            EditorView.lineWrapping,
+            theme.of(markdownEditorTheme(true)),
+            readOnly.of(EditorState.readOnly.of(false)),
+            livePreviewPlugin,
+          ],
+        }),
+      });
+      window.fixture = {
+        view,
+        source,
+        setDark(dark) {
+          document.documentElement.classList.toggle('dark', dark);
+          view.dispatch({ effects: theme.reconfigure(markdownEditorTheme(dark)) });
+        },
+        setReadOnly(value) {
+          view.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(value)) });
+        },
+      };
+    </script>
+  </body>
+</html>

@@ -536,7 +536,7 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   const code = ref.node.parent?.name === "FencedCode"
     ? ref.node.parent
     : next?.name === "FencedCode" && state.doc.lineAt(next.from).from === line.from ? next : null;
-  if (callout && code) {
+  if (code) {
     const prefixTo = ref.to + trailingSpaceCount(state, ref.to, 1);
     if (cursorLine(collector, code.from, code.to) || sourceSelected(collector, code.from, code.to)) {
       addLine(collector, line.from, "mk-cm-callout-code-source");
@@ -646,7 +646,6 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
   let calloutClass = "";
   const fenceLine = doc.lineAt(ref.from);
   const fencePrefix = fenceLine.text.match(/^\s*>[ \t]?/);
-  const quoteClass = fencePrefix ? " mk-cm-quote-line" : "";
   if (fencePrefix) {
     for (let number = fenceLine.number; number >= 1; number -= 1) {
       const line = doc.line(number);
@@ -659,6 +658,7 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
       }
     }
   }
+  const quoteClass = fencePrefix && !calloutClass ? " mk-cm-quote-line mk-cm-quote-code-line" : "";
   if (infoNode && indentAttribute) {
     hide(collector, infoNode.from + indentAttribute.from, infoNode.from + indentAttribute.to);
   }
