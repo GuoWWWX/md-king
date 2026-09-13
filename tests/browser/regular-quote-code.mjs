@@ -30,7 +30,7 @@ async function inspect(sourceMode) {
       if (Boolean(prefix) !== sourceMode) failures.push("source prefix visibility");
       if (prefix) {
         if (Math.abs(prefix.getBoundingClientRect().left - box.left - 14) > 1) failures.push("prefix alignment");
-        if (Math.abs(prefix.getBoundingClientRect().width - 18) > 1) failures.push("prefix width");
+        if (Math.abs(prefix.getBoundingClientRect().width - 26) > 1) failures.push("prefix width");
       }
       if (line.classList.contains("mk-cm-code-line") && Math.abs(parseFloat(getComputedStyle(line).marginLeft) - 64) > 0.1) {
         failures.push("code block indent");

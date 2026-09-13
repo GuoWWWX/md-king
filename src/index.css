@@ -2123,6 +2123,11 @@ select {
     padding-left: calc(6px + var(--mk-cm-source-indent, 0px)) !important;
   }
 
+  .mk-cm-list-line.mk-cm-quote-list-line {
+    /* 引用列表的项目符号要落在引用正文列，不能把引用箭头挤到列表符号后面。 */
+    padding-left: calc(14px + var(--mk-cm-source-indent, 0px)) !important;
+  }
+
   .mk-cm-bullet {
     display: inline-block;
     color: #2563eb;
@@ -2580,7 +2585,7 @@ select {
 
   .mk-cm-quote-code-prefix {
     display: inline-block;
-    width: 18px;
+    width: 26px;
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     font-size: calc(1em / 0.88);

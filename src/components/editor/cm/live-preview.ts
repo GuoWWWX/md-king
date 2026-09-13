@@ -589,7 +589,9 @@ function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): voi
   const ordered = parentList?.name === "OrderedList";
   const taskRange = taskSourceRange(node);
 
-  addLine(collector, line.from, ordered ? "mk-cm-list-line mk-cm-list-ordered" : "mk-cm-list-line");
+  const quoted = /^\s*>[ \t]?/.test(line.text);
+  const quoteClass = quoted ? " mk-cm-quote-list-line" : "";
+  addLine(collector, line.from, `${ordered ? "mk-cm-list-line mk-cm-list-ordered" : "mk-cm-list-line"}${quoteClass}`);
 
   // 任务项用 TaskMarker 的复选框作为唯一符号，不能再额外留一个普通圆点。
   // `- [ ]` 作为一个整体判断：只有光标靠近这组标记时才一起显示源码，
