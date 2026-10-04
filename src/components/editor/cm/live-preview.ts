@@ -6,6 +6,7 @@ import { parseMarkdownCalloutHeader } from "@/lib/markdown-callout";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { findBlockMarkdownMath, findInlineMarkdownMath } from "@/lib/markdown-math";
 import { findRelaxedStrongRanges } from "@/lib/relaxed-strong";
+import { findRelaxedEmphasisRanges } from "@/lib/relaxed-emphasis";
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
@@ -15,7 +16,13 @@ import {
   codeBlockIndentPtFromInfo,
   codeFenceLanguageFromInfo,
 } from "./code-block-indent";
-import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
+import {
+  markdownSourceIndentClass,
+  markdownSourceIndentLength,
+  parseMarkdownSourceListLine,
+  sourceOrderedListValue,
+  splitMarkdownQuotePrefix,
+} from "./source-indent";
 import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
 import { markdownInlineHtmlTagRanges } from "../../../lib/markdown-inline-html.ts";
@@ -287,19 +294,64 @@ function hasSyntaxAncestor(node: SyntaxNode, names: ReadonlySet<string>): boolea
   return false;
 }
 
-const relaxedStrongExcludedNodes = new Set(["StrongEmphasis", "InlineCode", "FencedCode", "CodeBlock"]);
+function isInsideOrCrossingMath(from: number, to: number, mathRanges: Array<{ from: number; to: number }>): boolean {
+  for (const math of mathRanges) {
+    if (from < math.to && to > math.from) {
+      if (!(from <= math.from && to >= math.to)) return true;
+    }
+  }
+  return false;
+}
+
+const relaxedStrongExcludedNodes = new Set([
+  "StrongEmphasis",
+  "InlineCode",
+  "FencedCode",
+  "CodeBlock",
+  "Link",
+  "Autolink",
+]);
+
+const relaxedEmphasisExcludedNodes = new Set([
+  "StrongEmphasis",
+  "Emphasis",
+  "InlineCode",
+  "FencedCode",
+  "CodeBlock",
+  "Link",
+  "Autolink",
+]);
 
 function addRelaxedStrong(collector: DecorationCollector, lineFrom: number, tree: ReturnType<typeof syntaxTree>): void {
   const line = collector.state.doc.lineAt(lineFrom);
   for (const range of findRelaxedStrongRanges(line.text)) {
     const from = line.from + range.from;
     const to = line.from + range.to;
-    if (collector.mathRanges.some((math) => from < math.to && to > math.from)) continue;
+    if (isInsideOrCrossingMath(from, to, collector.mathRanges)) continue;
     const contentFrom = line.from + range.contentFrom;
     const contentNode = tree.resolveInner(contentFrom, 1);
     if (hasSyntaxAncestor(contentNode, relaxedStrongExcludedNodes)) continue;
+    if (isInsideObsidianWikilink(collector.state, from, to)) continue;
 
     addMark(collector, from, to, "mk-cm-strong");
+    if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
+    hide(collector, from, contentFrom);
+    hide(collector, line.from + range.contentTo, to);
+  }
+}
+
+function addRelaxedEmphasis(collector: DecorationCollector, lineFrom: number, tree: ReturnType<typeof syntaxTree>): void {
+  const line = collector.state.doc.lineAt(lineFrom);
+  for (const range of findRelaxedEmphasisRanges(line.text)) {
+    const from = line.from + range.from;
+    const to = line.from + range.to;
+    if (isInsideOrCrossingMath(from, to, collector.mathRanges)) continue;
+    const contentFrom = line.from + range.contentFrom;
+    const contentNode = tree.resolveInner(contentFrom, 1);
+    if (hasSyntaxAncestor(contentNode, relaxedEmphasisExcludedNodes)) continue;
+    if (isInsideObsidianWikilink(collector.state, from, to)) continue;
+
+    addMark(collector, from, to, "mk-cm-em");
     if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
     hide(collector, from, contentFrom);
     hide(collector, line.from + range.contentTo, to);
@@ -356,7 +408,7 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
   for (const link of wikilinks) {
     const from = line.from + link.from;
     const to = line.from + link.to;
-    if (collector.mathRanges.some((math) => from < math.to && to > math.from)) continue;
+    if (isInsideOrCrossingMath(from, to, collector.mathRanges)) continue;
     if (insideProtectedInlineSource(collector.state, from)) continue;
 
     const kind = isExternalDocumentLink(link.target) ? "external" : "document";
@@ -371,7 +423,7 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
     if (wikilinks.some((wikilink) => link.from < wikilink.to && link.to > wikilink.from)) continue;
     const from = line.from + link.from;
     const to = line.from + link.to;
-    if (collector.mathRanges.some((math) => from < math.to && to > math.from)) continue;
+    if (isInsideOrCrossingMath(from, to, collector.mathRanges)) continue;
     if (insideProtectedInlineSource(collector.state, from)) continue;
     if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
     const attributes = { "data-mk-link-target": link.target };
@@ -448,8 +500,10 @@ function addRenderedSourceIndent(collector: DecorationCollector, lineFrom: numbe
   const indentLength = markdownSourceIndentLength(line.text);
   if (indentLength === 0) return;
   if (sourceSelected(collector, line.from, line.to)) return;
+  const { prefix } = splitMarkdownQuotePrefix(line.text);
+  const start = line.from + prefix.length;
   addLine(collector, line.from, markdownSourceIndentClass(line.text));
-  hide(collector, line.from, line.from + indentLength);
+  hide(collector, start, start + indentLength);
 }
 
 function lineHasParsedListMark(state: EditorState, from: number, to: number): boolean {
@@ -603,20 +657,26 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   hide(collector, ref.from, ref.to + trailingSpaceCount(state, ref.to, 1));
   if (!callout || !isFirstLine) return;
   const markerFrom = firstContentStart + callout.markerStart;
+  const markerTo = firstContentStart + callout.markerEnd;
+  const hasCustomTitle = Boolean(callout.title);
   addWidget(
     collector,
     markerFrom,
     new MarkdownCalloutIconWidget(
       callout.type,
       callout.tone,
-      callout.title || callout.defaultTitle,
+      hasCustomTitle ? "" : callout.defaultTitle,
       callout.fold ? collapsed : undefined,
       callout.fold ? firstLine.from : undefined,
       callout.fold ? (view) => { toggleCalloutCollapsed(view, firstLine.from); } : undefined,
     ),
     -1,
   );
-  hide(collector, markerFrom, firstLine.to);
+  if (hasCustomTitle) {
+    hide(collector, markerFrom, markerTo);
+  } else {
+    hide(collector, markerFrom, firstLine.to);
+  }
 }
 
 /**
@@ -807,6 +867,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
       addFallbackSourceList(collector, lineFrom);
       addObsidianAndBareLinks(collector, lineFrom);
       addRelaxedStrong(collector, lineFrom, tree);
+      addRelaxedEmphasis(collector, lineFrom, tree);
     }
     tree.iterate({
       from,
@@ -820,7 +881,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
           return;
         }
 
-        if (collector.mathRanges.some((math) => ref.from < math.to && ref.to > math.from)
+        if (isInsideOrCrossingMath(ref.from, ref.to, collector.mathRanges)
           && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link")) return;
 
         switch (name) {
@@ -1004,7 +1065,12 @@ function buildMathBlocks(state: EditorState): DecorationSet {
       builder.add(range.from, range.to, Decoration.mark({ class: "mk-cm-math-source" }));
       continue;
     }
-    const formula = source.slice(range.contentFrom, range.contentTo).trim();
+    const rawFormula = source.slice(range.contentFrom, range.contentTo);
+    const formula = rawFormula
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^[ \t]*(?:>[ \t]?)+/, ""))
+      .join("\n")
+      .trim();
     if (!formula) continue;
     builder.add(
       range.from,
@@ -1138,12 +1204,18 @@ function extractFenceBody(state: EditorState, from: number, to: number): string 
   const last = state.doc.lineAt(Math.min(to, state.doc.length));
   if (last.number <= first.number) return "";
 
-  const bodyStart = state.doc.line(first.number + 1).from;
-  // 末行是收尾围栏时不要带进来；文档结尾缺收尾围栏时它就是正文的一部分。
-  const closing = /^\s*(```|~~~)/.test(last.text);
-  const bodyEnd = closing ? state.doc.line(last.number - 1>= first.number + 1 ? last.number - 1 : first.number + 1).to : last.to;
-  if (bodyEnd <= bodyStart) return "";
-  return state.doc.sliceString(bodyStart, bodyEnd);
+  const bodyStartLine = first.number + 1;
+  const closing = /^[ \t]*(?:>[ \t]?)*[ \t]*(```|~~~)/.test(last.text);
+  const bodyEndLine = closing
+    ? (last.number - 1 >= bodyStartLine ? last.number - 1 : bodyStartLine)
+    : last.number;
+
+  const lines: string[] = [];
+  for (let ln = bodyStartLine; ln <= bodyEndLine; ln += 1) {
+    const text = state.doc.line(ln).text;
+    lines.push(text.replace(/^[ \t]*(?:>[ \t]?)+/, ""));
+  }
+  return lines.join("\n");
 }
 
 /** 取围栏代码块的纯文本正文（供复制按钮使用），去掉首尾围栏行。 */

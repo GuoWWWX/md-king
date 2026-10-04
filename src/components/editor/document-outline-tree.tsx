@@ -1,5 +1,5 @@
 import { ChevronRight, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildMarkdownOutlineTree, type MarkdownOutlineItem, type MarkdownOutlineNode } from "@/lib/document-outline";
 import { cn } from "@/lib/utils";
 
@@ -104,42 +104,14 @@ function OutlineNodeList({
 
         return (
           <div key={`${node.line}-${node.text}`}>
-            <div
-              className={cn(
-                "group flex h-6 items-center gap-0.5 rounded-[5px] pr-1 transition",
-                selected
-                  ? "bg-slate-200 dark:bg-zinc-700"
-                  : "hover:bg-slate-100 dark:hover:bg-zinc-800",
-              )}
-            >
-              {hasChildren ? (
-                <button
-                  type="button"
-                  aria-label={collapsed ? `展开 ${node.text}` : `折叠 ${node.text}`}
-                  aria-expanded={!collapsed}
-                  onClick={() => onToggle(node.line)}
-                  className="flex size-4 shrink-0 items-center justify-center rounded-[3px] text-slate-400 transition hover:text-slate-700 dark:text-zinc-500 dark:hover:text-zinc-200"
-                >
-                  <ChevronRight className={cn("size-3 transition-transform", !collapsed && "rotate-90")} />
-                </button>
-              ) : (
-                <span aria-hidden className="size-4 shrink-0" />
-              )}
-              <button
-                type="button"
-                onClick={() => onSelect(node.line)}
-                style={{ fontSize: '12px', fontFamily: 'sans-serif', fontWeight: 500 }}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-1 truncate text-left leading-6 transition",
-                  selected
-                    ? "font-medium text-slate-950 dark:text-zinc-50"
-                    : "text-slate-600 group-hover:text-slate-950 dark:text-zinc-300 dark:group-hover:text-zinc-50",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate">{node.text}</span>
-                <span className="ml-1 shrink-0 text-[10px] font-semibold text-slate-400 dark:text-zinc-500">H{node.level}</span>
-              </button>
-            </div>
+            <OutlineNodeItem
+              node={node}
+              selected={selected}
+              hasChildren={hasChildren}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
 
             {hasChildren && !collapsed ? (
               <OutlineNodeList
@@ -154,6 +126,77 @@ function OutlineNodeList({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function OutlineNodeItem({
+  node,
+  selected,
+  hasChildren,
+  collapsed,
+  onToggle,
+  onSelect,
+}: {
+  node: MarkdownOutlineNode;
+  selected: boolean;
+  hasChildren: boolean;
+  collapsed: boolean;
+  onToggle: (line: number) => void;
+  onSelect: (line: number) => void;
+}) {
+  const itemRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selected) {
+      itemRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selected]);
+
+  return (
+    <div
+      ref={itemRef}
+      className={cn(
+        "group relative flex h-6 items-center gap-0.5 rounded-[5px] pr-1 transition",
+        selected
+          ? "bg-blue-50 text-blue-700 font-semibold dark:bg-blue-500/15 dark:text-blue-200 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[2.5px] before:rounded-full before:bg-blue-600 dark:before:bg-blue-400"
+          : "hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300",
+      )}
+    >
+      {hasChildren ? (
+        <button
+          type="button"
+          aria-label={collapsed ? `展开 ${node.text}` : `折叠 ${node.text}`}
+          aria-expanded={!collapsed}
+          onClick={() => onToggle(node.line)}
+          className="flex size-4 shrink-0 items-center justify-center rounded-[3px] text-slate-400 transition hover:text-slate-700 dark:text-zinc-500 dark:hover:text-zinc-200"
+        >
+          <ChevronRight className={cn("size-3 transition-transform", !collapsed && "rotate-90")} />
+        </button>
+      ) : (
+        <span aria-hidden className="size-4 shrink-0" />
+      )}
+      <button
+        type="button"
+        onClick={() => onSelect(node.line)}
+        style={{ fontSize: "12px", fontFamily: "sans-serif", fontWeight: selected ? 600 : 500 }}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-1 truncate text-left leading-6 transition",
+          selected
+            ? "text-blue-700 dark:text-blue-200"
+            : "text-slate-600 group-hover:text-slate-950 dark:text-zinc-300 dark:group-hover:text-zinc-50",
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{node.text}</span>
+        <span
+          className={cn(
+            "ml-1 shrink-0 text-[10px] font-semibold transition",
+            selected ? "text-blue-500 dark:text-blue-400" : "text-slate-400 dark:text-zinc-500",
+          )}
+        >
+          H{node.level}
+        </span>
+      </button>
     </div>
   );
 }

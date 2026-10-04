@@ -2,7 +2,15 @@ import { ChevronsDownUp, ChevronsUpDown, FileText, ListTree, type LucideIcon } f
 import { useDeferredValue, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { DocumentOutlineTree } from "./document-outline-tree";
-import { collectOutlineParentLines, markdownOutlineRevealEvent, parseMarkdownOutline } from "@/lib/document-outline";
+import {
+  collectOutlineParentLines,
+  findActiveOutlineLine,
+  markdownOutlineRevealEvent,
+  markdownVisibleLineChangeEvent,
+  markdownVisibleLineQueryEvent,
+  parseMarkdownOutline,
+  type MarkdownVisibleLineChangeDetail,
+} from "@/lib/document-outline";
 import { cn } from "@/lib/utils";
 import { useDocumentTabsStore } from "@/stores/document-tabs-store";
 
@@ -70,6 +78,21 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
     setSelectedHeadingLine(undefined);
     setCollapsedLines(new Set<number>());
   }, [activeTabId]);
+
+  useEffect(() => {
+    const handleVisibleLineChange = (event: Event) => {
+      const detail = (event as CustomEvent<MarkdownVisibleLineChangeDetail>).detail;
+      if (!detail || detail.tabId !== activeTabId) return;
+      const activeLine = findActiveOutlineLine(outline, detail.line);
+      if (activeLine !== undefined) {
+        setSelectedHeadingLine(activeLine);
+      }
+    };
+
+    window.addEventListener(markdownVisibleLineChangeEvent, handleVisibleLineChange);
+    window.dispatchEvent(new CustomEvent(markdownVisibleLineQueryEvent, { detail: { tabId: activeTabId } }));
+    return () => window.removeEventListener(markdownVisibleLineChangeEvent, handleVisibleLineChange);
+  }, [activeTabId, outline]);
 
   function toggleCollapsedLine(line: number) {
     setCollapsedLines((current) => {

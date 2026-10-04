@@ -73,3 +73,25 @@ test("缩进有序列表按同级项目连续编号", () => {
   assert.equal(sourceOrderedListValue(lines, 3), 2);
   assert.equal(sourceOrderedListValue(lines, 4), 2);
 });
+
+test("引用块内部列表能够正确识别多级缩进与序号", () => {
+  const line1 = "> - 一级列表";
+  assert.equal(markdownSourceIndentClass(line1), "");
+  const parsed1 = parseMarkdownSourceListLine(line1, true);
+  assert.ok(parsed1);
+  assert.equal(parsed1.level, 0);
+
+  const line2 = ">     - 二级列表";
+  assert.equal(markdownSourceIndentClass(line2), "mk-cm-source-indent-1");
+  const parsed2 = parseMarkdownSourceListLine(line2);
+  assert.ok(parsed2);
+  assert.equal(parsed2.level, 1);
+  assert.equal(parsed2.marker, "-");
+
+  const line3 = ">         1. 三级有序列表";
+  assert.equal(markdownSourceIndentClass(line3), "mk-cm-source-indent-2");
+  const parsed3 = parseMarkdownSourceListLine(line3);
+  assert.ok(parsed3);
+  assert.equal(parsed3.level, 2);
+  assert.equal(parsed3.order, 1);
+});

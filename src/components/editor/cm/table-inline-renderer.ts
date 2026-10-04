@@ -12,6 +12,7 @@ import {
 import { obsidianWikilinkPlugin } from "../../../lib/obsidian-wikilinks.ts";
 import { findInlineMarkdownMath } from "../../../lib/markdown-math.ts";
 import { relaxedStrongPlugin } from "../../../lib/relaxed-strong.ts";
+import { relaxedEmphasisPlugin } from "../../../lib/relaxed-emphasis.ts";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "../../../lib/markdown-inline-html.ts";
 
 type TableInlineElementTag =
@@ -62,7 +63,8 @@ const parser = new MarkdownIt({ html: false, linkify: true, typographer: false }
   .use(markdownInlineHtmlPlugin)
   .use(tableInlineMathPlugin)
   .use(obsidianWikilinkPlugin)
-  .use(relaxedStrongPlugin);
+  .use(relaxedStrongPlugin)
+  .use(relaxedEmphasisPlugin);
 
 type PendingInlineElement = {
   tag: TableInlineElementTag;

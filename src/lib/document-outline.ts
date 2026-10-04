@@ -19,6 +19,32 @@ export type MarkdownOutlineRevealTarget = {
 };
 
 export const markdownOutlineRevealEvent = "md-king:reveal-markdown-heading";
+export const markdownVisibleLineChangeEvent = "md-king:visible-line-change";
+export const markdownVisibleLineQueryEvent = "md-king:visible-line-query";
+
+export type MarkdownVisibleLineChangeDetail = {
+  tabId: string;
+  line: number;
+};
+
+/**
+ * 根据视口当前首行（1-based），在已解析的大纲中匹配当前读者正在阅读的章节行号。
+ * 若视口在首个标题之前，返回首个标题；否则返回最后一个行号 <= currentLine 的标题。
+ */
+export function findActiveOutlineLine(outline: MarkdownOutlineItem[], currentLine: number): number | undefined {
+  if (outline.length === 0) return undefined;
+  if (currentLine <= outline[0].line) return outline[0].line;
+
+  let activeLine = outline[0].line;
+  for (const item of outline) {
+    if (item.line <= currentLine) {
+      activeLine = item.line;
+    } else {
+      break;
+    }
+  }
+  return activeLine;
+}
 
 /// 只识别正文中的 ATX 标题，围栏代码块内的 # 不应出现在目录中。
 export function parseMarkdownOutline(markdown: string): MarkdownOutlineItem[] {

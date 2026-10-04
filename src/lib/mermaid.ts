@@ -31,7 +31,8 @@ const MERMAID_THEME_CSS = `
   text-align: center;
 }
 .nodeLabel p { margin: 0; }
-.cluster-label .nodeLabel { max-width: 320px; }
+.cluster-label { padding-bottom: 8px; }
+.cluster-label .nodeLabel { max-width: 480px; font-weight: 600; line-height: 1.35; }
 /* 连线标签只显示文字，不绘制 Mermaid 默认的背景块。 */
 .edgeLabel,
 .edgeLabel *,
@@ -62,11 +63,36 @@ function mermaidConfig(theme: "default" | "dark") {
     },
     themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
 .relation { stroke: #a1a1aa !important; }
-/* 时序图消息文字、生命线和箭头使用浅灰，避免深色模式下默认 #333 隐入背景。 */
-.messageText { fill: #d4d4d8 !important; }
-.messageLine0, .messageLine1, .actor-line, .innerArc { stroke: #a1a1aa !important; }
+/* 流程图子图卡片与标题在深色模式下高对比度 */
+.cluster rect { fill: #1e293b !important; stroke: #475569 !important; }
+.cluster-label text, .cluster-label span, .cluster-label .nodeLabel { fill: #f1f5f9 !important; color: #f1f5f9 !important; }
+/* 连线与标签文字 */
+.edgeLabel text, .edgeLabel span { fill: #e2e8f0 !important; color: #e2e8f0 !important; }
+.edgePath .path { stroke: #94a3b8 !important; }
+/* 时序图消息文字、生命线、箭头、参与者与便签/循环条件高对比度 */
+.messageText { fill: #f1f5f9 !important; }
+.messageLine0, .messageLine1, .actor-line, .innerArc { stroke: #94a3b8 !important; }
 .messageLine0, .messageLine1 { fill: none !important; }
-[id$="-arrowhead"] path, [id$="-crosshead"] path { fill: #d4d4d8 !important; stroke: #d4d4d8 !important; }
+[id$="-arrowhead"] path, [id$="-crosshead"] path { fill: #f1f5f9 !important; stroke: #f1f5f9 !important; }
+.actor text, .actor tspan { fill: #f1f5f9 !important; }
+.actor rect { fill: #27272a !important; stroke: #64748b !important; }
+.noteText, .noteText tspan { fill: #f1f5f9 !important; }
+.note { fill: #1e293b !important; stroke: #475569 !important; }
+.labelText, .loopText, .loopText tspan { fill: #f1f5f9 !important; }
+.loopLine { stroke: #64748b !important; }
+/* 状态图 stateDiagram 状态名、转移说明与便签 */
+.state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text { fill: #f1f5f9 !important; color: #f1f5f9 !important; }
+.statediagram-state rect { fill: #27272a !important; stroke: #64748b !important; }
+.statediagram-note rect { fill: #1e293b !important; stroke: #475569 !important; }
+/* 实体关系图 ER Diagram */
+.er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text { fill: #f1f5f9 !important; }
+.er.entityBox { fill: #27272a !important; stroke: #64748b !important; }
+.er.attributeBoxOdd { fill: #1f2023 !important; }
+.er.attributeBoxEven { fill: #27272a !important; }
+.er.relationshipLine { stroke: #94a3b8 !important; }
+/* 类图关系重数与命名空间 */
+.classTitle text { fill: #f1f5f9 !important; }
+.relationLabel { fill: #e2e8f0 !important; }
 /* classDiagram 的默认节点略微加深紫色，避免深色背景下发白；文字仍保持深色对比度。 */
 .node[id*="classId-"] .outer-path path:first-child { fill: #ccd2f2 !important; }
 /* flowchart 的矩形/菱形节点使用同一套浅蓝紫色，避免深色模式出现白色卡片。 */
@@ -78,9 +104,9 @@ function mermaidConfig(theme: "default" | "dark") {
       useMaxWidth: false,
       wrappingWidth: MERMAID_LABEL_WRAP_WIDTH,
       nodeSpacing: 40,
-      rankSpacing: 40,
-      padding: 8,
-      subGraphTitleMargin: { top: 8, bottom: 16 },
+      rankSpacing: 44,
+      padding: 18,
+      subGraphTitleMargin: { top: 14, bottom: 28 },
     },
   };
 }

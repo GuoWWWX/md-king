@@ -11,6 +11,7 @@ import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle,
 import { renderToStaticMarkup } from "react-dom/server";
 import { isSupportedImagePath } from "@/lib/image-files";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
+import { markdownVisibleLineChangeEvent, markdownVisibleLineQueryEvent, type MarkdownVisibleLineChangeDetail } from "@/lib/document-outline";
 import { cn } from "@/lib/utils";
 import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, markdownMathBlockExtension, mermaidBlockExtension, renderFrontmatterEffect, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
 import { documentTitleExtension } from "./cm/document-title";
@@ -330,6 +331,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // 首个 documentKey 已经由 initialContent 建进 state，不能在 mount 后再替换一次。
   const lastDocumentKeyRef = useRef(documentKey);
   const activeDocumentIdRef = useRef(documentId);
+  activeDocumentIdRef.current = documentId;
   const incomingViewStateRef = useRef(viewState);
   incomingViewStateRef.current = viewState;
   const viewStateTimerRef = useRef<number | undefined>(undefined);
@@ -635,9 +637,35 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       parent: host,
     });
     viewRef.current = view;
-    const handleEditorScroll = () => scheduleViewStateReport(view);
+    let visibleLineRafId: number | undefined;
+    const reportVisibleLine = () => {
+      if (visibleLineRafId !== undefined) return;
+      visibleLineRafId = window.requestAnimationFrame(() => {
+        visibleLineRafId = undefined;
+        if (viewRef.current !== view) return;
+        const currentDocId = activeDocumentIdRef.current;
+        if (!currentDocId) return;
+        try {
+          const scrollTop = view.scrollDOM.scrollTop;
+          const scrollBlock = view.lineBlockAtHeight(scrollTop);
+          const line = view.state.doc.lineAt(scrollBlock.from).number;
+          window.dispatchEvent(
+            new CustomEvent<MarkdownVisibleLineChangeDetail>(markdownVisibleLineChangeEvent, {
+              detail: { tabId: currentDocId, line },
+            }),
+          );
+        } catch {
+          // 测量异常防御
+        }
+      });
+    };
+    const handleEditorScroll = () => {
+      scheduleViewStateReport(view);
+      reportVisibleLine();
+    };
     view.scrollDOM.addEventListener("scroll", handleEditorScroll, { passive: true });
     restoreScrollPosition(view, incomingViewStateRef.current);
+    reportVisibleLine();
     if (tableDefaultWidthModeRef.current !== "content") {
       view.dispatch({
         effects: setTableWidthModeEffect.of({ scope: "global", mode: tableDefaultWidthModeRef.current }),
@@ -659,13 +687,23 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     host.addEventListener(tableContextChangeEvent, handleTableContextChange);
     document.addEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
 
+    const handleVisibleLineQuery = (event: Event) => {
+      const targetTabId = (event as CustomEvent<{ tabId?: string }>).detail?.tabId;
+      if (!targetTabId || targetTabId === activeDocumentIdRef.current) {
+        reportVisibleLine();
+      }
+    };
+    window.addEventListener(markdownVisibleLineQueryEvent, handleVisibleLineQuery);
+
     return () => {
       reportViewState(view);
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       if (viewStateTimerRef.current !== undefined) window.clearTimeout(viewStateTimerRef.current);
+      if (visibleLineRafId !== undefined) window.cancelAnimationFrame(visibleLineRafId);
       if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
       if (restoreScrollReleaseTimerRef.current !== undefined) window.clearTimeout(restoreScrollReleaseTimerRef.current);
       view.scrollDOM.removeEventListener("scroll", handleEditorScroll);
+      window.removeEventListener(markdownVisibleLineQueryEvent, handleVisibleLineQuery);
       host.removeEventListener(tableContextChangeEvent, handleTableContextChange);
       document.removeEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
       view.destroy();

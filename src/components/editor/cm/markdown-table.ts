@@ -1,4 +1,5 @@
 import { findObsidianWikilinks } from "../../../lib/document-links.ts";
+import { findInlineMarkdownMath } from "../../../lib/markdown-math.ts";
 
 export type TableAlignment = "none" | "left" | "center" | "right";
 
@@ -6,6 +7,7 @@ export interface MarkdownTable {
   /** 第一行是表头，其余是数据行。Markdown 分隔行单独保存在 alignments 中。 */
   rows: string[][];
   alignments: TableAlignment[];
+  columnWeights?: number[];
 }
 
 export type TableOperation =
@@ -51,10 +53,17 @@ export function tableCellPointerSelection(
   return { kind: "cell", anchor: cell, focus: cell };
 }
 
-function obsidianWikilinkPipePositions(value: string): Set<number> {
+function protectedTablePipePositions(value: string): Set<number> {
   const positions = new Set<number>();
+  // 1. Obsidian 双链中的管道符
   for (const link of findObsidianWikilinks(value)) {
     for (let index = link.from + 2; index < link.to - 2; index++) {
+      if (value[index] === "|") positions.add(index);
+    }
+  }
+  // 2. 行内数学公式中的管道符（如 $P(A|B)$）
+  for (const math of findInlineMarkdownMath(value)) {
+    for (let index = math.contentFrom; index < math.contentTo; index++) {
       if (value[index] === "|") positions.add(index);
     }
   }
@@ -64,7 +73,7 @@ function obsidianWikilinkPipePositions(value: string): Set<number> {
 /** 按 GFM 表格规则拆行：管道前连续反斜杠为奇数时转义，为偶数时仍是列边界。 */
 export function parseMarkdownTableRow(line: string): string[] {
   const cells: string[] = [];
-  const wikilinkPipes = obsidianWikilinkPipePositions(line);
+  const protectedPipes = protectedTablePipePositions(line);
   let cell = "";
   let sawDelimiter = false;
 
@@ -73,7 +82,7 @@ export function parseMarkdownTableRow(line: string): string[] {
     if (char === "\\") {
       const run = backslashRunLength(line, index);
       if (line[index + run] === "|") {
-        if (wikilinkPipes.has(index + run)) {
+        if (protectedPipes.has(index + run)) {
           cell += `${"\\".repeat(run)}|`;
           index += run + 1;
           continue;
@@ -95,7 +104,7 @@ export function parseMarkdownTableRow(line: string): string[] {
       continue;
     }
     if (char === "|") {
-      if (wikilinkPipes.has(index)) {
+      if (protectedPipes.has(index)) {
         cell += char;
         index++;
         continue;
@@ -116,15 +125,22 @@ export function parseMarkdownTableRow(line: string): string[] {
   return cells.length > 0 ? cells : [""];
 }
 
-function parseAlignment(cell: string): TableAlignment | null {
+interface ParsedDelimiter {
+  alignment: TableAlignment;
+  weight: number;
+}
+
+function parseDelimiterColumn(cell: string): ParsedDelimiter | null {
   const value = cell.trim();
-  if (!/^:?-{3,}:?$/.test(value)) return null;
+  if (!/^:?-+:?$/.test(value)) return null;
   const left = value.startsWith(":");
   const right = value.endsWith(":");
-  if (left && right) return "center";
-  if (left) return "left";
-  if (right) return "right";
-  return "none";
+  const alignment: TableAlignment = left && right ? "center" : left ? "left" : right ? "right" : "none";
+  const hyphenCount = (value.match(/-/g) ?? []).length;
+  return {
+    alignment,
+    weight: Math.max(1, hyphenCount),
+  };
 }
 
 function padRow(row: readonly string[], columnCount: number): string[] {
@@ -137,16 +153,20 @@ export function parseMarkdownTable(source: string): MarkdownTable | null {
   if (lines.length < 2) return null;
 
   const parsedRows = lines.map(parseMarkdownTableRow);
-  const parsedAlignments = parsedRows[1].map(parseAlignment);
-  if (parsedAlignments.length === 0 || parsedAlignments.some((alignment) => alignment === null)) return null;
+  const parsedDelimiters = parsedRows[1].map(parseDelimiterColumn);
+  if (parsedDelimiters.length === 0 || parsedDelimiters.some((delimiter) => delimiter === null)) return null;
 
   const contentRows = [parsedRows[0], ...parsedRows.slice(2)];
-  const columnCount = Math.max(1, parsedAlignments.length, ...contentRows.map((row) => row.length));
+  const columnCount = Math.max(1, parsedDelimiters.length, ...contentRows.map((row) => row.length));
   return {
     rows: contentRows.map((row) => padRow(row, columnCount)),
     alignments: Array.from(
       { length: columnCount },
-      (_, index) => parsedAlignments[index] ?? "none",
+      (_, index) => parsedDelimiters[index]?.alignment ?? "none",
+    ),
+    columnWeights: Array.from(
+      { length: columnCount },
+      (_, index) => parsedDelimiters[index]?.weight ?? 3,
     ),
   };
 }
@@ -158,23 +178,24 @@ function normalizeCell(value: string): string {
 /** 普通管道写回表格时需要转义；Obsidian 双链中的别名分隔符保持原样。 */
 export function serializeMarkdownTableCell(value: string): string {
   const normalized = normalizeCell(value);
-  const wikilinkPipes = obsidianWikilinkPipePositions(normalized);
+  const protectedPipes = protectedTablePipePositions(normalized);
   let result = "";
 
   for (let index = 0; index < normalized.length;) {
     const char = normalized[index];
-    if (char === "|" && !wikilinkPipes.has(index)) result += "\\|";
+    if (char === "|" && !protectedPipes.has(index)) result += "\\|";
     else result += char;
     index++;
   }
   return result;
 }
 
-function separatorFor(alignment: TableAlignment): string {
-  if (alignment === "left") return ":---";
-  if (alignment === "right") return "---:";
-  if (alignment === "center") return ":---:";
-  return "---";
+function separatorFor(alignment: TableAlignment, weight = 3): string {
+  const dashes = "-".repeat(Math.max(1, weight));
+  if (alignment === "left") return `:${dashes}`;
+  if (alignment === "right") return `${dashes}:`;
+  if (alignment === "center") return `:${dashes}:`;
+  return dashes;
 }
 
 export function serializeMarkdownTable(table: MarkdownTable): string {
@@ -183,34 +204,49 @@ export function serializeMarkdownTable(table: MarkdownTable): string {
     { length: columnCount },
     (_, index): TableAlignment => table.alignments[index] ?? "none",
   );
+  const weights = Array.from(
+    { length: columnCount },
+    (_, index): number => table.columnWeights?.[index] ?? 3,
+  );
   const rows = table.rows.length > 0 ? table.rows : [Array(columnCount).fill("")];
   const serializeRow = (row: readonly string[]) =>
     `| ${padRow(row, columnCount).map(serializeMarkdownTableCell).join(" | ")} |`;
 
-  return [serializeRow(rows[0]), serializeRow(alignments.map(separatorFor)), ...rows.slice(1).map(serializeRow)].join("\n");
+  return [
+    serializeRow(rows[0]),
+    serializeRow(alignments.map((alignment, index) => separatorFor(alignment, weights[index]))),
+    ...rows.slice(1).map(serializeRow),
+  ].join("\n");
 }
 
 export function applyTableOperation(table: MarkdownTable, operation: TableOperation): MarkdownTable {
   const rows = table.rows.map((row) => [...row]);
   const alignments = [...table.alignments];
+  const columnWeights = table.columnWeights ? [...table.columnWeights] : undefined;
   const columnCount = Math.max(1, alignments.length, ...rows.map((row) => row.length));
   for (const row of rows) while (row.length < columnCount) row.push("");
   while (alignments.length < columnCount) alignments.push("none");
+  if (columnWeights) while (columnWeights.length < columnCount) columnWeights.push(3);
 
   if (operation.type === "insert-column") {
     const insertAt = Math.max(0, Math.min(columnCount, operation.index + (operation.side === "right" ? 1 : 0)));
     rows.forEach((row) => row.splice(insertAt, 0, ""));
     alignments.splice(insertAt, 0, "none");
+    columnWeights?.splice(insertAt, 0, 3);
   } else if (operation.type === "delete-column") {
     if (columnCount > 1 && operation.index >= 0 && operation.index < columnCount) {
       rows.forEach((row) => row.splice(operation.index, 1));
       alignments.splice(operation.index, 1);
+      columnWeights?.splice(operation.index, 1);
     }
   } else if (operation.type === "move-column") {
     const target = operation.index + (operation.direction === "left" ? -1 : 1);
     if (operation.index >= 0 && operation.index < columnCount && target >= 0 && target < columnCount) {
       rows.forEach((row) => [row[operation.index], row[target]] = [row[target], row[operation.index]]);
       [alignments[operation.index], alignments[target]] = [alignments[target], alignments[operation.index]];
+      if (columnWeights) {
+        [columnWeights[operation.index], columnWeights[target]] = [columnWeights[target], columnWeights[operation.index]];
+      }
     }
   } else if (operation.type === "insert-row") {
     const insertAt = Math.max(0, Math.min(rows.length, operation.index + (operation.side === "below" ? 1 : 0)));
@@ -219,7 +255,7 @@ export function applyTableOperation(table: MarkdownTable, operation: TableOperat
     if (rows.length > 1 && operation.index >= 0 && operation.index < rows.length) rows.splice(operation.index, 1);
   }
 
-  return { rows, alignments };
+  return { rows, alignments, ...(columnWeights ? { columnWeights } : {}) };
 }
 
 /** 将一列移动到指定的最终位置，同时保持各行和对齐方式同步。 */
@@ -227,13 +263,21 @@ export function reorderTableColumn(table: MarkdownTable, from: number, to: numbe
   const rows = table.rows.map((row) => [...row]);
   const columnCount = Math.max(1, table.alignments.length, ...rows.map((row) => row.length));
   if (from < 0 || from >= columnCount || to < 0 || to >= columnCount || from === to) {
-    return { rows, alignments: [...table.alignments] };
+    return {
+      rows,
+      alignments: [...table.alignments],
+      ...(table.columnWeights ? { columnWeights: [...table.columnWeights] } : {}),
+    };
   }
 
   const alignments = Array.from(
     { length: columnCount },
     (_, index): TableAlignment => table.alignments[index] ?? "none",
   );
+  const columnWeights = table.columnWeights
+    ? Array.from({ length: columnCount }, (_, index): number => table.columnWeights?.[index] ?? 3)
+    : undefined;
+
   rows.forEach((row) => {
     while (row.length < columnCount) row.push("");
     const [cell] = row.splice(from, 1);
@@ -241,18 +285,30 @@ export function reorderTableColumn(table: MarkdownTable, from: number, to: numbe
   });
   const [alignment] = alignments.splice(from, 1);
   alignments.splice(to, 0, alignment);
-  return { rows, alignments };
+  if (columnWeights) {
+    const [weight] = columnWeights.splice(from, 1);
+    columnWeights.splice(to, 0, weight);
+  }
+  return { rows, alignments, ...(columnWeights ? { columnWeights } : {}) };
 }
 
 /** 将一行移动到指定的最终位置；表头也可以被拖到普通数据行位置。 */
 export function reorderTableRow(table: MarkdownTable, from: number, to: number): MarkdownTable {
   const rows = table.rows.map((row) => [...row]);
   if (from < 0 || from >= rows.length || to < 0 || to >= rows.length || from === to) {
-    return { rows, alignments: [...table.alignments] };
+    return {
+      rows,
+      alignments: [...table.alignments],
+      ...(table.columnWeights ? { columnWeights: [...table.columnWeights] } : {}),
+    };
   }
   const [row] = rows.splice(from, 1);
   rows.splice(to, 0, row);
-  return { rows, alignments: [...table.alignments] };
+  return {
+    rows,
+    alignments: [...table.alignments],
+    ...(table.columnWeights ? { columnWeights: [...table.columnWeights] } : {}),
+  };
 }
 
 function tableSize(table: MarkdownTable): { rows: number; columns: number } {

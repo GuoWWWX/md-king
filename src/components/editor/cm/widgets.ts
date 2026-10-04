@@ -348,7 +348,20 @@ export class MermaidWidget extends WidgetType {
 
     const canvas = document.createElement("div");
     canvas.className = "mk-cm-mermaid-canvas";
-    canvas.setAttribute("role", "img");
+    canvas.setAttribute("role", "region");
+    canvas.style.userSelect = "text";
+    canvas.addEventListener("pointerdown", (event) => {
+      const target = event.target as Element | null;
+      if (target?.closest("a, [role='link'], text, span, .node, .edgeLabel, .cluster-label")) {
+        event.stopPropagation();
+      }
+    });
+    canvas.addEventListener("click", (event) => {
+      const link = (event.target as Element | null)?.closest("a");
+      if (link && link.href) {
+        event.stopPropagation();
+      }
+    });
     canvas.setAttribute("aria-label", "Mermaid 图表");
     host.append(canvas);
 
@@ -390,7 +403,11 @@ export class MermaidWidget extends WidgetType {
    * 图表主体交给编辑器处理选区：普通单击仍是空选区并保持预览，
    * 拖选经过图表时才能让块级装饰恢复 Mermaid 源码。
    */
-  ignoreEvent(): boolean {
+  ignoreEvent(event: Event): boolean {
+    const target = event.target as Element | null;
+    if (target?.closest(".mk-cm-mermaid-canvas, .mk-cm-mermaid-source, a, [role='link']")) {
+      return true;
+    }
     return false;
   }
 }
@@ -656,12 +673,39 @@ export class MarkdownWikilinkWidget extends WidgetType {
     icon.className = `mk-cm-link-icon mk-cm-link-icon--${this.kind}${this.invalid ? " mk-cm-link-icon--invalid" : ""}`;
     icon.setAttribute("aria-hidden", "true");
     icon.innerHTML = iconMarkup(this.kind === "external" ? Globe2 : FileText);
-    link.append(icon, document.createTextNode(this.label));
+    link.append(icon);
+    renderWikilinkFormattedLabel(link, this.label);
     return link;
   }
 
   ignoreEvent(): boolean {
     return false;
+  }
+}
+
+function renderWikilinkFormattedLabel(container: HTMLElement, label: string): void {
+  const pattern = /(\*\*([^\*]+)\*\*|\*([^\*]+)\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(label)) !== null) {
+    if (match.index > lastIndex) {
+      container.append(document.createTextNode(label.slice(lastIndex, match.index)));
+    }
+    if (match[2] !== undefined) {
+      const strong = document.createElement("strong");
+      strong.className = "mk-cm-strong";
+      strong.textContent = match[2];
+      container.append(strong);
+    } else if (match[3] !== undefined) {
+      const em = document.createElement("em");
+      em.className = "mk-cm-em";
+      em.textContent = match[3];
+      container.append(em);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < label.length) {
+    container.append(document.createTextNode(label.slice(lastIndex)));
   }
 }
 
@@ -705,10 +749,12 @@ export class MarkdownCalloutIconWidget extends WidgetType {
       toggle.innerHTML = iconMarkup(this.collapsed ? ChevronRight : ChevronDown);
       host.prepend(toggle);
     }
-    const title = document.createElement("span");
-    title.className = "mk-cm-callout-title";
-    title.textContent = this.title;
-    host.append(title);
+    if (this.title) {
+      const title = document.createElement("span");
+      title.className = "mk-cm-callout-title";
+      title.textContent = this.title;
+      host.append(title);
+    }
 
     if (this.onToggle) {
       host.addEventListener("mousedown", (event) => {
@@ -876,14 +922,37 @@ export class TableWidget extends WidgetType {
     tableScroll.className = "mk-cm-table-scroll";
     const table = document.createElement("table");
     table.className = "mk-cm-table";
+    if (this.model.columnWeights && this.model.columnWeights.length > 0) {
+      const colgroup = document.createElement("colgroup");
+      const totalWeight = this.model.columnWeights.reduce((sum, w) => sum + w, 0);
+      this.model.columnWeights.forEach((weight) => {
+        const col = document.createElement("col");
+        if (totalWeight > 0) {
+          col.style.width = `${((weight / totalWeight) * 100).toFixed(2)}%`;
+        }
+        colgroup.append(col);
+      });
+      table.append(colgroup);
+    }
     const buildRow = (rowIndex: number, isHeader: boolean) => {
       const row = document.createElement("tr");
       this.model.rows[rowIndex].forEach((cell, columnIndex) => {
         const element = document.createElement(isHeader ? "th" : "td");
         element.dataset.tableRow = String(rowIndex);
         element.dataset.tableColumn = String(columnIndex);
+        const alignment = this.model.alignments[columnIndex] ?? "none";
+        if (alignment !== "none") {
+          element.style.textAlign = alignment;
+        }
+        const weight = this.model.columnWeights?.[columnIndex];
+        if (weight !== undefined) {
+          element.style.minWidth = `${Math.max(48, Math.min(320, weight * 24))}px`;
+        }
         const content = renderTableInlineMarkdown(cell);
         content.removeAttribute("tabindex");
+        if (alignment !== "none") {
+          content.style.textAlign = alignment;
+        }
         element.append(content);
         row.append(element);
       });
@@ -1104,6 +1173,7 @@ export class TableWidget extends WidgetType {
     let draft: MarkdownTable = {
       rows: this.model.rows.map((row) => [...row]),
       alignments: [...this.model.alignments],
+      ...(this.model.columnWeights ? { columnWeights: [...this.model.columnWeights] } : {}),
     };
     let dirty = false;
     const composition = new TableCellCompositionGuard();
@@ -1127,7 +1197,7 @@ export class TableWidget extends WidgetType {
     // 默认按表格内容收缩，避免只有少量列时无意义地铺满编辑区。
     let wrapsContent = this.widthMode === "content";
 
-    const focusCell = (row: number, column: number) => {
+    const focusCell = (row: number, column: number, selectAll = false) => {
       scheduleFrame(() => {
         const current = view.dom.querySelector<HTMLTextAreaElement>(
           `.mk-cm-table-wrapper[data-table-from="${this.tableFrom}"] .mk-cm-table-input[data-table-row="${row}"][data-table-column="${column}"]`,
@@ -1136,14 +1206,19 @@ export class TableWidget extends WidgetType {
         current.hidden = false;
         current.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.add("is-editing");
         current.focus();
-        current.select();
+        if (selectAll) {
+          current.select();
+        } else {
+          const len = current.value.length;
+          current.setSelectionRange(len, len);
+        }
       });
     };
 
     const commit = (focus?: { row: number; column: number }) => {
       const previous = active;
       if (!dirty) {
-        if (focus) focusCell(focus.row, focus.column);
+        if (focus) focusCell(focus.row, focus.column, true);
         else if (previous) {
           const input = wrapper.querySelector<HTMLTextAreaElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
           if (input) input.hidden = true;
@@ -1158,7 +1233,11 @@ export class TableWidget extends WidgetType {
     };
 
     const cancel = () => {
-      draft = { rows: this.model.rows.map((row) => [...row]), alignments: [...this.model.alignments] };
+      draft = {
+        rows: this.model.rows.map((row) => [...row]),
+        alignments: [...this.model.alignments],
+        ...(this.model.columnWeights ? { columnWeights: [...this.model.columnWeights] } : {}),
+      };
       dirty = false;
       wrapper.querySelectorAll<HTMLTextAreaElement>(".mk-cm-table-input").forEach((input) => {
         const row = Number(input.dataset.tableRow);
@@ -1388,6 +1467,18 @@ export class TableWidget extends WidgetType {
 
     const table = document.createElement("table");
     table.className = "mk-cm-table";
+    if (draft.columnWeights && draft.columnWeights.length > 0) {
+      const colgroup = document.createElement("colgroup");
+      const totalWeight = draft.columnWeights.reduce((sum, w) => sum + w, 0);
+      draft.columnWeights.forEach((weight) => {
+        const col = document.createElement("col");
+        if (totalWeight > 0) {
+          col.style.width = `${((weight / totalWeight) * 100).toFixed(2)}%`;
+        }
+        colgroup.append(col);
+      });
+      table.append(colgroup);
+    }
     const tableScroll = document.createElement("div");
     tableScroll.className = "mk-cm-table-scroll";
     const columnDragLayer = document.createElement("div");
@@ -1873,11 +1964,15 @@ export class TableWidget extends WidgetType {
     const buildInput = (row: number, column: number) => {
       const cell = document.createElement("div");
       cell.className = "mk-cm-table-cell";
+      const alignment = draft.alignments[column] ?? "none";
       const rendered = renderTableInlineMarkdown(draft.rows[row]?.[column] ?? "");
       rendered.dataset.tableRow = String(row);
       rendered.dataset.tableColumn = String(column);
       rendered.tabIndex = 0;
       rendered.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
+      if (alignment !== "none") {
+        rendered.style.textAlign = alignment;
+      }
 
       const input = document.createElement("textarea");
       input.className = "mk-cm-table-input";
@@ -1886,6 +1981,9 @@ export class TableWidget extends WidgetType {
       input.dataset.tableRow = String(row);
       input.dataset.tableColumn = String(column);
       input.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
+      if (alignment !== "none") {
+        input.style.textAlign = alignment;
+      }
       input.addEventListener("focus", () => {
         active = { row, column };
         updateSelection({ kind: "cell", anchor: { row, column }, focus: { row, column } });
@@ -2009,6 +2107,14 @@ export class TableWidget extends WidgetType {
         const el = document.createElement(isHeader ? "th" : "td");
         el.dataset.tableRow = String(rowIndex);
         el.dataset.tableColumn = String(colIndex);
+        const alignment = draft.alignments[colIndex] ?? "none";
+        if (alignment !== "none") {
+          el.style.textAlign = alignment;
+        }
+        const weight = draft.columnWeights?.[colIndex];
+        if (weight !== undefined) {
+          el.style.minWidth = `${Math.max(48, Math.min(320, weight * 24))}px`;
+        }
         el.append(buildInput(rowIndex, colIndex));
         if (isHeader) {
           const columnHandle = buildDragHandle("column", colIndex);

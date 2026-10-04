@@ -54,14 +54,44 @@ test("Obsidian 双链别名中的管道不会拆成额外列", () => {
       "转型主攻方向",
     ],
   ]);
-  assert.equal(serializeMarkdownTable(table), source.replace(/ ---- /g, " --- "));
+  assert.equal(serializeMarkdownTable(table), source);
+});
+
+test("数学公式中的管道不会拆成额外列且写回不破坏", () => {
+  const source = [
+    "| 公式 | 数值 | 说明 |",
+    "| --- | --- | --- |",
+    "| $P(A|B)$ | 0.85 | 条件概率 |",
+  ].join("\n");
+  const table = parseMarkdownTable(source);
+
+  assert.ok(table);
+  assert.deepEqual(table.rows, [
+    ["公式", "数值", "说明"],
+    ["$P(A|B)$", "0.85", "条件概率"],
+  ]);
+  assert.equal(serializeMarkdownTable(table), source);
 });
 
 test("解析对齐并按最大列数补齐", () => {
   assert.deepEqual(parseMarkdownTable("A | B\r\n:--- | ---:\r\n1 | 2 | 3"), {
     rows: [["A", "B", ""], ["1", "2", "3"]],
     alignments: ["left", "right", "none"],
+    columnWeights: [3, 3, 3],
   });
+});
+
+test("支持 :-:、:--:、:-、-: 等任意长度连字符分隔符并提取列宽权重", () => {
+  const source = [
+    "| 序号 | 状态 | 描述 | 操作 | 默认 |",
+    "| :-: | :--: | :------- | ---: | -- |",
+    "| 1 | 正常 | 详情描述文本 | 删除 | 内容 |",
+  ].join("\n");
+  const table = parseMarkdownTable(source);
+  assert.ok(table);
+  assert.deepEqual(table.alignments, ["center", "center", "left", "right", "none"]);
+  assert.deepEqual(table.columnWeights, [1, 2, 7, 3, 2]);
+  assert.equal(serializeMarkdownTable(table), source);
 });
 
 test("序列化转义编辑值并规范化换行，且结果稳定 round-trip", () => {

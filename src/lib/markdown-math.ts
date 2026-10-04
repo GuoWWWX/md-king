@@ -52,13 +52,25 @@ function closingBackticks(source: string, from: number, length: number): number 
   return -1;
 }
 
-function closingDollar(source: string, from: number): number {
+function closingDollar(source: string, from: number, openingFollowedByDigit: boolean): number {
   for (let index = from; index < source.length; index += 1) {
     if (source[index] !== "$" || escapedAt(source, index)) continue;
     if (source[index - 1] === "$" || source[index + 1] === "$") continue;
+    // 闭合 $ 紧前面的字符不能是空白字符
+    if (/[\s\r\n]/.test(source[index - 1])) continue;
+    // 如果起始紧随数字，闭合 $ 后面紧跟数字（如 "$5 and $10" 中的 "$10"），不能作为闭合
+    if (openingFollowedByDigit && index + 1 < source.length && /\d/.test(source[index + 1])) continue;
     return index;
   }
   return -1;
+}
+
+/** 剥离行首的引用前缀 `> `，返回去除后的文本与前缀字符长度。 */
+export function stripMarkdownQuotePrefix(text: string): { prefixLength: number; text: string } {
+  const match = text.match(/^[ \t]*(?:>[ \t]?)+/);
+  return match
+    ? { prefixLength: match[0].length, text: text.slice(match[0].length) }
+    : { prefixLength: 0, text };
 }
 
 /** 查找单行中的 `$...$` 与 `\(...\)`，位置相对于传入字符串。 */
@@ -79,7 +91,13 @@ export function findInlineMarkdownMath(source: string): MarkdownMathRange[] {
         index += 1;
         continue;
       }
-      const close = closingDollar(source, index + 1);
+      // 起始 $ 紧后面的字符不能是空白字符
+      if (index + 1 >= source.length || /[\s\r\n]/.test(source[index + 1])) {
+        index += 1;
+        continue;
+      }
+      const openingFollowedByDigit = /\d/.test(source[index + 1]);
+      const close = closingDollar(source, index + 1, openingFollowedByDigit);
       if (close > index + 1) {
         ranges.push({
           from: index,
@@ -161,24 +179,28 @@ export function findBlockMarkdownMath(source: string): MarkdownMathRange[] {
       continue;
     }
 
-    // Pandoc/Obsidian 文档里常见缩进后的单行显示公式：`  $$...$$`。
+    // Pandoc/Obsidian 文档里常见缩进或引用块后的单行显示公式：`  $$...$$` 或 `> $$...$$`。
     // 它不是行内 `$...$`，但也不满足独占行分隔符的多行形式；单独识别后交给
     // 块公式渲染，避免四空格或列表缩进让公式原样显示。
-    const trimmed = line.text.trim();
+    const { prefixLength, text: strippedText } = stripMarkdownQuotePrefix(line.text);
+    const trimmed = strippedText.trim();
     if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) {
-      const contentFrom = line.from + line.text.indexOf("$$") + 2;
-      const contentTo = line.from + line.text.lastIndexOf("$$");
+      const firstDollar = strippedText.indexOf("$$");
+      const lastDollar = strippedText.lastIndexOf("$$");
+      const contentFrom = line.from + prefixLength + firstDollar + 2;
+      const contentTo = line.from + prefixLength + lastDollar;
       if (contentTo > contentFrom) {
         ranges.push({ from: line.from, to: line.to, contentFrom, contentTo, display: true });
         continue;
       }
     }
 
-    const delimiter = displayDelimiter(line.text);
+    const delimiter = displayDelimiter(strippedText);
     if (!delimiter) continue;
     for (let closeIndex = index + 1; closeIndex < lines.length; closeIndex += 1) {
       const closingLine = lines[closeIndex];
-      if (!closesDisplayDelimiter(closingLine.text, delimiter)) continue;
+      const { text: strippedClosing } = stripMarkdownQuotePrefix(closingLine.text);
+      if (!closesDisplayDelimiter(strippedClosing, delimiter)) continue;
       if (closingLine.from > line.next) {
         ranges.push({
           from: line.from,

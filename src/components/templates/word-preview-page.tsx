@@ -27,6 +27,7 @@ import { isConventionalUnnumberedHeading, parseUnnumberedHeadingText } from "@/l
 import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "@/lib/markdown-inline-html";
 import { relaxedStrongPlugin } from "@/lib/relaxed-strong";
+import { relaxedEmphasisPlugin } from "@/lib/relaxed-emphasis";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -177,6 +178,7 @@ const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer:
   .use(markdownInlineHtmlPlugin)
   .use(obsidianWikilinkPlugin)
   .use(relaxedStrongPlugin)
+  .use(relaxedEmphasisPlugin)
   .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
   .use(backslashMathPlugin);
 // 与 Rust 端 is_math_fence_language 保持一致，避免预览与导出对 ```math 的判定不同。

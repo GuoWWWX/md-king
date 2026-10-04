@@ -1,7 +1,7 @@
 import { markdownCaptionText } from "./mermaid-fence.ts";
 
 const tableRow = /^\s*\|?.*\|.*\|?\s*$/;
-const tableDelimiter = /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/;
+const tableDelimiter = /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/;
 const fenceStart = /^\s*(`{3,}|~{3,})/;
 
 /**

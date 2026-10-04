@@ -2382,6 +2382,8 @@ select {
     display: flex;
     justify-content: center;
     overflow-x: auto;
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   .mk-cm-mermaid svg {
@@ -2806,7 +2808,7 @@ select {
   .mk-cm-table th,
   .mk-cm-table td {
     position: relative;
-    min-width: 112px;
+    min-width: 60px;
     padding: 0;
     border: 1px solid #e2e8f0;
     text-align: left;
@@ -2835,9 +2837,11 @@ select {
     white-space: normal;
   }
 
-  .mk-cm-table-wrapper.is-wrap .mk-cm-table-cell-content {
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table-cell-content,
+  .mk-cm-table-wrapper.is-wrap .mk-cm-table-input {
     overflow-wrap: anywhere;
     text-overflow: clip;
+    word-break: break-word;
   }
 
   .mk-table-column-drag-handle,
@@ -2977,17 +2981,20 @@ select {
     min-height: 32px;
     resize: none;
     overflow: hidden;
-    padding: 5px 10px;
+    padding: 6px 10px;
     box-sizing: border-box;
     border: 0;
     outline: 0;
     background: transparent;
     color: inherit;
     font: inherit;
+    font-size: 13px;
     line-height: 1.5;
-    letter-spacing: 0;
+    letter-spacing: normal;
+    text-align: inherit;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .mk-cm-table-input[hidden] {
@@ -2995,19 +3002,30 @@ select {
   }
 
   .mk-cm-table-cell {
-    min-width: 110px;
+    position: relative;
+    width: 100%;
+    min-width: 0;
     min-height: 32px;
+    box-sizing: border-box;
   }
 
   .mk-cm-table-cell-content {
     min-height: 32px;
     padding: 6px 10px;
+    box-sizing: border-box;
     overflow: hidden;
     outline: 0;
+    text-align: inherit;
     text-overflow: ellipsis;
     cursor: cell;
     user-select: none;
     touch-action: none;
+    font-size: 13px;
+    line-height: 1.5;
+    letter-spacing: normal;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .mk-cm-table-cell-content.is-editing {

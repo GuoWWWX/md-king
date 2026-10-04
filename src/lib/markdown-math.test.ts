@@ -58,3 +58,20 @@ test("未闭合或空块公式保持源码", () => {
   assert.deepEqual(findBlockMarkdownMath("$$\n$$"), []);
   assert.deepEqual(findInlineMarkdownMath("未闭合 $a+b"), []);
 });
+
+test("货币符号与带空格的美元符号不误判为行内公式", () => {
+  const source = "这件衣服 $5，那件衣服 $10，运费 $ 3 元。";
+  assert.deepEqual(findInlineMarkdownMath(source), []);
+});
+
+test("识别引用块内的单行与多行块级数学公式", () => {
+  const single = "> $$E = mc^2$$";
+  const [rangeSingle] = findBlockMarkdownMath(single);
+  assert.equal(single.slice(rangeSingle.contentFrom, rangeSingle.contentTo), "E = mc^2");
+
+  const multi = "> $$\n> \\frac{a}{b}\n> $$";
+  const [rangeMulti] = findBlockMarkdownMath(multi);
+  assert.ok(rangeMulti);
+  assert.equal(multi.slice(rangeMulti.contentFrom, rangeMulti.contentTo).replace(/^>\s*/gm, "").trim(), "\\frac{a}{b}");
+});
+
