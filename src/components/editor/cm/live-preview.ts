@@ -1183,7 +1183,7 @@ export function frontmatterBlockExtension(editable = true): Extension {
  * 代价是这里要遍历整篇文档而不是可见区。可以接受：mermaid 块通常一篇文档里
  * 只有几个，远少于内联标记的数量。
  */
-function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: number | null, editable: boolean): DecorationSet {
+function buildMermaidBlocks(state: EditorState, sourceBlockFrom: number | null, editable: boolean): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
   syntaxTree(state).iterate({
@@ -1227,7 +1227,7 @@ function buildMermaidBlocks(state: EditorState, dark: boolean, sourceBlockFrom: 
       builder.add(
         replaceFrom,
         replaceTo,
-        Decoration.replace({ widget: new MermaidWidget(body, dark, first.from, editable, caption), block: true }),
+        Decoration.replace({ widget: new MermaidWidget(body, first.from, editable, caption), block: true }),
       );
       return false;
     },
@@ -1261,9 +1261,10 @@ function extractFenceCodeText(state: EditorState, from: number, to: number): str
   return extractFenceBody(state, from, to);
 }
 
-/// 深浅色作为 field 的一部分：主题切换时要重画图，否则深色模式下
-/// 拿到的还是上次缓存的浅色版本。
-export function mermaidBlockExtension(dark: boolean, editable = true): Extension {
+/// Mermaid 块级装饰：尺寸和布局与深浅色完全无关，
+/// 仅需按 editable 初始化与热替换，绝不在主题切换时销毁重建 StateField，
+/// 彻底保障 CodeMirror HeightMap 物理高度连续稳定，杜绝视口跳动与滚动位置被重置。
+export function mermaidBlockExtension(editable = true): Extension {
   interface MermaidBlockState {
     decorations: DecorationSet;
     parserTree: ReturnType<typeof syntaxTree>;
@@ -1273,7 +1274,7 @@ export function mermaidBlockExtension(dark: boolean, editable = true): Extension
   const field = StateField.define<MermaidBlockState>({
     create: (state) => {
       const parserTree = syntaxTree(state);
-      return { decorations: buildMermaidBlocks(state, dark, null, editable), parserTree, sourceBlockFrom: null };
+      return { decorations: buildMermaidBlocks(state, null, editable), parserTree, sourceBlockFrom: null };
     },
     update: (value, tr) => {
       const parserTree = syntaxTree(tr.state);
@@ -1303,7 +1304,7 @@ export function mermaidBlockExtension(dark: boolean, editable = true): Extension
       // 大段粘贴后语法树可能在后台才补齐；解析树变化时也必须重建，否则要等
       // 用户再点击一次产生选区事务后才会把源码替换成图表。
       if (!tr.docChanged && tr.selection === undefined && !parserChanged && sourceBlockFrom === value.sourceBlockFrom) return value;
-      return { decorations: buildMermaidBlocks(tr.state, dark, sourceBlockFrom, editable), parserTree, sourceBlockFrom };
+      return { decorations: buildMermaidBlocks(tr.state, sourceBlockFrom, editable), parserTree, sourceBlockFrom };
     },
     provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
   });

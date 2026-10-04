@@ -23,6 +23,7 @@ import { revealHighlightExtension } from "./cm/reveal-highlight";
 import { resetTableDisplaySettingsEffect, setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./cm/table-display-settings";
 import { tableBlockPasteExtension } from "./cm/table-block-paste";
 import { markdownEditorTheme } from "./cm/theme";
+import { refreshLiveMermaidTheme } from "./cm/widgets";
 
 export type { TableDisplayContext } from "./cm/live-preview";
 export type { TableWidthMode } from "./cm/table-display-settings";
@@ -574,7 +575,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       )),
       frontmatterCompartment.of(frontmatterBlockExtension(!readOnly)),
       markdownMathBlockExtension,
-      mermaidCompartment.of(mermaidBlockExtension(isDark, !readOnly)),
+      mermaidCompartment.of(mermaidBlockExtension(!readOnly)),
       imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
       tableBlockExtension,
       tableSyntaxRefreshPlugin,
@@ -736,54 +737,29 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     });
   }, [documentTitle, documentTitleCompartment, documentTitleEditable]);
 
-  // 主题热替换：只换 compartment 内容，view 保持不变，同时锁住当前视口阅读锚点行，
-  // 杜绝因字体、行高、样式重新计算或块级组件重绘导致用户阅读位置跳动或回到第一行。
+  // 主题热替换：只换 theme 和 cursor 纯样式层，绝对不碰任何块级 StateField！
+  // 杜绝因 StateField 重建导致视口外图表高度丢失、虚拟化 HeightMap 塌陷或阅读位置跳动。
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
 
-    const scrollTop = view.scrollDOM.scrollTop;
-    let lineAnchor: number | undefined;
-    let lineOffset = 0;
-    try {
-      const scrollBlock = view.lineBlockAtHeight(scrollTop);
-      lineAnchor = scrollBlock.from;
-      lineOffset = scrollBlock.top - scrollTop;
-    } catch {
-      // 视口测量防御
-    }
+    const pinnedScrollTop = view.scrollDOM.scrollTop;
 
     view.dispatch({
       effects: [
         themeCompartment.reconfigure(markdownEditorTheme(isDark)),
         cursorCompartment.reconfigure(markdownCursorExtension(isDark)),
-        frontmatterCompartment.reconfigure(frontmatterBlockExtension(!readOnly)),
-        mermaidCompartment.reconfigure(mermaidBlockExtension(isDark, !readOnly)),
       ],
     });
 
-    if (lineAnchor !== undefined) {
-      view.requestMeasure({
-        read(currentView) {
-          try {
-            const newBlock = currentView.lineBlockAt(lineAnchor);
-            const targetTop = newBlock.top - lineOffset;
-            return Math.min(
-              Math.max(0, targetTop),
-              Math.max(0, currentView.scrollDOM.scrollHeight - currentView.scrollDOM.clientHeight),
-            );
-          } catch {
-            return scrollTop;
-          }
-        },
-        write(targetScrollTop, currentView) {
-          if (Math.abs(currentView.scrollDOM.scrollTop - targetScrollTop) > 0.5) {
-            currentView.scrollDOM.scrollTop = targetScrollTop;
-          }
-        },
-      });
+    // 页面内可见的 Mermaid 图表就地更新深浅色，物理尺寸完全一致，零排版干扰
+    refreshLiveMermaidTheme(view.dom, isDark);
+
+    // 锁定视口滚动位置，杜绝主题切换引发的任何微小布局扰动
+    if (view.scrollDOM.scrollTop !== pinnedScrollTop) {
+      view.scrollDOM.scrollTop = pinnedScrollTop;
     }
-  }, [cursorCompartment, frontmatterCompartment, isDark, mermaidCompartment, readOnly, themeCompartment]);
+  }, [cursorCompartment, isDark, themeCompartment]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
@@ -799,13 +775,17 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
 
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: readOnlyCompartment.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+      effects: [
+        readOnlyCompartment.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+        frontmatterCompartment.reconfigure(frontmatterBlockExtension(!readOnly)),
+        mermaidCompartment.reconfigure(mermaidBlockExtension(!readOnly)),
+      ],
     });
     if (readOnly) {
       activeTableFromRef.current = null;
       reportTableContext(null);
     }
-  }, [readOnly, readOnlyCompartment]);
+  }, [frontmatterCompartment, mermaidCompartment, readOnly, readOnlyCompartment]);
 
   useEffect(() => {
     if (appliedTableDefaultWidthModeRef.current === tableDefaultWidthMode) return;

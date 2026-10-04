@@ -287,10 +287,46 @@ function measuredBlockWidget(content: HTMLElement, spacing: "frontmatter" | "med
  * mermaid 的渲染是异步的，widget 的 toDOM 必须同步返回，所以这里先返回一个
  * 容器：命中缓存就直接填图（切换光标进出时不会闪空白），否则先占位再异步补上。
  */
+function isDarkEditorView(view: EditorView): boolean {
+  return view.dom.closest(".dark") !== null
+    || document.documentElement.classList.contains("dark")
+    || document.body.classList.contains("dark");
+}
+
+export function refreshLiveMermaidTheme(editorDom: HTMLElement, isDark: boolean): void {
+  const hosts = editorDom.querySelectorAll<HTMLElement>(".mk-cm-mermaid");
+  hosts.forEach((host) => {
+    const canvas = host.querySelector<HTMLElement>(".mk-cm-mermaid-canvas");
+    const source = host.dataset.mkMermaidSource;
+    if (!canvas || !source) return;
+
+    const cached = getCachedMermaidSvg(source, isDark);
+    if (cached) {
+      delete host.dataset.state;
+      host.style.minHeight = "";
+      canvas.innerHTML = cached.svg;
+      return;
+    }
+
+    void renderMermaid(source, isDark)
+      .then(({ svg }) => {
+        if (!canvas.isConnected) return;
+        delete host.dataset.state;
+        host.style.minHeight = "";
+        canvas.innerHTML = svg;
+      })
+      .catch((error: unknown) => {
+        if (!canvas.isConnected) return;
+        host.dataset.state = "error";
+        host.style.minHeight = "";
+        canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
+      });
+  });
+}
+
 export class MermaidWidget extends WidgetType {
   constructor(
     private readonly source: string,
-    private readonly dark: boolean,
     private readonly blockFrom: number,
     private readonly editable: boolean,
     private readonly caption?: string,
@@ -300,16 +336,49 @@ export class MermaidWidget extends WidgetType {
 
   eq(other: MermaidWidget): boolean {
     return other.source === this.source
-      && other.dark === this.dark
       && other.blockFrom === this.blockFrom
       && other.editable === this.editable
       && other.caption === this.caption;
+  }
+
+  updateDOM(dom: HTMLElement, view: EditorView): boolean {
+    const host = dom.classList.contains("mk-cm-mermaid") ? dom : dom.querySelector<HTMLElement>(".mk-cm-mermaid");
+    const canvas = dom.querySelector<HTMLElement>(".mk-cm-mermaid-canvas");
+    if (!host || !canvas) return false;
+
+    const isDark = isDarkEditorView(view);
+    const cached = getCachedMermaidSvg(this.source, isDark);
+    if (cached) {
+      delete host.dataset.state;
+      host.style.minHeight = "";
+      canvas.innerHTML = cached.svg;
+      return true;
+    }
+
+    // 若新主题尚未缓存，保留当前现有 SVG 画面与物理尺寸（零坍塌），在后台无感完成重绘替换
+    void renderMermaid(this.source, isDark)
+      .then(({ svg }) => {
+        if (!canvas.isConnected) return;
+        delete host.dataset.state;
+        host.style.minHeight = "";
+        canvas.innerHTML = svg;
+      })
+      .catch((error: unknown) => {
+        if (!canvas.isConnected) return;
+        host.dataset.state = "error";
+        host.style.minHeight = "";
+        canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
+      });
+
+    return true;
   }
 
   toDOM(view: EditorView): HTMLElement {
     // 分两层：外层负责边框，内层专门放 SVG。
     const host = document.createElement("div");
     host.className = "mk-cm-mermaid";
+    host.dataset.mkMermaidSource = this.source;
+    if (this.caption) host.dataset.mkMermaidCaption = this.caption;
     const container = measuredBlockWidget(host, "media");
 
     const langLabel = document.createElement("span");
@@ -378,26 +447,25 @@ export class MermaidWidget extends WidgetType {
       host.append(caption);
     }
 
-    const cached = getCachedMermaidSvg(this.source, this.dark);
+    const isDark = isDarkEditorView(view);
+    const cached = getCachedMermaidSvg(this.source, isDark);
     if (cached) {
       canvas.innerHTML = cached.svg;
       return container;
     }
 
-    // 若当前深浅色尚未缓存，但相反主题已有缓存，用相反主题的尺寸撑开容器最小高度，
-    // 避免切换主题时由于异步重绘导致图表高度瞬间坍缩、页面跳动或滚动位置被重置。
-    const peerCached = getCachedMermaidSvg(this.source, !this.dark);
-    if (peerCached?.height) {
-      host.style.minHeight = `${Math.round(peerCached.height + 28)}px`;
+    // 若当前深浅色尚未缓存，但相反主题已有缓存，直接借用相反主题的 SVG 呈现在画布上！
+    // 物理尺寸和 viewBox 分毫不差，高度绝对零坍缩，彻底杜绝切换主题时视口跳动与滚动重置。
+    const peerCached = getCachedMermaidSvg(this.source, !isDark);
+    if (peerCached) {
+      canvas.innerHTML = peerCached.svg;
     } else {
-      // 未命中任何缓存时，也提供合理的默认占位高度，防止异步渲染过程导致整篇文档高度瞬间坍缩
       host.style.minHeight = "180px";
+      host.dataset.state = "loading";
+      canvas.textContent = "正在渲染图表…";
     }
 
-    host.dataset.state = "loading";
-    canvas.textContent = "正在渲染图表…";
-
-    void renderMermaid(this.source, this.dark)
+    void renderMermaid(this.source, isDark)
       .then(({ svg }) => {
         // 容器可能已经被 CM 回收（用户快速滚动或改了源码），
         // 这时候往里写东西没有意义，isConnected 判掉。
@@ -405,7 +473,11 @@ export class MermaidWidget extends WidgetType {
         delete host.dataset.state;
         host.style.minHeight = "";
         canvas.innerHTML = svg;
-        view.requestMeasure();
+        // 如果此前未命中任何缓存（从 loading 状态初次撑开），才需要通知 CM 重排测量；
+        // 若此前已使用同尺寸的 peerCached，高度完全一致，避免冗余测量扰动视口。
+        if (!peerCached) {
+          view.requestMeasure();
+        }
       })
       .catch((error: unknown) => {
         if (!canvas.isConnected) return;
