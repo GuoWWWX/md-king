@@ -2071,9 +2071,13 @@ select {
     line-height: 1;
   }
 
+  .mk-cm-callout-first,
+  .mk-cm-callout-first *,
   .mk-cm-callout-title,
-  .mk-cm-callout-fallback-title {
-    color: var(--mk-callout-accent);
+  .mk-cm-callout-title *,
+  .mk-cm-callout-fallback-title,
+  .mk-cm-callout-fallback-title * {
+    color: var(--mk-callout-accent) !important;
     font-style: normal;
     font-weight: 700;
   }
@@ -2094,12 +2098,16 @@ select {
   .mk-word-callout--red { --mk-callout-accent: #dc2626; }
   .mk-word-callout--purple { --mk-callout-accent: #7c3aed; }
 
+  .mk-word-callout-title,
+  .mk-word-callout-title * {
+    color: var(--mk-callout-accent) !important;
+    font-weight: 700;
+  }
+
   .mk-word-callout-title {
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--mk-callout-accent);
-    font-weight: 700;
   }
 
   .mk-word-callout-body {
@@ -3811,8 +3819,12 @@ select {
   .dark .mk-cm-callout-line--red { --mk-callout-accent: #ef4444; }
   .dark .mk-cm-callout-line--purple { --mk-callout-accent: #a855f7; }
 
+  .dark .mk-cm-callout-first,
+  .dark .mk-cm-callout-first *,
   .dark .mk-cm-callout-title,
-  .dark .mk-cm-callout-fallback-title {
+  .dark .mk-cm-callout-title *,
+  .dark .mk-cm-callout-fallback-title,
+  .dark .mk-cm-callout-fallback-title * {
     color: var(--mk-callout-accent) !important;
     font-weight: 700;
   }
@@ -4259,7 +4271,7 @@ select {
   }
 
   .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) .mk-word-callout-title,
-  .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) .mk-word-callout-title span {
+  .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) .mk-word-callout-title * {
     color: var(--mk-callout-accent) !important;
   }
 
