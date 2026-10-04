@@ -65,6 +65,31 @@ g.classGroup .classTitle .nodeLabel,
 .edgeLabel rect { fill: transparent !important; stroke: none !important; }
 .edgeLabel, .edgeLabel * { text-shadow: none !important; }
 .edgeLabel text, .edgeLabel tspan { paint-order: normal; stroke: none !important; }
+/* 状态图 (State Diagram) 连线与箭头统一使用琥珀主橙色 #f59e0b */
+.transition,
+path.transition,
+.edgePaths .transition,
+.statediagram-state line,
+g.stateGroup line {
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+  fill: none !important;
+}
+defs [id*="barbEnd"],
+[id*="barbEnd"] path,
+marker[id*="barbEnd"] path,
+[id$="-barbEnd"],
+[id$="-barbEnd"] path {
+  fill: #f59e0b !important;
+  stroke: #f59e0b !important;
+}
+.node circle.state-start,
+circle.state-start,
+.node .fork-join,
+rect.fork-join {
+  fill: #f59e0b !important;
+  stroke: #f59e0b !important;
+}
 `;
 
 function mermaidConfig(theme: "default" | "dark") {
@@ -230,7 +255,32 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
-.state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text {
+.statediagram-cluster rect,
+.statediagram-cluster rect.outer {
+  fill: #261e14 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+.statediagram-cluster .inner {
+  fill: #1c150e !important;
+}
+.node circle.state-end {
+  fill: #261e14 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+.end-state-inner {
+  fill: #f59e0b !important;
+  stroke: none !important;
+}
+.state-title,
+.transitionLabel,
+.state-note,
+.statediagram-state text,
+.statediagram-note text,
+.state-title text,
+.stateLabel text,
+.statediagram .edgeLabel {
   fill: #fef3c7 !important;
   color: #fef3c7 !important;
 }
@@ -386,7 +436,32 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
-.state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text {
+.statediagram-cluster rect,
+.statediagram-cluster rect.outer {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+.statediagram-cluster .inner {
+  fill: #fef3c7 !important;
+}
+.node circle.state-end {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+.end-state-inner {
+  fill: #f59e0b !important;
+  stroke: none !important;
+}
+.state-title,
+.transitionLabel,
+.state-note,
+.statediagram-state text,
+.statediagram-note text,
+.state-title text,
+.stateLabel text,
+.statediagram .edgeLabel {
   fill: #1c1917 !important;
   color: #1c1917 !important;
 }
