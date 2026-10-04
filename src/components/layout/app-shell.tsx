@@ -159,16 +159,8 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           onOpenChange={setGlobalSearchOpen}
           onSelect={handleGlobalSearchSelect}
         />
-        <div className="relative flex min-h-0 min-w-0 flex-1 gap-1 overflow-hidden">
-          {/* 状态栏内侧与左侧栏内侧交汇处的平滑内凹弧形过渡 */}
-          <svg
-            className="pointer-events-none absolute left-12 top-0 z-20 h-2.5 w-2.5 text-slate-200/90 dark:text-zinc-800/90"
-            viewBox="0 0 10 10"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path d="M0 0 H10 C4.47715 0 0 4.47715 0 10 V0 Z" fill="currentColor" />
-          </svg>
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          {/* 左侧状态栏：无缝直通顶部与窗口边缘 */}
           <ActivityBar
             activePage={activePage}
             navigation={navigation}
@@ -177,77 +169,90 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
             onToggleThemeMode={appConfig ? () => void handleToggleThemeMode() : undefined}
           />
 
-          {showFileTreeResizeEdge ? (
-            <>
-              {showFileTree ? (
-                <FileTreePanel
-                  width={fileTreeWidth}
-                  onOpenFile={(entry) => {
-                    setActivePage("convert");
-                    void openVaultFile(entry.path);
-                  }}
-                  onOpenImage={(entry) => {
-                    const root = useVaultStore.getState().vaultRoot;
-                    if (!root) return;
-                    setActivePage("convert");
-                    openImageTab({
-                      path: entry.path,
-                      absolutePath: `${root.replace(/[\\/]+$/, "")}/${entry.path}`,
-                      title: entry.name,
-                    });
-                  }}
+          {/* 状态栏内侧与左侧栏内侧交汇处的平滑内凹弧形过渡 */}
+          <svg
+            className="pointer-events-none absolute left-12 top-0 z-20 h-2.5 w-2.5 text-[#f4f6f8] dark:text-[#18181b]"
+            viewBox="0 0 10 10"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="M0 0 H10 C4.47715 0 0 4.47715 0 10 V0 Z" fill="currentColor" />
+          </svg>
+
+          {/* 右侧卡片内容区：与顶部状态栏留出 4px 悬浮缝隙 (pt-1)，与左侧栏留出 4px 缝隙 (pl-1)，卡片之间 gap-1，底部直通到底 (pb-0)，右侧直通到边 (pr-0) */}
+          <div className="relative flex min-h-0 min-w-0 flex-1 gap-1 overflow-hidden pt-1 pl-1 pr-0 pb-0">
+            {showFileTreeResizeEdge ? (
+              <>
+                {showFileTree ? (
+                  <FileTreePanel
+                    width={fileTreeWidth}
+                    onOpenFile={(entry) => {
+                      setActivePage("convert");
+                      void openVaultFile(entry.path);
+                    }}
+                    onOpenImage={(entry) => {
+                      const root = useVaultStore.getState().vaultRoot;
+                      if (!root) return;
+                      setActivePage("convert");
+                      openImageTab({
+                        path: entry.path,
+                        absolutePath: `${root.replace(/[\\/]+$/, "")}/${entry.path}`,
+                        title: entry.name,
+                      });
+                    }}
+                  />
+                ) : null}
+                <ResizableDivider
+                  orientation="vertical"
+                  size={fileTreeWidth}
+                  min={FILE_TREE_WIDTH_RANGE.min}
+                  max={FILE_TREE_WIDTH_RANGE.max}
+                  onResize={setFileTreeWidth}
+                  collapsed={!showFileTree}
+                  // onCollapsedChange 传的是「是否已收起」，和 visible 语义相反，必须取反。
+                  onCollapsedChange={(collapsed) => setFileTreeVisible(!collapsed)}
+                  ariaLabel="调整文件树宽度"
+                  // 容器本身零宽，但仍会占掉一份 flex gap。抵消一份 4px 间距，
+                  // 让文件树右侧与图标栏、上下外边距保持一致。
+                  className="-ml-1"
                 />
-              ) : null}
+              </>
+            ) : null}
+
+            <main
+              aria-label={pageMeta.title}
+              className="flex min-w-0 flex-1 flex-col overflow-hidden"
+            >
+              <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+                {children}
+              </div>
+            </main>
+            <>
               <ResizableDivider
                 orientation="vertical"
-                size={fileTreeWidth}
-                min={FILE_TREE_WIDTH_RANGE.min}
-                max={FILE_TREE_WIDTH_RANGE.max}
-                onResize={setFileTreeWidth}
-                collapsed={!showFileTree}
-                // onCollapsedChange 传的是「是否已收起」，和 visible 语义相反，必须取反。
-                onCollapsedChange={(collapsed) => setFileTreeVisible(!collapsed)}
-                ariaLabel="调整文件树宽度"
-                // 容器本身零宽，但仍会占掉一份 flex gap。抵消一份 4px 间距，
-                // 让文件树右侧与图标栏、上下外边距保持一致。
-                className="-ml-1"
+                size={documentDrawerWidth}
+                min={160}
+                max={520}
+                from="end"
+                onResize={setDocumentDrawerWidth}
+                collapsed={!documentDrawerOpen}
+                allowCollapsedDrag={false}
+                // 同上：collapsed=true 表示刚收起，对应 open=false。
+                onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
+                ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
+                className="-mx-0.5"
+                handleClassName="w-1"
               />
+              {documentDrawerOpen ? (
+                <DocumentSideDrawer
+                  open
+                  width={documentDrawerWidth}
+                  view={documentDrawerView}
+                  onViewChange={handleDocumentDrawerViewChange}
+                />
+              ) : null}
             </>
-          ) : null}
-
-          <main
-            aria-label={pageMeta.title}
-            className="flex min-w-0 flex-1 flex-col overflow-hidden"
-          >
-            <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
-              {children}
-            </div>
-          </main>
-          <>
-            <ResizableDivider
-              orientation="vertical"
-              size={documentDrawerWidth}
-              min={160}
-              max={520}
-              from="end"
-              onResize={setDocumentDrawerWidth}
-              collapsed={!documentDrawerOpen}
-              allowCollapsedDrag={false}
-              // 同上：collapsed=true 表示刚收起，对应 open=false。
-              onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
-              ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
-              className="-mx-0.5"
-              handleClassName="w-1"
-            />
-            {documentDrawerOpen ? (
-              <DocumentSideDrawer
-                open
-                width={documentDrawerWidth}
-                view={documentDrawerView}
-                onViewChange={handleDocumentDrawerViewChange}
-              />
-            ) : null}
-          </>
+          </div>
         </div>
         </div>
       </div>

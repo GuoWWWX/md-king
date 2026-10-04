@@ -46,7 +46,7 @@ export function ActivityBar({
     <aside
       data-collapsed="true"
       aria-label="主导航"
-      className="mk-activity-bar flex h-full w-12 shrink-0 flex-col items-center border-r border-slate-200/80 px-1 py-2 dark:border-zinc-800/80"
+      className="mk-activity-bar flex h-full w-12 shrink-0 flex-col items-center px-1 py-2"
     >
       <nav className="flex flex-col items-center gap-1.5" aria-label="页面导航">
         {primaryNavigation.map((item) => {
