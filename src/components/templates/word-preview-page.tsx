@@ -8,7 +8,7 @@ import "katex/dist/katex.min.css";
 import { AppSurface } from "@/components/ui/app-surface";
 import { MarkdownCalloutIcon } from "@/components/markdown-callout-icon";
 import { codeBlockIndentPtFromInfo } from "@/components/editor/cm/code-block-indent";
-import { parseMarkdownTable } from "@/components/editor/cm/markdown-table";
+import { parseMarkdownTable, type TableAlignment } from "@/components/editor/cm/markdown-table";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { MediaPreviewDialog } from "@/components/media/image-viewer";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
@@ -93,7 +93,7 @@ type PreviewTextSegment = {
   link?: string;
 };
 type PreviewListItem = { segments: PreviewTextSegment[]; level: number; ordered: boolean; index: number; task?: "checked" | "unchecked" };
-type PreviewTableCell = { segments: PreviewTextSegment[] };
+type PreviewTableCell = { segments: PreviewTextSegment[]; alignment?: TableAlignment };
 type MarkdownInlineToken = {
   type: string;
   content?: string;
@@ -1329,7 +1329,23 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         ? parseMarkdownTable(markdownLines.slice(token.map[0], token.map[1]).join("\n"))
         : null;
       if (sourceTable) {
-        const [header, ...rows] = sourceTable.rows.map((row) => row.map((cell) => ({ segments: inlineSegmentsFromMarkdown(cell) })));
+        const hasDistinctWeights = Boolean(
+          sourceTable.columnWeights && sourceTable.columnWeights.length > 0
+          && !sourceTable.columnWeights.every((w) => w === sourceTable.columnWeights![0])
+        );
+        const totalWeight = hasDistinctWeights
+          ? sourceTable.columnWeights!.reduce((sum, w) => sum + w, 0)
+          : 0;
+        const columnWidthPercentages = hasDistinctWeights && totalWeight > 0
+          ? sourceTable.columnWeights!.map((w) => (w / totalWeight) * 100)
+          : undefined;
+
+        const [header, ...rows] = sourceTable.rows.map((row) =>
+          row.map((cell, colIndex) => ({
+            segments: inlineSegmentsFromMarkdown(cell),
+            alignment: sourceTable.alignments[colIndex] ?? "none",
+          }))
+        );
         while (index < tokens.length && tokens[index].type !== "table_close") index += 1;
         const followingCaption = tokens[index + 1]?.type === "paragraph_open"
           && tokens[index + 2]?.type === "inline"
@@ -1338,7 +1354,15 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
           ? markdownCaptionText(tokens[index + 2].content)
           : undefined;
         if (followingCaption) index += 3;
-        if (header) blocks.push({ type: "table", caption: pendingTableCaption ?? followingCaption, header, rows });
+        if (header) {
+          blocks.push({
+            type: "table",
+            caption: pendingTableCaption ?? followingCaption,
+            header,
+            rows,
+            columnWidthPercentages,
+          });
+        }
         pendingTableCaption = undefined;
         continue;
       }
@@ -1349,7 +1373,13 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
       while (index < tokens.length && tokens[index].type !== "table_close") {
         if (tokens[index].type === "tr_open") currentRow = [];
         if ((tokens[index].type === "td_open" || tokens[index].type === "th_open") && tokens[index + 1]?.type === "inline") {
-          currentRow?.push({ segments: inlineSegmentsFromToken(tokens[index + 1]) });
+          const styleAttr = tokens[index].attrs?.find(([key]) => key === "style")?.[1];
+          const alignMatch = styleAttr?.match(/text-align:\s*(left|center|right)/);
+          const alignment = (alignMatch ? alignMatch[1] : "none") as TableAlignment;
+          currentRow?.push({
+            segments: inlineSegmentsFromToken(tokens[index + 1]),
+            alignment,
+          });
         }
         if (tokens[index].type === "tr_close" && currentRow) {
           rows.push(currentRow);
@@ -2325,7 +2355,19 @@ function renderMarkdownBlocks({
           {header ? (
             <thead>
               {/* DOCX table runs do not carry the paragraph-level CJK/Latin boundary gap used by body text. */}
-              <tr>{header.map((cell, cellIndex) => <th key={cellIndex} style={tableStyle.headerStyle}>{renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}</th>)}</tr>
+              <tr>
+                {header.map((cell, cellIndex) => (
+                  <th
+                    key={cellIndex}
+                    style={{
+                      ...tableStyle.headerStyle,
+                      ...(cell.alignment && cell.alignment !== "none" ? { textAlign: cell.alignment } : {}),
+                    }}
+                  >
+                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}
+                  </th>
+                ))}
+              </tr>
             </thead>
           ) : null}
           <tbody>
@@ -2338,6 +2380,7 @@ function renderMarkdownBlocks({
                     style={{
                       ...tableStyle.bodyCellStyle,
                       backgroundColor: tableStyle.rowStripe && ((block.bodyRowOffset ?? 0) + rowIndex) % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
+                      ...(cell.alignment && cell.alignment !== "none" ? { textAlign: cell.alignment } : {}),
                     }}
                   >
                     {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}

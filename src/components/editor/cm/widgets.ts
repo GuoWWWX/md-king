@@ -922,10 +922,15 @@ export class TableWidget extends WidgetType {
     tableScroll.className = "mk-cm-table-scroll";
     const table = document.createElement("table");
     table.className = "mk-cm-table";
-    if (this.model.columnWeights && this.model.columnWeights.length > 0) {
+    const hasDistinctWeights = Boolean(
+      this.model.columnWeights
+      && this.model.columnWeights.length > 0
+      && !this.model.columnWeights.every((w) => w === this.model.columnWeights![0]),
+    );
+    if (hasDistinctWeights) {
       const colgroup = document.createElement("colgroup");
-      const totalWeight = this.model.columnWeights.reduce((sum, w) => sum + w, 0);
-      this.model.columnWeights.forEach((weight) => {
+      const totalWeight = this.model.columnWeights!.reduce((sum, w) => sum + w, 0);
+      this.model.columnWeights!.forEach((weight) => {
         const col = document.createElement("col");
         if (totalWeight > 0) {
           col.style.width = `${((weight / totalWeight) * 100).toFixed(2)}%`;
@@ -1467,10 +1472,15 @@ export class TableWidget extends WidgetType {
 
     const table = document.createElement("table");
     table.className = "mk-cm-table";
-    if (draft.columnWeights && draft.columnWeights.length > 0) {
+    const hasDistinctWeights = Boolean(
+      draft.columnWeights
+      && draft.columnWeights.length > 0
+      && !draft.columnWeights.every((w) => w === draft.columnWeights![0]),
+    );
+    if (hasDistinctWeights) {
       const colgroup = document.createElement("colgroup");
-      const totalWeight = draft.columnWeights.reduce((sum, w) => sum + w, 0);
-      draft.columnWeights.forEach((weight) => {
+      const totalWeight = draft.columnWeights!.reduce((sum, w) => sum + w, 0);
+      draft.columnWeights!.forEach((weight) => {
         const col = document.createElement("col");
         if (totalWeight > 0) {
           col.style.width = `${((weight / totalWeight) * 100).toFixed(2)}%`;
