@@ -22,6 +22,17 @@
 - HTML 用于查看布局和提取局部结构，但不要直接复制生成代码到 React 页面。
 - 视觉 token 和实现原则见 [../UI_STYLE_DIRECTION.md](../UI_STYLE_DIRECTION.md)。
 
+### 排序示例
+
+本目录附带可独立运行的 Java 排序示例。使用 JDK 在本目录执行：
+
+```bash
+javac BubbleSort.java QuickSort.java
+java QuickSort
+```
+
+`QuickSort` 使用原地快速排序将 `int[]` 升序排列；其 `main` 会输出排序后的示例数组。
+
 ## 旧探索稿
 
 - `md-king-blue-variant-c-glass.*`：用户选中的 C 风格主屏原始稿。

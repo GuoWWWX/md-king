@@ -129,6 +129,16 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     };
   }, [tabLayoutKey]);
 
+  useEffect(() => {
+    const handleBlur = () => {
+      windowDragRef.current = null;
+      tabDragRef.current = null;
+      setDraggedTabId(undefined);
+    };
+    window.addEventListener("blur", handleBlur);
+    return () => window.removeEventListener("blur", handleBlur);
+  }, []);
+
   async function requestClose(tab: DocumentTab) {
     if (tab.dirty && onBeforeClose) {
       const confirmed = await onBeforeClose(tab);
@@ -273,11 +283,23 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
   }
 
   function finishTabListPointerDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    try {
+      if (listRef.current?.hasPointerCapture(event.pointerId)) {
+        listRef.current.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // 忽略 WebView 已释放
+    }
+
     const windowDrag = windowDragRef.current;
     if (windowDrag) {
       windowDragRef.current = null;
-      if (listRef.current?.hasPointerCapture(windowDrag.pointerId)) {
-        listRef.current.releasePointerCapture(windowDrag.pointerId);
+      try {
+        if (listRef.current?.hasPointerCapture(windowDrag.pointerId)) {
+          listRef.current.releasePointerCapture(windowDrag.pointerId);
+        }
+      } catch {
+        // 忽略
       }
     }
 
@@ -293,7 +315,6 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     }
     tabDragRef.current = null;
     setDraggedTabId(undefined);
-    if (listRef.current?.hasPointerCapture(event.pointerId)) listRef.current.releasePointerCapture(event.pointerId);
   }
 
   function suppressClickAfterTabDrag(event: ReactMouseEvent<HTMLDivElement>) {

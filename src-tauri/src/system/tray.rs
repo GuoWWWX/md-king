@@ -68,7 +68,7 @@ fn create_tray(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| format!("创建系统托盘失败：{error}"))
 }
 
-fn show_main_window(app: &AppHandle) {
+pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         show_window(&window);
     }

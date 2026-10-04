@@ -30,6 +30,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let _ = system::startup_files::queue_open_files(app, args);
+            system::tray::show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -65,6 +66,7 @@ pub fn run() {
                 return Ok(());
             }
             system::context_menu::handle_startup_context_action(app.handle().clone());
+            system::tray::show_main_window(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {

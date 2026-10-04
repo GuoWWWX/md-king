@@ -105,17 +105,26 @@ export function ResizableDivider({
     };
 
     const stop = () => {
+      try {
+        if (divider.hasPointerCapture(event.pointerId)) {
+          divider.releasePointerCapture(event.pointerId);
+        }
+      } catch {
+        // WebView 已释放指针
+      }
       isDraggingRef.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
   }
 
   return (

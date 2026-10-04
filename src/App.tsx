@@ -48,6 +48,48 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // 防锁死自愈机制 (Self-Healing Guardian)：
+    // Radix UI 等模态库在打开弹窗/菜单时会将 document.body.style.pointerEvents 设为 none。
+    // 若在关闭时因外部失焦、快捷键或卸载竞态遗留了 pointer-events: none，整页将无法点击。
+    // 此守护在没有可见弹窗或活动菜单时，自动重置 body 的 pointerEvents。
+    const hasActiveModalOrMenu = () => {
+      return Boolean(
+        document.querySelector(
+          '[data-slot="dialog-content"], [data-slot="dialog-overlay"], [role="dialog"], [data-radix-menu-content], [data-radix-popper-content-wrapper]'
+        )
+      );
+    };
+
+    const healBodyPointerEvents = () => {
+      if (document.body.style.pointerEvents === "none" && !hasActiveModalOrMenu()) {
+        document.body.style.pointerEvents = "";
+      }
+    };
+
+    const observer = new MutationObserver(() => {
+      healBodyPointerEvents();
+    });
+
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+
+    const handleWindowFocusOrKey = () => {
+      healBodyPointerEvents();
+    };
+
+    window.addEventListener("focus", handleWindowFocusOrKey);
+    window.addEventListener("keydown", handleWindowFocusOrKey, true);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("focus", handleWindowFocusOrKey);
+      window.removeEventListener("keydown", handleWindowFocusOrKey, true);
+    };
+  }, []);
+
+  useEffect(() => {
     // 自定义 ContextMenu 仍会收到事件；这里只负责兜底屏蔽 WebView/浏览器原生菜单。
     const preventNativeContextMenu = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;

@@ -114,6 +114,12 @@ export class MarkdownMathWidget extends WidgetType {
   }
 }
 
+export class MarkdownBreakWidget extends WidgetType {
+  eq(other: MarkdownBreakWidget) { return other.constructor === MarkdownBreakWidget; }
+  toDOM() { const element = document.createElement("br"); element.className = "mk-cm-markdown-break"; return element; }
+  ignoreEvent() { return false; }
+}
+
 /**
  * 代码块右上角的复制按钮。
  *
@@ -1123,7 +1129,7 @@ export class TableWidget extends WidgetType {
 
     const focusCell = (row: number, column: number) => {
       scheduleFrame(() => {
-        const current = view.dom.querySelector<HTMLInputElement>(
+        const current = view.dom.querySelector<HTMLTextAreaElement>(
           `.mk-cm-table-wrapper[data-table-from="${this.tableFrom}"] .mk-cm-table-input[data-table-row="${row}"][data-table-column="${column}"]`,
         );
         if (!current) return;
@@ -1139,7 +1145,7 @@ export class TableWidget extends WidgetType {
       if (!dirty) {
         if (focus) focusCell(focus.row, focus.column);
         else if (previous) {
-          const input = wrapper.querySelector<HTMLInputElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
+          const input = wrapper.querySelector<HTMLTextAreaElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
           if (input) input.hidden = true;
           input?.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.remove("is-editing");
         }
@@ -1154,7 +1160,7 @@ export class TableWidget extends WidgetType {
     const cancel = () => {
       draft = { rows: this.model.rows.map((row) => [...row]), alignments: [...this.model.alignments] };
       dirty = false;
-      wrapper.querySelectorAll<HTMLInputElement>(".mk-cm-table-input").forEach((input) => {
+      wrapper.querySelectorAll<HTMLTextAreaElement>(".mk-cm-table-input").forEach((input) => {
         const row = Number(input.dataset.tableRow);
         const column = Number(input.dataset.tableColumn);
         input.value = draft.rows[row]?.[column] ?? "";
@@ -1873,8 +1879,7 @@ export class TableWidget extends WidgetType {
       rendered.tabIndex = 0;
       rendered.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
 
-      const input = document.createElement("input");
-      input.type = "text";
+      const input = document.createElement("textarea");
       input.className = "mk-cm-table-input";
       input.hidden = true;
       input.value = draft.rows[row]?.[column] ?? "";
@@ -1921,7 +1926,7 @@ export class TableWidget extends WidgetType {
           event.preventDefault();
           redo(view);
           focusCell(row, column);
-        } else if (event.key === "Enter" && !composition.composing && !event.isComposing) {
+        } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !composition.composing && !event.isComposing) {
           event.preventDefault();
           input.blur();
         } else if (event.key === "Escape") {

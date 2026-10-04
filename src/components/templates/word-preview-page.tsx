@@ -25,6 +25,7 @@ import { extractExplicitImageCaptions } from "@/lib/markdown-image-caption";
 import { normalizeAdjacentBoldTableCaptions } from "@/lib/markdown-block-caption";
 import { isConventionalUnnumberedHeading, parseUnnumberedHeadingText } from "@/lib/markdown-heading-attributes";
 import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
+import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "@/lib/markdown-inline-html";
 import { relaxedStrongPlugin } from "@/lib/relaxed-strong";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
@@ -75,7 +76,21 @@ type PreviewBlock =
   | { type: "table"; caption?: string; header?: PreviewTableCell[]; rows: PreviewTableCell[][]; bodyRowOffset?: number; columnWidthPercentages?: number[] };
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
-type PreviewTextSegment = { text: string; code?: boolean; math?: boolean; bold?: boolean; italic?: boolean; strike?: boolean; link?: string };
+type PreviewTextSegment = {
+  text: string;
+  code?: boolean;
+  math?: boolean;
+  bold?: boolean;
+  italic?: boolean;
+  strike?: boolean;
+  underline?: boolean;
+  highlight?: boolean;
+  subscript?: boolean;
+  superscript?: boolean;
+  small?: boolean;
+  keyboard?: boolean;
+  link?: string;
+};
 type PreviewListItem = { segments: PreviewTextSegment[]; level: number; ordered: boolean; index: number; task?: "checked" | "unchecked" };
 type PreviewTableCell = { segments: PreviewTextSegment[] };
 type MarkdownInlineToken = {
@@ -159,6 +174,7 @@ function backslashMathPlugin(md: MarkdownIt) {
 }
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(markdownInlineHtmlPlugin)
   .use(obsidianWikilinkPlugin)
   .use(relaxedStrongPlugin)
   .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
@@ -437,6 +453,12 @@ function canMergeSegments(a: PreviewTextSegment, b: PreviewTextSegment) {
     && Boolean(a.bold) === Boolean(b.bold)
     && Boolean(a.italic) === Boolean(b.italic)
     && Boolean(a.strike) === Boolean(b.strike)
+    && Boolean(a.underline) === Boolean(b.underline)
+    && Boolean(a.highlight) === Boolean(b.highlight)
+    && Boolean(a.subscript) === Boolean(b.subscript)
+    && Boolean(a.superscript) === Boolean(b.superscript)
+    && Boolean(a.small) === Boolean(b.small)
+    && Boolean(a.keyboard) === Boolean(b.keyboard)
     && a.link === b.link;
 }
 
@@ -585,15 +607,114 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
   if (children.length === 0) return textSegments(token.content ?? "");
 
   const segments: PreviewTextSegment[] = [];
-  const marks = { bold: 0, italic: 0, strike: 0 };
-  const linkStack: Array<{ target: string; auto: boolean; wikilinkTarget?: string }> = [];
+  const marks = {
+    bold: 0,
+    italic: 0,
+    strike: 0,
+    underline: 0,
+    highlight: 0,
+    subscript: 0,
+    superscript: 0,
+    small: 0,
+    code: 0,
+    keyboard: 0,
+  };
+  const linkStack: Array<{ target: string; auto: boolean; wikilinkTarget?: string; html?: boolean }> = [];
 
   const currentMarks = (): Omit<PreviewTextSegment, "text"> => ({
     bold: marks.bold > 0 || undefined,
     italic: marks.italic > 0 || undefined,
     strike: marks.strike > 0 || undefined,
-    link: linkStack[linkStack.length - 1]?.target,
+    underline: marks.underline > 0 || undefined,
+    highlight: marks.highlight > 0 || undefined,
+    subscript: marks.subscript > 0 || undefined,
+    superscript: marks.superscript > 0 || undefined,
+    small: marks.small > 0 || undefined,
+    code: marks.code > 0 || undefined,
+    keyboard: marks.keyboard > 0 || undefined,
+    link: linkStack[linkStack.length - 1]?.target || undefined,
   });
+
+  const appendBreak = () => {
+    const previous = segments[segments.length - 1];
+    if (!previous?.text.endsWith("\n")) segments.push({ ...currentMarks(), text: "\n" });
+  };
+
+  const changeMark = (name: keyof typeof marks, closing: boolean) => {
+    marks[name] = Math.max(0, marks[name] + (closing ? -1 : 1));
+  };
+
+  const applyHtmlTag = (tag: MarkdownInlineHtmlTag) => {
+    if (tag.name === "br") {
+      segments.push({ ...currentMarks(), text: "\n" });
+      return;
+    }
+    if (tag.name === "wbr") {
+      segments.push({ ...currentMarks(), text: "\u200b" });
+      return;
+    }
+    if (tag.name === "hr") {
+      appendBreak();
+      return;
+    }
+    if (tag.name === "img") {
+      if (!tag.closing && tag.attributes.alt) segments.push({ ...currentMarks(), text: tag.attributes.alt });
+      return;
+    }
+    if (tag.name === "a") {
+      if (tag.closing) {
+        if (linkStack[linkStack.length - 1]?.html) linkStack.pop();
+      } else {
+        const rawTarget = tag.attributes.href ?? "";
+        const target = markdownParser.validateLink(rawTarget) ? rawTarget : "";
+        linkStack.push({ target, auto: false, html: true });
+      }
+      return;
+    }
+
+    if (tag.name === "b" || tag.name === "strong" || tag.name === "summary") changeMark("bold", tag.closing);
+    else if (tag.name === "i" || tag.name === "em" || tag.name === "cite" || tag.name === "var") changeMark("italic", tag.closing);
+    else if (tag.name === "s" || tag.name === "strike" || tag.name === "del") changeMark("strike", tag.closing);
+    else if (tag.name === "u" || tag.name === "ins") changeMark("underline", tag.closing);
+    else if (tag.name === "mark") changeMark("highlight", tag.closing);
+    else if (tag.name === "sub") changeMark("subscript", tag.closing);
+    else if (tag.name === "sup") changeMark("superscript", tag.closing);
+    else if (tag.name === "small") changeMark("small", tag.closing);
+    else if (tag.name === "code" || tag.name === "samp") changeMark("code", tag.closing);
+    else if (tag.name === "kbd") changeMark("keyboard", tag.closing);
+
+    if ((tag.name === "p" || tag.name === "div" || tag.name === "details") && tag.closing) appendBreak();
+    if (tag.name === "summary" && tag.closing) appendBreak();
+  };
+
+  const appendTextToken = (text: string, html = false) => {
+    const parts = html ? splitMarkdownInlineHtml(text) : [{ type: "text" as const, value: text }];
+    for (const part of parts) {
+      if (part.type === "tag") {
+        applyHtmlTag(part);
+        continue;
+      }
+
+      const activeLink = linkStack[linkStack.length - 1];
+      if (activeLink?.wikilinkTarget) {
+        // 双链的显示名只服务编辑体验。为了和 DOCX 导出保持一致，Word 预览
+        // 直接展示目标 URL 或文档路径，并保留原目标用于点击跳转。
+        segments.push({ ...currentMarks(), text: activeLink.wikilinkTarget, link: activeLink.target });
+        continue;
+      }
+      if (activeLink?.auto && isExternalDocumentLink(activeLink.target) && /^https?:\/\//i.test(part.value)) {
+        const target = normalizeBareExternalLink(part.value);
+        const current = currentMarks();
+        segments.push({ ...current, text: target, link: target });
+        if (target.length < part.value.length) {
+          const { link: _link, ...withoutLink } = current;
+          segments.push({ ...withoutLink, text: part.value.slice(target.length) });
+        }
+        continue;
+      }
+      if (part.value) segments.push({ ...currentMarks(), text: part.value });
+    }
+  };
 
   for (const child of children) {
     switch (child.type) {
@@ -609,28 +730,8 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
         wikilinkTarget: child.meta?.mkWikilinkTarget,
       }); break;
       case "link_close": linkStack.pop(); break;
-      case "text": {
-        const text = child.content ?? "";
-        const activeLink = linkStack[linkStack.length - 1];
-        if (activeLink?.wikilinkTarget) {
-          // 双链的显示名只服务编辑体验。为了和 DOCX 导出保持一致，Word 预览
-          // 直接展示目标 URL 或文档路径，并保留原目标用于点击跳转。
-          segments.push({ ...currentMarks(), text: activeLink.wikilinkTarget, link: activeLink.target });
-          break;
-        }
-        if (activeLink?.auto && isExternalDocumentLink(activeLink.target) && /^https?:\/\//i.test(text)) {
-          const target = normalizeBareExternalLink(text);
-          const current = currentMarks();
-          segments.push({ ...current, text: target, link: target });
-          if (target.length < text.length) {
-            const { link: _link, ...withoutLink } = current;
-            segments.push({ ...withoutLink, text: text.slice(target.length) });
-          }
-          break;
-        }
-        segments.push({ ...currentMarks(), text });
-        break;
-      }
+      case "text": appendTextToken(child.content ?? ""); break;
+      case "html_inline": appendTextToken(child.content ?? "", true); break;
       case "code_inline": segments.push({ ...currentMarks(), text: child.content ?? "", code: true }); break;
       case "math_inline":
       case "math_inline_double": segments.push({ text: child.content ?? "", math: true }); break;
@@ -719,12 +820,21 @@ function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined
   const style: CSSProperties = {};
   if (segment.bold) style.fontWeight = 700;
   if (segment.italic) style.fontStyle = "italic";
-  if (segment.strike) style.textDecorationLine = "line-through";
+  const decorations: string[] = [];
+  if (segment.strike) decorations.push("line-through");
+  if (segment.underline) decorations.push("underline");
+  if (segment.highlight) { style.backgroundColor = "#fef08a"; style.color = "#1c1917"; }
+  if (segment.subscript || segment.superscript) {
+    style.fontSize = "0.75em";
+    style.verticalAlign = segment.subscript ? "sub" : "super";
+  }
+  if (segment.small) style.fontSize = "0.85em";
   if (segment.link !== undefined) {
     // Word 默认 Hyperlink 样式就是蓝色加下划线，预览保持一致。
     style.color = "#0563C1";
-    style.textDecorationLine = segment.strike ? "line-through underline" : "underline";
+    decorations.push("underline");
   }
+  if (decorations.length) style.textDecorationLine = [...new Set(decorations)].join(" ");
   return Object.keys(style).length > 0 ? style : undefined;
 }
 
@@ -783,7 +893,9 @@ function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: S
 
     const markStyle = inlineMarkStyle(segment);
     let content: ReactNode;
-    if (segment.code && inlineCodeEnabled) {
+    if (segment.keyboard) {
+      content = <kbd className="mk-html-keyboard" style={markStyle}>{segment.text}</kbd>;
+    } else if (segment.code && inlineCodeEnabled) {
       content = (
         <code
           className={cn("mx-0.5 rounded px-1 py-0.5", selectedRing(selectedStyle, "inline-code"))}

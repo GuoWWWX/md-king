@@ -18,6 +18,7 @@ import {
 import { markdownSourceIndentClass, markdownSourceIndentLength, parseMarkdownSourceListLine, sourceOrderedListValue } from "./source-indent";
 import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
+import { markdownInlineHtmlTagRanges } from "../../../lib/markdown-inline-html.ts";
 import {
   applyTableWidthMode,
   createTableDisplaySettings,
@@ -28,7 +29,7 @@ import {
   type TableDisplaySettings,
   type TableWidthMode,
 } from "./table-display-settings";
-import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownCalloutIconWidget, MarkdownFrontmatterWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownMathWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
+import { BulletWidget, CopyCodeWidget, editMermaidSourceEffect, editTableSourceEffect, MarkdownBreakWidget, MarkdownCalloutIconWidget, MarkdownFrontmatterWidget, MarkdownImageWidget, MarkdownLinkIconWidget, MarkdownMathWidget, MarkdownWikilinkWidget, MermaidWidget, OrderedListWidget, selectWholeTableEffect, TableWidget, TaskCheckboxWidget } from "./widgets";
 
 /**
  * 内联装饰层：Obsidian 式实时预览的核心。
@@ -416,6 +417,31 @@ function addInlineMath(collector: DecorationCollector, lineFrom: number): void {
   }
 }
 
+function addCommonHtml(collector: DecorationCollector, lineFrom: number): void {
+  const line = collector.state.doc.lineAt(lineFrom);
+  if (insideFencedCode(collector.state, line.from)) return;
+  const stack: Array<{ name: string; contentFrom: number }> = [];
+  for (const tag of markdownInlineHtmlTagRanges(line.text)) {
+    const from = line.from + tag.from;
+    const to = line.from + tag.to;
+    if (cursorInside(collector, from, to) || sourceSelected(collector, from, to)) continue;
+    if (tag.name === "br") {
+      replaceInline(collector, from, to, new MarkdownBreakWidget());
+    } else if (tag.closing) {
+      hide(collector, from, to);
+      const open = stack.pop();
+      if (open && open.name === tag.name && open.contentFrom < from) {
+        const className = `mk-cm-html-${tag.name === "b" ? "strong" : tag.name === "i" ? "em" : tag.name === "del" ? "s" : tag.name}`;
+        addMark(collector, open.contentFrom, from, className);
+      }
+    } else {
+      hide(collector, from, to);
+      if (!tag.selfClosing) stack.push({ name: tag.name, contentFrom: to });
+    }
+    if (tag.name !== "br" && !tag.closing && tag.selfClosing) hide(collector, from, to);
+  }
+}
+
 function addRenderedSourceIndent(collector: DecorationCollector, lineFrom: number): void {
   const line = collector.state.doc.lineAt(lineFrom);
   if (insideFencedCode(collector.state, line.from)) return;
@@ -533,23 +559,41 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   // 围栏首行的 QuoteMark 是 FencedCode 的前一个兄弟，其余行在 FencedCode 内。
   // 代码块进入源码态时统一保留真实引用前缀，不让普通引用的逐行 hide 再将它隐藏。
   const next = ref.node.nextSibling;
-  const code = ref.node.parent?.name === "FencedCode"
+  let code = ref.node.parent?.name === "FencedCode"
     ? ref.node.parent
     : next?.name === "FencedCode" && state.doc.lineAt(next.from).from === line.from ? next : null;
+  if (!code && ref.node.parent?.name === "Blockquote") {
+    for (let sibling = ref.node.nextSibling; sibling; sibling = sibling.nextSibling) {
+      if (state.doc.lineAt(sibling.from).from !== line.from) break;
+      if (sibling.name === "FencedCode") {
+        code = sibling;
+        break;
+      }
+    }
+  }
   if (code) {
-    const prefixTo = ref.to + trailingSpaceCount(state, ref.to, 1);
+    // `firstLine`/`lastLine` 上面表示的是整个 Blockquote。不能用它们判断
+    // 代码块是否进入源码态，否则光标停在代码块前面的引用正文时，会让首行
+    // 的 `>` 先显示出来，再被 FencedCode 的隐藏装饰盖掉，造成箭头跑位。
+    const codeFirstLine = state.doc.lineAt(code.from);
+    const codeLastLine = state.doc.lineAt(Math.min(code.to, state.doc.length));
     // 选中首行时，选区通常只覆盖围栏文本；FencedCode 节点从围栏内容起算，
     // 仅按节点区间判断会把 QuoteMark 误判为渲染态，导致隐藏的 `>` 被原生选区
     // 临时绘制到代码卡片里。按实际代码首尾行判断，保证前缀和首行同步进入源码态。
-    if (cursorLine(collector, code.from, code.to)
+    const sourceVisible = cursorLine(collector, code.from, code.to)
       || sourceSelected(collector, code.from, code.to)
-      || (collector.focused && (selectionOnLines(state, firstLine.from, lastLine.to)
+      || (collector.focused && (selectionOnLines(state, codeFirstLine.from, codeLastLine.to)
         || selectionOnLineNumber(state, line.number)
-        || selectionIntersectsRange(state, line.from, line.to)))) {
+        || selectionIntersectsRange(state, line.from, line.to)));
+    const prefixClass = callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix";
+
+    // 始终保留 QuoteMark 和其后空格的 DOM，只切换可见性。如果在渲染态用
+    // replace 删掉它们，鼠标开始拖选时 CodeMirror 会在同一帧里先绘制旧选区、
+    // 再重建行内 DOM，首行的 `>` 和围栏就会短暂被推进代码卡片。
+    addLine(collector, line.from, "mk-cm-nested-code-prefix-layout");
+    collector.decorations.push(markDecoration(`${prefixClass}${sourceVisible ? "" : " mk-cm-nested-code-prefix-hidden"}`).range(ref.from, ref.to));
+    if (sourceVisible) {
       addLine(collector, line.from, callout ? "mk-cm-callout-code-source" : "mk-cm-quote-code-source");
-      collector.decorations.push(markDecoration(callout ? "mk-cm-callout-code-prefix" : "mk-cm-quote-code-prefix").range(ref.from, ref.to));
-    } else {
-      hide(collector, ref.from, prefixTo);
     }
     return;
   }
@@ -691,8 +735,10 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
 
     if (isFence && !editing) {
       // 整行 replace 掉围栏。跨行装饰必须由 StateField 提供，所以这里只能
-      // 逐行处理：把这一行的字符全部隐藏，行本身仍然存在（高度靠 CSS 压到 0）。
-      hide(collector, line.from, line.to);
+      // 逐行处理。引用里的 QuoteMark 需要始终留在 DOM 中，否则拖选围栏首行时
+      // 它会在 replace/mark 切换的瞬间改变行宽。因此引用围栏只隐藏 `> ` 后的内容。
+      const quotePrefixLength = line.text.match(/^\s*>[ \t]?/)?.[0].length ?? 0;
+      hide(collector, line.from + quotePrefixLength, line.to);
       addLine(collector, line.from, `${isFirst
         ? `mk-cm-code-fence mk-cm-code-fence-first${indented}`
         : `mk-cm-code-fence mk-cm-code-fence-last${indented}`}${quoteClass}${calloutClass}`);
@@ -756,6 +802,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
     for (let lineNumber = firstLine.number; lineNumber <= lastLine.number; lineNumber += 1) {
       const lineFrom = state.doc.line(lineNumber).from;
       addInlineMath(collector, lineFrom);
+      addCommonHtml(collector, lineFrom);
       addRenderedSourceIndent(collector, lineFrom);
       addFallbackSourceList(collector, lineFrom);
       addObsidianAndBareLinks(collector, lineFrom);
@@ -878,9 +925,9 @@ class LivePreviewPlugin {
       const built = buildDecorations(update.view);
       this.decorations = built.decorations;
       this.atomics = built.atomics;
-      // 选区触发源码态时，QuoteMark 的 inline decoration 会在同一轮更新里从
-      // replace 切换为可见前缀。主动排一次 measure，避免浏览器沿用切换前的
-      // 原生选区矩形，导致 `>` 看起来跑进选区、代码卡片短暂收窄。
+      // 选区触发源码态时，围栏文本和代码行 class 会在同一轮切换。主动排一次
+      // measure，避免浏览器沿用切换前的原生选区矩形；引用前缀本身则始终保留
+      // 在 DOM 中，只切换 visibility，不再参与这次重排。
       if (update.selectionSet || update.focusChanged || readOnlyChanged) update.view.requestMeasure();
     }
   }

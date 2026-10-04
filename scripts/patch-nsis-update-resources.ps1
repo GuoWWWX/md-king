@@ -88,7 +88,9 @@ $pandocCacheBlock = @'
   pandoc_ready:
 '@
 $pandocCacheBlock = $pandocCacheBlock.Replace('__PANDOC_VERSION__', $pandocVersion).Replace('__PANDOC_SOURCE__', $pandocFileMatch.Groups['source'].Value).Replace('__PANDOC_VERSION_FILE__', $pandocVersionFile)
-$content = $content.Replace($pandocDirectory, $pandocCacheBlock).Replace($pandocFileMatch.Value, "")
+if (!$content.Contains("pandoc_version_check:")) {
+  $content = $content.Replace($pandocDirectory, $pandocCacheBlock).Replace($pandocFileMatch.Value, "")
+}
 
 $pandocDelete = '    Delete "$INSTDIR\pandoc\windows\pandoc.exe"'
 $pandocVersionDelete = '    Delete "$INSTDIR\pandoc\windows\pandoc.version"'

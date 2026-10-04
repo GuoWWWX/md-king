@@ -23,6 +23,29 @@ test("解析闭合星号后紧邻正文的宽松加粗", () => {
   ]);
 });
 
+test("表格单元格把 br 标签渲染为换行节点", () => {
+  assert.deepEqual(parseTableInlineMarkdown("第一行<br>第二行<br />第三行</br>"), [
+    { type: "text", value: "第一行" },
+    { type: "break" },
+    { type: "text", value: "第二行" },
+    { type: "break" },
+    { type: "text", value: "第三行" },
+    { type: "break" },
+  ]);
+});
+
+test("表格单元格支持常用 Markdown 内嵌 HTML", () => {
+  assert.deepEqual(parseTableInlineMarkdown("<mark>重点</mark> <u>下划线</u> H<sub>2</sub>O <kbd>Ctrl</kbd>"), [
+    { type: "element", tag: "mark", children: [{ type: "text", value: "重点" }] },
+    { type: "text", value: " " },
+    { type: "element", tag: "u", children: [{ type: "text", value: "下划线" }] },
+    { type: "text", value: " H" },
+    { type: "element", tag: "sub", children: [{ type: "text", value: "2" }] },
+    { type: "text", value: "O " },
+    { type: "element", tag: "kbd", children: [{ type: "text", value: "Ctrl" }] },
+  ]);
+});
+
 test("表格单元格将行内公式作为独立节点且不把方括号识别为链接", () => {
   assert.deepEqual(
     parseTableInlineMarkdown("命中率 $R=N_{\\mathrm{hit}}/N_{\\mathrm{alarm}}$，区间 $[a,b]$"),
@@ -48,11 +71,12 @@ test("表格单元格支持反斜杠行内公式并保留外层加粗", () => {
   ]);
 });
 
-test("HTML 与危险链接不会成为可执行节点", () => {
-  const nodes = parseTableInlineMarkdown("<img src=x onerror=alert(1)> [危险](javascript:alert(1))");
-  assert.equal(JSON.stringify(nodes).includes("img"), true);
+test("常用 HTML 会过滤事件属性，危险链接不会成为可执行节点", () => {
+  const nodes = parseTableInlineMarkdown("<img src=x onerror=alert(1)> <script>alert(1)</script> [危险](javascript:alert(1))");
   assert.equal(JSON.stringify(nodes).includes('"tag":"a"'), false);
-  assert.equal(nodes.some((node) => node.type === "image"), false);
+  assert.deepEqual(nodes[0], { type: "image", src: "x", alt: "" });
+  assert.equal(JSON.stringify(nodes).includes("onerror"), false);
+  assert.equal(JSON.stringify(nodes).includes("<script>"), true);
 });
 
 test("支持粗斜体嵌套、自动链接和安全图片", () => {

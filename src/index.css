@@ -2515,12 +2515,18 @@ select {
     isolation: isolate;
     box-sizing: border-box;
     /* 额外缩进只移动内层卡片，不能移动引用边线或可编辑的 >。 */
-    margin-inline: 0;
+    margin-inline: 0 !important;
     width: auto;
     /* 选区切换源码态时，行宽仍固定为编辑器内容宽度，避免卡片按选中文本收缩。 */
     min-width: 100%;
     padding-inline: calc(44px + var(--mk-code-indent, 0px)) 44px !important;
     border-radius: 0;
+  }
+
+  /* 代码块的缩进只作用于卡片内部。即使行同时带有
+     `.mk-cm-code-indent-*`，也不能把整行（以及可编辑的 `>`）一起推走。 */
+  .cm-line.mk-cm-nested-code-prefix-layout {
+    margin-inline: 0 !important;
   }
 
   .cm-line.mk-cm-callout-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
@@ -2580,17 +2586,24 @@ select {
     text-indent: 0 !important;
   }
 
-  .cm-line.mk-cm-callout-code-source .mk-cm-callout-code-prefix,
-  .cm-line.mk-cm-quote-code-source .mk-cm-quote-code-prefix {
+  .cm-line.mk-cm-nested-code-prefix-layout .mk-cm-callout-code-prefix,
+  .cm-line.mk-cm-nested-code-prefix-layout .mk-cm-quote-code-prefix {
     width: auto;
     margin-left: calc(-30px - var(--mk-code-indent, 0px));
     margin-right: 0;
   }
 
-  .cm-line.mk-cm-callout-code-source .mk-cm-callout-code-prefix + *,
-  .cm-line.mk-cm-quote-code-source .mk-cm-quote-code-prefix + * {
+  .cm-line.mk-cm-nested-code-prefix-layout .mk-cm-callout-code-prefix + *,
+  .cm-line.mk-cm-nested-code-prefix-layout .mk-cm-quote-code-prefix + * {
     /* 间距放在 > 后面的内容上，不能放在前缀本身上，否则 > 后的光标会跳过整段间距。 */
     margin-right: calc(14.5625px + var(--mk-code-indent, 0px));
+  }
+
+  /* 渲染态不显示引用箭头，但保留它的行内尺寸；进入源码态时只切换
+     visibility，不重建行内排版，拖选首行不再产生横向跳动。 */
+  .mk-cm-nested-code-prefix-hidden {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .mk-cm-callout-code-prefix {
@@ -2603,7 +2616,8 @@ select {
     font-family: var(--font-sans, sans-serif);
     /* 代码为正文的 0.88 倍，引用前缀恢复为正文大小，且不改变代码行高。 */
     font-size: calc(1em / 0.88);
-    line-height: inherit;
+    /* 与渲染态围栏保持同一行高，避免点击代码块后整块跳高。 */
+    line-height: 1;
     font-weight: 400;
   }
 
@@ -2616,7 +2630,9 @@ select {
     text-indent: 0;
     font-family: var(--font-sans, sans-serif);
     font-size: calc(1em / 0.88);
-    line-height: inherit;
+    /* 前缀字号恢复为正文大小，但不能把代码行撑高；代码行仍由 0.88em
+       的行盒决定高度，箭头只在行内垂直对齐。 */
+    line-height: 1;
     font-weight: 400;
     position: relative;
     z-index: 1;
@@ -2958,6 +2974,9 @@ select {
     width: 100%;
     min-width: 0;
     height: 100%;
+    min-height: 32px;
+    resize: none;
+    overflow: hidden;
     padding: 5px 10px;
     box-sizing: border-box;
     border: 0;
@@ -2967,6 +2986,8 @@ select {
     font: inherit;
     line-height: 1.5;
     letter-spacing: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .mk-cm-table-input[hidden] {
@@ -3059,6 +3080,17 @@ select {
     background: #bfdbfe !important;
     box-shadow: none;
   }
+
+  .mk-cm-html-strong { font-weight: 700; }
+  .mk-cm-html-em { font-style: italic; }
+  .mk-cm-html-s { text-decoration: line-through; }
+  .mk-cm-html-u { text-decoration: underline; }
+  .mk-cm-html-mark { background: #fef08a; color: #1c1917; }
+  .mk-cm-html-sub { font-size: 0.75em; vertical-align: sub; }
+  .mk-cm-html-sup { font-size: 0.75em; vertical-align: super; }
+  .mk-cm-html-small { font-size: 0.85em; }
+  .mk-cm-html-kbd,
+  .mk-html-keyboard { border: 1px solid #cbd5e1; border-radius: 3px; background: #f1f5f9; padding: 1px 4px; font-family: ui-monospace, monospace; font-size: 0.88em; }
 
   /* 只有显式点击“选中整张表格”时才整表高亮；普通文本选区保留实际行列范围。 */
   .mk-cm-table-wrapper.is-toolbar-selected .mk-cm-table th,

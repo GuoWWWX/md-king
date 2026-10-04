@@ -1661,7 +1661,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     const container = splitPaneRef.current;
     if (!container || event.button !== 0) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const target = event.currentTarget;
+    const pointerId = event.pointerId;
+    target.setPointerCapture(pointerId);
     const rect = container.getBoundingClientRect();
     // CSS zoom 会让 getBoundingClientRect 与受控 grid 宽度处于不同坐标系，
     // 统一换算到未缩放的布局坐标，拖动时才不会出现移动但宽度不变。
@@ -1701,19 +1703,30 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       setPreviewWidth(Math.min(maxWidth, Math.max(previewMinWidth, Math.round(nextWidth))));
     };
     const stop = () => {
+      try {
+        if (target.hasPointerCapture(pointerId)) {
+          target.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // WebView 已释放指针
+      }
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
   }
 
   function handlePreviewSidebarResizeStart(event: ReactPointerEvent<HTMLDivElement>, container: HTMLDivElement | null) {
     if (!container) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const target = event.currentTarget;
+    const pointerId = event.pointerId;
+    target.setPointerCapture(pointerId);
     const rect = container.getBoundingClientRect();
     const move = (moveEvent: PointerEvent) => {
       const minWidth = 172;
@@ -1721,13 +1734,22 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       setPreviewSidebarWidth(Math.min(maxWidth, Math.max(minWidth, moveEvent.clientX - rect.left)));
     };
     const stop = () => {
+      try {
+        if (target.hasPointerCapture(pointerId)) {
+          target.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // WebView 已释放指针
+      }
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
   }
 
   const words = markdown.trim() ? markdown.trim().length : 0;
