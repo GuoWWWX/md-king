@@ -114,9 +114,15 @@ rect.actor, rect[class*="actor"], .actor rect {
 text.actor, text[class*="actor"], .actor text, .actor tspan {
   fill: #fef3c7 !important;
   color: #fef3c7 !important;
+  stroke: none !important;
 }
-circle.actor-man, line.actor-man, path.actor-man {
+.actor-man line, line.actor-man {
   stroke: #f59e0b !important;
+  stroke-width: 2px !important;
+}
+.actor-man circle, circle.actor-man {
+  stroke: #f59e0b !important;
+  stroke-width: 2px !important;
   fill: #382613 !important;
 }
 .actor-line {
@@ -135,8 +141,19 @@ circle.actor-man, line.actor-man, path.actor-man {
 .noteText, .noteText tspan {
   fill: #fef3c7 !important;
 }
+/* 时序图 alt/loop 条件框体与其文字 */
+.labelBox {
+  fill: #382613 !important;
+  stroke: #f59e0b !important;
+}
 .labelText, .loopText, .loopText tspan {
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
+  font-weight: 600 !important;
+}
+.sectionTitle, .sectionTitle text {
   fill: #fde68a !important;
+  color: #fde68a !important;
   font-weight: 600 !important;
 }
 .loopLine {
@@ -227,9 +244,15 @@ rect.actor, rect[class*="actor"], .actor rect {
 text.actor, text[class*="actor"], .actor text, .actor tspan {
   fill: #1c1917 !important;
   color: #1c1917 !important;
+  stroke: none !important;
 }
-circle.actor-man, line.actor-man, path.actor-man {
+.actor-man line, line.actor-man {
   stroke: #d97706 !important;
+  stroke-width: 2px !important;
+}
+.actor-man circle, circle.actor-man {
+  stroke: #d97706 !important;
+  stroke-width: 2px !important;
   fill: #fef3c7 !important;
 }
 .actor-line {
@@ -248,8 +271,19 @@ circle.actor-man, line.actor-man, path.actor-man {
 .noteText, .noteText tspan {
   fill: #1c1917 !important;
 }
+/* 时序图 alt/loop 条件框体与其文字 */
+.labelBox {
+  fill: #fef3c7 !important;
+  stroke: #d97706 !important;
+}
 .labelText, .loopText, .loopText tspan {
   fill: #78350f !important;
+  color: #78350f !important;
+  font-weight: 600 !important;
+}
+.sectionTitle, .sectionTitle text {
+  fill: #78350f !important;
+  color: #78350f !important;
   font-weight: 600 !important;
 }
 .loopLine {
