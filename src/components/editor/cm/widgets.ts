@@ -312,6 +312,12 @@ export class MermaidWidget extends WidgetType {
     host.className = "mk-cm-mermaid";
     const container = measuredBlockWidget(host, "media");
 
+    const langLabel = document.createElement("span");
+    langLabel.className = "mk-cm-mermaid-language";
+    langLabel.textContent = "MERMAID";
+    langLabel.setAttribute("aria-hidden", "true");
+    host.append(langLabel);
+
     const previewButton = document.createElement("button");
     previewButton.type = "button";
     previewButton.className = "mk-cm-mermaid-expand";

@@ -2418,6 +2418,21 @@ select {
     background: #f8fafc;
   }
 
+  .mk-cm-mermaid-language {
+    position: absolute;
+    left: 12px;
+    top: 8px;
+    font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(100, 116, 139, 0.85);
+    pointer-events: none;
+    user-select: none;
+  }
+
   .mk-cm-mermaid-canvas {
     display: flex;
     justify-content: center;
@@ -3985,6 +4000,10 @@ select {
 
   .dark .mk-cm-mermaid-expand {
     color: #a1a1aa;
+  }
+
+  .dark .mk-cm-mermaid-language {
+    color: rgba(161, 161, 170, 0.85);
   }
 
   .dark .mk-cm-mermaid-expand:hover,
