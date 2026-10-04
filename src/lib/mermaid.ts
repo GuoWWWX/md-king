@@ -57,14 +57,41 @@ function mermaidConfig(theme: "default" | "dark") {
     markdownAutoWrap: true,
     themeVariables: {
       fontSize: `${MERMAID_FONT_SIZE}px`,
-      lineColor: isDark ? "#fbbf24" : "#f59e0b",
+      fontFamily: MERMAID_FONT_FAMILY,
+      // 深浅色模式使用完全相同的核心主橙色 #f59e0b
+      lineColor: "#f59e0b",
+      primaryBorderColor: "#f59e0b",
+      nodeBorder: "#f59e0b",
+      actorBorder: "#f59e0b",
+      actorLineColor: "#f59e0b",
+      signalColor: "#f59e0b",
+      labelBoxBorderColor: "#f59e0b",
+      loopLineColor: "#f59e0b",
+      noteBorderColor: "#f59e0b",
+      sequenceNumberColor: "#1c1917",
+      // 方块填充：浅色模式 #fef3c7（正宗浅橙金色），深色模式 #382613（深黑棕夜光底）
+      primaryColor: isDark ? "#382613" : "#fef3c7",
+      actorBkg: isDark ? "#382613" : "#fef3c7",
+      labelBoxBkgColor: isDark ? "#382613" : "#fef3c7",
+      mainBkg: isDark ? "#382613" : "#fef3c7",
+      // 容器背景与便签背景
+      secondaryColor: isDark ? "#292015" : "#fffbeb",
+      tertiaryColor: isDark ? "#261e14" : "#fffbeb",
+      noteBkgColor: isDark ? "#292015" : "#fffbeb",
+      // 文本颜色
+      primaryTextColor: isDark ? "#fef3c7" : "#1c1917",
+      actorTextColor: isDark ? "#fef3c7" : "#1c1917",
+      signalTextColor: isDark ? "#fef3c7" : "#1c1917",
+      labelTextColor: isDark ? "#fef3c7" : "#78350f",
+      loopTextColor: isDark ? "#fef3c7" : "#78350f",
+      noteTextColor: isDark ? "#fef3c7" : "#1c1917",
     },
     themeCSS: MERMAID_THEME_CSS + (isDark ? `
-/* ====== 深色模式：方案 B 暖金/琥珀夜光体系 ====== */
+/* ====== 深色模式：暖金/琥珀夜光体系 ====== */
 /* 流程图子图（Cluster）容器与标题 */
 .cluster rect {
   fill: #261e14 !important;
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
   rx: 6px !important;
   ry: 6px !important;
@@ -94,13 +121,13 @@ function mermaidConfig(theme: "default" | "dark") {
 
 /* 连线与连线标签 */
 .relation, .edgePath .path {
-  stroke: #fbbf24 !important;
+  stroke: #f59e0b !important;
 }
 [id$="-arrowhead"] path:not([fill]):not([style*="fill"]),
 [id$="-crosshead"] path:not([fill]):not([style*="fill"]),
 marker path:not([fill]):not([style*="fill"]) {
-  fill: #fbbf24 !important;
-  stroke: #fbbf24 !important;
+  fill: #f59e0b !important;
+  stroke: #f59e0b !important;
 }
 .edgeLabel text, .edgeLabel span {
   fill: #fef3c7 !important;
@@ -128,17 +155,17 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   fill: #382613 !important;
 }
 .actor-line {
-  stroke: #b45309 !important;
+  stroke: #f59e0b !important;
 }
 .messageText {
   fill: #fef3c7 !important;
 }
 .messageLine0, .messageLine1 {
-  stroke: #fbbf24 !important;
+  stroke: #f59e0b !important;
 }
 .note {
   fill: #292015 !important;
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
 }
 .noteText, .noteText tspan {
   fill: #fef3c7 !important;
@@ -159,12 +186,12 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   font-weight: 600 !important;
 }
 .loopLine {
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
 }
 /* 时序图 autonumber 序号圆点与文字 */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
   fill: #f59e0b !important;
-  stroke: #fbbf24 !important;
+  stroke: #f59e0b !important;
   stroke-width: 1px !important;
 }
 .sequenceNumber {
@@ -186,7 +213,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 .statediagram-note rect {
   fill: #292015 !important;
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
 }
 
 /* 类图与 ER 图 */
@@ -202,12 +229,12 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
   fill: #fef3c7 !important;
 }
-.er.relationshipLine { stroke: #fbbf24 !important; }
+.er.relationshipLine { stroke: #f59e0b !important; }
 ` : `
-/* ====== 浅色模式：方案 B 纯正暖金/琥珀日间体系 ====== */
+/* ====== 浅色模式：暖金/琥珀日间体系 ====== */
 /* 流程图子图（Cluster）容器与标题 */
 .cluster rect {
-  fill: #fff7ed !important;
+  fill: #fffbeb !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
   rx: 6px !important;
@@ -219,13 +246,13 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   font-weight: 600 !important;
 }
 
-/* 流程图节点小方块（矩形、多边形/菱形、圆形等）：边框橙色，中间浅橙色 */
+/* 流程图节点小方块（矩形、多边形/菱形、圆形等）：边框纯正橙色，中间浅一点的橙色 */
 .node[id*="-flowchart-"] rect,
 .node[id*="-flowchart-"] polygon,
 .node[id*="-flowchart-"] circle,
 .node[id*="-flowchart-"] ellipse,
 .node[id*="-flowchart-"] path {
-  fill: #ffedd5 !important;
+  fill: #fef3c7 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
@@ -251,9 +278,9 @@ marker path:not([fill]):not([style*="fill"]) {
   color: #1c1917 !important;
 }
 
-/* 时序图 (Sequence Diagram)：方块边框橙色，中间浅橙色 */
+/* 时序图 (Sequence Diagram)：方块边框纯正橙色，中间浅一点的橙色 */
 rect.actor, rect[class*="actor"], .actor rect {
-  fill: #ffedd5 !important;
+  fill: #fef3c7 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
@@ -269,7 +296,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .actor-man circle, circle.actor-man {
   stroke: #f59e0b !important;
   stroke-width: 2px !important;
-  fill: #ffedd5 !important;
+  fill: #fef3c7 !important;
 }
 .actor-line {
   stroke: #f59e0b !important;
@@ -281,7 +308,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   stroke: #f59e0b !important;
 }
 .note {
-  fill: #fff7ed !important;
+  fill: #fffbeb !important;
   stroke: #f59e0b !important;
 }
 .noteText, .noteText tspan {
@@ -289,7 +316,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 /* 时序图 alt/loop 条件框体与其文字 */
 .labelBox {
-  fill: #ffedd5 !important;
+  fill: #fef3c7 !important;
   stroke: #f59e0b !important;
 }
 .labelText, .loopText, .loopText tspan {
@@ -305,22 +332,22 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字 */
+/* 时序图 autonumber 序号圆点与文字：深浅两端完全一致主橙色 #f59e0b */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
   fill: #f59e0b !important;
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
   stroke-width: 1px !important;
 }
 .sequenceNumber {
-  fill: #ffffff !important;
-  color: #ffffff !important;
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
   font-weight: 700 !important;
   font-size: 11px !important;
 }
 
 /* 状态图 (State Diagram) */
 .statediagram-state rect {
-  fill: #ffedd5 !important;
+  fill: #fef3c7 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
@@ -329,7 +356,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   color: #1c1917 !important;
 }
 .statediagram-note rect {
-  fill: #fff7ed !important;
+  fill: #fffbeb !important;
   stroke: #f59e0b !important;
 }
 
@@ -337,12 +364,12 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .classTitle text { fill: #1c1917 !important; }
 .relationLabel { fill: #1c1917 !important; }
 .node[id*="classId-"] .outer-path path:first-child {
-  fill: #ffedd5 !important;
+  fill: #fef3c7 !important;
   stroke: #f59e0b !important;
 }
-.er.entityBox { fill: #ffedd5 !important; stroke: #f59e0b !important; }
-.er.attributeBoxOdd { fill: #fff7ed !important; }
-.er.attributeBoxEven { fill: #ffedd5 !important; }
+.er.entityBox { fill: #fef3c7 !important; stroke: #f59e0b !important; }
+.er.attributeBoxOdd { fill: #fffbeb !important; }
+.er.attributeBoxEven { fill: #fef3c7 !important; }
 .er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
   fill: #1c1917 !important;
 }
