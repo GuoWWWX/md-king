@@ -96,7 +96,9 @@ function mermaidConfig(theme: "default" | "dark") {
 .relation, .edgePath .path {
   stroke: #fbbf24 !important;
 }
-[id$="-arrowhead"] path, [id$="-crosshead"] path, marker path {
+[id$="-arrowhead"] path:not([fill]):not([style*="fill"]),
+[id$="-crosshead"] path:not([fill]):not([style*="fill"]),
+marker path:not([fill]):not([style*="fill"]) {
   fill: #fbbf24 !important;
   stroke: #fbbf24 !important;
 }
@@ -158,6 +160,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 .loopLine {
   stroke: #d97706 !important;
+}
+/* 时序图 autonumber 序号圆点与文字 */
+[id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
+  fill: #f59e0b !important;
+  stroke: #fbbf24 !important;
+  stroke-width: 1px !important;
+}
+.sequenceNumber {
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
 }
 
 /* 状态图 (State Diagram) */
@@ -226,7 +240,9 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .relation, .edgePath .path {
   stroke: #b45309 !important;
 }
-[id$="-arrowhead"] path, [id$="-crosshead"] path, marker path {
+[id$="-arrowhead"] path:not([fill]):not([style*="fill"]),
+[id$="-crosshead"] path:not([fill]):not([style*="fill"]),
+marker path:not([fill]):not([style*="fill"]) {
   fill: #b45309 !important;
   stroke: #b45309 !important;
 }
@@ -288,6 +304,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 .loopLine {
   stroke: #d97706 !important;
+}
+/* 时序图 autonumber 序号圆点与文字 */
+[id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
+  fill: #d97706 !important;
+  stroke: #b45309 !important;
+  stroke-width: 1px !important;
+}
+.sequenceNumber {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
 }
 
 /* 状态图 (State Diagram) */
