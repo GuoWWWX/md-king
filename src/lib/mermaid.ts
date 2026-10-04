@@ -57,7 +57,7 @@ function mermaidConfig(theme: "default" | "dark") {
     markdownAutoWrap: true,
     themeVariables: {
       fontSize: `${MERMAID_FONT_SIZE}px`,
-      lineColor: isDark ? "#fbbf24" : "#b45309",
+      lineColor: isDark ? "#fbbf24" : "#f59e0b",
     },
     themeCSS: MERMAID_THEME_CSS + (isDark ? `
 /* ====== 深色模式：方案 B 暖金/琥珀夜光体系 ====== */
@@ -204,10 +204,10 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 .er.relationshipLine { stroke: #fbbf24 !important; }
 ` : `
-/* ====== 浅色模式：方案 B 暖金/琥珀日间体系 ====== */
+/* ====== 浅色模式：方案 B 纯正暖金/琥珀日间清爽体系 ====== */
 /* 流程图子图（Cluster）容器与标题 */
 .cluster rect {
-  fill: #fffbeb !important;
+  fill: #fffdf5 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
   rx: 6px !important;
@@ -225,8 +225,8 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .node[id*="-flowchart-"] circle,
 .node[id*="-flowchart-"] ellipse,
 .node[id*="-flowchart-"] path {
-  fill: #fef3c7 !important;
-  stroke: #d97706 !important;
+  fill: #ffffff !important;
+  stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
 .node .nodeLabel,
@@ -238,13 +238,13 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 
 /* 连线与连线标签 */
 .relation, .edgePath .path {
-  stroke: #b45309 !important;
+  stroke: #f59e0b !important;
 }
 [id$="-arrowhead"] path:not([fill]):not([style*="fill"]),
 [id$="-crosshead"] path:not([fill]):not([style*="fill"]),
 marker path:not([fill]):not([style*="fill"]) {
-  fill: #b45309 !important;
-  stroke: #b45309 !important;
+  fill: #f59e0b !important;
+  stroke: #f59e0b !important;
 }
 .edgeLabel text, .edgeLabel span {
   fill: #1c1917 !important;
@@ -253,8 +253,8 @@ marker path:not([fill]):not([style*="fill"]) {
 
 /* 时序图 (Sequence Diagram) */
 rect.actor, rect[class*="actor"], .actor rect {
-  fill: #fef3c7 !important;
-  stroke: #d97706 !important;
+  fill: #ffffff !important;
+  stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
 text.actor, text[class*="actor"], .actor text, .actor tspan {
@@ -263,25 +263,25 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   stroke: none !important;
 }
 .actor-man line, line.actor-man {
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
   stroke-width: 2px !important;
 }
 .actor-man circle, circle.actor-man {
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
   stroke-width: 2px !important;
-  fill: #fef3c7 !important;
+  fill: #ffffff !important;
 }
 .actor-line {
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
 }
 .messageText {
   fill: #1c1917 !important;
 }
 .messageLine0, .messageLine1 {
-  stroke: #b45309 !important;
+  stroke: #f59e0b !important;
 }
 .note {
-  fill: #fffbeb !important;
+  fill: #fffdf5 !important;
   stroke: #f59e0b !important;
 }
 .noteText, .noteText tspan {
@@ -289,8 +289,8 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 /* 时序图 alt/loop 条件框体与其文字 */
 .labelBox {
-  fill: #fef3c7 !important;
-  stroke: #d97706 !important;
+  fill: #fffdf5 !important;
+  stroke: #f59e0b !important;
 }
 .labelText, .loopText, .loopText tspan {
   fill: #78350f !important;
@@ -303,12 +303,12 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   font-weight: 600 !important;
 }
 .loopLine {
-  stroke: #d97706 !important;
+  stroke: #f59e0b !important;
 }
 /* 时序图 autonumber 序号圆点与文字 */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  fill: #d97706 !important;
-  stroke: #b45309 !important;
+  fill: #f59e0b !important;
+  stroke: #d97706 !important;
   stroke-width: 1px !important;
 }
 .sequenceNumber {
@@ -320,8 +320,8 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 
 /* 状态图 (State Diagram) */
 .statediagram-state rect {
-  fill: #fef3c7 !important;
-  stroke: #d97706 !important;
+  fill: #ffffff !important;
+  stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
 .state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text {
@@ -329,7 +329,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   color: #1c1917 !important;
 }
 .statediagram-note rect {
-  fill: #fffbeb !important;
+  fill: #fffdf5 !important;
   stroke: #f59e0b !important;
 }
 
@@ -337,16 +337,16 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .classTitle text { fill: #1c1917 !important; }
 .relationLabel { fill: #1c1917 !important; }
 .node[id*="classId-"] .outer-path path:first-child {
-  fill: #fef3c7 !important;
-  stroke: #d97706 !important;
+  fill: #ffffff !important;
+  stroke: #f59e0b !important;
 }
-.er.entityBox { fill: #fef3c7 !important; stroke: #d97706 !important; }
-.er.attributeBoxOdd { fill: #fffbeb !important; }
-.er.attributeBoxEven { fill: #fef3c7 !important; }
+.er.entityBox { fill: #ffffff !important; stroke: #f59e0b !important; }
+.er.attributeBoxOdd { fill: #fffdf5 !important; }
+.er.attributeBoxEven { fill: #ffffff !important; }
 .er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
   fill: #1c1917 !important;
 }
-.er.relationshipLine { stroke: #b45309 !important; }
+.er.relationshipLine { stroke: #f59e0b !important; }
 `),
     flowchart: {
       htmlLabels: true,
