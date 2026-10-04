@@ -2734,28 +2734,13 @@ select {
     background: #eff6ff;
   }
 
-  .mk-cm-mermaid-source {
-    position: absolute;
-    top: 4px;
-    right: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: #64748b;
-    cursor: pointer;
-  }
-
   .mk-cm-mermaid-actions {
     position: absolute;
     top: 6px;
     right: 8px;
     display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 4px;
     z-index: 5;
@@ -2774,6 +2759,7 @@ select {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     width: 24px;
     height: 24px;
     padding: 0;
