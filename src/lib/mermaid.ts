@@ -204,10 +204,10 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 .er.relationshipLine { stroke: #fbbf24 !important; }
 ` : `
-/* ====== 浅色模式：方案 B 纯正暖金/琥珀日间清爽体系 ====== */
+/* ====== 浅色模式：方案 B 纯正暖金/琥珀日间体系 ====== */
 /* 流程图子图（Cluster）容器与标题 */
 .cluster rect {
-  fill: #fffdf5 !important;
+  fill: #fff7ed !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
   rx: 6px !important;
@@ -219,13 +219,13 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   font-weight: 600 !important;
 }
 
-/* 流程图节点小方块（矩形、多边形/菱形、圆形等） */
+/* 流程图节点小方块（矩形、多边形/菱形、圆形等）：边框橙色，中间浅橙色 */
 .node[id*="-flowchart-"] rect,
 .node[id*="-flowchart-"] polygon,
 .node[id*="-flowchart-"] circle,
 .node[id*="-flowchart-"] ellipse,
 .node[id*="-flowchart-"] path {
-  fill: #ffffff !important;
+  fill: #ffedd5 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
@@ -251,9 +251,9 @@ marker path:not([fill]):not([style*="fill"]) {
   color: #1c1917 !important;
 }
 
-/* 时序图 (Sequence Diagram) */
+/* 时序图 (Sequence Diagram)：方块边框橙色，中间浅橙色 */
 rect.actor, rect[class*="actor"], .actor rect {
-  fill: #ffffff !important;
+  fill: #ffedd5 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
@@ -269,7 +269,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .actor-man circle, circle.actor-man {
   stroke: #f59e0b !important;
   stroke-width: 2px !important;
-  fill: #ffffff !important;
+  fill: #ffedd5 !important;
 }
 .actor-line {
   stroke: #f59e0b !important;
@@ -281,7 +281,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   stroke: #f59e0b !important;
 }
 .note {
-  fill: #fffdf5 !important;
+  fill: #fff7ed !important;
   stroke: #f59e0b !important;
 }
 .noteText, .noteText tspan {
@@ -289,7 +289,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 }
 /* 时序图 alt/loop 条件框体与其文字 */
 .labelBox {
-  fill: #fffdf5 !important;
+  fill: #ffedd5 !important;
   stroke: #f59e0b !important;
 }
 .labelText, .loopText, .loopText tspan {
@@ -320,7 +320,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 
 /* 状态图 (State Diagram) */
 .statediagram-state rect {
-  fill: #ffffff !important;
+  fill: #ffedd5 !important;
   stroke: #f59e0b !important;
   stroke-width: 1.5px !important;
 }
@@ -329,7 +329,7 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   color: #1c1917 !important;
 }
 .statediagram-note rect {
-  fill: #fffdf5 !important;
+  fill: #fff7ed !important;
   stroke: #f59e0b !important;
 }
 
@@ -337,12 +337,12 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .classTitle text { fill: #1c1917 !important; }
 .relationLabel { fill: #1c1917 !important; }
 .node[id*="classId-"] .outer-path path:first-child {
-  fill: #ffffff !important;
+  fill: #ffedd5 !important;
   stroke: #f59e0b !important;
 }
-.er.entityBox { fill: #ffffff !important; stroke: #f59e0b !important; }
-.er.attributeBoxOdd { fill: #fffdf5 !important; }
-.er.attributeBoxEven { fill: #ffffff !important; }
+.er.entityBox { fill: #ffedd5 !important; stroke: #f59e0b !important; }
+.er.attributeBoxOdd { fill: #fff7ed !important; }
+.er.attributeBoxEven { fill: #ffedd5 !important; }
 .er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
   fill: #1c1917 !important;
 }
