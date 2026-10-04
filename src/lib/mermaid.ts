@@ -68,7 +68,7 @@ function mermaidConfig(theme: "default" | "dark") {
       labelBoxBorderColor: "#f59e0b",
       loopLineColor: "#f59e0b",
       noteBorderColor: "#f59e0b",
-      sequenceNumberColor: "#1c1917",
+      sequenceNumberColor: isDark ? "#fef3c7" : "#1c1917",
       // 方块填充：浅色模式 #fef3c7（正宗浅橙金色），深色模式 #382613（深黑棕夜光底）
       primaryColor: isDark ? "#382613" : "#fef3c7",
       actorBkg: isDark ? "#382613" : "#fef3c7",
@@ -188,17 +188,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字 */
+/* 时序图 autonumber 序号圆点与文字：与深色方块形式统一（橙色边框 + 暗橙内芯 + 浅色大文字） */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  fill: #f59e0b !important;
+  r: 9px !important;
+  fill: #382613 !important;
   stroke: #f59e0b !important;
-  stroke-width: 1px !important;
+  stroke-width: 1.5px !important;
 }
 .sequenceNumber {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
   font-weight: 700 !important;
-  font-size: 11px !important;
+  font-size: 13px !important;
 }
 
 /* 状态图 (State Diagram) */
@@ -332,17 +333,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：深浅两端完全一致主橙色 #f59e0b */
+/* 时序图 autonumber 序号圆点与文字：与浅色方块形式统一（橙色边框 + 浅橙内芯 + 深色大文字） */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  fill: #f59e0b !important;
+  r: 9px !important;
+  fill: #fef3c7 !important;
   stroke: #f59e0b !important;
-  stroke-width: 1px !important;
+  stroke-width: 1.5px !important;
 }
 .sequenceNumber {
   fill: #1c1917 !important;
   color: #1c1917 !important;
   font-weight: 700 !important;
-  font-size: 11px !important;
+  font-size: 13px !important;
 }
 
 /* 状态图 (State Diagram) */
