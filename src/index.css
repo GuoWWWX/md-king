@@ -2434,16 +2434,18 @@ select {
   }
 
   .mk-cm-mermaid-canvas {
-    display: flex;
-    justify-content: center;
+    display: block;
     overflow-x: auto;
+    text-align: center;
     -webkit-user-select: text;
     user-select: text;
   }
 
   .mk-cm-mermaid svg {
-    max-width: 100%;
+    display: inline-block;
+    max-width: none;
     height: auto;
+    vertical-align: middle;
   }
 
 .mk-cm-mermaid-caption {
@@ -2457,7 +2459,7 @@ select {
 
   .mk-cm-mermaid[data-state="loading"] .mk-cm-mermaid-canvas,
   .mk-cm-mermaid[data-state="error"] .mk-cm-mermaid-canvas {
-    justify-content: flex-start;
+    text-align: left;
     font-family: ui-sans-serif, system-ui, var(--font-emoji), sans-serif;
     font-size: 12px;
     color: #64748b;

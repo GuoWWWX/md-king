@@ -1,4 +1,4 @@
-import { calculateRasterSize, svgDataUrl } from "@/lib/svg-image";
+import { calculateRasterSize, svgDataUrl } from "./svg-image.ts";
 
 /**
  * Mermaid 渲染服务。
@@ -410,6 +410,23 @@ async function loadMermaid(dark: boolean) {
   return mermaid;
 }
 
+/**
+ * 对用户输入的 Mermaid 源码做方向与格式的轻量容错归一化：
+ * 1. 容错方向小写：Mermaid 官方 lexer 仅识别大写 LR/RL/TB/TD/BT，
+ *    用户手打小写 "flowchart lr"、"graph tb" 或 "direction lr" 时自动归一为大写，
+ *    彻底避免因大小写敏感导致解析失败或方向失灵。
+ */
+export function normalizeMermaidSource(source: string): string {
+  let s = source.trim();
+  s = s.replace(/^([ \t]*(?:flowchart|graph))[ \t]+(lr|rl|tb|td|bt)\b/im, (_m, prefix, dir) => {
+    return `${prefix} ${dir.toUpperCase()}`;
+  });
+  s = s.replace(/^([ \t]*direction)[ \t]+(lr|rl|tb|td|bt)\b/gim, (_m, prefix, dir) => {
+    return `${prefix} ${dir.toUpperCase()}`;
+  });
+  return s;
+}
+
 function cacheKey(source: string, dark: boolean) {
   return `${dark ? "d" : "l"}:${source}`;
 }
@@ -418,12 +435,12 @@ let renderSeq = 0;
 
 /** 读缓存，命中时调用方可以同步拿到图，避免闪一下空白再出现。 */
 export function getCachedMermaidSvg(source: string, dark: boolean): RenderResult | undefined {
-  return svgCache.get(cacheKey(source.trim(), dark));
+  return svgCache.get(cacheKey(normalizeMermaidSource(source), dark));
 }
 
 export async function renderMermaid(source: string, dark: boolean): Promise<RenderResult> {
-  const trimmed = source.trim();
-  const key = cacheKey(trimmed, dark);
+  const normalized = normalizeMermaidSource(source);
+  const key = cacheKey(normalized, dark);
 
   const cached = svgCache.get(key);
   if (cached) return cached;
@@ -436,7 +453,7 @@ export async function renderMermaid(source: string, dark: boolean): Promise<Rend
     renderSeq += 1;
     // id 必须唯一：mermaid 会用它做 DOM 元素 id 和 SVG 内部的 clip-path 引用，
     // 重复 id 会让同一页里的多张图互相串。
-    const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, trimmed);
+    const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, normalized);
     const size = measureSvg(svg);
     const result = { svg: readableEdgeLabels(svg, size, dark), ...size };
     svgCache.set(key, result);
@@ -503,8 +520,11 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
     }
     ["width", "height"].forEach((name, i) => {
       const value = originalSize[i];
-      if (value === null) root.removeAttribute(name);
-      else root.setAttribute(name, value);
+      if (value === "100%" || value === null) {
+        root.setAttribute(name, String(i === 0 ? size.width : size.height));
+      } else {
+        root.setAttribute(name, value);
+      }
     });
     return root.outerHTML;
   } finally {
@@ -516,20 +536,24 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
  * 从 SVG 文本里读出尺寸。
  *
  * 优先 viewBox：mermaid 输出的 width/height 常常是 `100%`，直接拿去做
- * canvas 尺寸会得到 NaN。
+ * canvas 尺寸会得到 NaN。支持科学计数法与逗号/空格分隔格式。
  */
-function measureSvg(svg: string): { width: number; height: number } {
-  const viewBox = svg.match(/viewBox="([\d.\-\s]+)"/);
+export function measureSvg(svg: string): { width: number; height: number } {
+  const viewBox = svg.match(/\bviewBox="([^"]+)"/i);
   if (viewBox) {
-    const parts = viewBox[1].trim().split(/\s+/).map(Number);
-    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+    const parts = viewBox[1].trim().split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && Number.isFinite(parts[2]) && Number.isFinite(parts[3]) && parts[2] > 0 && parts[3] > 0) {
       return { width: parts[2], height: parts[3] };
     }
   }
 
-  const width = Number(svg.match(/\bwidth="(\d+(?:\.\d+)?)"/)?.[1]);
-  const height = Number(svg.match(/\bheight="(\d+(?:\.\d+)?)"/)?.[1]);
-  if (width > 0 && height > 0) return { width, height };
+  const widthMatch = svg.match(/\bwidth="([\d.]+(?:e[+-]?\d+)?)(?:px)?"/i);
+  const heightMatch = svg.match(/\bheight="([\d.]+(?:e[+-]?\d+)?)(?:px)?"/i);
+  const width = Number(widthMatch?.[1]);
+  const height = Number(heightMatch?.[1]);
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    return { width, height };
+  }
 
   return { width: 800, height: 400 };
 }
