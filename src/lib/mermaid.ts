@@ -188,18 +188,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：与深色方块形式统一（橙色边框 + 暗橙内芯 + 浅色大文字） */
+/* 时序图 autonumber 序号圆点与文字：与深色方块形式统一（橙色细边框 + 暗橙内芯 + 浅色大文字） */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 9px !important;
+  r: 8px !important;
   fill: #382613 !important;
   stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
+  stroke-width: 1px !important;
 }
 .sequenceNumber {
   fill: #fef3c7 !important;
   color: #fef3c7 !important;
   font-weight: 700 !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
 }
 
 /* 状态图 (State Diagram) */
@@ -333,18 +333,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：与浅色方块形式统一（橙色边框 + 浅橙内芯 + 深色大文字） */
+/* 时序图 autonumber 序号圆点与文字：与浅色方块形式统一（橙色细边框 + 浅橙内芯 + 深色大文字） */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 9px !important;
+  r: 8px !important;
   fill: #fef3c7 !important;
   stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
+  stroke-width: 1px !important;
 }
 .sequenceNumber {
   fill: #1c1917 !important;
   color: #1c1917 !important;
   font-weight: 700 !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
 }
 
 /* 状态图 (State Diagram) */
