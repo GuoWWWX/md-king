@@ -65,6 +65,22 @@ g.classGroup .classTitle .nodeLabel,
 .edgeLabel rect { fill: transparent !important; stroke: none !important; }
 .edgeLabel, .edgeLabel * { text-shadow: none !important; }
 .edgeLabel text, .edgeLabel tspan { paint-order: normal; stroke: none !important; }
+/* 连线标签文字长时自动折行，避免被 foreignObject 默认单行截断 */
+.edgeLabel,
+.labelBkg,
+.edgeLabel p,
+.edgeLabel span,
+.edgeLabel div,
+.edgeLabel foreignObject > div {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  line-height: 1.35 !important;
+  text-align: center !important;
+}
+.edgeLabel foreignObject {
+  overflow: visible !important;
+}
 /* 状态图 (State Diagram) 连线与箭头统一使用琥珀主橙色 #f59e0b */
 .transition,
 path.transition,
@@ -235,9 +251,9 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：与深色方块形式统一（橙色细边框 + 暗橙内芯 + 浅色大文字） */
+/* 时序图 autonumber 序号圆点与文字：缩小圆点尺寸与文字大小，小巧精致 */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 8px !important;
+  r: 6px !important;
   fill: #382613 !important;
   stroke: #f59e0b !important;
   stroke-width: 1px !important;
@@ -246,7 +262,9 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   fill: #fef3c7 !important;
   color: #fef3c7 !important;
   font-weight: 700 !important;
-  font-size: 14px !important;
+  font-size: 10px !important;
+  dominant-baseline: central !important;
+  text-anchor: middle !important;
 }
 
 /* 状态图 (State Diagram) */
@@ -416,9 +434,9 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：与浅色方块形式统一（橙色细边框 + 浅橙内芯 + 深色大文字） */
+/* 时序图 autonumber 序号圆点与文字：缩小圆点尺寸与文字大小，小巧精致 */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 8px !important;
+  r: 6px !important;
   fill: #fef3c7 !important;
   stroke: #f59e0b !important;
   stroke-width: 1px !important;
@@ -427,7 +445,9 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
   fill: #1c1917 !important;
   color: #1c1917 !important;
   font-weight: 700 !important;
-  font-size: 14px !important;
+  font-size: 10px !important;
+  dominant-baseline: central !important;
+  text-anchor: middle !important;
 }
 
 /* 状态图 (State Diagram) */
@@ -632,8 +652,29 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
           element.style.setProperty("stroke-width", "3px", "important");
           element.style.setProperty("paint-order", "stroke", "important");
         } else if (element.matches("div,span,p")) {
+          element.style.setProperty("white-space", "normal", "important");
+          element.style.setProperty("overflow-wrap", "anywhere", "important");
+          element.style.setProperty("word-break", "break-word", "important");
+          element.style.setProperty("line-height", "1.35", "important");
+          element.style.setProperty("text-align", "center", "important");
           // foreignObject 文本没有 SVG stroke，用同色文字描边擦掉连线。
           element.style.setProperty("text-shadow", `1.5px 0 ${background}, -1.5px 0 ${background}, 0 1.5px ${background}, 0 -1.5px ${background}`, "important");
+        }
+      }
+
+      // 如果连线标签内容较长发生换行，自动扩展 foreignObject 高度并向上补偿偏移以保持居中，避免文字被溢出切断
+      for (const fo of label.querySelectorAll<SVGForeignObjectElement>("foreignObject")) {
+        fo.style.setProperty("overflow", "visible", "important");
+        const div = fo.querySelector<HTMLElement>("div, span, p");
+        if (div) {
+          const neededHeight = Math.ceil(div.scrollHeight);
+          const currentHeight = parseFloat(fo.getAttribute("height") || "0");
+          if (neededHeight > currentHeight && neededHeight > 0) {
+            fo.setAttribute("height", String(neededHeight));
+            const deltaY = (neededHeight - currentHeight) / 2;
+            const foY = parseFloat(fo.getAttribute("y") || "0");
+            fo.setAttribute("y", String(foY - deltaY));
+          }
         }
       }
     }

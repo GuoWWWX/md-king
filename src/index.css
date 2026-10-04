@@ -2443,7 +2443,7 @@ select {
 
   .mk-cm-mermaid svg {
     display: inline-block;
-    max-width: none;
+    max-width: 100%;
     height: auto;
     vertical-align: middle;
   }
