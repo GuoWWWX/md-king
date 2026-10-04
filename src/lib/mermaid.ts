@@ -251,18 +251,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：缩小圆点尺寸与文字大小，小巧精致 */
+/* 时序图 autonumber 序号圆点与文字：紧凑精致，文字清晰不模糊，完美垂直居中 */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 6px !important;
+  r: 7.5px !important;
   fill: #382613 !important;
   stroke: #f59e0b !important;
-  stroke-width: 1px !important;
+  stroke-width: 1.2px !important;
 }
 .sequenceNumber {
   fill: #fef3c7 !important;
   color: #fef3c7 !important;
   font-weight: 700 !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   dominant-baseline: central !important;
   text-anchor: middle !important;
 }
@@ -434,18 +434,18 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 .loopLine {
   stroke: #f59e0b !important;
 }
-/* 时序图 autonumber 序号圆点与文字：缩小圆点尺寸与文字大小，小巧精致 */
+/* 时序图 autonumber 序号圆点与文字：紧凑精致，文字清晰不模糊，完美垂直居中 */
 [id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 6px !important;
+  r: 7.5px !important;
   fill: #fef3c7 !important;
   stroke: #f59e0b !important;
-  stroke-width: 1px !important;
+  stroke-width: 1.2px !important;
 }
 .sequenceNumber {
   fill: #1c1917 !important;
   color: #1c1917 !important;
   font-weight: 700 !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   dominant-baseline: central !important;
   text-anchor: middle !important;
 }
@@ -518,12 +518,13 @@ g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="cla
 `),
     flowchart: {
       htmlLabels: true,
-      useMaxWidth: false,
+      useMaxWidth: true,
       wrappingWidth: MERMAID_LABEL_WRAP_WIDTH,
-      nodeSpacing: 42,
-      rankSpacing: 48,
-      padding: 20,
+      nodeSpacing: 50,
+      rankSpacing: 60,
+      padding: 24,
       subGraphTitleMargin: { top: 16, bottom: 32 },
+      curve: "basis" as const,
     },
   };
 }
@@ -678,6 +679,50 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
         }
       }
     }
+
+    // 时序图 autonumber 序号文字垂直居中校准：消除 Mermaid 原生硬编码的 y 偏移，绝对对齐圆球中心
+    for (const seq of root.querySelectorAll<SVGTextElement>(".sequenceNumber, text[class*='sequenceNumber']")) {
+      const currentY = parseFloat(seq.getAttribute("y") || "0");
+      if (currentY) {
+        seq.setAttribute("y", String(currentY - 4.5));
+      }
+      seq.style.setProperty("dominant-baseline", "central", "important");
+      seq.style.setProperty("text-anchor", "middle", "important");
+      seq.style.setProperty("font-size", "11px", "important");
+      seq.style.setProperty("font-weight", "700", "important");
+      if (dark) {
+        seq.style.setProperty("fill", "#fef3c7", "important");
+        seq.style.setProperty("color", "#fef3c7", "important");
+      }
+    }
+
+    // 自定义颜色方块深色模式自适应：保留用户自定义边框颜色，背景色自适应为对应同色系的暗夜微透底色
+    if (dark) {
+      for (const node of root.querySelectorAll<SVGGElement>(".node")) {
+        const shapes = node.querySelectorAll<SVGElement>("rect, polygon, circle, ellipse, path");
+        for (const shape of shapes) {
+          const styleAttr = shape.getAttribute("style") || "";
+          const fillMatch = styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;!]+)/i);
+          const strokeMatch = styleAttr.match(/(?:^|;)\s*stroke\s*:\s*([^;!]+)/i);
+          const inlineFill = fillMatch?.[1]?.trim() || shape.getAttribute("fill");
+          const inlineStroke = strokeMatch?.[1]?.trim() || shape.getAttribute("stroke");
+
+          if (inlineFill && inlineFill !== "none" && inlineFill !== "transparent") {
+            const strokeColor = inlineStroke && inlineStroke !== "none" && inlineStroke !== "transparent" ? inlineStroke : inlineFill;
+            shape.style.setProperty("stroke", strokeColor, "important");
+            shape.style.setProperty("stroke-width", "2px", "important");
+            shape.style.setProperty("fill", `color-mix(in srgb, ${strokeColor} 20%, #202020)`, "important");
+            for (const textEl of node.querySelectorAll<HTMLElement | SVGElement>("div, span, p, text, tspan")) {
+              textEl.style.setProperty("color", "#fef3c7", "important");
+              if (textEl.matches("text, tspan")) {
+                textEl.style.setProperty("fill", "#fef3c7", "important");
+              }
+            }
+          }
+        }
+      }
+    }
+
     ["width", "height"].forEach((name, i) => {
       const value = originalSize[i];
       if (value === "100%" || value === null) {

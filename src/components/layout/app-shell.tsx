@@ -159,7 +159,16 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           onOpenChange={setGlobalSearchOpen}
           onSelect={handleGlobalSearchSelect}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 gap-1 p-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1 gap-1 overflow-hidden">
+          {/* 状态栏内侧与左侧栏内侧交汇处的平滑内凹弧形过渡 */}
+          <svg
+            className="pointer-events-none absolute left-12 top-0 z-20 h-2.5 w-2.5 text-slate-200/90 dark:text-zinc-800/90"
+            viewBox="0 0 10 10"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="M0 0 H10 C4.47715 0 0 4.47715 0 10 V0 Z" fill="currentColor" />
+          </svg>
           <ActivityBar
             activePage={activePage}
             navigation={navigation}

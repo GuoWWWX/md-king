@@ -675,6 +675,9 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   );
   if (hasCustomTitle) {
     hide(collector, markerFrom, markerTo);
+    if (markerTo < firstLine.to) {
+      collector.decorations.push(markDecoration("mk-cm-callout-title").range(markerTo, firstLine.to));
+    }
   } else {
     hide(collector, markerFrom, firstLine.to);
   }
@@ -847,15 +850,14 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
     addLine(collector, line.from, `mk-cm-code-line${edge}${indented}${quoteClass}${calloutClass}`);
   }
 
-  // 只有渲染态才挂语言标签和复制按钮：编辑态首行显示的就是 ```java 本身，
-  // 标签叠上去会跟源码文字重叠。
-  if (!editing && firstLine.from >= rangeFrom && firstLine.from <= rangeTo) {
-    if (language) {
+  // 语言标签只在非编辑态显示（避免与编辑态首行的 ```lang 文本重叠）；
+  // 复制按钮始终挂在围栏首行末尾绝对定位在右上角，鼠标 hover 时呈现，编辑源码时也能便捷复制。
+  if (firstLine.from >= rangeFrom && firstLine.from <= rangeTo) {
+    if (!editing && language) {
       collector.decorations.push(
         Decoration.line({ attributes: { "data-code-language": language } }).range(firstLine.from),
       );
     }
-    // 复制按钮作为 side:1 的 widget 挂在围栏首行末尾，绝对定位在右上角。
     const codeText = extractFenceCodeText(state, ref.from, ref.to);
     if (codeText) {
       collector.decorations.push(

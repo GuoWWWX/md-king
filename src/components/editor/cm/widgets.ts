@@ -120,6 +120,29 @@ export class MarkdownBreakWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+function copyTextToClipboard(text: string, onSuccess: () => void): void {
+  const fallback = () => {
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    } catch {}
+    onSuccess();
+  };
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
 /**
  * 代码块右上角的复制按钮。
  *
@@ -154,7 +177,7 @@ export class CopyCodeWidget extends WidgetType {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      void navigator.clipboard.writeText(this.code).then(() => {
+      copyTextToClipboard(this.code, () => {
         btn.innerHTML = CHECK_ICON;
         btn.classList.add("mk-cm-copy-code--ok");
         window.setTimeout(() => {
@@ -387,6 +410,35 @@ export class MermaidWidget extends WidgetType {
     langLabel.setAttribute("aria-hidden", "true");
     host.append(langLabel);
 
+    const actions = document.createElement("div");
+    actions.className = "mk-cm-mermaid-actions";
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "mk-cm-mermaid-copy";
+    copyButton.dataset.tooltip = "复制 Mermaid 源码";
+    copyButton.setAttribute("aria-label", "复制 Mermaid 源码");
+    copyButton.innerHTML = COPY_ICON;
+    const preventSelect = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    copyButton.addEventListener("pointerdown", preventSelect);
+    copyButton.addEventListener("mousedown", preventSelect);
+    copyButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      copyTextToClipboard(this.source, () => {
+        copyButton.innerHTML = CHECK_ICON;
+        copyButton.classList.add("mk-cm-mermaid-copy--ok");
+        window.setTimeout(() => {
+          copyButton.innerHTML = COPY_ICON;
+          copyButton.classList.remove("mk-cm-mermaid-copy--ok");
+        }, 1500);
+      });
+    });
+    actions.append(copyButton);
+
     const previewButton = document.createElement("button");
     previewButton.type = "button";
     previewButton.className = "mk-cm-mermaid-expand";
@@ -399,7 +451,7 @@ export class MermaidWidget extends WidgetType {
       const svg = host.querySelector(".mk-cm-mermaid-canvas svg")?.outerHTML;
       if (svg) requestMediaPreview({ src: svgDataUrl(svg), alt: "Mermaid 图表", title: "Mermaid 图表" });
     });
-    host.append(previewButton);
+    actions.append(previewButton);
 
     if (this.editable) {
       const sourceButton = document.createElement("button");
@@ -418,8 +470,9 @@ export class MermaidWidget extends WidgetType {
         });
         view.focus();
       });
-      host.append(sourceButton);
+      actions.append(sourceButton);
     }
+    host.append(actions);
 
     const canvas = document.createElement("div");
     canvas.className = "mk-cm-mermaid-canvas";

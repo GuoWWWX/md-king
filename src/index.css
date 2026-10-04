@@ -1324,8 +1324,15 @@ select {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16) !important;
   }
 
-  /* 48px 窄图标栏：复用 mk-sidebar-panel 的底色，但要压掉它为宽栏写的
-     max-[980px] 强制居中分支（那些 !important 规则在 48px 下会打架）。 */
+  /* 48px 窄图标栏：无缝连通顶部状态栏与窗口边缘 */
+  .mk-activity-bar {
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
   .mk-activity-bar .mk-sidebar-label {
     display: none !important;
   }
@@ -2434,17 +2441,20 @@ select {
   }
 
   .mk-cm-mermaid-canvas {
-    display: block;
-    overflow-x: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-x: hidden;
+    max-width: 100%;
     text-align: center;
     -webkit-user-select: text;
     user-select: text;
   }
 
   .mk-cm-mermaid svg {
-    display: inline-block;
-    max-width: 100%;
-    height: auto;
+    display: block;
+    max-width: 100% !important;
+    height: auto !important;
     vertical-align: middle;
   }
 
@@ -2549,6 +2559,7 @@ select {
   }
 
   .cm-line[data-code-language]:hover .mk-cm-copy-code,
+  .cm-line.mk-cm-code-line--first:hover .mk-cm-copy-code,
   .mk-cm-copy-code:focus-visible {
     opacity: 1;
   }
@@ -2740,10 +2751,26 @@ select {
     cursor: pointer;
   }
 
-  .mk-cm-mermaid-expand {
+  .mk-cm-mermaid-actions {
     position: absolute;
-    top: 4px;
-    right: 36px;
+    top: 6px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .mk-cm-mermaid:hover .mk-cm-mermaid-actions,
+  .mk-cm-mermaid-actions:focus-within {
+    opacity: 1;
+  }
+
+  .mk-cm-mermaid-copy,
+  .mk-cm-mermaid-expand,
+  .mk-cm-mermaid-source {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2751,32 +2778,26 @@ select {
     height: 24px;
     padding: 0;
     border: none;
-    border-radius: 5px;
+    border-radius: 4px;
     background: transparent;
     color: #64748b;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+    transition: background 140ms ease, color 140ms ease;
   }
 
-  .mk-cm-mermaid:hover .mk-cm-mermaid-expand,
-  .mk-cm-mermaid-expand:focus-visible,
-  .mk-cm-mermaid-expand:hover {
-    opacity: 1;
-  }
-
+  .mk-cm-mermaid-copy:hover,
+  .mk-cm-mermaid-copy:focus-visible,
   .mk-cm-mermaid-expand:hover,
-  .mk-cm-mermaid-expand:focus-visible {
-    background: rgba(226, 232, 240, 0.9);
-    color: #334155;
-    outline: none;
-  }
-
+  .mk-cm-mermaid-expand:focus-visible,
   .mk-cm-mermaid-source:hover,
   .mk-cm-mermaid-source:focus-visible {
     background: rgba(226, 232, 240, 0.9);
     color: #334155;
     outline: none;
+  }
+
+  .mk-cm-mermaid-copy--ok {
+    color: #16a34a !important;
   }
 
   .mk-cm-table-scroll {
@@ -3776,7 +3797,11 @@ select {
       inset 0 -1px 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;
   }
 
-  .dark .mk-cm-callout-first.mk-cm-callout-last {
+  .dark .mk-cm-callout-first.mk-cm-callout-last,
+  .dark .mk-cm-callout-first.mk-cm-callout-collapsed-summary {
+    padding-bottom: 7px !important;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent),
@@ -3784,9 +3809,17 @@ select {
       inset 0 -1px 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;
   }
 
+  .dark .mk-cm-callout-line--cyan { --mk-callout-accent: #06b6d4; }
+  .dark .mk-cm-callout-line--blue { --mk-callout-accent: #3b82f6; }
+  .dark .mk-cm-callout-line--green { --mk-callout-accent: #22c55e; }
+  .dark .mk-cm-callout-line--amber { --mk-callout-accent: #f59e0b; }
+  .dark .mk-cm-callout-line--red { --mk-callout-accent: #ef4444; }
+  .dark .mk-cm-callout-line--purple { --mk-callout-accent: #a855f7; }
+
   .dark .mk-cm-callout-title,
   .dark .mk-cm-callout-fallback-title {
-    color: color-mix(in srgb, var(--mk-callout-accent) 70%, white) !important;
+    color: var(--mk-callout-accent) !important;
+    font-weight: 700;
   }
 
   .dark .mk-cm-frontmatter {
@@ -3996,10 +4029,8 @@ select {
     color: #e4e4e7;
   }
 
-  .dark .mk-cm-mermaid-source {
-    color: #a1a1aa;
-  }
-
+  .dark .mk-cm-mermaid-copy,
+  .dark .mk-cm-mermaid-source,
   .dark .mk-cm-mermaid-expand {
     color: #a1a1aa;
   }
@@ -4008,16 +4039,18 @@ select {
     color: rgba(161, 161, 170, 0.85);
   }
 
+  .dark .mk-cm-mermaid-copy:hover,
+  .dark .mk-cm-mermaid-copy:focus-visible,
   .dark .mk-cm-mermaid-expand:hover,
-  .dark .mk-cm-mermaid-expand:focus-visible {
-    background: rgba(63, 63, 70, 0.9);
-    color: #f4f4f5;
-  }
-
+  .dark .mk-cm-mermaid-expand:focus-visible,
   .dark .mk-cm-mermaid-source:hover,
   .dark .mk-cm-mermaid-source:focus-visible {
     background: rgba(63, 63, 70, 0.9);
     color: #f4f4f5;
+  }
+
+  .dark .mk-cm-mermaid-copy--ok {
+    color: #4ade80 !important;
   }
 
   .dark .mk-table-column-drag-handle,
@@ -4232,7 +4265,7 @@ select {
 
   .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) .mk-word-callout-title,
   .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) .mk-word-callout-title span {
-    color: color-mix(in srgb, var(--mk-callout-accent) 70%, white) !important;
+    color: var(--mk-callout-accent) !important;
   }
 
   .dark .mk-word-preview-page:not(.mk-word-preview-page--paper-light) pre {
