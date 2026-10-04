@@ -401,11 +401,11 @@ async function loadMermaid(dark: boolean) {
 
   const mermaid = await mermaidReady;
   if (currentTheme !== wanted) {
-    // 主题变了要重新初始化并清缓存，否则深色模式下拿到的还是浅色图。
+    // 主题变了要重新初始化 mermaid 引擎，但保留已有的 svgCache 和 pngCache：
+    // cacheKey 已经由 "d:" / "l:" 天然区分深浅色，保留缓存可让用户来回切换深浅色时瞬间秒开，
+    // 彻底避免图表高度瞬间坍缩导致页面滚动位置丢失。
     mermaid.initialize(mermaidConfig(wanted));
     currentTheme = wanted;
-    svgCache.clear();
-    pngCache.clear();
   }
   return mermaid;
 }

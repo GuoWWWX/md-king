@@ -384,6 +384,16 @@ export class MermaidWidget extends WidgetType {
       return container;
     }
 
+    // 若当前深浅色尚未缓存，但相反主题已有缓存，用相反主题的尺寸撑开容器最小高度，
+    // 避免切换主题时由于异步重绘导致图表高度瞬间坍缩、页面跳动或滚动位置被重置。
+    const peerCached = getCachedMermaidSvg(this.source, !this.dark);
+    if (peerCached?.height) {
+      host.style.minHeight = `${Math.round(peerCached.height + 28)}px`;
+    } else {
+      // 未命中任何缓存时，也提供合理的默认占位高度，防止异步渲染过程导致整篇文档高度瞬间坍缩
+      host.style.minHeight = "180px";
+    }
+
     host.dataset.state = "loading";
     canvas.textContent = "正在渲染图表…";
 
@@ -393,13 +403,17 @@ export class MermaidWidget extends WidgetType {
         // 这时候往里写东西没有意义，isConnected 判掉。
         if (!canvas.isConnected) return;
         delete host.dataset.state;
+        host.style.minHeight = "";
         canvas.innerHTML = svg;
+        view.requestMeasure();
       })
       .catch((error: unknown) => {
         if (!canvas.isConnected) return;
         host.dataset.state = "error";
+        host.style.minHeight = "";
         // 语法错误要给出原文，否则用户不知道图为什么画不出来。
         canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
+        view.requestMeasure();
       });
 
     return container;

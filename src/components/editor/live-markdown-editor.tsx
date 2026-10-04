@@ -365,6 +365,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   }
 
   function restoreScrollPosition(view: EditorView, state: LiveMarkdownViewState | undefined, targetDocumentId = activeDocumentIdRef.current) {
+    if (!state && view.scrollDOM.scrollTop > 0) {
+      // 当未传入有效目标视口状态且当前视图已有浏览位置时，保持当前位置，绝不强制归零回到第一行
+      return;
+    }
     if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
     if (restoreScrollReleaseTimerRef.current !== undefined) window.clearTimeout(restoreScrollReleaseTimerRef.current);
     restoringDocumentIdRef.current = targetDocumentId;
@@ -732,9 +736,24 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     });
   }, [documentTitle, documentTitleCompartment, documentTitleEditable]);
 
-  // 主题热替换：只换 compartment 内容，view 保持不变，所以光标和 undo 历史都在。
+  // 主题热替换：只换 compartment 内容，view 保持不变，同时锁住当前视口阅读锚点行，
+  // 杜绝因字体、行高、样式重新计算或块级组件重绘导致用户阅读位置跳动或回到第一行。
   useEffect(() => {
-    viewRef.current?.dispatch({
+    const view = viewRef.current;
+    if (!view) return;
+
+    const scrollTop = view.scrollDOM.scrollTop;
+    let lineAnchor: number | undefined;
+    let lineOffset = 0;
+    try {
+      const scrollBlock = view.lineBlockAtHeight(scrollTop);
+      lineAnchor = scrollBlock.from;
+      lineOffset = scrollBlock.top - scrollTop;
+    } catch {
+      // 视口测量防御
+    }
+
+    view.dispatch({
       effects: [
         themeCompartment.reconfigure(markdownEditorTheme(isDark)),
         cursorCompartment.reconfigure(markdownCursorExtension(isDark)),
@@ -742,6 +761,28 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
         mermaidCompartment.reconfigure(mermaidBlockExtension(isDark, !readOnly)),
       ],
     });
+
+    if (lineAnchor !== undefined) {
+      view.requestMeasure({
+        read(currentView) {
+          try {
+            const newBlock = currentView.lineBlockAt(lineAnchor);
+            const targetTop = newBlock.top - lineOffset;
+            return Math.min(
+              Math.max(0, targetTop),
+              Math.max(0, currentView.scrollDOM.scrollHeight - currentView.scrollDOM.clientHeight),
+            );
+          } catch {
+            return scrollTop;
+          }
+        },
+        write(targetScrollTop, currentView) {
+          if (Math.abs(currentView.scrollDOM.scrollTop - targetScrollTop) > 0.5) {
+            currentView.scrollDOM.scrollTop = targetScrollTop;
+          }
+        },
+      });
+    }
   }, [cursorCompartment, frontmatterCompartment, isDark, mermaidCompartment, readOnly, themeCompartment]);
 
   useEffect(() => {
