@@ -2112,6 +2112,46 @@ select {
     transform: translateY(-50%);
   }
 
+  /* 带文字居中分割线（--- ABC）：行居中，两端延伸横线，文字两端各隔一个空格 */
+  .mk-cm-hr-text {
+    position: relative;
+    text-align: center;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.5;
+    padding: 6px 0;
+  }
+
+  .mk-cm-hr-text-content {
+    position: relative;
+    display: inline-block;
+    padding: 0 0.75em;
+    user-select: text;
+  }
+
+  .mk-cm-hr-text-content::before,
+  .mk-cm-hr-text-content::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: 9999px;
+    height: 1.5px;
+    background: rgba(148, 163, 184, 0.6);
+    border-radius: 1px;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .mk-cm-hr-text-content::before {
+    right: 100%;
+  }
+
+  .mk-cm-hr-text-content::after {
+    left: 100%;
+  }
+
   .mk-cm-source-indent-1 { --mk-cm-source-indent: 32px; padding-left: 32px !important; }
   .mk-cm-source-indent-2 { --mk-cm-source-indent: 64px; padding-left: 64px !important; }
   .mk-cm-source-indent-3 { --mk-cm-source-indent: 96px; padding-left: 96px !important; }
@@ -3761,6 +3801,15 @@ select {
   }
 
   .dark .mk-cm-hr::before {
+    background: rgba(100, 116, 139, 0.5);
+  }
+
+  .dark .mk-cm-hr-text {
+    color: #94a3b8;
+  }
+
+  .dark .mk-cm-hr-text-content::before,
+  .dark .mk-cm-hr-text-content::after {
     background: rgba(100, 116, 139, 0.5);
   }
 

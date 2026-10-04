@@ -7,6 +7,7 @@ import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { findBlockMarkdownMath, findInlineMarkdownMath } from "@/lib/markdown-math";
 import { findRelaxedStrongRanges } from "@/lib/relaxed-strong";
 import { findRelaxedEmphasisRanges } from "@/lib/relaxed-emphasis";
+import { parseHorizontalRuleText } from "@/lib/horizontal-rule-text";
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate, type WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
@@ -692,6 +693,40 @@ function handleHorizontalRule(collector: DecorationCollector, ref: SyntaxNodeRef
   hide(collector, line.from, line.to);
 }
 
+/**
+ * 带文字居中分割线（如 `--- ABC` 或 `--- 阶段总结 ---`）：
+ * 光标未处于行内时，隐藏前缀（及可选后缀），将整行渲染为两端延伸横线、中间文字留空格间隙的居中分割线；
+ * 光标处于行内或被选中时，展开完整 Markdown 源码。
+ */
+function handleTextDivider(collector: DecorationCollector, ref: SyntaxNodeRef): void {
+  const state = collector.state;
+  const line = state.doc.lineAt(ref.from);
+  if (ref.from !== line.from || ref.to !== line.to) return;
+
+  const quotePrefixMatch = line.text.match(/^\s*>[ \t]?/);
+  const quoteOffset = quotePrefixMatch ? quotePrefixMatch[0].length : 0;
+  const lineText = line.text.slice(quoteOffset);
+
+  const parsed = parseHorizontalRuleText(lineText);
+  if (!parsed) return;
+
+  const editing = cursorLine(collector, line.from, line.to) || sourceSelected(collector, line.from, line.to);
+  if (editing) return;
+
+  const { prefix, text, suffix } = parsed;
+
+  addLine(collector, line.from, "mk-cm-hr-text");
+  const prefixStart = line.from + quoteOffset;
+  const textStart = prefixStart + prefix.length;
+  const textEnd = textStart + text.length;
+
+  hide(collector, prefixStart, textStart);
+  addMark(collector, textStart, textEnd, "mk-cm-hr-text-content");
+  if (suffix) {
+    hide(collector, textEnd, line.to);
+  }
+}
+
 function handleListMark(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const state = collector.state;
   const line = state.doc.lineAt(ref.from);
@@ -908,6 +943,9 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
             return;
           case "HorizontalRule":
             handleHorizontalRule(collector, ref);
+            return;
+          case "Paragraph":
+            handleTextDivider(collector, ref);
             return;
           case "ListMark":
             handleListMark(collector, ref);

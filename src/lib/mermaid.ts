@@ -46,12 +46,10 @@ const MERMAID_THEME_CSS = `
 `;
 
 function mermaidConfig(theme: "default" | "dark") {
+  const isDark = theme === "dark";
   return {
     startOnLoad: false,
-    // 保留节点的原始配色，避免 dark 主题把浅色自定义节点的文字改成浅色。
     theme: "default" as const,
-    // securityLevel 保持 strict：图里的文本来自用户文档，
-    // 放开会让 mermaid 允许内联脚本和外部资源。
     securityLevel: "strict" as const,
     htmlLabels: true,
     fontFamily: MERMAID_FONT_FAMILY,
@@ -59,54 +57,243 @@ function mermaidConfig(theme: "default" | "dark") {
     markdownAutoWrap: true,
     themeVariables: {
       fontSize: `${MERMAID_FONT_SIZE}px`,
-      ...(theme === "dark" ? { lineColor: "#a1a1aa" } : {}),
+      lineColor: isDark ? "#fbbf24" : "#b45309",
     },
-    themeCSS: MERMAID_THEME_CSS + (theme === "dark" ? `
-.relation { stroke: #a1a1aa !important; }
-/* 流程图子图卡片与标题在深色模式下高对比度 */
-.cluster rect { fill: #1e293b !important; stroke: #475569 !important; }
-.cluster-label text, .cluster-label span, .cluster-label .nodeLabel { fill: #f1f5f9 !important; color: #f1f5f9 !important; }
-/* 连线与标签文字 */
-.edgeLabel text, .edgeLabel span { fill: #e2e8f0 !important; color: #e2e8f0 !important; }
-.edgePath .path { stroke: #94a3b8 !important; }
-/* 时序图消息文字、生命线、箭头、参与者与便签/循环条件高对比度 */
-.messageText { fill: #f1f5f9 !important; }
-.messageLine0, .messageLine1, .actor-line, .innerArc { stroke: #94a3b8 !important; }
-.messageLine0, .messageLine1 { fill: none !important; }
-[id$="-arrowhead"] path, [id$="-crosshead"] path { fill: #f1f5f9 !important; stroke: #f1f5f9 !important; }
-.actor text, .actor tspan { fill: #f1f5f9 !important; }
-.actor rect { fill: #27272a !important; stroke: #64748b !important; }
-.noteText, .noteText tspan { fill: #f1f5f9 !important; }
-.note { fill: #1e293b !important; stroke: #475569 !important; }
-.labelText, .loopText, .loopText tspan { fill: #f1f5f9 !important; }
-.loopLine { stroke: #64748b !important; }
-/* 状态图 stateDiagram 状态名、转移说明与便签 */
-.state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text { fill: #f1f5f9 !important; color: #f1f5f9 !important; }
-.statediagram-state rect { fill: #27272a !important; stroke: #64748b !important; }
-.statediagram-note rect { fill: #1e293b !important; stroke: #475569 !important; }
-/* 实体关系图 ER Diagram */
-.er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text { fill: #f1f5f9 !important; }
-.er.entityBox { fill: #27272a !important; stroke: #64748b !important; }
-.er.attributeBoxOdd { fill: #1f2023 !important; }
-.er.attributeBoxEven { fill: #27272a !important; }
-.er.relationshipLine { stroke: #94a3b8 !important; }
-/* 类图关系重数与命名空间 */
-.classTitle text { fill: #f1f5f9 !important; }
-.relationLabel { fill: #e2e8f0 !important; }
-/* classDiagram 的默认节点略微加深紫色，避免深色背景下发白；文字仍保持深色对比度。 */
-.node[id*="classId-"] .outer-path path:first-child { fill: #ccd2f2 !important; }
-/* flowchart 的矩形/菱形节点使用同一套浅蓝紫色，避免深色模式出现白色卡片。 */
+    themeCSS: MERMAID_THEME_CSS + (isDark ? `
+/* ====== 深色模式：方案 B 暖金/琥珀夜光体系 ====== */
+/* 流程图子图（Cluster）容器与标题 */
+.cluster rect {
+  fill: #261e14 !important;
+  stroke: #d97706 !important;
+  stroke-width: 1.5px !important;
+  rx: 6px !important;
+  ry: 6px !important;
+}
+.cluster-label text, .cluster-label span, .cluster-label .nodeLabel {
+  fill: #fde68a !important;
+  color: #fde68a !important;
+  font-weight: 600 !important;
+}
+
+/* 流程图节点小方块（矩形、多边形/菱形、圆形等） */
 .node[id*="-flowchart-"] rect,
-.node[id*="-flowchart-"] polygon { fill: #ccd2f2 !important; }
-` : ""),
+.node[id*="-flowchart-"] polygon,
+.node[id*="-flowchart-"] circle,
+.node[id*="-flowchart-"] ellipse,
+.node[id*="-flowchart-"] path {
+  fill: #382613 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+.node .nodeLabel,
+.node text,
+.node span {
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
+}
+
+/* 连线与连线标签 */
+.relation, .edgePath .path {
+  stroke: #fbbf24 !important;
+}
+[id$="-arrowhead"] path, [id$="-crosshead"] path, marker path {
+  fill: #fbbf24 !important;
+  stroke: #fbbf24 !important;
+}
+.edgeLabel text, .edgeLabel span {
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
+}
+
+/* 时序图 (Sequence Diagram) */
+rect.actor, rect[class*="actor"], .actor rect {
+  fill: #382613 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+text.actor, text[class*="actor"], .actor text, .actor tspan {
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
+}
+circle.actor-man, line.actor-man, path.actor-man {
+  stroke: #f59e0b !important;
+  fill: #382613 !important;
+}
+.actor-line {
+  stroke: #b45309 !important;
+}
+.messageText {
+  fill: #fef3c7 !important;
+}
+.messageLine0, .messageLine1 {
+  stroke: #fbbf24 !important;
+}
+.note {
+  fill: #292015 !important;
+  stroke: #d97706 !important;
+}
+.noteText, .noteText tspan {
+  fill: #fef3c7 !important;
+}
+.labelText, .loopText, .loopText tspan {
+  fill: #fde68a !important;
+  font-weight: 600 !important;
+}
+.loopLine {
+  stroke: #d97706 !important;
+}
+
+/* 状态图 (State Diagram) */
+.statediagram-state rect {
+  fill: #382613 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+.state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text {
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
+}
+.statediagram-note rect {
+  fill: #292015 !important;
+  stroke: #d97706 !important;
+}
+
+/* 类图与 ER 图 */
+.classTitle text { fill: #fef3c7 !important; }
+.relationLabel { fill: #fef3c7 !important; }
+.node[id*="classId-"] .outer-path path:first-child {
+  fill: #382613 !important;
+  stroke: #f59e0b !important;
+}
+.er.entityBox { fill: #382613 !important; stroke: #f59e0b !important; }
+.er.attributeBoxOdd { fill: #261e14 !important; }
+.er.attributeBoxEven { fill: #382613 !important; }
+.er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
+  fill: #fef3c7 !important;
+}
+.er.relationshipLine { stroke: #fbbf24 !important; }
+` : `
+/* ====== 浅色模式：方案 B 暖金/琥珀日间体系 ====== */
+/* 流程图子图（Cluster）容器与标题 */
+.cluster rect {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+  rx: 6px !important;
+  ry: 6px !important;
+}
+.cluster-label text, .cluster-label span, .cluster-label .nodeLabel {
+  fill: #78350f !important;
+  color: #78350f !important;
+  font-weight: 600 !important;
+}
+
+/* 流程图节点小方块（矩形、多边形/菱形、圆形等） */
+.node[id*="-flowchart-"] rect,
+.node[id*="-flowchart-"] polygon,
+.node[id*="-flowchart-"] circle,
+.node[id*="-flowchart-"] ellipse,
+.node[id*="-flowchart-"] path {
+  fill: #fef3c7 !important;
+  stroke: #d97706 !important;
+  stroke-width: 1.5px !important;
+}
+.node .nodeLabel,
+.node text,
+.node span {
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
+}
+
+/* 连线与连线标签 */
+.relation, .edgePath .path {
+  stroke: #b45309 !important;
+}
+[id$="-arrowhead"] path, [id$="-crosshead"] path, marker path {
+  fill: #b45309 !important;
+  stroke: #b45309 !important;
+}
+.edgeLabel text, .edgeLabel span {
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
+}
+
+/* 时序图 (Sequence Diagram) */
+rect.actor, rect[class*="actor"], .actor rect {
+  fill: #fef3c7 !important;
+  stroke: #d97706 !important;
+  stroke-width: 1.5px !important;
+}
+text.actor, text[class*="actor"], .actor text, .actor tspan {
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
+}
+circle.actor-man, line.actor-man, path.actor-man {
+  stroke: #d97706 !important;
+  fill: #fef3c7 !important;
+}
+.actor-line {
+  stroke: #d97706 !important;
+}
+.messageText {
+  fill: #1c1917 !important;
+}
+.messageLine0, .messageLine1 {
+  stroke: #b45309 !important;
+}
+.note {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+}
+.noteText, .noteText tspan {
+  fill: #1c1917 !important;
+}
+.labelText, .loopText, .loopText tspan {
+  fill: #78350f !important;
+  font-weight: 600 !important;
+}
+.loopLine {
+  stroke: #d97706 !important;
+}
+
+/* 状态图 (State Diagram) */
+.statediagram-state rect {
+  fill: #fef3c7 !important;
+  stroke: #d97706 !important;
+  stroke-width: 1.5px !important;
+}
+.state-title, .transitionLabel, .state-note, .statediagram-state text, .statediagram-note text, .state-title text {
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
+}
+.statediagram-note rect {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+}
+
+/* 类图与 ER 图 */
+.classTitle text { fill: #1c1917 !important; }
+.relationLabel { fill: #1c1917 !important; }
+.node[id*="classId-"] .outer-path path:first-child {
+  fill: #fef3c7 !important;
+  stroke: #d97706 !important;
+}
+.er.entityBox { fill: #fef3c7 !important; stroke: #d97706 !important; }
+.er.attributeBoxOdd { fill: #fffbeb !important; }
+.er.attributeBoxEven { fill: #fef3c7 !important; }
+.er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
+  fill: #1c1917 !important;
+}
+.er.relationshipLine { stroke: #b45309 !important; }
+`),
     flowchart: {
       htmlLabels: true,
       useMaxWidth: false,
       wrappingWidth: MERMAID_LABEL_WRAP_WIDTH,
-      nodeSpacing: 40,
-      rankSpacing: 44,
-      padding: 18,
-      subGraphTitleMargin: { top: 14, bottom: 28 },
+      nodeSpacing: 42,
+      rankSpacing: 48,
+      padding: 20,
+      subGraphTitleMargin: { top: 16, bottom: 32 },
     },
   };
 }
@@ -193,7 +380,7 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       if (!bounds.width || !bounds.height) continue;
       const x = bounds.x + bounds.width / 2;
       const y = bounds.y + bounds.height / 2;
-      let rgb = dark ? [34, 34, 34] : [255, 255, 255];
+      let rgb = dark ? [24, 24, 27] : [255, 255, 255];
       for (const cluster of clusters) {
         const b = cluster.bounds;
         if (x < b.left || x > b.right || y < b.top || y > b.bottom) continue;
@@ -207,7 +394,7 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
         return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
       });
       const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
-      const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#222222" : "#ffffff";
+      const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#1c1917" : "#fef3c7";
       const background = `rgb(${rgb.map((channel) => Math.round(channel)).join(", ")})`;
       // 内联到文字本身，SVG 单独展示和 PNG 栅格化时也能保留，不依赖页面 CSS。
       for (const element of [label, ...label.querySelectorAll<SVGElement | HTMLElement>("div,span,p,text,tspan")]) {

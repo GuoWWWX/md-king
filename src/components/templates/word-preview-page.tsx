@@ -23,6 +23,7 @@ import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCall
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
 import { extractExplicitImageCaptions } from "@/lib/markdown-image-caption";
 import { normalizeAdjacentBoldTableCaptions } from "@/lib/markdown-block-caption";
+import { parseHorizontalRuleText } from "@/lib/horizontal-rule-text";
 import { isConventionalUnnumberedHeading, parseUnnumberedHeadingText } from "@/lib/markdown-heading-attributes";
 import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "@/lib/markdown-inline-html";
@@ -71,7 +72,7 @@ type PreviewBlock =
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number; caption?: string; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "math"; text: string }
-  | { type: "hr" }
+  | { type: "hr"; text?: string }
   | { type: "list"; items: PreviewListItem[]; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "image"; src?: string; alt?: string; caption?: string }
   | { type: "table"; caption?: string; header?: PreviewTableCell[]; rows: PreviewTableCell[][]; bodyRowOffset?: number; columnWidthPercentages?: number[] };
@@ -1255,6 +1256,12 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         index += 2;
         continue;
       }
+      const parsedHr = next.content ? parseHorizontalRuleText(next.content) : null;
+      if (parsedHr) {
+        blocks.push({ type: "hr", text: parsedHr.text });
+        index += 2;
+        continue;
+      }
       blocks.push({ type: "paragraph", segments: inlineSegmentsFromToken(next) });
       index += 2;
       continue;
@@ -1647,7 +1654,8 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   if (block.type === "hr") {
     const draft = drafts["horizontal-rule"];
-    return ptToPx(draft.beforeSpacing + draft.afterSpacing + Math.max(0.25, draft.borderWidth));
+    const textExtra = block.text ? 18 : 0;
+    return ptToPx(draft.beforeSpacing + draft.afterSpacing + Math.max(0.25, draft.borderWidth)) + textExtra;
   }
 
   if (block.type === "list") {
@@ -2263,6 +2271,35 @@ function renderMarkdownBlocks({
 
     if (block.type === "hr") {
       const draft = drafts["horizontal-rule"];
+      if (block.text) {
+        rendered.push(
+          <div
+            key={index}
+            className={cn("flex items-center text-center overflow-hidden", selectedRing(selectedStyle, "horizontal-rule"))}
+            style={{
+              marginTop: `${draft.beforeSpacing}pt`,
+              marginBottom: `${draft.afterSpacing}pt`,
+            }}
+          >
+            <div
+              className="flex-1"
+              style={{
+                borderTop: `${Math.max(0.25, draft.borderWidth)}pt ${draft.borderStyle} ${draft.borderColor}`,
+              }}
+            />
+            <span className="px-3 text-sm text-slate-500 dark:text-slate-400 font-medium shrink-0">
+              {block.text}
+            </span>
+            <div
+              className="flex-1"
+              style={{
+                borderTop: `${Math.max(0.25, draft.borderWidth)}pt ${draft.borderStyle} ${draft.borderColor}`,
+              }}
+            />
+          </div>,
+        );
+        return;
+      }
       rendered.push(
         <hr
           key={index}

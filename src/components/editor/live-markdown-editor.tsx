@@ -637,6 +637,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       parent: host,
     });
     viewRef.current = view;
+    (window as any).__mk_editor_view = view;
     let visibleLineRafId: number | undefined;
     const reportVisibleLine = () => {
       if (visibleLineRafId !== undefined) return;
@@ -708,6 +709,9 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       document.removeEventListener("pointerdown", clearTableContextOnOutsidePointer, true);
       view.destroy();
       viewRef.current = null;
+      if (typeof window !== "undefined" && (window as any).__mk_editor_view === view) {
+        delete (window as any).__mk_editor_view;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
