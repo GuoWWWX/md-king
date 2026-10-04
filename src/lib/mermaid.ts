@@ -19,7 +19,7 @@ let mermaidReady: Promise<typeof import("mermaid").default> | undefined;
 let currentTheme: "default" | "dark" = "default";
 const MERMAID_FONT_FAMILY = "Microsoft YaHei, Segoe UI Emoji, sans-serif";
 const MERMAID_FONT_SIZE = 14;
-const MERMAID_LABEL_WRAP_WIDTH = 160;
+const MERMAID_LABEL_WRAP_WIDTH = 240;
 const MERMAID_THEME_CSS = `
 .nodeLabel {
   display: inline-block;
@@ -33,6 +33,28 @@ const MERMAID_THEME_CSS = `
 .nodeLabel p { margin: 0; }
 .cluster-label { padding-bottom: 8px; }
 .cluster-label .nodeLabel { max-width: 480px; font-weight: 600; line-height: 1.35; }
+/* 类图方法与属性列表：单行完整舒展展现，不限宽度、不折行，左对齐展示代码签名 */
+g.classGroup .nodeLabel,
+.node[id*="classId-"] .nodeLabel,
+g.classGroup div,
+.node[id*="classId-"] div,
+g.classGroup span,
+.node[id*="classId-"] span,
+g.classGroup p,
+.node[id*="classId-"] p {
+  max-width: none !important;
+  white-space: nowrap !important;
+  text-align: left !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+/* 类名标题保持居中加粗 */
+g.classGroup .classTitle .nodeLabel,
+.node[id*="classId-"] .classTitle .nodeLabel,
+.classTitle,
+.classTitleText {
+  text-align: center !important;
+}
 /* 连线标签只显示文字，不绘制 Mermaid 默认的背景块。 */
 .edgeLabel,
 .edgeLabel *,
@@ -220,9 +242,20 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 /* 类图与 ER 图 */
 .classTitle text { fill: #fef3c7 !important; }
 .relationLabel { fill: #fef3c7 !important; }
-.node[id*="classId-"] .outer-path path:first-child {
+.node[id*="classId-"] .outer-path path:first-child,
+g.classGroup rect,
+.node[id*="classId-"] rect {
   fill: #382613 !important;
   stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+g.classGroup line, .node[id*="classId-"] line, .divider {
+  stroke: #f59e0b !important;
+  stroke-width: 1px !important;
+}
+g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="classId-"] span {
+  fill: #fef3c7 !important;
+  color: #fef3c7 !important;
 }
 .er.entityBox { fill: #382613 !important; stroke: #f59e0b !important; }
 .er.attributeBoxOdd { fill: #261e14 !important; }
@@ -365,9 +398,20 @@ text.actor, text[class*="actor"], .actor text, .actor tspan {
 /* 类图与 ER 图 */
 .classTitle text { fill: #1c1917 !important; }
 .relationLabel { fill: #1c1917 !important; }
-.node[id*="classId-"] .outer-path path:first-child {
+.node[id*="classId-"] .outer-path path:first-child,
+g.classGroup rect,
+.node[id*="classId-"] rect {
   fill: #fef3c7 !important;
   stroke: #f59e0b !important;
+  stroke-width: 1.5px !important;
+}
+g.classGroup line, .node[id*="classId-"] line, .divider {
+  stroke: #f59e0b !important;
+  stroke-width: 1px !important;
+}
+g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="classId-"] span {
+  fill: #1c1917 !important;
+  color: #1c1917 !important;
 }
 .er.entityBox { fill: #fef3c7 !important; stroke: #f59e0b !important; }
 .er.attributeBoxOdd { fill: #fffbeb !important; }

@@ -2411,7 +2411,7 @@ select {
   .mk-cm-mermaid {
     position: relative;
     margin: 0;
-    padding: 12px;
+    padding: 36px 14px 14px 14px;
     border: 1px solid rgba(226, 232, 240, 0.95);
     border-radius: 4px;
     /* 同上，与预览侧的图表外框同色，不带透明度。 */
