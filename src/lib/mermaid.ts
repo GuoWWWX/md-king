@@ -680,6 +680,88 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       }
     }
 
+    // 嵌套子图防遮挡与标题避让：检测外层 cluster 标题是否被内层嵌套 cluster 的顶边侵入，自动拉开安全留白
+    const clusterElements = Array.from(root.querySelectorAll<SVGGElement>(".cluster"));
+    const clusterData = clusterElements.map((c) => {
+      const rect = c.querySelector<SVGRectElement>("rect");
+      const label = c.querySelector<SVGGElement>(".cluster-label");
+      const rectY = rect ? parseFloat(rect.getAttribute("y") || "0") : 0;
+      const rectH = rect ? parseFloat(rect.getAttribute("height") || "0") : 0;
+      const rectX = rect ? parseFloat(rect.getAttribute("x") || "0") : 0;
+      const rectW = rect ? parseFloat(rect.getAttribute("width") || "0") : 0;
+      return { cluster: c, rect, label, rectX, rectY, rectW, rectH };
+    });
+
+    for (const parent of clusterData) {
+      if (!parent.rect || !parent.label) continue;
+      const parentLabelFo = parent.label.querySelector("foreignObject");
+      const parentLabelH = parentLabelFo ? parseFloat(parentLabelFo.getAttribute("height") || "24") : 24;
+      const parentLabelMatch = parent.label.getAttribute("transform")?.match(/translate\(([^,]+),\s*([^)]+)\)/);
+      if (!parentLabelMatch) continue;
+      const parentLabelX = parentLabelMatch[1];
+      const parentLabelY = parseFloat(parentLabelMatch[2]);
+      const parentLabelBottom = parentLabelY + parentLabelH;
+
+      // 查找在几何空间上属于 parent 内部的直接子 cluster
+      const children = clusterData.filter((c) =>
+        c !== parent && c.rect &&
+        c.rectX >= parent.rectX - 4 &&
+        c.rectX + c.rectW <= parent.rectX + parent.rectW + 4 &&
+        c.rectY >= parent.rectY - 4 &&
+        c.rectY + c.rectH <= parent.rectY + parent.rectH + 4,
+      );
+
+      if (children.length === 0) continue;
+      const topChild = children.reduce((min, c) => (c.rectY < min.rectY ? c : min), children[0]);
+      if (!topChild?.rect) continue;
+      const minSafeGap = 16;
+      const currentGap = topChild.rectY - parentLabelBottom;
+
+      if (currentGap < minSafeGap) {
+        const deficit = minSafeGap - currentGap;
+        const upShift = Math.max(12, Math.ceil(deficit * 0.55));
+        const downShift = Math.max(10, Math.ceil(deficit * 0.45));
+
+        // 提升父卡片顶部与标题，拓宽外层空间
+        parent.rect.setAttribute("y", String(parent.rectY - upShift));
+        parent.rect.setAttribute("height", String(parent.rectH + upShift));
+        parent.label.setAttribute("transform", `translate(${parentLabelX}, ${parentLabelY - upShift})`);
+
+        // 适度下移子卡片顶边与子标题，消除压盖
+        topChild.rect.setAttribute("y", String(topChild.rectY + downShift));
+        topChild.rect.setAttribute("height", String(Math.max(20, topChild.rectH - downShift)));
+        if (topChild.label) {
+          const childLabelMatch = topChild.label.getAttribute("transform")?.match(/translate\(([^,]+),\s*([^)]+)\)/);
+          if (childLabelMatch) {
+            topChild.label.setAttribute("transform", `translate(${childLabelMatch[1]}, ${parseFloat(childLabelMatch[2]) + downShift * 0.7})`);
+          }
+        }
+      }
+    }
+
+    // 卡片标题与连线文字防重叠避让：检测 cluster-label 与 edgeLabel 是否发生空间撞车
+    for (const cluster of clusterData) {
+      if (!cluster.label) continue;
+      const clusterBbox = cluster.label.getBoundingClientRect();
+      if (!clusterBbox.width || !clusterBbox.height) continue;
+
+      for (const edge of root.querySelectorAll<SVGGElement>("g.edgeLabel")) {
+        const edgeBbox = edge.getBoundingClientRect();
+        if (!edgeBbox.width || !edgeBbox.height) continue;
+
+        const xOverlap = Math.max(0, Math.min(clusterBbox.right, edgeBbox.right) - Math.max(clusterBbox.left, edgeBbox.left));
+        const yOverlap = Math.max(0, Math.min(clusterBbox.bottom, edgeBbox.bottom) - Math.max(clusterBbox.top, edgeBbox.top));
+
+        if (xOverlap > 10 && yOverlap > 0) {
+          const edgeMatch = edge.getAttribute("transform")?.match(/translate\(([^,]+),\s*([^)]+)\)/);
+          if (edgeMatch) {
+            const shiftY = yOverlap + 14;
+            edge.setAttribute("transform", `translate(${edgeMatch[1]}, ${parseFloat(edgeMatch[2]) - shiftY})`);
+          }
+        }
+      }
+    }
+
     // 时序图 autonumber 序号文字垂直居中校准：消除 Mermaid 原生硬编码的 y 偏移，绝对对齐圆球中心
     for (const seq of root.querySelectorAll<SVGTextElement>(".sequenceNumber, text[class*='sequenceNumber']")) {
       const currentY = parseFloat(seq.getAttribute("y") || "0");
