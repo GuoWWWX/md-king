@@ -178,8 +178,8 @@ function mermaidConfig(theme: "default" | "dark") {
 .node .nodeLabel,
 .node text,
 .node span {
-  fill: #fbbf24 !important;
-  color: #fbbf24 !important;
+  fill: #fde68a !important;
+  color: #fde68a !important;
 }
 
 /* 连线与连线标签 */
@@ -361,8 +361,8 @@ g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="cla
 .node .nodeLabel,
 .node text,
 .node span {
-  fill: #c2410c !important;
-  color: #c2410c !important;
+  fill: #ea580c !important;
+  color: #ea580c !important;
 }
 
 /* 连线与连线标签 */
@@ -1013,7 +1013,9 @@ export function applyNodeTextBorderColor(root: Element, dark: boolean) {
     const hasExplicitTextColor = /(?:^|;)\s*color\s*:\s*([^;!]+)/i.test(nodeStyle);
 
     if (!hasExplicitTextColor) {
-      const targetColor = customStroke || (dark ? "#fbbf24" : "#c2410c");
+      const targetColor = customStroke
+        ? (dark ? `color-mix(in srgb, ${customStroke} 75%, #ffffff)` : customStroke)
+        : (dark ? "#fde68a" : "#ea580c");
       for (const textEl of node.querySelectorAll<HTMLElement | SVGElement>("div, span, p, text, tspan")) {
         const elStyle = textEl.getAttribute("style") || "";
         if (!/(?:^|;)\s*(?:color|fill)\s*:\s*([^;!]+)/i.test(elStyle)) {

@@ -173,12 +173,12 @@ test("applyNodeTextBorderColor 智能让节点文字颜色继承边框色", asyn
   root1.children.push(node1);
 
   applyNodeTextBorderColor(root1 as unknown as Element, true);
-  assert.equal(text1.style.getPropertyValue("color"), "#10b981");
-  assert.equal(text1.style.getPropertyValue("fill"), "#10b981");
+  assert.equal(text1.style.getPropertyValue("color"), "color-mix(in srgb, #10b981 75%, #ffffff)");
+  assert.equal(text1.style.getPropertyValue("fill"), "color-mix(in srgb, #10b981 75%, #ffffff)");
   assert.equal(rect1.style.getPropertyValue("stroke"), "#10b981");
   assert.equal(rect1.style.getPropertyValue("fill"), "color-mix(in srgb, #10b981 20%, #202020)");
 
-  // 场景 2：未指定任何自定义颜色的默认方块，文字默认继承对应主题的橙色
+  // 场景 2：未指定任何自定义颜色的默认方块，文字默认继承对应主题的浅明暖橙色
   const root2 = createMockElement("svg");
   const node2 = createMockElement("g", "node");
   const rect2 = createMockElement("rect");
@@ -187,9 +187,9 @@ test("applyNodeTextBorderColor 智能让节点文字颜色继承边框色", asyn
   root2.children.push(node2);
 
   applyNodeTextBorderColor(root2 as unknown as Element, true);
-  assert.equal(span2.style.getPropertyValue("color"), "#fbbf24"); // 深色模式明亮橙
+  assert.equal(span2.style.getPropertyValue("color"), "#fde68a"); // 深色模式浅金暖橙，略微浅一点点
 
-  // 浅色模式默认深橙色
+  // 浅色模式默认明朗暖橙
   const root3 = createMockElement("svg");
   const node3 = createMockElement("g", "node");
   const rect3 = createMockElement("rect");
@@ -198,7 +198,7 @@ test("applyNodeTextBorderColor 智能让节点文字颜色继承边框色", asyn
   root3.children.push(node3);
 
   applyNodeTextBorderColor(root3 as unknown as Element, false);
-  assert.equal(span3.style.getPropertyValue("color"), "#c2410c"); // 浅色模式高对比饱满深橙
+  assert.equal(span3.style.getPropertyValue("color"), "#ea580c"); // 浅色模式明朗暖橙，略微浅一点点
 
   // 场景 3：显式指定了 color 的节点，不强制覆盖用户定义的文字颜色
   const root4 = createMockElement("svg");
