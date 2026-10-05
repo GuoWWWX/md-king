@@ -178,8 +178,8 @@ function mermaidConfig(theme: "default" | "dark") {
 .node .nodeLabel,
 .node text,
 .node span {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
+  fill: #fbbf24 !important;
+  color: #fbbf24 !important;
 }
 
 /* 连线与连线标签 */
@@ -361,8 +361,8 @@ g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="cla
 .node .nodeLabel,
 .node text,
 .node span {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
+  fill: #c2410c !important;
+  color: #c2410c !important;
 }
 
 /* 连线与连线标签 */
@@ -680,16 +680,21 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       }
     }
 
-    // 嵌套子图防遮挡与标题避让：检测外层 cluster 标题是否被内层嵌套 cluster 的顶边侵入，自动拉开安全留白
+    // 嵌套子图防遮挡与标题避让：使用相对于 SVG 的绝对屏幕全局几何坐标，精准判定父子包含关系
+    const rootBbox = root.getBoundingClientRect();
     const clusterElements = Array.from(root.querySelectorAll<SVGGElement>(".cluster"));
     const clusterData = clusterElements.map((c) => {
       const rect = c.querySelector<SVGRectElement>("rect");
       const label = c.querySelector<SVGGElement>(".cluster-label");
-      const rectY = rect ? parseFloat(rect.getAttribute("y") || "0") : 0;
-      const rectH = rect ? parseFloat(rect.getAttribute("height") || "0") : 0;
-      const rectX = rect ? parseFloat(rect.getAttribute("x") || "0") : 0;
-      const rectW = rect ? parseFloat(rect.getAttribute("width") || "0") : 0;
-      return { cluster: c, rect, label, rectX, rectY, rectW, rectH };
+      const rectBbox = rect ? rect.getBoundingClientRect() : null;
+      const labelBbox = label ? label.getBoundingClientRect() : null;
+      const localRectY = rect ? parseFloat(rect.getAttribute("y") || "0") : 0;
+      const localRectH = rect ? parseFloat(rect.getAttribute("height") || "0") : 0;
+      const globalX = rectBbox ? rectBbox.left - rootBbox.left : 0;
+      const globalY = rectBbox ? rectBbox.top - rootBbox.top : 0;
+      const globalW = rectBbox ? rectBbox.width : 0;
+      const globalH = rectBbox ? rectBbox.height : 0;
+      return { cluster: c, rect, label, localRectY, localRectH, globalX, globalY, globalW, globalH, labelBbox };
     });
 
     for (const parent of clusterData) {
@@ -700,40 +705,47 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       if (!parentLabelMatch) continue;
       const parentLabelX = parentLabelMatch[1];
       const parentLabelY = parseFloat(parentLabelMatch[2]);
-      const parentLabelBottom = parentLabelY + parentLabelH;
+      const parentLabelBottom = parent.labelBbox ? parent.labelBbox.bottom - rootBbox.top : (parent.globalY + parentLabelH);
 
-      // 查找在几何空间上属于 parent 内部的直接子 cluster
+      // 仅当子 cluster 在全局坐标上真正被包含在 parent 内部（且有明显内缩）或 DOM 包含时才判定为嵌套子图，
+      // 彻底避免同级平行的多个子图因局部坐标同为 (8, 8) 而被误判为嵌套，进而导致负坐标裁切
       const children = clusterData.filter((c) =>
         c !== parent && c.rect &&
-        c.rectX >= parent.rectX - 4 &&
-        c.rectX + c.rectW <= parent.rectX + parent.rectW + 4 &&
-        c.rectY >= parent.rectY - 4 &&
-        c.rectY + c.rectH <= parent.rectY + parent.rectH + 4,
+        (parent.cluster.contains(c.cluster) || (
+          c.globalX >= parent.globalX + 2 &&
+          c.globalX + c.globalW <= parent.globalX + parent.globalW - 2 &&
+          c.globalY >= parent.globalY + 2 &&
+          c.globalY + c.globalH <= parent.globalY + parent.globalH - 2
+        ))
       );
 
       if (children.length === 0) continue;
-      const topChild = children.reduce((min, c) => (c.rectY < min.rectY ? c : min), children[0]);
+      const topChild = children.reduce((min, c) => (c.globalY < min.globalY ? c : min), children[0]);
       if (!topChild?.rect) continue;
       const minSafeGap = 16;
-      const currentGap = topChild.rectY - parentLabelBottom;
+      const currentGap = topChild.globalY - parentLabelBottom;
 
       if (currentGap < minSafeGap) {
         const deficit = minSafeGap - currentGap;
-        const upShift = Math.max(12, Math.ceil(deficit * 0.55));
-        const downShift = Math.max(10, Math.ceil(deficit * 0.45));
+        // 向上扩展父卡片时受限于父卡片本地坐标，不得使其变为负数以免顶沿被视口裁剪
+        const maxSafeUpShift = Math.max(0, parent.localRectY);
+        const upShift = Math.min(maxSafeUpShift, Math.ceil(deficit * 0.5));
+        const downShift = deficit - upShift;
 
-        // 提升父卡片顶部与标题，拓宽外层空间
-        parent.rect.setAttribute("y", String(parent.rectY - upShift));
-        parent.rect.setAttribute("height", String(parent.rectH + upShift));
-        parent.label.setAttribute("transform", `translate(${parentLabelX}, ${parentLabelY - upShift})`);
+        if (upShift > 0) {
+          parent.rect.setAttribute("y", String(parent.localRectY - upShift));
+          parent.rect.setAttribute("height", String(parent.localRectH + upShift));
+          parent.label.setAttribute("transform", `translate(${parentLabelX}, ${parentLabelY - upShift})`);
+        }
 
-        // 适度下移子卡片顶边与子标题，消除压盖
-        topChild.rect.setAttribute("y", String(topChild.rectY + downShift));
-        topChild.rect.setAttribute("height", String(Math.max(20, topChild.rectH - downShift)));
-        if (topChild.label) {
-          const childLabelMatch = topChild.label.getAttribute("transform")?.match(/translate\(([^,]+),\s*([^)]+)\)/);
-          if (childLabelMatch) {
-            topChild.label.setAttribute("transform", `translate(${childLabelMatch[1]}, ${parseFloat(childLabelMatch[2]) + downShift * 0.7})`);
+        if (downShift > 0) {
+          topChild.rect.setAttribute("y", String(topChild.localRectY + downShift));
+          topChild.rect.setAttribute("height", String(Math.max(20, topChild.localRectH - downShift)));
+          if (topChild.label) {
+            const childLabelMatch = topChild.label.getAttribute("transform")?.match(/translate\(([^,]+),\s*([^)]+)\)/);
+            if (childLabelMatch) {
+              topChild.label.setAttribute("transform", `translate(${childLabelMatch[1]}, ${parseFloat(childLabelMatch[2]) + downShift * 0.7})`);
+            }
           }
         }
       }
@@ -778,30 +790,61 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       }
     }
 
-    // 自定义颜色方块深色模式自适应：保留用户自定义边框颜色，背景色自适应为对应同色系的暗夜微透底色
-    if (dark) {
-      for (const node of root.querySelectorAll<SVGGElement>(".node")) {
-        const shapes = node.querySelectorAll<SVGElement>("rect, polygon, circle, ellipse, path");
-        for (const shape of shapes) {
-          const styleAttr = shape.getAttribute("style") || "";
-          const fillMatch = styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;!]+)/i);
-          const strokeMatch = styleAttr.match(/(?:^|;)\s*stroke\s*:\s*([^;!]+)/i);
-          const inlineFill = fillMatch?.[1]?.trim() || shape.getAttribute("fill");
-          const inlineStroke = strokeMatch?.[1]?.trim() || shape.getAttribute("stroke");
+    // 方块颜色与文字颜色智能联动：
+    // 当改变方块颜色时（自定义 stroke/fill），内部文字若未显式指定颜色，默认使用边框颜色；
+    // 使得边框与文字始终同色系（如默认橙框橙字、绿框绿字、蓝框蓝字），无论深浅模式都完美清晰协调。
+    applyNodeTextBorderColor(root, dark);
 
-          if (inlineFill && inlineFill !== "none" && inlineFill !== "transparent") {
-            const strokeColor = inlineStroke && inlineStroke !== "none" && inlineStroke !== "transparent" ? inlineStroke : inlineFill;
-            shape.style.setProperty("stroke", strokeColor, "important");
-            shape.style.setProperty("stroke-width", "2px", "important");
-            shape.style.setProperty("fill", `color-mix(in srgb, ${strokeColor} 20%, #202020)`, "important");
-            for (const textEl of node.querySelectorAll<HTMLElement | SVGElement>("div, span, p, text, tspan")) {
-              textEl.style.setProperty("color", "#fef3c7", "important");
-              if (textEl.matches("text, tspan")) {
-                textEl.style.setProperty("fill", "#fef3c7", "important");
-              }
-            }
-          }
+    // 全图 ViewBox 动态安全呼吸边距自适应：检测最顶、最底、最左、最右的几何边界，
+    // 确保任何图形、圆角边框、标题文字与视口边缘至少有 12~16px 的充裕呼吸留白，100% 杜绝裁切与紧贴压抑。
+    const vbAttr = root.getAttribute("viewBox");
+    if (vbAttr) {
+      const vbParts = vbAttr.trim().split(/[\s,]+/).map(Number);
+      if (vbParts.length === 4 && vbParts.every(Number.isFinite)) {
+        let [vx, vy, vw, vh] = vbParts;
+
+        let minTop = Infinity;
+        let maxBottom = -Infinity;
+        let minLeft = Infinity;
+        let maxRight = -Infinity;
+
+        for (const el of root.querySelectorAll<SVGGraphicsElement>(".cluster rect, .cluster-label, .node, g.edgeLabel, .edgePaths path, rect.actor, text.actor, .statediagram-state")) {
+          const b = el.getBoundingClientRect();
+          if (b.width === 0 && b.height === 0) continue;
+          const top = b.top - rootBbox.top;
+          const bottom = b.bottom - rootBbox.top;
+          const left = b.left - rootBbox.left;
+          const right = b.right - rootBbox.left;
+          if (top < minTop) minTop = top;
+          if (bottom > maxBottom) maxBottom = bottom;
+          if (left < minLeft) minLeft = left;
+          if (right > maxRight) maxRight = right;
         }
+
+        const SAFE_PAD_TOP = 16;
+        const SAFE_PAD_BOTTOM = 16;
+        const SAFE_PAD_SIDE = 12;
+
+        if (minTop < SAFE_PAD_TOP) {
+          const deltaTop = SAFE_PAD_TOP - minTop;
+          vy -= deltaTop;
+          vh += deltaTop;
+        }
+        if (Number.isFinite(maxBottom) && (vh - maxBottom < SAFE_PAD_BOTTOM)) {
+          vh += (SAFE_PAD_BOTTOM - (vh - maxBottom));
+        }
+        if (minLeft < SAFE_PAD_SIDE) {
+          const deltaLeft = SAFE_PAD_SIDE - minLeft;
+          vx -= deltaLeft;
+          vw += deltaLeft;
+        }
+        if (Number.isFinite(maxRight) && (vw - maxRight < SAFE_PAD_SIDE)) {
+          vw += (SAFE_PAD_SIDE - (vw - maxRight));
+        }
+
+        root.setAttribute("viewBox", `${vx} ${vy} ${vw} ${vh}`);
+        size.width = Math.ceil(vw);
+        size.height = Math.ceil(vh);
       }
     }
 
@@ -933,4 +976,53 @@ function withExplicitSize(svg: string, width: number, height: number) {
 /** 判断一个代码块的语言标记是不是 mermaid。 */
 export function isMermaidLanguage(language: string | undefined) {
   return language?.trim().toLowerCase() === "mermaid";
+}
+
+/**
+ * 节点文字颜色智能联动与微透暗底适配：
+ * 当改变方块颜色时（自定义 stroke/fill），内部文字若未显式指定颜色，默认使用边框颜色；
+ * 使得边框与文字始终同色系（如默认橙框橙字、绿框绿字、蓝框蓝字），无论深浅模式都完美清晰协调。
+ */
+export function applyNodeTextBorderColor(root: Element, dark: boolean) {
+  for (const node of root.querySelectorAll<SVGGElement>(".node")) {
+    const shapes = node.querySelectorAll<SVGElement>("rect, polygon, circle, ellipse, path");
+    let customStroke: string | null = null;
+
+    for (const shape of shapes) {
+      const styleAttr = shape.getAttribute("style") || "";
+      const fillMatch = styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;!]+)/i);
+      const strokeMatch = styleAttr.match(/(?:^|;)\s*stroke\s*:\s*([^;!]+)/i);
+      const inlineFill = fillMatch?.[1]?.trim() || shape.getAttribute("fill");
+      const inlineStroke = strokeMatch?.[1]?.trim() || shape.getAttribute("stroke");
+
+      const hasFill = inlineFill && inlineFill !== "none" && inlineFill !== "transparent";
+      const hasStroke = inlineStroke && inlineStroke !== "none" && inlineStroke !== "transparent";
+
+      if (hasStroke || hasFill) {
+        customStroke = (hasStroke ? inlineStroke! : inlineFill!).trim();
+        if (dark) {
+          shape.style.setProperty("stroke", customStroke, "important");
+          shape.style.setProperty("stroke-width", "2px", "important");
+          shape.style.setProperty("fill", `color-mix(in srgb, ${customStroke} 20%, #202020)`, "important");
+        }
+      }
+    }
+
+    // 如果未显式指定文字颜色，让文字默认使用边框颜色
+    const nodeStyle = node.getAttribute("style") || "";
+    const hasExplicitTextColor = /(?:^|;)\s*color\s*:\s*([^;!]+)/i.test(nodeStyle);
+
+    if (!hasExplicitTextColor) {
+      const targetColor = customStroke || (dark ? "#fbbf24" : "#c2410c");
+      for (const textEl of node.querySelectorAll<HTMLElement | SVGElement>("div, span, p, text, tspan")) {
+        const elStyle = textEl.getAttribute("style") || "";
+        if (!/(?:^|;)\s*(?:color|fill)\s*:\s*([^;!]+)/i.test(elStyle)) {
+          textEl.style.setProperty("color", targetColor, "important");
+          if (textEl.matches("text, tspan")) {
+            textEl.style.setProperty("fill", targetColor, "important");
+          }
+        }
+      }
+    }
+  }
 }

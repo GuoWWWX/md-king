@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { resolveBrowserPreviewImage } from "@/lib/browser-preview-images";
 import { downloadDir, join } from "@tauri-apps/api/path";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -451,3 +453,27 @@ export function convertMarkdown(request: ConvertRequest) {
     message: "浏览器预览完成，未生成实际 DOCX 文件。",
   });
 }
+
+/**
+ * 在顶部栏、侧边栏等空白区域按下鼠标左键时启动原生窗口拖拽。
+ * 会自动忽略按钮、输入框、标签、菜单项等可交互控件，确保不影响正常点击操作。
+ */
+export function handleTauriWindowDrag(event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) {
+  if (event.button !== 0) return;
+  if (!isTauriEnvironment()) return;
+
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+
+  // 如果点击的是按钮、输入框、下拉菜单、标签等可交互控件，不启动窗口拖拽
+  if (target.closest("button, input, select, textarea, a, [role='button'], [role='tab'], [role='menuitem'], [data-mk-context-menu], [data-no-drag]")) {
+    return;
+  }
+
+  try {
+    void getCurrentWindow().startDragging().catch(() => undefined);
+  } catch {
+    // 忽略异常
+  }
+}
+

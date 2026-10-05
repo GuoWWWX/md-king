@@ -11,8 +11,15 @@ import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle,
 import { renderToStaticMarkup } from "react-dom/server";
 import { isSupportedImagePath } from "@/lib/image-files";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
-import { markdownVisibleLineChangeEvent, markdownVisibleLineQueryEvent, type MarkdownVisibleLineChangeDetail } from "@/lib/document-outline";
 import { cn } from "@/lib/utils";
+import {
+  markdownVisibleLineChangeEvent,
+  markdownVisibleLineQueryEvent,
+  parseMarkdownOutline,
+  resolveActiveHeadingFromReadingLine,
+  type MarkdownOutlineItem,
+  type MarkdownVisibleLineChangeDetail,
+} from "@/lib/document-outline";
 import { frontmatterBlockExtension, getTableDisplayContext, livePreviewPlugin, markdownImageBlockExtension, markdownMathBlockExtension, mermaidBlockExtension, renderFrontmatterEffect, resetCalloutCollapsedEffect, tableBlockExtension, tableSyntaxRefreshPlugin, type TableDisplayContext } from "./cm/live-preview";
 import { documentTitleExtension } from "./cm/document-title";
 import { markdownCursorExtension } from "./cm/cursor";
@@ -284,6 +291,130 @@ function initialEditorSelection(content: string, viewState?: LiveMarkdownViewSta
   return { anchor: parseYamlFrontmatter(content)?.to ?? 0 };
 }
 
+/**
+ * 基于第一性原理与用户交互体验：
+ * 检测当前窗口第一行（视口顶部）呈现的是哪一行内容，并精确映射到所属的大纲章节。
+ * 
+ * 核心优化（略微扩展首行标题感应区）：
+ * 只要当前窗口第一行区域已经显现了某个章节的标题（视口顶部偏下 0~36px 内），
+ * 右侧目录立即高亮该章节，绝不需要等用户把标题完全或部分覆盖后才切换。
+ */
+export function detectViewportReadingLine(
+  view: EditorView,
+  outline: MarkdownOutlineItem[],
+): { line: number; activeHeadingLine: number | undefined } {
+  const doc = view.state.doc;
+  const totalLines = doc.lines;
+  if (outline.length === 0 || totalLines <= 0) {
+    return { line: 1, activeHeadingLine: undefined };
+  }
+
+  const scrollDOM = view.scrollDOM;
+  const scrollTop = scrollDOM.scrollTop;
+
+  // 文首保护：极小滚动量时直接激活首个章节
+  if (scrollTop <= 15) {
+    return { line: 1, activeHeadingLine: outline[0].line };
+  }
+
+  const scrollRect = scrollDOM.getBoundingClientRect();
+  if (scrollRect.height <= 0 || scrollRect.width <= 0) {
+    const targetHeight = Math.max(0, scrollTop + 20);
+    const scrollBlock = view.lineBlockAtHeight(targetHeight);
+    const line = doc.lineAt(scrollBlock.from).number;
+    return { line, activeHeadingLine: resolveActiveHeadingFromReadingLine(outline, line) };
+  }
+
+  const viewportTop = scrollRect.top;
+  const viewportBottom = scrollRect.bottom;
+
+  // 首行标题感应带（视口顶部 0~36px，约 1~1.5 行高）：
+  // 当新章节标题刚刚出现在视口首行时立即高亮，消除等待覆盖的滞后感
+  const headingTopZone = viewportTop + 36;
+
+  let firstVisibleLine: number | null = null;
+  let topZoneHeadingLine: number | null = null;
+
+  // 遍历 contentDOM 真实渲染的子节点，寻找当前窗口第一行露出展示的实质内容
+  const children = view.contentDOM.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i] as HTMLElement;
+    if (!child || child.nodeType !== Node.ELEMENT_NODE) continue;
+    if (
+      child.classList.contains("cm-gap") ||
+      child.classList.contains("mk-doc-title-input") ||
+      child.hasAttribute("data-mk-doc-title-host")
+    ) {
+      continue;
+    }
+
+    const rect = child.getBoundingClientRect();
+    // 已经完全滚出视口上方
+    if (rect.bottom <= viewportTop + 2) continue;
+    // 超出视口底部，停止
+    if (rect.top >= viewportBottom) break;
+
+    let childLine: number | null = null;
+    try {
+      const pos = view.posAtDOM(child);
+      if (typeof pos === "number" && pos >= 0 && pos <= doc.length) {
+        childLine = doc.lineAt(pos).number;
+      }
+    } catch {
+      // 容错：个别复合节点跳过尝试下一个
+    }
+
+    if (childLine === null) continue;
+
+    // 记录视口第一行露出的内容行号
+    if (firstVisibleLine === null) {
+      firstVisibleLine = childLine;
+    }
+
+    // 只要窗口第一行区域已经显现了某个章节的标题，立即捕获该标题
+    if (rect.top <= headingTopZone && topZoneHeadingLine === null) {
+      const isHeading =
+        child.classList.contains("mk-cm-heading") ||
+        Boolean(child.querySelector(".mk-cm-heading")) ||
+        outline.some((h) => h.line === childLine);
+      if (isHeading) {
+        const matching = outline.find((h) => h.line === childLine);
+        if (matching) {
+          topZoneHeadingLine = matching.line;
+        }
+      }
+    }
+  }
+
+  // 双重保底：如果遍历未获取到，使用视口顶部物理坐标采样
+  if (firstVisibleLine === null) {
+    try {
+      const probeX = scrollRect.left + Math.min(60, scrollRect.width * 0.2);
+      const probeY = viewportTop + 10;
+      const probePos = view.posAtCoords({ x: probeX, y: probeY });
+      if (probePos !== null) {
+        firstVisibleLine = doc.lineAt(probePos).number;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const readingLine = firstVisibleLine ?? 1;
+
+  // 判定当前章节：
+  // 1) 当前第一行显示的已经是某个章节的标题了，右侧目录立即高亮该章节；
+  // 2) 否则按视口第一行正文所属区域，归属到大纲中最后一个 <= readingLine 的标题。
+  let activeHeadingLine: number;
+  if (topZoneHeadingLine !== null) {
+    activeHeadingLine = topZoneHeadingLine;
+  } else {
+    activeHeadingLine = resolveActiveHeadingFromReadingLine(outline, readingLine) ?? outline[0].line;
+  }
+
+  return { line: readingLine, activeHeadingLine };
+}
+
 export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor(
   { documentKey, documentId, initialContent, viewState, onViewStateChange, documentTitle, onDocumentTitleChange, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
   ref,
@@ -342,6 +473,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // 初始内容同理只在创建时读一次，之后的 props 变化不该反向覆盖用户正在编辑的内容。
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
+  const outlineRef = useRef<MarkdownOutlineItem[]>(parseMarkdownOutline(initialContent));
 
   function reportViewState(view: EditorView, targetDocumentId = activeDocumentIdRef.current) {
     if (!targetDocumentId || restoringDocumentIdRef.current === targetDocumentId) return;
@@ -626,6 +758,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
         if (!update.docChanged) return;
         const isExternal = update.transactions.some((tr) => tr.annotation(externalUpdate));
         const text = update.state.doc.toString();
+        outlineRef.current = parseMarkdownOutline(text);
         if (!isExternal) onDirtyRef.current?.();
         flushDocChange(text);
       }),
@@ -652,12 +785,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
         const currentDocId = activeDocumentIdRef.current;
         if (!currentDocId) return;
         try {
-          const scrollTop = view.scrollDOM.scrollTop;
-          const scrollBlock = view.lineBlockAtHeight(scrollTop);
-          const line = view.state.doc.lineAt(scrollBlock.from).number;
+          const { line, activeHeadingLine } = detectViewportReadingLine(view, outlineRef.current);
           window.dispatchEvent(
             new CustomEvent<MarkdownVisibleLineChangeDetail>(markdownVisibleLineChangeEvent, {
-              detail: { tabId: currentDocId, line },
+              detail: { tabId: currentDocId, line, activeHeadingLine },
             }),
           );
         } catch {
@@ -809,6 +940,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     const next = initialContentRef.current;
     const nextViewState = incomingViewStateRef.current;
     const selection = initialEditorSelection(next, nextViewState);
+    outlineRef.current = parseMarkdownOutline(next);
     activeTableFromRef.current = null;
     if (view.state.doc.toString() === next) {
       view.dispatch({

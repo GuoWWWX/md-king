@@ -31,6 +31,10 @@ export type ImageViewerHandle = {
   resetZoom: () => void;
 };
 
+import { getPanBounds } from "./image-pan-bounds.ts";
+
+export { getPanBounds };
+
 export function ImageViewer({
   src,
   alt,
@@ -84,12 +88,33 @@ export function ImageViewer({
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number }>();
 
+  const fitScale = naturalSize && viewport.width > 0 && viewport.height > 0
+    ? Math.min(Math.max(1, viewport.width - 48) / naturalSize.width, Math.max(1, viewport.height - 48) / naturalSize.height)
+    : 1;
+  const imageWidth = naturalSize ? Math.max(1, naturalSize.width * fitScale * zoom) : undefined;
+  const imageHeight = naturalSize ? Math.max(1, naturalSize.height * fitScale * zoom) : undefined;
+
+  const sizeRef = useRef({ imageWidth, imageHeight, viewportWidth: viewport.width, viewportHeight: viewport.height });
+  sizeRef.current = { imageWidth, imageHeight, viewportWidth: viewport.width, viewportHeight: viewport.height };
+
   // 仅在 src 切换时重置视图
   useEffect(() => {
     updateZoom(1);
     updatePan({ x: 0, y: 0 });
     setNaturalSize(undefined);
   }, [src, updateZoom, updatePan]);
+
+  // 当缩放或窗口尺寸变化时，自动约束当前平移位置；若已完全处于视口内则自动居中对齐
+  useEffect(() => {
+    if (imageWidth === undefined || imageHeight === undefined || viewport.width === 0 || viewport.height === 0) return;
+    const { canScrollX, canScrollY, maxPanX, maxPanY } = getPanBounds(imageWidth, imageHeight, viewport.width, viewport.height);
+    const curPan = panRef.current;
+    const clampedX = canScrollX ? Math.min(maxPanX, Math.max(-maxPanX, curPan.x)) : 0;
+    const clampedY = canScrollY ? Math.min(maxPanY, Math.max(-maxPanY, curPan.y)) : 0;
+    if (clampedX !== curPan.x || clampedY !== curPan.y) {
+      updatePan({ x: clampedX, y: clampedY });
+    }
+  }, [imageWidth, imageHeight, viewport.width, viewport.height, updatePan]);
 
   useEffect(() => {
     const node = viewportRef.current;
@@ -148,7 +173,7 @@ export function ImageViewer({
     [updateZoom, updatePan],
   );
 
-  // 鼠标滚轮和触摸板双指捏合（pinch）原生非 passive 监听，防止父级页面跟着滚动
+  // 鼠标滚轮和触摸板原生非 passive 监听
   useEffect(() => {
     const node = viewportRef.current;
     if (!node) return undefined;
@@ -166,12 +191,32 @@ export function ImageViewer({
 
         zoomAtPoint((curr) => Number((curr * factor).toFixed(3)), e.clientX, e.clientY);
       } else {
-        // 普通鼠标滚轮：平移画布（滚轮上下滑动平移 Y，横向滚轮平移 X）
-        const deltaX = e.deltaX;
-        const deltaY = e.deltaY;
+        // 普通鼠标滚轮：仅当图片内容尺寸超出视口时，才允许滚动平移对应方向！
+        const { imageWidth: curImgW, imageHeight: curImgH, viewportWidth: vpW, viewportHeight: vpH } = sizeRef.current;
+        const { canScrollX, canScrollY, maxPanX, maxPanY } = getPanBounds(curImgW, curImgH, vpW, vpH);
+
+        // 图片未超出窗口范围时，保持稳定居中，严禁滚动平移
+        if (!canScrollX && !canScrollY) {
+          return;
+        }
+
+        let moveX = e.deltaX;
+        let moveY = e.deltaY;
+
+        // 若横向超出但纵向未超出，且用户滚动垂直滚轮时，自动响应横向平移浏览宽图
+        if (canScrollX && !canScrollY && Math.abs(moveY) > 0 && Math.abs(moveX) === 0) {
+          moveX = moveY;
+          moveY = 0;
+        }
+
+        const deltaX = canScrollX ? moveX : 0;
+        const deltaY = canScrollY ? moveY : 0;
+
+        if (deltaX === 0 && deltaY === 0) return;
+
         updatePan((curr) => ({
-          x: Math.round((curr.x - deltaX) * 10) / 10,
-          y: Math.round((curr.y - deltaY) * 10) / 10,
+          x: canScrollX ? Math.min(maxPanX, Math.max(-maxPanX, Math.round((curr.x - deltaX) * 10) / 10)) : 0,
+          y: canScrollY ? Math.min(maxPanY, Math.max(-maxPanY, Math.round((curr.y - deltaY) * 10) / 10)) : 0,
         }));
       }
     };
@@ -180,9 +225,12 @@ export function ImageViewer({
     return () => node.removeEventListener("wheel", handleNativeWheel);
   }, [zoomAtPoint, updatePan]);
 
-  // 鼠标左键按下开始平移拖拽
+  // 鼠标左键按下开始平移拖拽（仅当内容超出视口时激活拖拽能力）
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
+    const { canScrollX, canScrollY } = getPanBounds(imageWidth, imageHeight, viewport.width, viewport.height);
+    if (!canScrollX && !canScrollY) return;
+
     event.preventDefault();
     setIsDragging(true);
     dragStartRef.current = {
@@ -200,11 +248,12 @@ export function ImageViewer({
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
     if (!dragStartRef.current.active) return;
     event.preventDefault();
-    const dx = event.clientX - dragStartRef.current.x;
-    const dy = event.clientY - dragStartRef.current.y;
+    const { canScrollX, canScrollY, maxPanX, maxPanY } = getPanBounds(imageWidth, imageHeight, viewport.width, viewport.height);
+    const targetX = dragStartRef.current.panX + (event.clientX - dragStartRef.current.x);
+    const targetY = dragStartRef.current.panY + (event.clientY - dragStartRef.current.y);
     updatePan({
-      x: dragStartRef.current.panX + dx,
-      y: dragStartRef.current.panY + dy,
+      x: canScrollX ? Math.min(maxPanX, Math.max(-maxPanX, targetX)) : 0,
+      y: canScrollY ? Math.min(maxPanY, Math.max(-maxPanY, targetY)) : 0,
     });
   }
 
@@ -223,11 +272,8 @@ export function ImageViewer({
     updatePan({ x: 0, y: 0 });
   }
 
-  const fitScale = naturalSize && viewport.width > 0 && viewport.height > 0
-    ? Math.min(Math.max(1, viewport.width - 48) / naturalSize.width, Math.max(1, viewport.height - 48) / naturalSize.height)
-    : 1;
-  const imageWidth = naturalSize ? Math.max(1, naturalSize.width * fitScale * zoom) : undefined;
-  const imageHeight = naturalSize ? Math.max(1, naturalSize.height * fitScale * zoom) : undefined;
+  const { canScrollX, canScrollY } = getPanBounds(imageWidth, imageHeight, viewport.width, viewport.height);
+  const canPan = canScrollX || canScrollY;
 
   return (
     <div
@@ -235,7 +281,7 @@ export function ImageViewer({
       className={cn(
         "relative min-h-0 min-w-0 select-none overflow-hidden touch-none",
         paper ? "bg-white dark:bg-[#202020]" : "bg-slate-50 dark:bg-zinc-900",
-        isDragging ? "cursor-grabbing" : "cursor-grab",
+        canPan ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-default",
         className,
       )}
       onPointerDown={handlePointerDown}

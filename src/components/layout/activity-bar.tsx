@@ -1,6 +1,7 @@
 import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { handleTauriWindowDrag } from "@/lib/tauri";
 import type { ThemeMode } from "@/types";
 
 export type ActivityBarItem = {
@@ -46,7 +47,9 @@ export function ActivityBar({
     <aside
       data-collapsed="true"
       aria-label="主导航"
-      className="mk-activity-bar flex h-full w-12 shrink-0 flex-col items-center px-1 py-2"
+      className="mk-activity-bar flex h-full w-12 shrink-0 select-none flex-col items-center px-1 py-2"
+      data-tauri-drag-region
+      onPointerDown={handleTauriWindowDrag}
     >
       <nav className="flex flex-col items-center gap-1.5" aria-label="页面导航">
         {primaryNavigation.map((item) => {
@@ -72,9 +75,13 @@ export function ActivityBar({
         })}
       </nav>
 
-      <div className="min-h-0 flex-1" />
+      <div
+        className="min-h-0 flex-1 w-full"
+        data-tauri-drag-region
+        onPointerDown={handleTauriWindowDrag}
+      />
 
-      <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700">
+      <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700" data-tauri-drag-region onPointerDown={handleTauriWindowDrag}>
         <Button
           variant="outline"
           className="mk-theme-cycle-button mk-sidebar-icon-button size-9 shrink-0 justify-center rounded-[8px] px-0"

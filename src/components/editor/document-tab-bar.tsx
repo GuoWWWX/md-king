@@ -5,7 +5,7 @@ import { ContextMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { collectOverflowedTabKeys, tabWheelScrollDelta } from "@/lib/document-tab-overflow";
-import { isTauriEnvironment } from "@/lib/tauri";
+import { isTauriEnvironment, handleTauriWindowDrag } from "@/lib/tauri";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { cn } from "@/lib/utils";
 
@@ -196,14 +196,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     const pageTab = target.closest<HTMLElement>("[data-page-tab-id]");
     if (!tab && !pageTab) {
       if (!isTauriEnvironment()) return;
-      // 空白区先保留一次普通点击；只有移动超过阈值才交给原生窗口拖动，
-      // 这样原地双击仍能稳定触发最大化/还原。
-      windowDragRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-      };
-      listRef.current.setPointerCapture(event.pointerId);
+      void getCurrentWindow().startDragging().catch(() => undefined);
       return;
     }
     // 顶部标签位于无边框桌面窗口的标题栏内。少数 Tauri 拖动场景会吞掉
@@ -362,8 +355,11 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
   }
 
   return (
-    <div className={cn("mk-document-tab-bar flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78", className)}>
-      <span className="mx-1 h-4 w-px shrink-0 bg-slate-200 dark:bg-zinc-700" aria-hidden />
+    <div
+      className={cn("mk-document-tab-bar flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-[#202020]", className)}
+      data-tauri-drag-region
+      onPointerDown={handleTauriWindowDrag}
+    >
       <div
         ref={listRef}
         className="scrollbar-none flex min-w-0 flex-1 cursor-default select-none items-center gap-1 overflow-x-auto overflow-y-hidden"
@@ -540,7 +536,7 @@ function PageTabItem({ tab, active, tabCount, onSelect, onClose, onCloseOthers, 
             "mk-document-tab group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
             active
               ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-zinc-600/80 dark:bg-zinc-700/76 dark:text-zinc-50"
-              : "border-transparent text-slate-600 hover:bg-slate-100 dark:border-zinc-700/45 dark:bg-zinc-800/72 dark:text-zinc-300 dark:hover:bg-zinc-700/80",
+              : "border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-zinc-700/60 dark:text-zinc-400 dark:hover:bg-zinc-800/72 dark:hover:text-zinc-200",
           )}
           onClick={onSelect}
           onAuxClick={(event) => {
@@ -645,10 +641,10 @@ function DocumentTabItem({ tab, active, tabCount, showDirtyIndicator, onSelect, 
             "mk-document-tab group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
             active
               ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-zinc-600/80 dark:bg-zinc-700/76 dark:text-zinc-50"
-              : "border-transparent text-slate-600 hover:bg-slate-100 dark:border-zinc-700/45 dark:bg-zinc-800/72 dark:text-zinc-300 dark:hover:bg-zinc-700/80",
+              : "border-slate-200/80 text-slate-600 hover:bg-slate-100 dark:border-zinc-700/60 dark:text-zinc-400 dark:hover:bg-zinc-800/72 dark:hover:text-zinc-200",
             // 临时文档没有落盘，用虚线边框提示它随时可能丢。
             tab.kind === "scratch" && "border-dashed",
-            tab.kind === "scratch" && !active && "border-slate-300 dark:border-zinc-600",
+            tab.kind === "scratch" && !active && "border-slate-300 dark:border-zinc-700",
             dragged && "opacity-55",
           )}
           onClick={onSelect}

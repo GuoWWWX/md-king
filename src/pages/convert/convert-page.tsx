@@ -1973,7 +1973,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div
             ref={expandedPreviewRef}
-            className="mk-preview-layout grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)] gap-0 max-[900px]:!grid-cols-1"
+            className="mk-preview-layout grid min-h-0 flex-1 grid-cols-[minmax(172px,var(--preview-sidebar-width))_4px_minmax(0,1fr)] gap-0 max-[900px]:!grid-cols-1"
             style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
           >
             <WordPreviewSidebar
@@ -2119,7 +2119,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       <div
         ref={splitPaneRef}
         className="grid min-h-0 min-w-0 gap-0 overflow-hidden"
-        style={{ gridTemplateColumns: layoutTooNarrow || !isDocumentWorkspace || !showPreviewPanel ? "minmax(0,1fr)" : `minmax(${editorMinWidth}px,1fr) 5px minmax(${previewMinWidth}px,${previewWidth}px)` }}
+        style={{ gridTemplateColumns: layoutTooNarrow || !isDocumentWorkspace || !showPreviewPanel ? "minmax(0,1fr)" : `minmax(${editorMinWidth}px,1fr) 4px minmax(${previewMinWidth}px,${previewWidth}px)` }}
         >
           <div className="min-h-0 min-w-0 overflow-hidden">
             {isWorkspacePage ? (
@@ -2174,7 +2174,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             </div>
 
             <div
-              className={cn("mk-preview-layout grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-x-0 gap-y-1 overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_5px_minmax(0,1fr)]" : "grid-cols-1")}
+              className={cn("mk-preview-layout grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-x-0 gap-y-1 overflow-hidden", showInlinePreviewSidebar ? "grid-cols-[minmax(172px,var(--preview-sidebar-width))_4px_minmax(0,1fr)]" : "grid-cols-1")}
               style={{ "--preview-sidebar-width": `${previewSidebarWidth}px` } as CSSProperties}
             >
               {showInlinePreviewSidebar ? (

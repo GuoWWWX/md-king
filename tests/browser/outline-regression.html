@@ -1,0 +1,65 @@
+<!doctype html>
+<html class="dark">
+  <head>
+    <meta charset="utf-8">
+    <title>Outline Regression Test</title>
+  </head>
+  <body style="margin:0;padding:0;background:#18181b;height:100vh;display:flex">
+    <div id="editor-container" style="flex:1;height:100vh;display:flex"></div>
+    <script type="module">
+      import "/src/index.css";
+      import { createElement, createRef } from "react";
+      import { createRoot } from "react-dom/client";
+      import { LiveMarkdownEditor } from "/src/components/editor/live-markdown-editor.tsx";
+      import { parseMarkdownOutline, findActiveOutlineLine } from "/src/lib/document-outline.ts";
+
+      const source = `# 06 · Redis 持久化：RDB 与 AOF（快照机制...
+
+## 一、业务痛点与核心矛盾：内存的高速读写与磁...
+
+正文内容...
+`.concat(
+  '\n\n'.repeat(5),
+  '## 二、前置核心厘清：持久化任务中哪些用“线程... \n\n正文内容...\n',
+  '\n\n'.repeat(5),
+  '## 三、RDB 快照机制与操作系统写时复制（Copy-... \n\n### 1. \`SAVE\` 与 \`BGSAVE\` 的触发方式\n\n正文...\n\n### 2. 写时复制（Copy-On-Write, COW）底...\n\n正文...\n',
+  '\n\n'.repeat(5),
+  '## 四、AOF 日志机制：命令追加、三种刷盘策略...\n\n### 1. AOF 写入的三个阶段与三种刷盘策略（\`a...\n\n正文...\n\n',
+  '### 2. AOF 重写机制（AOF Rewrite）：膨胀的...\n\n',
+  '重写机制介绍正文...\n\n',
+  '```mermaid\nflowchart LR\n    subgraph OldAOF["重写前：膨胀的历史 AOF 文件"]\n        O1["记录了 100 万次 INCR counter"]\n    end\n    subgraph NewAOF["重写后：精简的新 AOF 基线"]\n        N1["子进程直接读取当前内存最终值"]\n    end\n    OldAOF --> NewAOF\n```\n\n',
+  '## 五、混合持久化（Redis 4.0+）与 Multi-Part AOF（Redis 7.0+）\n\n',
+  '即使经过了 AOF 重写，纯文本格式的 AOF 命令在重启加载时，依然需要经过“词法解析 -> 伪客户端执行命令 -> 修改内存结构”的完整过程，恢复速度远不及直接加载二进制内存块的 RDB 快照。\n\n',
+  '为了同时拥有 RDB 的极速恢复能力与 AOF 的秒级数据安全性，Redis 4.0 引入了混合持久化（通过 aof-use-rdb-preamble yes 控制，Redis 5.0 及以上版本默认开启），并在 Redis 7.0 中进一步演进为更加优雅的 Multi-Part AOF（多部件 AOF）架构：\n\n',
+  '```mermaid\nflowchart LR\n    A --> B\n```\n\n',
+  '### 1. Redis 4.0 ~ 6.x 单文件混合模式的痛点\n\n在 Redis 4.0 到 6.x 中，混合持久化生成的仍然是单个 appendonly.aof 文件...\n\n',
+  '### 2. Redis 7.0+ Multi-Part AOF 的彻底革新\n\n为了彻底消除 aof_rewrite_buf 带来的内存开销与合并阻塞...\n\n',
+  '## 一分钟复盘核心记忆卡\n\n总结内容...\n\n',
+  '## 下一步\n\n后续步骤...\n'
+);
+
+      const ref = createRef();
+      const root = createRoot(document.querySelector('#editor-container'));
+      root.render(createElement(LiveMarkdownEditor, {
+        ref,
+        documentKey: 'outline-fixture',
+        documentId: 'tab-outline',
+        initialContent: source,
+        isDark: true,
+        readOnly: false,
+      }));
+
+      window.lastVisibleEvent = null;
+      window.addEventListener('md-king:visible-line-change', (e) => {
+        window.lastVisibleEvent = e.detail;
+      });
+
+      window.fixture = {
+        get view() { return ref.current?.getView(); },
+        source,
+        outline: parseMarkdownOutline(source),
+        findActiveOutlineLine,
+      };
+    </script>
+  </body>
+</html>

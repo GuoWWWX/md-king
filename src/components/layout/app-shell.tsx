@@ -151,7 +151,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
           onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
           pageZoomPercent={pageZoomPercent}
           onPageZoomChange={handlePageZoomChange}
-          documentTabsOffset={fileTreeVisible ? Math.max(0, fileTreeWidth - 174) : 0}
+          fileTreeWidth={fileTreeWidth}
         />
         <GlobalSearchDialog
           open={globalSearchOpen}
@@ -171,7 +171,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
 
           {/* 状态栏内侧与左侧栏内侧交汇处的平滑内凹弧形过渡 */}
           <svg
-            className="pointer-events-none absolute left-12 top-0 z-20 h-2.5 w-2.5 text-[#f4f6f8] dark:text-[#18181b]"
+            className="pointer-events-none absolute left-12 top-0 z-20 h-[5px] w-[5px] text-white dark:text-[#202020]"
             viewBox="0 0 10 10"
             fill="none"
             aria-hidden="true"

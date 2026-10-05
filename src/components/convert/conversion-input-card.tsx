@@ -119,10 +119,13 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
     const to = hasMatch ? line.from + endColumn : line.from;
 
     if (revealHighlightTimerRef.current !== undefined) window.clearTimeout(revealHighlightTimerRef.current);
+    const scrollY = target.y ?? (hasMatch ? "center" : "start");
+    const scrollYMargin = target.yMargin ?? (scrollY === "start" ? 24 : 5);
+
     view.dispatch({
       selection: { anchor: to },
       effects: [
-        EditorView.scrollIntoView(from, { y: "center" }),
+        EditorView.scrollIntoView(from, { y: scrollY, yMargin: scrollYMargin }),
         setRevealHighlightEffect.of(hasMatch ? { from, to } : null),
       ],
     });

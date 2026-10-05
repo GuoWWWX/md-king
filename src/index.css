@@ -715,11 +715,11 @@
   --sidebar-accent-foreground: #f8fafc;
   --sidebar-border: rgba(212, 212, 216, 0.22);
   --sidebar-ring: var(--app-primary, #60a5fa);
-  --mk-shell-bg: #18181b;
+  --mk-shell-bg: #2e2e2e;
 }
 
 .dark .mk-app-bg {
-  background: var(--mk-shell-bg);
+  background: #2e2e2e;
 }
 
 .dark .bg-white,
@@ -1161,11 +1161,11 @@ select {
 
 @layer components {
   .mk-app-bg {
-    background: var(--mk-shell-bg);
+    background: #f4f6f8;
   }
 
   .mk-titlebar {
-    background: var(--mk-shell-bg) !important;
+    background: #ffffff;
     border-bottom: none !important;
   }
 
@@ -1338,7 +1338,7 @@ select {
     border-left: none !important;
     border-right: none !important;
     border-radius: 0 !important;
-    background: var(--mk-shell-bg) !important;
+    background: #ffffff !important;
   }
 
   .mk-activity-bar .mk-sidebar-label {
@@ -3634,11 +3634,15 @@ select {
   }
 
   .dark .mk-titlebar {
-    border-color: transparent !important;
+    border: none !important;
     border-bottom: none !important;
-    background: var(--mk-shell-bg) !important;
+    background: #202020 !important;
     color: #e5e7eb !important;
     box-shadow: none !important;
+  }
+
+  .dark .mk-activity-bar {
+    background: #202020 !important;
   }
 
   .dark .mk-convert-footer {
@@ -3662,15 +3666,6 @@ select {
     background: #2a2a2a !important;
   }
 
-  /* 深色界面的转换操作使用低饱和蓝灰，保留主操作层级而不显得刺眼。 */
-  .dark .mk-convert-submit {
-    background: #4f7199 !important;
-  }
-
-  .dark .mk-convert-submit:hover:not(:disabled) {
-    background: #5d7fa7 !important;
-  }
-
   .dark .mk-titlebar .text-slate-950,
   .dark .mk-titlebar .text-blue-900\/42,
   .dark .mk-titlebar .text-blue-900\/55,
@@ -3680,29 +3675,56 @@ select {
 
   .dark .mk-titlebar .bg-white\/62,
   .dark .mk-titlebar .bg-blue-50\/80 {
-    background-color: var(--mk-shell-bg) !important;
+    background-color: #202020 !important;
     color: #e5e7eb !important;
   }
 
-  .dark .mk-document-tab-bar,
-  .dark .mk-document-tab-bar [role="tab"] {
+  .dark .mk-document-tab-bar {
     border-color: rgba(212, 212, 216, 0.2) !important;
     background: #202020 !important;
   }
 
   .dark .mk-document-tab-bar [role="tab"] {
-    color: #d4d4d8 !important;
+    border-color: rgba(212, 212, 216, 0.22) !important;
+    background: #202020 !important;
+    color: #a1a1aa !important;
+  }
+
+  .dark .mk-document-tab-bar [role="tab"]:hover {
+    border-color: rgba(212, 212, 216, 0.38) !important;
+    background: #282828 !important;
+    color: #e4e4e7 !important;
   }
 
   .dark .mk-document-tab-bar [role="tab"][aria-selected="true"] {
-    border-color: rgba(212, 212, 216, 0.42) !important;
+    border-color: rgba(212, 212, 216, 0.5) !important;
     background: #2a2a2a !important;
     color: #f4f4f5 !important;
-    box-shadow: inset 0 0 0 1px rgba(212, 212, 216, 0.12);
+    font-weight: 600 !important;
+    box-shadow: inset 0 0 0 1px rgba(212, 212, 216, 0.12) !important;
+  }
+
+  .dark .mk-document-tab-bar [role="tab"][aria-selected="true"]:hover {
+    border-color: rgba(212, 212, 216, 0.6) !important;
+    background: #323232 !important;
+    color: #ffffff !important;
+  }
+
+  .dark .mk-document-tab-bar [role="tab"] button {
+    color: inherit !important;
   }
 
   .dark .mk-document-tab-bar [role="tab"] button:hover {
     background: rgba(82, 82, 91, 0.46) !important;
+  }
+
+  .dark .mk-document-tab-bar [role="tab"][aria-selected="true"] button {
+    color: #a1a1aa !important;
+  }
+
+  .dark .mk-document-tab-bar [role="tab"][aria-selected="true"] button:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
   }
 
   .dark .mk-titlebar-button {

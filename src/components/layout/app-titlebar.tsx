@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { handleTauriWindowDrag } from "@/lib/tauri";
 import { PAGE_ZOOM_MAX_PERCENT, PAGE_ZOOM_MIN_PERCENT, PAGE_ZOOM_STEP_PERCENT } from "@/lib/page-zoom";
 
 function getAppWindow(): TauriWindow | undefined {
@@ -31,9 +32,10 @@ type AppTitlebarProps = {
   pageZoomPercent?: number;
   onPageZoomChange?: (percent: number) => void;
   documentTabsOffset?: number;
+  fileTreeWidth?: number;
 };
 
-export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, onOpenGlobalSearch, pageZoomPercent = 100, onPageZoomChange, documentTabsOffset = 0 }: AppTitlebarProps) {
+export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDocumentDrawerControl = false, documentDrawerOpen = false, onToggleDocumentDrawer, onOpenGlobalSearch, pageZoomPercent = 100, onPageZoomChange, documentTabsOffset = 0, fileTreeWidth }: AppTitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const canControlWindow = isTauriEnvironment();
 
@@ -94,8 +96,18 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
     <div
       className="mk-titlebar flex h-9 shrink-0 select-none items-center text-slate-700 dark:text-zinc-300"
       data-tauri-drag-region
+      onPointerDown={handleTauriWindowDrag}
+      onDoubleClick={handleDoubleClick}
     >
-      <div className="flex h-full w-[224px] items-center gap-1 px-2" data-tauri-drag-region onDoubleClick={handleDoubleClick}>
+      <div
+        className="flex h-full shrink-0 items-center gap-1 px-2"
+        style={{
+          width: fileTreeVisible && fileTreeWidth ? `${fileTreeWidth + 53.5}px` : "224px",
+        }}
+        data-tauri-drag-region
+        onPointerDown={handleTauriWindowDrag}
+        onDoubleClick={handleDoubleClick}
+      >
         {onToggleFileTree ? (
           <TitlebarButton
             label={fileTreeVisible ? "收起文件树" : "展开文件树"}
@@ -112,13 +124,24 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         ) : null}
       </div>
 
+      {/* 竖向分割线：精准对齐左侧文件树与右侧 Markdown 编辑区缝隙的正中间铅垂线 */}
+      <span className="h-4 w-px shrink-0 bg-slate-200 dark:bg-zinc-700" aria-hidden />
+
       <div
         id="mk-titlebar-document-tabs"
-        className="flex h-full min-w-0 flex-1 items-stretch"
+        className="flex h-full min-w-0 flex-1 items-stretch pl-1"
         style={{ marginLeft: documentTabsOffset }}
+        data-tauri-drag-region
+        onPointerDown={handleTauriWindowDrag}
+        onDoubleClick={handleDoubleClick}
       />
 
-      <div className="flex h-full shrink-0 items-center">
+      <div
+        className="flex h-full shrink-0 items-center"
+        data-tauri-drag-region
+        onPointerDown={handleTauriWindowDrag}
+        onDoubleClick={handleDoubleClick}
+      >
         {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <>
             <TitlebarButton

@@ -1,10 +1,11 @@
 import { ChevronsDownUp, ChevronsUpDown, FileText, ListTree, type LucideIcon } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { DocumentOutlineTree } from "./document-outline-tree";
 import {
   collectOutlineParentLines,
   findActiveOutlineLine,
+  findOutlineAncestors,
   markdownOutlineRevealEvent,
   markdownVisibleLineChangeEvent,
   markdownVisibleLineQueryEvent,
@@ -73,20 +74,66 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
   const parentLines = useMemo(() => collectOutlineParentLines(outline), [outline]);
   // 只要还有一个可折叠节点是展开的，按钮就应该是「全部折叠」，避免半折叠状态下按钮语义含糊。
   const allCollapsed = parentLines.length > 0 && parentLines.every((line) => collapsedLines.has(line));
+  const navigatingLockRef = useRef<{ line: number; timer: number } | null>(null);
 
   useEffect(() => {
     setSelectedHeadingLine(undefined);
     setCollapsedLines(new Set<number>());
+    if (navigatingLockRef.current?.timer) {
+      window.clearTimeout(navigatingLockRef.current.timer);
+    }
+    navigatingLockRef.current = null;
   }, [activeTabId]);
+
+  // 监听用户在编辑器内的手动滚轮操作，随时解除点击跳转的导航锁
+  useEffect(() => {
+    const handleGlobalWheel = (event: WheelEvent) => {
+      if (navigatingLockRef.current && (event.target as Element)?.closest?.(".cm-scroller")) {
+        window.clearTimeout(navigatingLockRef.current.timer);
+        navigatingLockRef.current = null;
+      }
+    };
+    window.addEventListener("wheel", handleGlobalWheel, { passive: true, capture: true });
+    return () => window.removeEventListener("wheel", handleGlobalWheel, true);
+  }, []);
+
+  // 只要当前选中的章节属于某个折叠的父节点内部，自动将其祖先展开，确保当前正在看的章节必定可见
+  useEffect(() => {
+    if (!selectedHeadingLine) return;
+    const ancestors = findOutlineAncestors(outline, selectedHeadingLine);
+    if (ancestors.length > 0) {
+      setCollapsedLines((current) => {
+        const hasCollapsedAncestor = ancestors.some((line) => current.has(line));
+        if (!hasCollapsedAncestor) return current;
+        const next = new Set(current);
+        for (const line of ancestors) {
+          next.delete(line);
+        }
+        return next;
+      });
+    }
+  }, [selectedHeadingLine, outline]);
 
   useEffect(() => {
     const handleVisibleLineChange = (event: Event) => {
       const detail = (event as CustomEvent<MarkdownVisibleLineChangeDetail>).detail;
       if (!detail || detail.tabId !== activeTabId) return;
-      const activeLine = findActiveOutlineLine(outline, detail.line);
-      if (activeLine !== undefined) {
-        setSelectedHeadingLine(activeLine);
+      const activeLine = detail.activeHeadingLine ?? findActiveOutlineLine(outline, detail.line);
+      if (activeLine === undefined) return;
+
+      // 如果当前处于点击导航锁定期间：
+      if (navigatingLockRef.current) {
+        if (activeLine === navigatingLockRef.current.line) {
+          // 视口已平滑滚动到目标章节，安全解除锁定
+          window.clearTimeout(navigatingLockRef.current.timer);
+          navigatingLockRef.current = null;
+        } else {
+          // 尚在平滑滚动途中，保持用户点击的章节高亮不变，避免被中间帧冲刷
+          return;
+        }
       }
+
+      setSelectedHeadingLine(activeLine);
     };
 
     window.addEventListener(markdownVisibleLineChangeEvent, handleVisibleLineChange);
@@ -110,7 +157,35 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
   function revealHeading(line: number) {
     if (!activeTab) return;
     setSelectedHeadingLine(line);
-    window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, { detail: { tabId: activeTab.id, line } }));
+
+    // 自动展开目标项的所有祖先节点
+    const ancestors = findOutlineAncestors(outline, line);
+    if (ancestors.length > 0) {
+      setCollapsedLines((current) => {
+        const next = new Set(current);
+        let changed = false;
+        for (const aLine of ancestors) {
+          if (next.has(aLine)) {
+            next.delete(aLine);
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    }
+
+    // 设置导航锁定（1000ms），在平滑滚动过程中保持目标高亮
+    if (navigatingLockRef.current?.timer) {
+      window.clearTimeout(navigatingLockRef.current.timer);
+    }
+    const timer = window.setTimeout(() => {
+      navigatingLockRef.current = null;
+    }, 1000);
+    navigatingLockRef.current = { line, timer };
+
+    window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, {
+      detail: { tabId: activeTab.id, line, y: "start", yMargin: 24 },
+    }));
   }
 
   function moveTab(source: DocumentDrawerView, target: DocumentDrawerView, placement: "before" | "after") {
