@@ -463,7 +463,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   // 首个 documentKey 已经由 initialContent 建进 state，不能在 mount 后再替换一次。
   const lastDocumentKeyRef = useRef(documentKey);
   const activeDocumentIdRef = useRef(documentId);
-  activeDocumentIdRef.current = documentId;
+  const reportVisibleLineRef = useRef<(() => void) | undefined>(undefined);
   const incomingViewStateRef = useRef(viewState);
   incomingViewStateRef.current = viewState;
   const viewStateTimerRef = useRef<number | undefined>(undefined);
@@ -498,16 +498,16 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   }
 
   function restoreScrollPosition(view: EditorView, state: LiveMarkdownViewState | undefined, targetDocumentId = activeDocumentIdRef.current) {
-    if (!state && view.scrollDOM.scrollTop > 0) {
-      // 当未传入有效目标视口状态且当前视图已有浏览位置时，保持当前位置，绝不强制归零回到第一行
-      return;
-    }
     if (restoreScrollFrameRef.current !== undefined) window.cancelAnimationFrame(restoreScrollFrameRef.current);
     if (restoreScrollReleaseTimerRef.current !== undefined) window.clearTimeout(restoreScrollReleaseTimerRef.current);
     restoringDocumentIdRef.current = targetDocumentId;
     if (viewStateTimerRef.current !== undefined) {
       window.clearTimeout(viewStateTimerRef.current);
       viewStateTimerRef.current = undefined;
+    }
+    // 当未传入有效目标视口状态（新打开的文档）时，必须从头开始，立即将视口归零回到第一行
+    if (!state && view.scrollDOM.scrollTop > 0) {
+      view.scrollDOM.scrollTop = 0;
     }
     const scrollTop = Math.max(0, state?.scrollTop ?? 0);
     const scrollAnchor = state?.scrollAnchor === undefined
@@ -796,6 +796,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
         }
       });
     };
+    reportVisibleLineRef.current = reportVisibleLine;
     const handleEditorScroll = () => {
       scheduleViewStateReport(view);
       reportVisibleLine();
@@ -833,6 +834,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     window.addEventListener(markdownVisibleLineQueryEvent, handleVisibleLineQuery);
 
     return () => {
+      reportVisibleLineRef.current = undefined;
       reportViewState(view);
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       if (viewStateTimerRef.current !== undefined) window.clearTimeout(viewStateTimerRef.current);
@@ -933,7 +935,10 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     const view = viewRef.current;
     if (!view) return;
     if (lastDocumentKeyRef.current === documentKey) return;
-    reportViewState(view, activeDocumentIdRef.current);
+    const previousDocId = activeDocumentIdRef.current;
+    if (previousDocId && previousDocId !== documentId) {
+      reportViewState(view, previousDocId);
+    }
     lastDocumentKeyRef.current = documentKey;
     activeDocumentIdRef.current = documentId;
 
@@ -952,6 +957,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       });
       restoreScrollPosition(view, nextViewState, documentId);
       reportTableContext(null);
+      reportVisibleLineRef.current?.();
       return;
     }
 
@@ -969,6 +975,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     });
     restoreScrollPosition(view, nextViewState, documentId);
     reportTableContext(null);
+    reportVisibleLineRef.current?.();
   }, [documentId, documentKey]);
 
   return <div ref={hostRef} className={cn("mk-cm-host min-h-0 flex-1 overflow-hidden", className)} />;

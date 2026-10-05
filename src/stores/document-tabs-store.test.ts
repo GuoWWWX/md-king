@@ -204,6 +204,28 @@ test("每个标签分别保存滚动位置和光标位置", () => {
   }
 });
 
+test("新打开的文档初始不携带滚动视口状态，切换已打开标签时保持各自位置", () => {
+  resetTabs();
+  try {
+    // 1. 打开第一个文档并在浏览到中间时记录其视口状态
+    const firstId = useDocumentTabsStore.getState().openScratchTab({ title: "文档A", content: "长文档A" });
+    useDocumentTabsStore.getState().setTabViewState(firstId, { scrollTop: 680, anchor: 10, head: 10 });
+
+    // 2. 此时打开一个全新文档，它的 viewState 必须是 undefined（从头第一行开始）
+    const secondId = useDocumentTabsStore.getState().openScratchTab({ title: "文档B", content: "新文档B" });
+    const secondTab = useDocumentTabsStore.getState().tabs.find((tab) => tab.id === secondId);
+    assert.equal(secondTab?.viewState, undefined);
+
+    // 3. 在标签栏切回文档A，文档A仍然保有其原本的 680 滚动位置
+    useDocumentTabsStore.getState().setActiveTab(firstId);
+    const activeTabA = useDocumentTabsStore.getState().tabs.find((tab) => tab.id === firstId);
+    assert.equal(activeTabA?.viewState?.scrollTop, 680);
+  } finally {
+    resetTabs();
+  }
+});
+
+
 test("恢复会话时保持标签顺序和关闭前激活的标签", () => {
   resetTabs();
   try {
