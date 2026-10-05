@@ -101,6 +101,53 @@ export function ImageViewer({
     return () => observer.disconnect();
   }, []);
 
+  const zoomAtPoint = useCallback(
+    (nextZoomOrUpdater: number | ((curr: number) => number), clientX?: number, clientY?: number) => {
+      const node = viewportRef.current;
+      const currZoom = zoomRef.current;
+      const currPan = panRef.current;
+
+      const nextZoomRaw = typeof nextZoomOrUpdater === "function" ? nextZoomOrUpdater(currZoom) : nextZoomOrUpdater;
+      const nextZoom = clampZoom(nextZoomRaw);
+      if (Math.abs(nextZoom - currZoom) < 1e-4) return;
+
+      const ratio = nextZoom / currZoom;
+
+      if (!node || clientX === undefined || clientY === undefined) {
+        // 未提供鼠标坐标时，以视口几何中心为基准按比例缩放平移量
+        updateZoom(nextZoom);
+        updatePan({
+          x: Math.round(currPan.x * ratio * 10) / 10,
+          y: Math.round(currPan.y * ratio * 10) / 10,
+        });
+        return;
+      }
+
+      const rect = node.getBoundingClientRect();
+      const mouseX = clientX - rect.left;
+      const mouseY = clientY - rect.top;
+
+      // 视口几何中心
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      // 鼠标相对于视口中心的偏移向量
+      const dx = mouseX - centerX;
+      const dy = mouseY - centerY;
+
+      // 定点缩放方程：pan_new = pan_old * ratio + d * (1 - ratio)
+      const nextPanX = currPan.x * ratio + dx * (1 - ratio);
+      const nextPanY = currPan.y * ratio + dy * (1 - ratio);
+
+      updateZoom(nextZoom);
+      updatePan({
+        x: Math.round(nextPanX * 10) / 10,
+        y: Math.round(nextPanY * 10) / 10,
+      });
+    },
+    [updateZoom, updatePan],
+  );
+
   // 鼠标滚轮和触摸板双指捏合（pinch）原生非 passive 监听，防止父级页面跟着滚动
   useEffect(() => {
     const node = viewportRef.current;
@@ -109,13 +156,29 @@ export function ImageViewer({
     const handleNativeWheel = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const factor = e.deltaY < 0 ? 1.15 : 0.85;
-      updateZoom((curr) => Number((curr * factor).toFixed(3)));
+
+      // 结合 Ctrl/Cmd 键或触摸板双指捏合（浏览器原生附带 ctrlKey: true）进行定点缩放
+      if (e.ctrlKey || e.metaKey) {
+        const delta = -e.deltaY;
+        const factor = Math.abs(delta) < 40
+          ? 1 + delta * 0.01 // 触摸板小步进平滑缩放
+          : delta > 0 ? 1.15 : 0.85; // 鼠标滚轮档位缩放
+
+        zoomAtPoint((curr) => Number((curr * factor).toFixed(3)), e.clientX, e.clientY);
+      } else {
+        // 普通鼠标滚轮：平移画布（滚轮上下滑动平移 Y，横向滚轮平移 X）
+        const deltaX = e.deltaX;
+        const deltaY = e.deltaY;
+        updatePan((curr) => ({
+          x: Math.round((curr.x - deltaX) * 10) / 10,
+          y: Math.round((curr.y - deltaY) * 10) / 10,
+        }));
+      }
     };
 
     node.addEventListener("wheel", handleNativeWheel, { passive: false });
     return () => node.removeEventListener("wheel", handleNativeWheel);
-  }, [updateZoom]);
+  }, [zoomAtPoint, updatePan]);
 
   // 鼠标左键按下开始平移拖拽
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -183,7 +246,7 @@ export function ImageViewer({
       aria-label={alt ? `${alt}，图片查看器` : "图片查看器"}
     >
       <div
-        className="flex h-full w-full items-center justify-center p-4 transition-transform ease-out"
+        className="flex h-full w-full items-center justify-center p-4"
         style={{
           transform: `translate3d(${pan.x}px, ${pan.y}px, 0)`,
           willChange: isDragging ? "transform" : "auto",
@@ -242,8 +305,30 @@ export function MediaPreviewDialog({
     }
   }, [open, src]);
 
-  const handleZoomIn = () => setZoom((z) => clampZoom(Number((z * 1.25).toFixed(3))));
-  const handleZoomOut = () => setZoom((z) => clampZoom(Number((z * 0.8).toFixed(3))));
+  const handleZoomIn = () => {
+    setZoom((currZoom) => {
+      const nextZoom = clampZoom(Number((currZoom * 1.25).toFixed(3)));
+      const ratio = nextZoom / currZoom;
+      setPan((currPan) => ({
+        x: Math.round(currPan.x * ratio * 10) / 10,
+        y: Math.round(currPan.y * ratio * 10) / 10,
+      }));
+      return nextZoom;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setZoom((currZoom) => {
+      const nextZoom = clampZoom(Number((currZoom * 0.8).toFixed(3)));
+      const ratio = nextZoom / currZoom;
+      setPan((currPan) => ({
+        x: Math.round(currPan.x * ratio * 10) / 10,
+        y: Math.round(currPan.y * ratio * 10) / 10,
+      }));
+      return nextZoom;
+    });
+  };
+
   const handleReset = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -267,7 +352,7 @@ export function MediaPreviewDialog({
               type="button"
               onClick={handleZoomOut}
               className="flex h-7 w-7 items-center justify-center rounded-[4px] transition hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
-              title="缩小 (滚轮下滑)"
+              title="缩小 (Ctrl + 滚轮下滑)"
               aria-label="缩小"
             >
               <ZoomOut className="size-3.5" />
@@ -282,7 +367,7 @@ export function MediaPreviewDialog({
               type="button"
               onClick={handleZoomIn}
               className="flex h-7 w-7 items-center justify-center rounded-[4px] transition hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
-              title="放大 (滚轮上滑)"
+              title="放大 (Ctrl + 滚轮上滑)"
               aria-label="放大"
             >
               <ZoomIn className="size-3.5" />
