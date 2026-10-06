@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { resolveBrowserPreviewImage } from "@/lib/browser-preview-images";
+import { resolveBrowserPreviewImage } from "./browser-preview-images.ts";
 import { downloadDir, join } from "@tauri-apps/api/path";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { limitHistory } from "@/lib/conversion-history";
+import { limitHistory } from "./conversion-history.ts";
 import type { AppConfig, AppStatus, ConvertRequest, ConvertResult, HistoryItem, ImportTemplateRequest, PandocStatus, Template, TemplateStyleConfig } from "@/types";
 
 type TauriWindow = Window & {
@@ -454,26 +454,81 @@ export function convertMarkdown(request: ConvertRequest) {
   });
 }
 
+let lastToggleMaximizeTime = 0;
+
+export type WindowDragTarget = {
+  startDragging: () => Promise<unknown>;
+  toggleMaximize: () => Promise<unknown>;
+};
+
 /**
- * 在顶部栏、侧边栏等空白区域按下鼠标左键时启动原生窗口拖拽。
+ * 节流触发窗口最大化/还原，防止 pointerdown (detail===2) 与 dblclick 短时间内重复触发导致窗口状态震荡。
+ */
+export function triggerTauriWindowToggleMaximize(windowGetter: () => WindowDragTarget = getCurrentWindow) {
+  if (!isTauriEnvironment()) return;
+  const now = Date.now();
+  if (now - lastToggleMaximizeTime < 450) return;
+  lastToggleMaximizeTime = now;
+
+  try {
+    void windowGetter().toggleMaximize().catch(() => undefined);
+  } catch {
+    // 忽略异常
+  }
+}
+
+/**
+ * 在顶部栏、侧边栏等空白区域按下鼠标左键时处理窗口拖拽与双击最大化/还原。
+ * - 快速连续点击第 2 次（event.detail === 2）：立即触发双击切换窗口最大化/还原；
+ * - 普通单次点击（event.detail === 1）：启动原生窗口拖拽；
  * 会自动忽略按钮、输入框、标签、菜单项等可交互控件，确保不影响正常点击操作。
  */
-export function handleTauriWindowDrag(event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) {
+export function handleTauriWindowDrag(
+  event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>,
+  windowGetter: () => WindowDragTarget = getCurrentWindow,
+) {
   if (event.button !== 0) return;
   if (!isTauriEnvironment()) return;
 
   const target = event.target as HTMLElement | null;
   if (!target) return;
 
-  // 如果点击的是按钮、输入框、下拉菜单、标签等可交互控件，不启动窗口拖拽
+  // 如果点击的是按钮、输入框、下拉菜单、标签等可交互控件，不启动窗口拖拽与双击最大化
   if (target.closest("button, input, select, textarea, a, [role='button'], [role='tab'], [role='menuitem'], [data-mk-context-menu], [data-no-drag]")) {
     return;
   }
 
+  if (event.detail === 2) {
+    triggerTauriWindowToggleMaximize(windowGetter);
+    return;
+  }
+
   try {
-    void getCurrentWindow().startDragging().catch(() => undefined);
+    void windowGetter().startDragging().catch(() => undefined);
   } catch {
     // 忽略异常
   }
 }
+
+/**
+ * 在顶部栏、侧边栏等空白区域双击时切换窗口最大化与还原。
+ */
+export function handleTauriWindowDoubleClick(
+  event: ReactMouseEvent<HTMLElement>,
+  windowGetter: () => WindowDragTarget = getCurrentWindow,
+) {
+  if (event.button !== 0) return;
+  if (!isTauriEnvironment()) return;
+
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+
+  if (target.closest("button, input, select, textarea, a, [role='button'], [role='tab'], [role='menuitem'], [data-mk-context-menu], [data-no-drag]")) {
+    return;
+  }
+
+  triggerTauriWindowToggleMaximize(windowGetter);
+}
+
+
 

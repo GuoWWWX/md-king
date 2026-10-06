@@ -1,9 +1,9 @@
 import { Columns2, Copy, Minus, PanelLeft, PanelRight, Search, Square, X, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { handleTauriWindowDrag } from "@/lib/tauri";
+import { handleTauriWindowDrag, handleTauriWindowDoubleClick } from "@/lib/tauri";
 import { PAGE_ZOOM_MAX_PERCENT, PAGE_ZOOM_MIN_PERCENT, PAGE_ZOOM_STEP_PERCENT } from "@/lib/page-zoom";
 
 function getAppWindow(): TauriWindow | undefined {
@@ -71,8 +71,8 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
     };
   }, []);
 
-  function handleDoubleClick() {
-    void getAppWindow()?.toggleMaximize().then(syncMaximizedState);
+  function handleDoubleClick(event: ReactMouseEvent<HTMLElement>) {
+    handleTauriWindowDoubleClick(event);
   }
 
   function handleWindowAction(action: "minimize" | "toggleMaximize" | "close") {
@@ -95,7 +95,6 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
   return (
     <div
       className="mk-titlebar flex h-9 shrink-0 select-none items-center text-slate-700 dark:text-zinc-300"
-      data-tauri-drag-region
       onPointerDown={handleTauriWindowDrag}
       onDoubleClick={handleDoubleClick}
     >
@@ -104,7 +103,6 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         style={{
           width: fileTreeVisible && fileTreeWidth ? `${fileTreeWidth + 53.5}px` : "224px",
         }}
-        data-tauri-drag-region
         onPointerDown={handleTauriWindowDrag}
         onDoubleClick={handleDoubleClick}
       >
@@ -131,14 +129,12 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         id="mk-titlebar-document-tabs"
         className="flex h-full min-w-0 flex-1 items-stretch pl-1"
         style={{ marginLeft: documentTabsOffset }}
-        data-tauri-drag-region
         onPointerDown={handleTauriWindowDrag}
         onDoubleClick={handleDoubleClick}
       />
 
       <div
         className="flex h-full shrink-0 items-center"
-        data-tauri-drag-region
         onPointerDown={handleTauriWindowDrag}
         onDoubleClick={handleDoubleClick}
       >

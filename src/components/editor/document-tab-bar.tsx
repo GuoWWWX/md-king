@@ -5,7 +5,7 @@ import { ContextMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { collectOverflowedTabKeys, tabWheelScrollDelta } from "@/lib/document-tab-overflow";
-import { isTauriEnvironment, handleTauriWindowDrag } from "@/lib/tauri";
+import { isTauriEnvironment, handleTauriWindowDrag, handleTauriWindowDoubleClick, triggerTauriWindowToggleMaximize } from "@/lib/tauri";
 import { useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { cn } from "@/lib/utils";
 
@@ -196,7 +196,11 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     const pageTab = target.closest<HTMLElement>("[data-page-tab-id]");
     if (!tab && !pageTab) {
       if (!isTauriEnvironment()) return;
-      void getCurrentWindow().startDragging().catch(() => undefined);
+      if (event.detail === 2) {
+        triggerTauriWindowToggleMaximize();
+      } else {
+        void getCurrentWindow().startDragging().catch(() => undefined);
+      }
       return;
     }
     // 顶部标签位于无边框桌面窗口的标题栏内。少数 Tauri 拖动场景会吞掉
@@ -322,7 +326,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     if (target.closest("[data-tab-id], [data-page-tab-id], button")) return;
     if (!isTauriEnvironment()) return;
     event.preventDefault();
-    void getCurrentWindow().toggleMaximize().catch(() => undefined);
+    triggerTauriWindowToggleMaximize();
   }
 
   function handleTabListWheel(event: ReactWheelEvent<HTMLDivElement>) {
@@ -357,8 +361,8 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
   return (
     <div
       className={cn("mk-document-tab-bar flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1 dark:border-zinc-700/60 dark:bg-[#202020]", className)}
-      data-tauri-drag-region
       onPointerDown={handleTauriWindowDrag}
+      onDoubleClick={handleTauriWindowDoubleClick}
     >
       <div
         ref={listRef}

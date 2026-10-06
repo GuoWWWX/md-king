@@ -1,4 +1,4 @@
-import { extractMarkdownTitle } from "@/lib/convert-utils";
+import { extractMarkdownTitle } from "./convert-utils.ts";
 import type { ConvertResult, HistoryItem } from "@/types";
 
 export const MAX_HISTORY_ITEMS = 10_000;
