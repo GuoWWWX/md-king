@@ -212,4 +212,114 @@ test("applyNodeTextBorderColor 智能让节点文字颜色继承边框色", asyn
   assert.equal(span4.style.getPropertyValue("color"), ""); // 保留原显式样式，不覆盖
 });
 
+test("adaptSequenceDiagramRects 智能自适应时序图背景高亮框并确保文字清晰度", async () => {
+  const { adaptSequenceDiagramRects } = await import("./mermaid.ts");
+
+  interface MockElement {
+    tagName: string;
+    className: string;
+    styleMap: Map<string, string>;
+    attributes: Map<string, string>;
+    children: MockElement[];
+    style: {
+      setProperty: (prop: string, val: string, priority?: string) => void;
+      getPropertyValue: (prop: string) => string;
+    };
+    getAttribute: (attr: string) => string | null;
+    setAttribute: (attr: string, val: string) => void;
+    querySelectorAll: <T = unknown>(selector: string) => T[];
+    matches: (selector: string) => boolean;
+  }
+
+  function createMockElement(tagName: string, className = "", style = "", fill = ""): MockElement {
+    const styleMap = new Map<string, string>();
+    const attributes = new Map<string, string>();
+    if (className) attributes.set("class", className);
+    if (style) attributes.set("style", style);
+    if (fill) attributes.set("fill", fill);
+
+    if (style) {
+      style.split(";").forEach((s) => {
+        const [k, v] = s.split(":").map((x) => x?.trim());
+        if (k && v) styleMap.set(k, v);
+      });
+    }
+
+    const el: MockElement = {
+      tagName: tagName.toLowerCase(),
+      className,
+      styleMap,
+      attributes,
+      children: [],
+      style: {
+        setProperty(prop: string, val: string) {
+          styleMap.set(prop, val);
+        },
+        getPropertyValue(prop: string) {
+          return styleMap.get(prop) || "";
+        },
+      },
+      getAttribute(attr: string) {
+        return attributes.get(attr) || null;
+      },
+      setAttribute(attr: string, val: string) {
+        attributes.set(attr, val);
+      },
+      querySelectorAll<T = unknown>(selector: string): T[] {
+        const result: MockElement[] = [];
+        const selectors = selector.split(",").map((s) => s.trim().toLowerCase());
+        function walk(node: MockElement) {
+          for (const child of node.children) {
+            const matches = selectors.some((s) => {
+              if (s.startsWith(".")) {
+                return child.className.split(" ").includes(s.slice(1));
+              }
+              if (s.startsWith("rect[")) {
+                return child.tagName === "rect";
+              }
+              return child.tagName === s;
+            });
+            if (matches) result.push(child);
+            walk(child);
+          }
+        }
+        walk(el);
+        return result as unknown as T[];
+      },
+      matches(selector: string) {
+        const selectors = selector.split(",").map((s) => s.trim().toLowerCase());
+        return selectors.some((s) => {
+          if (s.startsWith(".")) {
+            return el.className.split(" ").includes(s.slice(1));
+          }
+          return el.tagName === s;
+        });
+      },
+    };
+
+    return el;
+  }
+
+  // 场景：深色模式下，用户指定的两个时序图背景高亮框（AliceBlue 和 FloralWhite）
+  const root = createMockElement("svg");
+  const rect1 = createMockElement("rect", "rect", "fill: rgb(240, 248, 255);");
+  const rect2 = createMockElement("rect", "rect", "fill: rgb(255, 250, 240);");
+  const actorRect = createMockElement("rect", "actor", "fill: #382613;"); // 参与者角色框，不应被当成背景块修改
+
+  root.children.push(rect1, rect2, actorRect);
+
+  adaptSequenceDiagramRects(root as unknown as Element, true);
+
+  // 验证两块浅色背景在深色模式下成功转换为暗调底色与细微光边框
+  assert.equal(rect1.style.getPropertyValue("fill"), "color-mix(in srgb, rgb(240, 248, 255) 18%, #202020)");
+  assert.equal(rect1.style.getPropertyValue("stroke"), "color-mix(in srgb, rgb(240, 248, 255) 45%, #f59e0b)");
+  assert.equal(rect1.style.getPropertyValue("stroke-dasharray"), "4 2");
+
+  assert.equal(rect2.style.getPropertyValue("fill"), "color-mix(in srgb, rgb(255, 250, 240) 18%, #202020)");
+  assert.equal(rect2.style.getPropertyValue("stroke"), "color-mix(in srgb, rgb(255, 250, 240) 45%, #f59e0b)");
+
+  // 参与者框保持原本主题色，不受影响
+  assert.equal(actorRect.style.getPropertyValue("fill"), "#382613");
+});
+
 

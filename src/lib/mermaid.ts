@@ -795,6 +795,9 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
     // 使得边框与文字始终同色系（如默认橙框橙字、绿框绿字、蓝框蓝字），无论深浅模式都完美清晰协调。
     applyNodeTextBorderColor(root, dark);
 
+    // 时序图背景高亮框（rect rgb(...) 指令）深色模式自适应与文字高对比度保证
+    adaptSequenceDiagramRects(root, dark);
+
     // 全图 ViewBox 动态安全呼吸边距自适应：检测最顶、最底、最左、最右的几何边界，
     // 确保任何图形、圆角边框、标题文字与视口边缘至少有 12~16px 的充裕呼吸留白，100% 杜绝裁切与紧贴压抑。
     const vbAttr = root.getAttribute("viewBox");
@@ -1024,6 +1027,109 @@ export function applyNodeTextBorderColor(root: Element, dark: boolean) {
             textEl.style.setProperty("fill", targetColor, "important");
           }
         }
+      }
+    }
+  }
+}
+
+function parseRgbColor(colorStr: string): [number, number, number] | null {
+  const trimmed = colorStr.trim().toLowerCase();
+  const rgbMatch = trimmed.match(/rgba?\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/);
+  if (rgbMatch) {
+    return [parseFloat(rgbMatch[1]), parseFloat(rgbMatch[2]), parseFloat(rgbMatch[3])];
+  }
+  const hexMatch = trimmed.match(/^#([0-9a-f]{3,8})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    if (hex.length === 3) {
+      return [parseInt(hex[0] + hex[0], 16), parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16)];
+    }
+    if (hex.length >= 6) {
+      return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+    }
+  }
+  return null;
+}
+
+function getRgbLuminance(r: number, g: number, b: number): number {
+  const linear = [r, g, b].map((c) => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+}
+
+/**
+ * 时序图背景高亮框（rect rgb(...) 指令）深色模式自适应与对比度优化：
+ * 1. 在深色模式下，将刺眼的亮浅色背景框（如 AliceBlue、FloralWhite 等）自适应转换为沉稳优雅的微透暗调底色，
+ *    保留阶段区分色相（如阶段一暗蓝调、阶段二暗暖调），彻底避免深色模式下突兀的大白板；
+ * 2. 对落在背景框区域内的消息文本（.messageText）与连线进行底色亮度检测，确保文字与底色始终保持极佳对比度，
+ *    无论深色模式还是浅色模式都清晰可见。
+ */
+export function adaptSequenceDiagramRects(root: Element, dark: boolean) {
+  const backgroundRects = Array.from(root.querySelectorAll<SVGRectElement>("rect.rect, rect[class*='rect'], rect[fill*='rgb'], rect[style*='fill']")).filter((rect) => {
+    return !rect.matches(".actor, .note, .labelBox, [class*='actor'], [class*='note'], [class*='labelBox']");
+  });
+
+  if (backgroundRects.length === 0) return;
+
+  const rectData = backgroundRects.map((rect) => {
+    const styleAttr = rect.getAttribute("style") || "";
+    const fillMatch = styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;!]+)/i);
+    const fillStr = fillMatch?.[1]?.trim() || rect.getAttribute("fill") || "";
+    const parsed = parseRgbColor(fillStr);
+    let luminance = parsed ? getRgbLuminance(parsed[0], parsed[1], parsed[2]) : 0.5;
+
+    return {
+      rect,
+      fillStr,
+      parsed,
+      luminance,
+      bounds: typeof rect.getBoundingClientRect === "function" ? rect.getBoundingClientRect() : null,
+    };
+  });
+
+  for (const item of rectData) {
+    if (!item.parsed) continue;
+
+    if (dark) {
+      // 深色模式下：如果背景是亮浅色（相对亮度 > 0.35）
+      if (item.luminance > 0.35) {
+        const rawColor = `rgb(${item.parsed[0]}, ${item.parsed[1]}, ${item.parsed[2]})`;
+        const darkFill = `color-mix(in srgb, ${rawColor} 18%, #202020)`;
+        const darkStroke = `color-mix(in srgb, ${rawColor} 45%, #f59e0b)`;
+        item.rect.style.setProperty("fill", darkFill, "important");
+        item.rect.style.setProperty("stroke", darkStroke, "important");
+        item.rect.style.setProperty("stroke-width", "1px", "important");
+        item.rect.style.setProperty("stroke-dasharray", "4 2", "important");
+        item.rect.style.setProperty("rx", "4px", "important");
+        item.rect.style.setProperty("ry", "4px", "important");
+        item.luminance = 0.08; // 转换为暗底
+      }
+    }
+  }
+
+  // 检查落在此背景框内的时序图消息文本 (.messageText)
+  const messageTexts = root.querySelectorAll<SVGTextElement>(".messageText, text.messageText");
+  for (const text of messageTexts) {
+    if (typeof text.getBoundingClientRect !== "function") continue;
+    const textBounds = text.getBoundingClientRect();
+    if (!textBounds.width && !textBounds.height) continue;
+    const tx = textBounds.x + textBounds.width / 2;
+    const ty = textBounds.y + textBounds.height / 2;
+
+    for (const item of rectData) {
+      if (!item.bounds) continue;
+      const b = item.bounds;
+      if (tx >= b.left && tx <= b.right && ty >= b.top && ty <= b.bottom) {
+        if (item.luminance > 0.4) {
+          text.style.setProperty("fill", "#1c1917", "important");
+          text.style.setProperty("color", "#1c1917", "important");
+        } else {
+          text.style.setProperty("fill", "#fef3c7", "important");
+          text.style.setProperty("color", "#fef3c7", "important");
+        }
+        break;
       }
     }
   }
