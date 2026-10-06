@@ -3,7 +3,7 @@ import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { TooltipAnchor } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { handleTauriWindowDrag, handleTauriWindowDoubleClick } from "@/lib/tauri";
+import { handleTauriWindowDrag, handleTauriWindowDoubleClick, TAURI_MAXIMIZED_CHANGED_EVENT } from "@/lib/tauri";
 import { PAGE_ZOOM_MAX_PERCENT, PAGE_ZOOM_MIN_PERCENT, PAGE_ZOOM_STEP_PERCENT } from "@/lib/page-zoom";
 
 function getAppWindow(): TauriWindow | undefined {
@@ -65,9 +65,15 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
       if (disposed) cleanup();
     });
 
+    const handleMaximizedChanged = () => {
+      if (!disposed) void syncMaximizedState();
+    };
+    window.addEventListener(TAURI_MAXIMIZED_CHANGED_EVENT, handleMaximizedChanged);
+
     return () => {
       disposed = true;
       unlisten?.();
+      window.removeEventListener(TAURI_MAXIMIZED_CHANGED_EVENT, handleMaximizedChanged);
     };
   }, []);
 
@@ -103,8 +109,6 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         style={{
           width: fileTreeVisible && fileTreeWidth ? `${fileTreeWidth + 53.5}px` : "224px",
         }}
-        onPointerDown={handleTauriWindowDrag}
-        onDoubleClick={handleDoubleClick}
       >
         {onToggleFileTree ? (
           <TitlebarButton
@@ -129,14 +133,10 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         id="mk-titlebar-document-tabs"
         className="flex h-full min-w-0 flex-1 items-stretch pl-1"
         style={{ marginLeft: documentTabsOffset }}
-        onPointerDown={handleTauriWindowDrag}
-        onDoubleClick={handleDoubleClick}
       />
 
       <div
         className="flex h-full shrink-0 items-center"
-        onPointerDown={handleTauriWindowDrag}
-        onDoubleClick={handleDoubleClick}
       >
         {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <>

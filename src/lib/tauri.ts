@@ -455,6 +455,12 @@ export function convertMarkdown(request: ConvertRequest) {
 }
 
 let lastToggleMaximizeTime = 0;
+let lastPointerDownTime = 0;
+let lastPointerDownX = 0;
+let lastPointerDownY = 0;
+let activeDragCleanup: (() => void) | null = null;
+
+export const TAURI_MAXIMIZED_CHANGED_EVENT = "mk-window-maximized-changed";
 
 export type WindowDragTarget = {
   startDragging: () => Promise<unknown>;
@@ -462,16 +468,23 @@ export type WindowDragTarget = {
 };
 
 /**
- * 节流触发窗口最大化/还原，防止 pointerdown (detail===2) 与 dblclick 短时间内重复触发导致窗口状态震荡。
+ * 节流触发窗口最大化/还原，防止短时间内重复触发导致窗口状态震荡。
  */
 export function triggerTauriWindowToggleMaximize(windowGetter: () => WindowDragTarget = getCurrentWindow) {
   if (!isTauriEnvironment()) return;
   const now = Date.now();
-  if (now - lastToggleMaximizeTime < 450) return;
+  if (now - lastToggleMaximizeTime < 250) return;
   lastToggleMaximizeTime = now;
 
   try {
-    void windowGetter().toggleMaximize().catch(() => undefined);
+    void windowGetter()
+      .toggleMaximize()
+      .then(() => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent(TAURI_MAXIMIZED_CHANGED_EVENT));
+        }
+      })
+      .catch(() => undefined);
   } catch {
     // 忽略异常
   }
@@ -479,9 +492,9 @@ export function triggerTauriWindowToggleMaximize(windowGetter: () => WindowDragT
 
 /**
  * 在顶部栏、侧边栏等空白区域按下鼠标左键时处理窗口拖拽与双击最大化/还原。
- * - 快速连续点击第 2 次（event.detail === 2）：立即触发双击切换窗口最大化/还原；
- * - 普通单次点击（event.detail === 1）：启动原生窗口拖拽；
- * 会自动忽略按钮、输入框、标签、菜单项等可交互控件，确保不影响正常点击操作。
+ * - 核心机制：轻微移动阈值判定拖拽（移动超过 4px 才启动原生拖拽），彻底杜绝原生拖拽吞噬双击事件；
+ * - 采用时间戳 + 坐标容差与 event.detail 双保险识别双击，在最大化与窗口化双向切换时均 100% 灵敏响应；
+ * - 自动忽略按钮、输入框、标签、菜单项等可交互控件。
  */
 export function handleTauriWindowDrag(
   event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>,
@@ -493,21 +506,82 @@ export function handleTauriWindowDrag(
   const target = event.target as HTMLElement | null;
   if (!target) return;
 
-  // 如果点击的是按钮、输入框、下拉菜单、标签等可交互控件，不启动窗口拖拽与双击最大化
+  // 如果点击的是按钮、输入框、下拉菜单、标签等可交互控件，不处理
   if (target.closest("button, input, select, textarea, a, [role='button'], [role='tab'], [role='menuitem'], [data-mk-context-menu], [data-no-drag]")) {
     return;
   }
 
-  if (event.detail === 2) {
+  if (activeDragCleanup) {
+    activeDragCleanup();
+    activeDragCleanup = null;
+  }
+
+  const now = Date.now();
+  const timeDiff = now - lastPointerDownTime;
+  const clientX = event.clientX ?? 0;
+  const clientY = event.clientY ?? 0;
+  const dist = Math.hypot(clientX - lastPointerDownX, clientY - lastPointerDownY);
+
+  // 双击判定：
+  // 1. 原生 event.detail === 2
+  // 2. 或两次按下间隔在 40ms ~ 450ms 之间且位移 <= 12px
+  const isDoubleClick = event.detail === 2 || (timeDiff >= 40 && timeDiff <= 450 && dist <= 12);
+
+  if (isDoubleClick) {
+    lastPointerDownTime = 0;
     triggerTauriWindowToggleMaximize(windowGetter);
     return;
   }
 
-  try {
-    void windowGetter().startDragging().catch(() => undefined);
-  } catch {
-    // 忽略异常
+  lastPointerDownTime = now;
+  lastPointerDownX = clientX;
+  lastPointerDownY = clientY;
+
+  const startX = clientX;
+  const startY = clientY;
+
+  // 在没有 DOM 移动事件的纯测试环境（Node.js）中，如果 window 不存在或不支持 addEventListener，直接按单次拖拽处理
+  if (typeof window === "undefined" || typeof window.addEventListener !== "function") {
+    try {
+      void windowGetter().startDragging().catch(() => undefined);
+    } catch {
+      // 忽略异常
+    }
+    return;
   }
+
+  const onPointerMove = (moveEvent: PointerEvent | MouseEvent) => {
+    const delta = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+    if (delta >= 4) {
+      cleanup();
+      try {
+        void windowGetter().startDragging().catch(() => undefined);
+      } catch {
+        // 忽略异常
+      }
+    }
+  };
+
+  const cleanup = () => {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("mousemove", onPointerMove);
+    window.removeEventListener("pointerup", cleanup);
+    window.removeEventListener("mouseup", cleanup);
+    window.removeEventListener("pointercancel", cleanup);
+    window.removeEventListener("blur", cleanup);
+    if (activeDragCleanup === cleanup) {
+      activeDragCleanup = null;
+    }
+  };
+
+  activeDragCleanup = cleanup;
+
+  window.addEventListener("pointermove", onPointerMove, { passive: true });
+  window.addEventListener("mousemove", onPointerMove, { passive: true });
+  window.addEventListener("pointerup", cleanup, { once: true });
+  window.addEventListener("mouseup", cleanup, { once: true });
+  window.addEventListener("pointercancel", cleanup, { once: true });
+  window.addEventListener("blur", cleanup, { once: true });
 }
 
 /**

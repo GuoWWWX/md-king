@@ -195,12 +195,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
     const tab = target.closest<HTMLElement>("[data-tab-id]");
     const pageTab = target.closest<HTMLElement>("[data-page-tab-id]");
     if (!tab && !pageTab) {
-      if (!isTauriEnvironment()) return;
-      if (event.detail === 2) {
-        triggerTauriWindowToggleMaximize();
-      } else {
-        void getCurrentWindow().startDragging().catch(() => undefined);
-      }
+      handleTauriWindowDrag(event);
       return;
     }
     // 顶部标签位于无边框桌面窗口的标题栏内。少数 Tauri 拖动场景会吞掉

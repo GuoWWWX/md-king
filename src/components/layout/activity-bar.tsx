@@ -77,11 +77,9 @@ export function ActivityBar({
 
       <div
         className="min-h-0 flex-1 w-full"
-        onPointerDown={handleTauriWindowDrag}
-        onDoubleClick={handleTauriWindowDoubleClick}
       />
 
-      <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700" onPointerDown={handleTauriWindowDrag} onDoubleClick={handleTauriWindowDoubleClick}>
+      <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700">
         <Button
           variant="outline"
           className="mk-theme-cycle-button mk-sidebar-icon-button size-9 shrink-0 justify-center rounded-[8px] px-0"

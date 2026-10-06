@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { handleTauriWindowDrag, handleTauriWindowDoubleClick, triggerTauriWindowToggleMaximize } from "./tauri.ts";
 
-test("Tauri 窗口拖拽与双击最大化行为测试", () => {
+test("Tauri 窗口拖拽与双击最大化行为测试", async () => {
   let startDraggingCalled = 0;
   let toggleMaximizeCalled = 0;
 
@@ -65,6 +65,30 @@ test("Tauri 窗口拖拽与双击最大化行为测试", () => {
     // 5. triggerTauriWindowToggleMaximize 也遵循节流保护
     triggerTauriWindowToggleMaximize(getMockWindow);
     assert.equal(toggleMaximizeCalled, 1);
+
+    // 6. 模拟 Windows 丢失 detail 的场景：两次快速点击均为 detail: 1
+    // 等待超过节流时间后进行第一次点击
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const initialMaximizeCount = toggleMaximizeCalled;
+    handleTauriWindowDrag({
+      button: 0,
+      detail: 1,
+      clientX: 100,
+      clientY: 50,
+      target: blankTarget as unknown as EventTarget,
+    } as unknown as React.MouseEvent<HTMLElement>, getMockWindow);
+    assert.equal(toggleMaximizeCalled, initialMaximizeCount);
+
+    // 100ms 后的第二次点击，即使 detail 仍然是 1（被系统拖拽模态打断），也能通过时间戳容差判定为双击
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    handleTauriWindowDrag({
+      button: 0,
+      detail: 1,
+      clientX: 102,
+      clientY: 51,
+      target: blankTarget as unknown as EventTarget,
+    } as unknown as React.MouseEvent<HTMLElement>, getMockWindow);
+    assert.equal(toggleMaximizeCalled, initialMaximizeCount + 1);
 
   } finally {
     delete (globalThis as unknown as { __TAURI__?: unknown }).__TAURI__;
