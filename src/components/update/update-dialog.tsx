@@ -210,9 +210,10 @@ export function UpdateDialog() {
                   size="sm"
                   className="h-8 gap-1.5 bg-amber-600 text-xs font-bold text-white hover:bg-amber-700 dark:bg-amber-500 dark:text-zinc-950 dark:hover:bg-amber-400"
                   onClick={startDownload}
+                  disabled={status === "checking"}
                 >
                   <Download className="size-3.5" />
-                  <span>立即更新</span>
+                  <span>{status === "checking" ? "检查中..." : "立即更新"}</span>
                 </Button>
               </>
             )}

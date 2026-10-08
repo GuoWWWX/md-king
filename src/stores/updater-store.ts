@@ -175,7 +175,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
 
   startDownload: async () => {
     const { latestRelease, status } = get();
-    if (!latestRelease || ["downloading", "cancelling", "installing"].includes(status)) return;
+    if (!latestRelease || ["checking", "downloading", "cancelling", "installing"].includes(status)) return;
 
     // 寻找 Windows 安装包 asset（优先 *-setup.exe）
     const setupAsset = latestRelease.assets.find((a) => a.name === `md-king_${latestRelease.tag_name.replace(/^v/, "")}_x64-setup.exe`);

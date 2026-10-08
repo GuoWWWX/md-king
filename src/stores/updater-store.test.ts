@@ -126,3 +126,10 @@ test("重新打开窗口检查更新时，不打断正在检查、下载或安�
   }
   assert.deepEqual(commands, []);
 });
+
+test("检查新版本尚未结束时，不启动旧版本安装包下载", async () => {
+  useUpdaterStore.setState({ status: "checking" });
+  await useUpdaterStore.getState().startDownload();
+  assert.deepEqual(commands, []);
+  assert.equal(useUpdaterStore.getState().status, "checking");
+});
