@@ -2,140 +2,133 @@
 
 <img src="docs/images/logo.png" alt="MD King Logo" width="108" height="108" />
 
-# MD King (文档之王)
+# MD King · Markdown 编辑器与 Markdown 转 Word 工具
 
-**面向 AI 时代的一站式 Markdown 转 Word/WPS 本地桌面排版利器**
+**用 Markdown 写作，按自定义模板导出 Word / WPS 文档。**
+
+A local Markdown editor and Markdown-to-Word (DOCX) converter with customizable document styles and templates.
 
 [![Release](https://img.shields.io/github/v/release/GuoWWWX/md-king?color=blue&style=flat-square)](https://github.com/GuoWWWX/md-king/releases)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20x64-brightgreen?style=flat-square)](https://github.com/GuoWWWX/md-king)
-[![Tauri](https://img.shields.io/badge/Framework-Tauri%202.0-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
-[![React](https://img.shields.io/badge/Frontend-React%20%2B%20TypeScript-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
-[![Rust](https://img.shields.io/badge/Backend-Rust-DEA584?style=flat-square&logo=rust&logoColor=black)](https://www.rust-lang.org)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20x64-brightgreen?style=flat-square)](https://github.com/GuoWWWX/md-king/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
 <p align="center">
-  <a href="#-软件截图与核心功能展示">核心功能展示</a> •
-  <a href="#-核心亮点特性">亮点特性</a> •
-  <a href="#-下载与安装">安装下载</a> •
-  <a href="#-应用内自动更新">自动更新</a> •
-  <a href="#-开发与代码分支">开发贡献</a>
+  <a href="https://github.com/GuoWWWX/md-king/releases/latest"><strong>下载 Windows 版</strong></a> •
+  <a href="#quick-start">使用示例</a> •
+  <a href="#features">功能截图</a> •
+  <a href="https://github.com/GuoWWWX/md-king/issues">反馈问题</a> •
+  <a href="#development">开发贡献</a>
 </p>
 
 </div>
 
----
+MD King 是一个 Windows 本地桌面应用，主要提供两种功能：
 
-## 💡 为什么需要 MD King？
+| 功能 | 可以做什么 |
+| :--- | :--- |
+| Markdown 编辑器 | 用文件树管理文档，通过大纲定位章节，实时渲染表格、LaTeX 公式和 Mermaid 图表，支持深浅色模式。 |
+| Markdown 转 Word / WPS | 将 `.md` 导出为可继续编辑的 `.docx`；自定义模板的字体、字号、行距、缩进、页边距和标题编号，在不同文档中复用。 |
 
-如今越来越多的工作者与开发者借助 **ChatGPT、Claude、DeepSeek、Kimi** 等大模型辅助生成研究报告、技术方案、公文材料或学术草稿。
+适合写技术方案、工作报告或论文草稿：用 Markdown 组织内容，再按需要的格式交付 Word 文档。来自 ChatGPT、Claude、DeepSeek 等工具的 Markdown 内容也可以在这里编辑、排版和导出。编辑与转换在本机完成，无需上传文档。
 
-AI 默认输出极佳的结构化 Markdown；但一旦直接**复制粘贴到 Word / WPS** 时，格式往往瞬间崩溃：
-- ❌ **标题层级混乱**：标题 1 / 标题 2 样式失真，多级编号与目录无法自动识别；
-- ❌ **数学公式乱码**：LaTeX 公式变成纯文本代码或格式错位；
-- ❌ **时序图/流程图无法渲染**：Mermaid 语法直接变为原始代码块；
-- ❌ **代码块与表格变形**：代码块无语法高亮与行号，表格单元格跨行断裂、宽窄不一；
-- ❌ **重复调格式耗时耗力**：每次生成新文档都要耗费半小时手动调整页边距、字体、段落行距与题注。
-
-> **MD King 为终结这一痛点而生！**  
-> 无需联网上传、保护隐私安全；本地一键将 Markdown 结构化转换成样式规范、排版优美、支持继续编辑的 Word/WPS `DOCX` 办公文档。
-
----
-
-## 📸 软件截图与核心功能展示
-
-以下七张应用界面图均为 **v1.1.9 前端生产构建在浏览器中实际运行的 1920 × 1080 截图**，使用[技术报告示例](docs/examples/technical-report.md)展示表格、公式、时序图与代码；没有使用概念图。首图的文件树来自软件自带的浏览器示例仓库。浏览器只用于前端展示，文件系统操作、Pandoc 转换、系统集成和自动安装更新需要 Windows 桌面版。DOCX 导出图是文档页面，保留原始纸张比例。
-
-### 1. 文件树、Markdown 与大纲工作台
-左侧展开文件树，中间编辑 Markdown 文档并实时渲染表格与数学公式，右侧显示多级标题大纲，便于管理文件和定位章节。首图隐藏 Word 预览，集中展示日常写作布局；需要检查导出排版时，可通过工具栏打开 Word/WPS 纸张预览。
+下图展示日常写作布局：左侧文件树、中间 Markdown 内容、右侧标题大纲。Word 预览可通过工具栏开启，首图中已隐藏。
 
 ![左侧文件树、中间 Markdown 内容与右侧大纲目录](docs/images/feature-workbench.jpg)
 
----
+<a id="download"></a>
 
-### 2. 侧边大纲目录导航
-支持智能解析多级标题层级，一键展开右侧文档侧栏，快速搜索与高亮定位长篇文档结构。
+## 下载与安装
+
+支持 Windows 10 / 11，64 位。前往 [最新 Release](https://github.com/GuoWWWX/md-king/releases/latest)，下载 `md-king_<版本>_x64-setup.exe` 后双击安装，安装包内置 Pandoc 转换引擎，无需准备开发环境。
+
+已有 EXE 版可选择覆盖安装；应用内也支持检查和安装更新。Release 同时提供 MSI 安装包及校验文件。
+
+<a id="quick-start"></a>
+
+## 从 Markdown 到 Word
+
+可以用仓库里的[技术报告示例](docs/examples/technical-report.md)试一次完整流程，内容包含多级标题、表格、公式、Mermaid 时序图和代码块。
+
+1. 打开示例 `.md` 文件，在编辑器中修改内容，通过右侧大纲定位章节。
+2. 在模板中心选择预设模板，或创建自己的模板。也可以导入已有 `.docx` 的参考样式。
+3. 进入样式管理器，调整标题编号、正文中英文字体、字号、行距和页面设置，保存模板。
+4. 选择模板并导出 `.docx`，用 Word / WPS 打开检查排版，继续编辑或交付。
+
+例如，同一份报告可以分别使用团队报告模板和课程论文模板导出，无需为每份文档重新设置样式。导入的 DOCX 用于参考样式，模板中的正文不会复制进新文档。
+
+<a id="features"></a>
+
+## 功能展示
+
+### 自定义 Word / WPS 模板样式
+
+在样式管理器中设置标题 1~6 级、正文、列表、代码块、表格和页面样式。支持中英文字体、字号、字重、首行缩进、段前段后间距、行距及多级标题编号，保存后可用于后续导出。
+
+![Word/WPS 模板样式编辑器：字体、字号、间距与编号设置](docs/images/feature-style-manager.jpg)
+
+### 模板中心
+
+选择报告、公文、技术文档等预设模板，或创建自定义模板、导入 DOCX 参考样式。模板支持分组管理和设置默认值。
+
+![模板中心：选择预设模板、导入和管理自定义模板](docs/images/feature-templates.jpg)
+
+### Word 文档导出效果
+
+Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。下图为此前生成的文档页，实际分页需在目标 Word / WPS 环境中核对。
+
+![Markdown 转 Word 后的 DOCX 文档页](docs/images/feature-word-preview.png)
+
+<details>
+<summary>查看更多截图：大纲、深色模式、设置与更新</summary>
+
+### 大纲目录导航
+
+展开右侧文档大纲，通过多级标题快速定位长篇文档中的章节。
 
 ![侧边大纲目录导航](docs/images/feature-workbench-outline.jpg)
 
----
+### 深色模式
 
-### 3. 极客深色模式与智能图表自适应
-全面支持系统级深色/浅色模式无缝自适应切换。Mermaid 时序图自适应微光暗调背景与节点文字对比度反转，夜间写作沉浸舒适。
+编辑器支持深浅色模式，Mermaid 图表随主题调整背景与文字颜色，代码块保留语法高亮。
 
-![极客深色模式](docs/images/feature-dark-mode.jpg)
+![深色 Markdown 编辑器与 Mermaid 时序图](docs/images/feature-dark-mode.jpg)
 
----
+### 设置
 
-### 4. 专业级 Word / WPS 样式编辑设计器
-细粒度掌控全篇排版细节：标题级别（1~6 级）、正文字体（宋体/Times New Roman 等）、中英文混排、字号字重、行距行高、首行缩进、段前段后间距及多级自动编号。
+配置输出目录、主题和快捷操作，检查与维护 Pandoc 引擎。
 
-![专业样式编辑设计器](docs/images/feature-style-manager.jpg)
+![设置页面：输出目录、主题、快捷操作与 Pandoc 引擎](docs/images/feature-settings.jpg)
 
----
+### 关于与更新
 
-### 5. 强大的样式模板中心
-内置官方公文规范、技术方案、学术论文等多套工业级预设模板，支持自定义模板导入与分组管理，一键换装应用。
-
-![模板中心与样式管理](docs/images/feature-templates.jpg)
-
----
-
-### 6. 真实 DOCX 导出排版效果
-导出文档支持标题编号、表格、图表和题注；下图为此前生成的 DOCX 文档页，具体分页仍需在目标 Word/WPS 环境中核对。
-
-![DOCX 真实导出效果](docs/images/feature-word-preview.png)
-
----
-
-### 7. 深度个性化设置与引擎维护
-提供输出目录自定义、Pandoc 内核版本检测与维护、主题配色定制及全局快捷操作配置。
-
-![深度设置中心](docs/images/feature-settings.jpg)
-
----
-
-### 8. 关于面板与应用内一键自动推送更新
-桌面客户端支持版本检查与自动安装更新。下图展示浏览器中的关于页面和 Markdown 语法速览，安装更新链路在 Windows 桌面版运行。
+查看版本信息、Markdown 语法速览，并在 Windows 桌面版中检查更新。
 
 ![关于与版本中心](docs/images/feature-about.jpg)
 
----
+</details>
 
-## 🔥 核心亮点特性
+截图说明：七张应用界面图来自 v1.1.9 前端生产构建在浏览器中实际运行的 1920 × 1080 截图，使用上述技术报告示例；首图文件树来自浏览器示例仓库。DOCX 导出图保留原始纸张比例。浏览器用于前端展示，文件系统操作、Pandoc 转换、系统集成和自动安装更新在 Windows 桌面版运行。
 
-- [x] **本地优先 (Local First)**：所有转换与文档处理均在本机完成，隐私数据绝不上传云端，无网络亦可流畅使用。
-- [x] **完整语法生态支持**：
-  - **公式支持**：集成 KaTeX，支持行内公式 `$...$` 与独立块级公式 `$$...$$`；
-  - **图表渲染**：支持 Mermaid 流程图、时序图（带深色自适应与微光暗调背景）、类图、状态图；
-  - **富文本元素**：Callout 提示框、任务清单、自定义题注、表格列宽自适应。
-- [x] **Word 模板复用机制**：基于先进的样式映射引擎，可自由绑定公司/学术 Word 模版，保留原有字体、边距与标题层级。
-- [x] **极速悬浮转换**：支持右键菜单关联、全局快捷键 (`Ctrl+Alt+V`)、桌面快捷悬浮小球。
-- [x] **应用内自动推送更新**：无需手动去网页翻找安装包，客户端左侧栏自动提示新版本，点击即弹出进度条一键静默升级。
+## 其他功能
 
----
+- LaTeX 行内与块级公式、Mermaid 流程图和时序图、代码高亮、表格、任务清单与 Callout 提示框。
+- Windows 右键菜单、全局快捷键 `Ctrl+Alt+V` 与悬浮球转换入口。
+- 应用内更新提示、下载进度、取消与失败重试。
 
-## 📥 下载与安装
+## 应用内自动更新
 
-进入 [GitHub Releases 页面](https://github.com/GuoWWWX/md-king/releases) 即可下载最新 Windows 桌面端安装程序：
+主界面首次启动后 3 秒检查新版本；从托盘恢复或再次启动已有进程时主动检查，持续运行期间每 4 小时检查一次。也可以在“关于”页手动检查。
 
-| 版本 | 文件类型 | 适用系统 | 下载说明 |
-| :--- | :--- | :--- | :--- |
-| **最新正式版** | `md-king_1.1.11_x64-setup.exe` | Windows 10 / 11 (64-bit) | 双击运行安装；已有 EXE 版默认覆盖升级，内置排版引擎 |
+检测到新版本时，左侧栏下半部分会显示提示。点击后查看发布说明，再点击“立即更新”，弹窗显示下载字节数、百分比和网速。客户端验证签名和安装包哈希后，保存草稿会话，启动覆盖安装并重启。Windows 权限确认仍需用户处理。
 
----
+<details>
+<summary>更新校验与异常处理</summary>
 
-## 🔄 应用内自动更新
+更新来源固定为本仓库正式 Release。客户端先验证内置公钥对应的 Ed25519 清单签名，再验证安装包大小和 SHA-256；校验不通过会阻止安装。草稿存储失败或安装程序启动失败时保留当前应用，允许重试。网络不可用时不会自动退出当前应用。
 
-Windows 客户端在启动后检查新版本，之后每 4 小时检查一次；也可以在“关于”页手动检查。
+</details>
 
-1. 新版本提示出现在左侧栏下半部分，点击可查看 Release 更新说明。
-2. 点击“立即更新”，弹窗显示已下载 / 总字节数、百分比和网速；支持取消与失败重试。
-3. 客户端先验证内置公钥对应的 Ed25519 清单签名，再验证安装包大小和 SHA-256；校验不通过会阻止安装。
-4. 下载校验完成后，保存当前草稿会话并自动静默安装，覆盖当前安装目录后重启。草稿存储失败或安装程序启动失败时保留当前应用，允许重试。
-
-更新来源固定为本仓库正式 Release。Windows 的权限确认仍需用户处理。网络不可用时不会自动退出当前应用。
-
----
+<a id="development"></a>
 
 ## 🛠️ 开发与代码分支规范
 
