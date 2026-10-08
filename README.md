@@ -120,7 +120,7 @@ AI 默认输出极佳的结构化 Markdown；但一旦直接**复制粘贴到 Wo
 
 | 版本 | 文件类型 | 适用系统 | 下载说明 |
 | :--- | :--- | :--- | :--- |
-| **最新正式版** | `md-king_1.1.10_x64-setup.exe` | Windows 10 / 11 (64-bit) | 双击运行安装；已有 EXE 版默认覆盖升级，内置排版引擎 |
+| **最新正式版** | `md-king_1.1.11_x64-setup.exe` | Windows 10 / 11 (64-bit) | 双击运行安装；已有 EXE 版默认覆盖升级，内置排版引擎 |
 
 ---
 
@@ -141,7 +141,7 @@ Windows 客户端在启动后检查新版本，之后每 4 小时检查一次；
 
 本项目采用清晰的双分支研发规范，欢迎提交 Issue 与 Pull Request：
 
-- **`main` 分支**：主分支，保持稳定可发布状态，每一次发版均打有对应版本的 Git Tag（如 `v1.1.10`）；
+- **`main` 分支**：主分支，保持稳定可发布状态，每一次发版均打有对应版本的 Git Tag（如 `v1.1.11`）；
 - **`develop` 分支**：开发分支，承载日常功能开发与特性合流，新功能提 PR 请合并至此分支。
 
 ### 本地启动与构建
@@ -179,7 +179,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.10_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.11_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 

@@ -160,19 +160,28 @@ function App() {
 
   useEffect(() => {
     if (!bootReady) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    const checkForUpdates = () => {
+      if (!cancelled) void useUpdaterStore.getState().checkForUpdates({ silent: true });
+    };
     // 启动 3 秒后静默检查更新，不打扰用户首屏启动流程
-    const initialTimer = window.setTimeout(() => {
-      void useUpdaterStore.getState().checkForUpdates({ silent: true });
-    }, 3000);
+    const initialTimer = window.setTimeout(checkForUpdates, 3000);
+
+    // 从托盘恢复或再次双击程序时，已有进程也要检查新版本。
+    void listen("updater://check-on-open", checkForUpdates).then((dispose) => {
+      if (cancelled) dispose();
+      else unlisten = dispose;
+    }).catch(() => undefined);
 
     // 后台每隔 4 小时静默轮询一次最新 Release
-    const pollInterval = window.setInterval(() => {
-      void useUpdaterStore.getState().checkForUpdates({ silent: true });
-    }, 4 * 60 * 60 * 1000);
+    const pollInterval = window.setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
 
     return () => {
+      cancelled = true;
       window.clearTimeout(initialTimer);
       window.clearInterval(pollInterval);
+      unlisten?.();
     };
   }, [bootReady]);
 

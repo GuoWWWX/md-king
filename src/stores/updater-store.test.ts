@@ -105,3 +105,24 @@ test("compareSemver 正确对比主次补丁版本", () => {
   assert.equal(compareSemver("1.2", "1.1.9"), 1);
   assert.equal(compareSemver("1.1", "1.1.0"), 0);
 });
+
+test("启动或重新打开时静默检查会显示新版本提示，不自动弹窗或安装", async () => {
+  const release = useUpdaterStore.getState().latestRelease;
+  invokeCommand = async () => JSON.stringify(release);
+  useUpdaterStore.setState({ currentVersion: "1.1.9", status: "idle", hasUpdate: false, latestRelease: null, dialogOpen: false, ignoredVersions: [] });
+  assert.equal(await useUpdaterStore.getState().checkForUpdates({ silent: true }), true);
+  assert.equal(useUpdaterStore.getState().hasUpdate, true);
+  assert.equal(useUpdaterStore.getState().status, "available");
+  assert.equal(useUpdaterStore.getState().latestRelease?.tag_name, "v1.1.10");
+  assert.equal(useUpdaterStore.getState().dialogOpen, false);
+  assert.deepEqual(commands, ["fetch_latest_release"]);
+});
+
+test("重新打开窗口检查更新时，不打断正在检查、下载或安装的任务", async () => {
+  for (const status of ["checking", "downloading", "cancelling", "installing", "ready_to_install"] as const) {
+    useUpdaterStore.setState({ status });
+    assert.equal(await useUpdaterStore.getState().checkForUpdates({ silent: true }), false);
+    assert.equal(useUpdaterStore.getState().status, status);
+  }
+  assert.deepEqual(commands, []);
+});

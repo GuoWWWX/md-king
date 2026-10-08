@@ -1,6 +1,6 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, WebviewWindow, Window};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow, Window};
 
 use crate::core::config::load_config;
 
@@ -71,6 +71,7 @@ fn create_tray(app: &AppHandle) -> Result<(), String> {
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         show_window(&window);
+        let _ = window.emit("updater://check-on-open", ());
     }
 }
 
