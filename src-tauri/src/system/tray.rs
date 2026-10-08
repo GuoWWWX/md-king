@@ -71,7 +71,7 @@ fn create_tray(app: &AppHandle) -> Result<(), String> {
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         show_window(&window);
-        let _ = window.emit("updater://check-on-open", ());
+        let _ = window.emit_to(window.label(), "updater://check-on-open", ());
     }
 }
 

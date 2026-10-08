@@ -1,6 +1,7 @@
 import { History, Info, LayoutTemplate, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { applyAppearance } from "@/lib/appearance";
 import { SystemFloatingWindowManager } from "@/components/floating/system-floating-window-manager";
@@ -169,10 +170,11 @@ function App() {
     const initialTimer = window.setTimeout(checkForUpdates, 3000);
 
     // 从托盘恢复或再次双击程序时，已有进程也要检查新版本。
-    void listen("updater://check-on-open", checkForUpdates).then((dispose) => {
+    void (async () => {
+      const dispose = await getCurrentWindow().listen("updater://check-on-open", checkForUpdates);
       if (cancelled) dispose();
       else unlisten = dispose;
-    }).catch(() => undefined);
+    })().catch(() => undefined);
 
     // 后台每隔 4 小时静默轮询一次最新 Release
     const pollInterval = window.setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
