@@ -11,7 +11,7 @@ use crate::core::config::load_config;
 
 const BUNDLED_PANDOC_RESOURCE_PATH: &str = "pandoc/windows/pandoc.exe";
 const PANDOC_MARKDOWN_INPUT_FORMAT: &str =
-    "markdown+hard_line_breaks+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe";
+    "markdown-smart+hard_line_breaks+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe";
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -414,6 +414,35 @@ mod tests {
     #[test]
     fn preserves_explicit_markdown_line_breaks() {
         assert!(PANDOC_MARKDOWN_INPUT_FORMAT.contains("+hard_line_breaks"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn preserves_input_quotes_in_docx() {
+        use std::io::Read;
+        let directory = std::env::temp_dir()
+            .join(format!("md-king-pandoc-quotes-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let input = directory.join("quotes.md");
+        let output = directory.join("quotes.docx");
+        let text = r#"他说：“你好。” 英文 "hello"，嵌套“"原样"”，don't，--，...。"#;
+        std::fs::write(&input, text).unwrap();
+        let pandoc = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/pandoc/windows/pandoc.exe");
+        let result = super::run_resolved_pandoc_to_docx(
+            &pandoc, &input, &output, None, &PandocDocumentOptions::default(),
+        ).unwrap();
+        assert!(result.success, "{}", result.stderr);
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&output).unwrap()).unwrap();
+        let mut xml = String::new();
+        archive.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+        let actual = regex::Regex::new(r"(?s)<w:t\b[^>]*>(.*?)</w:t>").unwrap()
+            .captures_iter(&xml).map(|capture| quick_xml::escape::unescape(&capture[1]).unwrap().into_owned()).collect::<String>();
+        assert_eq!(actual, text);
+        drop(archive);
+        std::fs::remove_file(input).unwrap();
+        std::fs::remove_file(output).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]
