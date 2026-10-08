@@ -29,6 +29,7 @@ import { markdownCaptionText, mermaidFenceCaption } from "@/lib/mermaid-fence";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "@/lib/markdown-inline-html";
 import { relaxedStrongPlugin } from "@/lib/relaxed-strong";
 import { relaxedEmphasisPlugin } from "@/lib/relaxed-emphasis";
+import { normalizeMathSource } from "@/lib/markdown-math";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -480,7 +481,7 @@ function mergeTextSegments(segments: PreviewTextSegment[]) {
 
 function renderKatexMarkup(text: string, displayMode: boolean) {
   try {
-    return katex.renderToString(text, { displayMode, throwOnError: true, output: "html", strict: false });
+    return katex.renderToString(normalizeMathSource(text), { displayMode, throwOnError: true, output: "html", strict: false });
   } catch {
     return undefined;
   }

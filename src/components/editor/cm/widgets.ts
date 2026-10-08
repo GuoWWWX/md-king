@@ -58,6 +58,7 @@ import {
 import { TableCellCompositionGuard } from "./table-cell-edit";
 import { setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./table-display-settings";
 import { renderTableInlineMarkdown } from "./table-inline-renderer";
+import { normalizeMathSource } from "../../../lib/markdown-math";
 
 type ImageWidthMode = "fit" | "natural";
 
@@ -87,8 +88,9 @@ export class MarkdownMathWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const host = document.createElement(this.display ? "div" : "span");
     host.className = this.display ? "mk-cm-math-block" : "mk-cm-math-inline";
+    const normalized = normalizeMathSource(this.source);
     try {
-      host.innerHTML = katex.renderToString(this.source, {
+      host.innerHTML = katex.renderToString(normalized, {
         displayMode: this.display,
         throwOnError: true,
         output: "html",

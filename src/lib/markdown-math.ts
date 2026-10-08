@@ -217,3 +217,21 @@ export function findBlockMarkdownMath(source: string): MarkdownMathRange[] {
 
   return ranges;
 }
+
+/**
+ * 智能纠错与规范化 LaTeX 数学公式源码。
+ *
+ * 典型问题：用户在 \text{...} 文本模式下习惯性输入了 \mu、\Omega 等数学模式宏命令
+ * （例如 `\approx 50 \sim 100 \text{ \mu s}`），因为 \mu 在纯文本模式下未定义，KaTeX 会抛出
+ * `Undefined control sequence: \mu` 并标红报错。
+ *
+ * 本函数自动将非法的 `\text{ \mu s }` 转换为合法的 `\mu\text{s}` 或 `\mu`，
+ * 避免用户在书写物理单位、希腊字母时被红色报错打断。
+ */
+export function normalizeMathSource(source: string): string {
+  if (!source) return source;
+  return source.replace(
+    /\\text\{\s*\\(mu|Omega|Delta|alpha|beta|gamma|delta|sigma|pi|lambda|theta)\s*([a-zA-Z]*)\s*\}/g,
+    (_match, symbol, unit) => (unit ? `\\${symbol}\\text{${unit}}` : `\\${symbol}`),
+  );
+}

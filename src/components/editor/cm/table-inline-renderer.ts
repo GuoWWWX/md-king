@@ -10,7 +10,7 @@ import {
   normalizeBareExternalLink,
 } from "../../../lib/document-links.ts";
 import { obsidianWikilinkPlugin } from "../../../lib/obsidian-wikilinks.ts";
-import { findInlineMarkdownMath } from "../../../lib/markdown-math.ts";
+import { findInlineMarkdownMath, normalizeMathSource } from "../../../lib/markdown-math.ts";
 import { relaxedStrongPlugin } from "../../../lib/relaxed-strong.ts";
 import { relaxedEmphasisPlugin } from "../../../lib/relaxed-emphasis.ts";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "../../../lib/markdown-inline-html.ts";
@@ -283,7 +283,7 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       math.className = "mk-cm-math-inline mk-cm-table-math-inline";
       math.setAttribute("aria-label", node.value);
       try {
-        math.innerHTML = katex.renderToString(node.value, {
+        math.innerHTML = katex.renderToString(normalizeMathSource(node.value), {
           displayMode: false,
           throwOnError: true,
           output: "html",

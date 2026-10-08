@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findBlockMarkdownMath, findInlineMarkdownMath } from "./markdown-math.ts";
+import { findBlockMarkdownMath, findInlineMarkdownMath, normalizeMathSource } from "./markdown-math.ts";
 
 test("识别行内美元公式并忽略转义美元和行内代码", () => {
   const source = "分数为 $s(t)$，阈值为 $\\theta_{\\mathrm{warning}}$，价格 \\$10，代码 `$raw$`。";
@@ -73,5 +73,28 @@ test("识别引用块内的单行与多行块级数学公式", () => {
   const [rangeMulti] = findBlockMarkdownMath(multi);
   assert.ok(rangeMulti);
   assert.equal(multi.slice(rangeMulti.contentFrom, rangeMulti.contentTo).replace(/^>\s*/gm, "").trim(), "\\frac{a}{b}");
+});
+
+test("智能规范化 LaTeX 文本环境中的希腊字母与单位公式", () => {
+  assert.equal(
+    normalizeMathSource("\\approx 50 \\sim 100 \\text{ \\mu s}"),
+    "\\approx 50 \\sim 100 \\mu\\text{s}",
+  );
+  assert.equal(
+    normalizeMathSource("\\text{\\mu m}"),
+    "\\mu\\text{m}",
+  );
+  assert.equal(
+    normalizeMathSource("\\text{ \\mu }"),
+    "\\mu",
+  );
+  assert.equal(
+    normalizeMathSource("R = 10 \\text{ \\Omega }"),
+    "R = 10 \\Omega",
+  );
+  assert.equal(
+    normalizeMathSource("E = mc^2"),
+    "E = mc^2",
+  );
 });
 
