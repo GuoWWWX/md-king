@@ -79,7 +79,7 @@ export function compareSemver(v1: string, v2: string): number {
 const DEFAULT_REPO = "GuoWWWX/md-king";
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
-  currentVersion: "1.1.9",
+  currentVersion: "1.1.10",
   latestRelease: null,
   hasUpdate: false,
   status: "idle",

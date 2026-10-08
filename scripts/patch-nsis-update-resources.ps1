@@ -40,7 +40,10 @@ if ($content -match $solidCompressorPattern) {
 $defaultSelectionPattern = '(?ms)    ; Check the first radio button if this the first time\r?\n    ; we enter this page or if the second button wasn''t\r?\n    ; selected the last time we were on this page\r?\n    \$\{If\} \$ReinstallPageCheck <> 2\r?\n      SendMessage \$R2 \$\{BM_SETCHECK\} \$\{BST_CHECKED\} 0\r?\n    \$\{Else\}\r?\n      SendMessage \$R3 \$\{BM_SETCHECK\} \$\{BST_CHECKED\} 0\r?\n    \$\{EndIf\}\r?\n'
 $replacement = @'
     ; For upgrades, keep the current installation and update files in place.
-    ${If} $ReinstallPageCheck = 2
+    ${If} $WixMode = 1
+      SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
+      StrCpy $ReinstallPageCheck 1
+    ${ElseIf} $ReinstallPageCheck = 2
       SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
     ${ElseIf} $R0 = 1
       SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "md-king",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "identifier": "com.mdking.app",
   "build": {
     "beforeDevCommand": "node ensure-dev-server.mjs",
@@ -44,6 +44,11 @@
     ],
     "windows": {
       "nsis": {
+        "languages": ["SimpChinese", "English"],
+        "customLanguageFiles": {
+          "SimpChinese": "installer-languages/SimpChinese.nsh",
+          "English": "installer-languages/English.nsh"
+        },
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
         "headerImage": "icons/nsis-header.bmp",

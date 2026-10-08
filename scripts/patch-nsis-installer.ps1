@@ -25,7 +25,10 @@ $defaultSelectionPattern = '(?ms)    ; Check the first radio button if this the 
 $replacement = @'
     ; Keep the maintenance page visible. For upgrades, default to in-place install
     ; so pressing Next does not run the uninstall flow first.
-    ${If} $ReinstallPageCheck = 2
+    ${If} $WixMode = 1
+      SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
+      StrCpy $ReinstallPageCheck 1
+    ${ElseIf} $ReinstallPageCheck = 2
       SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
     ${ElseIf} $R0 = 1
       SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
@@ -41,6 +44,43 @@ if ($content -notlike "*Keep the maintenance page visible*" -and $content -notli
   }
 
   $content = [regex]::Replace($content, $defaultSelectionPattern, $replacement)
+}
+
+$maintenanceAnchor = '  ; Skip showing the page if passive'
+$msiMaintenance = @'
+  ; MSI migrations require Windows Installer removal; do not offer in-place install.
+  ${If} $WixMode = 1
+    StrCpy $R1 "$(migrateFromMsi)"
+    StrCpy $R2 "$(uninstallBeforeInstalling)"
+  ${EndIf}
+
+'@
+if (!$content.Contains('; MSI migrations require Windows Installer removal')) {
+  if (!$content.Contains($maintenanceAnchor)) { throw "Could not find the NSIS maintenance description anchor." }
+  $content = $content.Replace($maintenanceAnchor, "$msiMaintenance`r`n$maintenanceAnchor")
+}
+
+$radioAnchor = '    ; Disable this radio button if downgrading and downgrades are disabled'
+$hideMsiOverwrite = @'
+    ${IfThen} $WixMode = 1 ${|} ShowWindow $R3 ${SW_HIDE} ${|}
+'@
+if (!$content.Contains($hideMsiOverwrite)) {
+  if (!$content.Contains($radioAnchor)) { throw "Could not find the NSIS maintenance radio button anchor." }
+  $content = $content.Replace($radioAnchor, "$hideMsiOverwrite`r`n$radioAnchor")
+}
+
+$focusAnchor = '    ${NSD_SetFocus} $R2'
+$focusSelected = @'
+    ; Focus the selected operation so keyboard input preserves the default.
+    ${If} $ReinstallPageCheck = 2
+      ${NSD_SetFocus} $R3
+    ${Else}
+      ${NSD_SetFocus} $R2
+    ${EndIf}
+'@
+if (!$content.Contains('; Focus the selected operation')) {
+  if (!$content.Contains($focusAnchor)) { throw "Could not find the NSIS maintenance focus anchor." }
+  $content = $content.Replace($focusAnchor, $focusSelected)
 }
 
 $refreshCall = @'
