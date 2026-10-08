@@ -30,6 +30,7 @@ import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineH
 import { relaxedStrongPlugin } from "@/lib/relaxed-strong";
 import { relaxedEmphasisPlugin } from "@/lib/relaxed-emphasis";
 import { normalizeMathSource } from "@/lib/markdown-math";
+import { containsWordChineseText, splitWordPreviewQuotes } from "@/lib/word-preview-quotes";
 import { cn } from "@/lib/utils";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
@@ -304,17 +305,20 @@ function codeBlockBorder(draft: StyleDraft) {
 
 const emojiFontFallback = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"';
 
-function previewFontFamily(chineseFont: string, latinFont: string, generic = "sans-serif") {
+function previewFontStyle(chineseFont: string, latinFont: string, generic = "sans-serif"): CSSProperties & { "--mk-word-chinese-font": string } {
   // Match Word's run fallback: ASCII uses the Latin font and East Asian text
   // uses the configured Chinese font. This keeps mixed-text line breaks close
   // to the generated DOCX instead of letting the Chinese font shape numbers.
-  return `"${latinFont}", "${chineseFont}", ${emojiFontFallback}, ${generic}`;
+  return {
+    fontFamily: `"${latinFont}", "${chineseFont}", ${emojiFontFallback}, ${generic}`,
+    "--mk-word-chinese-font": `"${chineseFont}", ${generic}`,
+  };
 }
 
 function textStyle(draft: StyleDraft): CSSProperties {
   return {
     color: draft.color,
-    fontFamily: previewFontFamily(draft.chineseFont, draft.latinFont),
+    ...previewFontStyle(draft.chineseFont, draft.latinFont),
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
     letterSpacing: `${WORD_TEXT_CHARACTER_SPACING_PT}pt`,
@@ -330,7 +334,7 @@ function textStyle(draft: StyleDraft): CSSProperties {
 function inlineCodeStyle(draft: StyleDraft): CSSProperties {
   return {
     color: draft.color,
-    fontFamily: previewFontFamily(draft.chineseFont, draft.latinFont, "monospace"),
+    ...previewFontStyle(draft.chineseFont, draft.latinFont, "monospace"),
     fontSize: `${draft.fontSize}pt`,
     fontWeight: draft.fontWeight,
     letterSpacing: 0,
@@ -856,12 +860,20 @@ function isWordCjkLatinBoundary(left: string | undefined, right: string) {
     || (isWordLatinCharacter(left) && isWordCjkCharacter(right));
 }
 
+function renderChineseQuoteText(text: string, keyPrefix: string, chineseContext = containsWordChineseText(text)) {
+  if (!chineseContext || !/[“”‘’]/u.test(text)) return text;
+  return splitWordPreviewQuotes(text, chineseContext).map((piece, index) => piece.chineseQuote
+    ? <span key={`${keyPrefix}-quote-${index}`} style={{ fontFamily: "var(--mk-word-chinese-font)" }}>{piece.text}</span>
+    : piece.text);
+}
+
 function renderWordCompatibleText(
   text: string,
   keyPrefix: string,
   style?: CSSProperties,
   previousCharacter?: string,
   includeBoundaryGap = true,
+  chineseContext = containsWordChineseText(text),
 ) {
   const pieces: Array<{ text: string; gapBefore: boolean }> = [];
   let current = "";
@@ -880,18 +892,21 @@ function renderWordCompatibleText(
   }
   if (current) pieces.push({ text: current, gapBefore: false });
 
-  if (pieces.length <= 1) return style ? <span style={style}>{text}</span> : text;
+  if (pieces.length <= 1) {
+    const content = renderChineseQuoteText(text, keyPrefix, chineseContext);
+    return style ? <span style={style}>{content}</span> : content;
+  }
   return pieces.map((piece, index) => (
     <span
       key={`${keyPrefix}-mixed-${index}`}
       style={{ ...style, ...(piece.gapBefore ? { marginLeft: `${WORD_CJK_LATIN_GAP_PT}pt` } : undefined) }}
     >
-      {piece.text}
+      {renderChineseQuoteText(piece.text, `${keyPrefix}-${index}`, chineseContext)}
     </span>
   ));
 }
 
-function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void, includeBoundaryGap = true) {
+function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void, includeBoundaryGap: boolean, chineseContext: boolean) {
   return segments.map((segment, index) => {
     if (segment.math) return <MathInline key={`${keyPrefix}-math-${index}`} text={segment.text} />;
 
@@ -910,7 +925,7 @@ function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: S
       );
     } else {
       const previousCharacter = index > 0 ? segments[index - 1].text.slice(-1) : undefined;
-      content = renderWordCompatibleText(segment.text, `${keyPrefix}-${index}`, markStyle, previousCharacter, includeBoundaryGap);
+      content = renderWordCompatibleText(segment.text, `${keyPrefix}-${index}`, markStyle, previousCharacter, includeBoundaryGap, chineseContext);
     }
 
     if (segment.link === undefined) return <span key={`${keyPrefix}-${index}`}>{content}</span>;
@@ -1517,12 +1532,13 @@ function splitTextSegmentsByLine(segments: PreviewTextSegment[]) {
 }
 
 function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: StyleDraft, inlineCodeEnabled: boolean, keyPrefix: string, selectedStyle: StyleNode | undefined, onOpenLink: (target: string) => void, indentEachLine = false, lineIndent = "0em", includeBoundaryGap = true) {
+  const chineseContext = segments.some((segment) => (!segment.code || !inlineCodeEnabled) && containsWordChineseText(segment.text));
   if (!indentEachLine || !segments.some((segment) => segment.text.includes("\n"))) {
-    return renderInlineTextLine(segments, inlineCodeDraft, inlineCodeEnabled, keyPrefix, selectedStyle, onOpenLink, includeBoundaryGap);
+    return renderInlineTextLine(segments, inlineCodeDraft, inlineCodeEnabled, keyPrefix, selectedStyle, onOpenLink, includeBoundaryGap, chineseContext);
   }
   return splitTextSegmentsByLine(segments).map((line, lineIndex) => (
     <span key={`${keyPrefix}-line-${lineIndex}`} className="block" style={{ textIndent: lineIndent }}>
-      {renderInlineTextLine(line, inlineCodeDraft, inlineCodeEnabled, `${keyPrefix}-line-${lineIndex}`, selectedStyle, onOpenLink, includeBoundaryGap)}
+      {renderInlineTextLine(line, inlineCodeDraft, inlineCodeEnabled, `${keyPrefix}-line-${lineIndex}`, selectedStyle, onOpenLink, includeBoundaryGap, chineseContext)}
     </span>
   ));
 }
@@ -2062,7 +2078,7 @@ function renderMarkdownBlocks({
           ...(block.isDocumentTitle ? textStyle(drafts[styleId]) : headingTextStyle(drafts[styleId])),
         }}>
           {block.number ? <span>{block.number} </span> : null}
-          {block.text}
+          {renderChineseQuoteText(block.text, `heading-${index}`)}
         </div>,
       );
       return;
@@ -2075,7 +2091,7 @@ function renderMarkdownBlocks({
           <div
             style={{
               color: tableStyle.tocTitleColor,
-              fontFamily: previewFontFamily(tableStyle.tocTitleChineseFont, tableStyle.tocTitleLatinFont),
+              ...previewFontStyle(tableStyle.tocTitleChineseFont, tableStyle.tocTitleLatinFont),
               fontSize: `${tableStyle.tocTitleFontSize}pt`,
               fontWeight: tableStyle.tocTitleFontWeight,
               lineHeight: `${resolveWordAutoLineHeightPx(tableStyle.tocTitleFontSize, tableStyle.tocTitleLineHeight)}px`,
@@ -2085,7 +2101,7 @@ function renderMarkdownBlocks({
               textIndent: 0,
             }}
           >
-            {tableStyle.tocTitle || "目录"}
+            {renderChineseQuoteText(tableStyle.tocTitle || "目录", `toc-title-${index}`)}
           </div>
           <div>
             {block.entries.map((entry, entryIndex) => (
@@ -2094,14 +2110,14 @@ function renderMarkdownBlocks({
                 className="flex min-w-0 items-end gap-1"
                 style={{
                   color: bodyDraft.color,
-                  fontFamily: previewFontFamily(bodyDraft.chineseFont, bodyDraft.latinFont),
+                  ...previewFontStyle(bodyDraft.chineseFont, bodyDraft.latinFont),
                   fontSize: `${bodyDraft.fontSize}pt`,
                   lineHeight: `${resolveWordAutoLineHeightPx(bodyDraft.fontSize, bodyDraft.lineHeight)}px`,
                   marginBottom: `${bodyDraft.afterSpacing}pt`,
                   paddingLeft: `${(entry.level - 1) * 2}em`,
                 }}
               >
-                <span className="shrink-0">{entry.number ? `${entry.number} ` : ""}{entry.text}</span>
+                <span className="shrink-0">{entry.number ? `${entry.number} ` : ""}{renderChineseQuoteText(entry.text, `toc-${index}-${entryIndex}`)}</span>
                 {tableStyle.tocLeader === "cjk-dot" ? <span className="min-w-2 flex-1 overflow-hidden whitespace-nowrap text-slate-400">………………</span> : null}
                 {tableStyle.tocLeader === "dot-spaced" ? <span className="min-w-2 flex-1 overflow-hidden whitespace-nowrap text-slate-400">· · · · · · ·</span> : null}
                 {tableStyle.tocLeader !== "cjk-dot" && tableStyle.tocLeader !== "dot-spaced" ? <span className={cn("mb-1 min-w-2 flex-1 border-slate-400", tableStyle.tocLeader === "dot" && "border-b border-dotted", tableStyle.tocLeader === "dash" && "border-b border-dashed", tableStyle.tocLeader === "line" && "border-b", tableStyle.tocLeader === "space" && "border-b border-transparent")} /> : null}
@@ -2215,7 +2231,7 @@ function renderMarkdownBlocks({
         );
         const caption = block.caption ? (
           <div className={cn(selectedRing(selectedStyle, "caption"))} style={tableStyle.figureCaptionStyle}>
-            {block.caption}
+            {renderChineseQuoteText(block.caption, `caption-${index}`)}
           </div>
         ) : null;
         rendered.push(
@@ -2364,7 +2380,7 @@ function renderMarkdownBlocks({
     }
 
     if (block.type === "image") {
-      const caption = block.caption ? <div className="text-[10px] font-semibold text-slate-700" style={tableStyle.figureCaptionStyle}>{block.caption}</div> : null;
+      const caption = block.caption ? <div className="text-[10px] font-semibold text-slate-700" style={tableStyle.figureCaptionStyle}>{renderChineseQuoteText(block.caption, `caption-${index}`)}</div> : null;
       rendered.push(
         <figure key={index} className={cn("my-3", selectedRing(selectedStyle, "caption"))}>
           {tableStyle.figureCaptionPosition === "above" ? caption : null}
@@ -2384,7 +2400,7 @@ function renderMarkdownBlocks({
         : tableStyle.columnWidthMode === "custom"
           ? tableColumnWidths(tableStyle.columnWidthPercentages, Math.max(header?.length ?? 0, ...rows.map((row) => row.length), 1))
           : [];
-      const caption = block.caption ? <div className="text-[10px] font-semibold text-slate-700" style={tableStyle.captionStyle}>{block.caption}</div> : null;
+      const caption = block.caption ? <div className="text-[10px] font-semibold text-slate-700" style={tableStyle.captionStyle}>{renderChineseQuoteText(block.caption, `caption-${index}`)}</div> : null;
       rendered.push(
         <div key={index}>
           {tableStyle.captionPosition === "above" ? caption : null}
@@ -2522,7 +2538,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const whiteSpace = table.cellWrap ? "normal" : "nowrap";
   const captionStyle: CSSProperties = {
     color: tableCaption.color,
-    fontFamily: previewFontFamily(tableCaption.chineseFont, tableCaption.latinFont),
+    ...previewFontStyle(tableCaption.chineseFont, tableCaption.latinFont),
     fontSize: `${tableCaption.fontSize}pt`,
     fontWeight: tableCaption.fontWeight,
     lineHeight: `${resolveWordAutoLineHeightPx(tableCaption.fontSize, tableCaption.lineHeight)}px`,
@@ -2532,7 +2548,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   };
   const figureCaptionStyle: CSSProperties = {
     color: caption.color,
-    fontFamily: previewFontFamily(caption.chineseFont, caption.latinFont),
+    ...previewFontStyle(caption.chineseFont, caption.latinFont),
     fontSize: `${caption.fontSize}pt`,
     fontWeight: caption.fontWeight,
     lineHeight: `${resolveWordAutoLineHeightPx(caption.fontSize, caption.lineHeight)}px`,
@@ -2548,7 +2564,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const headerStyle: CSSProperties = {
     backgroundColor: tableHeader.headerBackgroundColor === "transparent" ? undefined : tableHeader.headerBackgroundColor,
     color: tableHeader.color,
-    fontFamily: previewFontFamily(tableHeader.chineseFont, tableHeader.latinFont),
+    ...previewFontStyle(tableHeader.chineseFont, tableHeader.latinFont),
     fontWeight: tableHeader.headerBold ? 700 : 500,
     fontSize: `${tableHeader.headerFontSize}pt`,
     lineHeight: tableHeader.headerLineHeight,
@@ -2566,7 +2582,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const bodyCellStyle: CSSProperties = {
     backgroundColor: tableBody.bodyBackgroundColor,
     color: tableBody.color,
-    fontFamily: previewFontFamily(tableBody.chineseFont, tableBody.latinFont),
+    ...previewFontStyle(tableBody.chineseFont, tableBody.latinFont),
     fontSize: `${tableBody.bodyFontSize}pt`,
     lineHeight: tableBody.bodyLineHeight,
     minHeight: `${table.minRowHeight}px`,

@@ -5634,7 +5634,59 @@ fn normalize_document_xml(
         xml
     };
 
-    normalize_emoji_runs(&xml)
+    normalize_emoji_runs(&normalize_chinese_quote_fonts(&xml))
+}
+
+fn normalize_chinese_quote_fonts(xml: &str) -> String {
+    if !xml.contains(['“', '”', '‘', '’']) {
+        return xml.to_string();
+    }
+    let paragraph = Regex::new(r"(?s)<w:p\b[^>]*>.*?</w:p>").expect("valid paragraph regex");
+    let run = Regex::new(r"(?s)<w:r\b[^>]*>.*?</w:r>").expect("valid run regex");
+    let code_paragraph = Regex::new(r#"<w:pStyle\b[^>]*w:val="SourceCode""#).unwrap();
+    let code_run = Regex::new(r#"<w:rStyle\b[^>]*w:val="VerbatimChar""#).unwrap();
+    let fonts = Regex::new(r"<w:rFonts\b[^>]*/>").unwrap();
+    let hint = Regex::new(r#"\s+w:hint="[^"]*""#).unwrap();
+    let properties_start = Regex::new(r"<w:rPr>(?:\s*<w:rStyle\b[^>]*/>)?|<w:rPr\s*/>").unwrap();
+    let run_start = Regex::new(r"<w:r\b[^>]*>").unwrap();
+    paragraph.replace_all(xml, |capture: &Captures| {
+        let paragraph_xml = &capture[0];
+        // English-only paragraphs and code retain their existing font selection.
+        let chinese_context = run.find_iter(paragraph_xml).any(|run| {
+            !code_run.is_match(run.as_str()) && paragraph_plain_text(run.as_str())
+                .chars().any(|character| matches!(character as u32, 0x3400..=0x9fff))
+        });
+        if code_paragraph.is_match(paragraph_xml) || !chinese_context {
+            return paragraph_xml.to_string();
+        }
+        run.replace_all(paragraph_xml, |capture: &Captures| {
+            let run_xml = &capture[0];
+            if code_run.is_match(run_xml) || !paragraph_plain_text(run_xml).contains(['“', '”', '‘', '’']) {
+                return run_xml.to_string();
+            }
+            // U+2018–U+201D use eastAsia only with this hint. Keep the template's
+            // actual font names and all emphasis/link properties intact.
+            if fonts.is_match(run_xml) {
+                return fonts.replace(run_xml, |capture: &Captures| {
+                    let font = hint.replace_all(&capture[0], "");
+                    format!(r#"{} w:hint="eastAsia" />"#, font.trim_end_matches("/>").trim_end())
+                }).to_string();
+            }
+            let font = r#"<w:rFonts w:hint="eastAsia" />"#;
+            if properties_start.is_match(run_xml) {
+                return properties_start.replace(run_xml, |capture: &Captures| {
+                    if capture[0].starts_with("<w:rPr>") {
+                        format!("{}{font}", &capture[0])
+                    } else {
+                        format!("<w:rPr>{font}</w:rPr>")
+                    }
+                }).to_string();
+            }
+            run_start.replace(run_xml, |capture: &Captures| {
+                format!("{}<w:rPr>{font}</w:rPr>", &capture[0])
+            }).to_string()
+        }).to_string()
+    }).to_string()
 }
 
 fn normalize_emoji_runs(xml: &str) -> String {
@@ -11677,6 +11729,39 @@ mod tests {
         assert!(output.contains(r#"<w:color w:val="1E40AF" />"#));
         assert!(output.contains(r#"<w:i w:val="0" />"#));
         assert!(output.contains(r#"<w:iCs w:val="0" />"#));
+    }
+
+    #[test]
+    fn uses_chinese_font_for_quotes_split_by_emphasis() {
+        let input = r#"<w:document><w:body><w:p><w:r><w:t>“</w:t></w:r><w:r><w:rPr><w:b /></w:rPr><w:t>重点内容</w:t></w:r><w:r><w:rPr><w:rFonts w:hint="eastAsia" /></w:rPr><w:t>”继续正文。</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="仿宋" w:hAnsi="Arial" w:hint="default" /><w:i /></w:rPr><w:t>‘中文表格’</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
+        let output = normalize_document_xml(input, false, None, &default_markdown_feature_config(), None, None, None);
+        assert!(output.contains(r#"<w:r><w:rPr><w:rFonts w:hint="eastAsia" /></w:rPr><w:t>“</w:t></w:r>"#));
+        assert!(output.contains(r#"w:ascii="Arial" w:eastAsia="仿宋" w:hAnsi="Arial" w:hint="eastAsia""#));
+        assert!(output.contains(r#"<w:b />"#));
+        assert!(output.contains(r#"<w:i />"#));
+        assert!(!output.contains(r#"w:hint="default""#));
+    }
+
+    #[test]
+    fn preserves_quote_hyperlinks_and_empty_run_properties() {
+        let input = r#"<w:document><w:body><w:p><w:hyperlink r:id="rId1"><w:r><w:rPr><w:rStyle w:val="Hyperlink" /></w:rPr><w:t>“中文链接”</w:t></w:r></w:hyperlink><w:r><w:rPr /><w:t>‘</w:t></w:r><w:r><w:t>正文</w:t></w:r><w:r><w:t>’</w:t></w:r></w:p></w:body></w:document>"#;
+        let output = normalize_document_xml(input, false, None, &default_markdown_feature_config(), None, None, None);
+        assert!(output.contains(r#"<w:hyperlink r:id="rId1">"#));
+        assert!(output.contains(r#"<w:rPr><w:rStyle w:val="Hyperlink" /><w:rFonts w:hint="eastAsia" /></w:rPr>"#));
+        assert_eq!(output.matches(r#"w:hint="eastAsia""#).count(), 3);
+    }
+
+    #[test]
+    fn preserves_english_and_code_quote_fonts() {
+        let input = r#"<w:document><w:body><w:p><w:r><w:t>“English”</w:t></w:r></w:p><w:p><w:r><w:t>中文</w:t></w:r><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /><w:rFonts w:ascii="Consolas" /></w:rPr><w:t>“代码”</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:t>“中文代码块”</w:t></w:r></w:p></w:body></w:document>"#;
+        let features = MarkdownFeatureConfig { inline_code: true, ..default_markdown_feature_config() };
+        let output = normalize_document_xml(input, false, None, &features, None, None, None);
+        assert!(output.contains(r#"<w:r><w:t>“English”</w:t></w:r>"#));
+        for text in ["“代码”", "“中文代码块”"] {
+            let run = Regex::new(r"(?s)<w:r\b[^>]*>.*?</w:r>").unwrap()
+                .find_iter(&output).find(|run| run.as_str().contains(text)).unwrap().as_str();
+            assert!(!run.contains(r#"w:hint="eastAsia""#), "{run}");
+        }
     }
 
     #[test]
