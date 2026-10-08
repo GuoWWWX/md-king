@@ -3,6 +3,7 @@ pub mod convert_commands;
 pub mod history_commands;
 pub mod system_commands;
 pub mod template_commands;
+pub mod update_commands;
 pub mod vault_commands;
 
 pub use config_commands::{get_app_config, get_app_status, save_app_config};
@@ -14,6 +15,10 @@ pub use system_commands::{check_pandoc, open_output_path, reveal_output_path};
 pub use template_commands::{
     get_template_style_config, get_template_style_configs, import_template, list_templates,
     reset_template_style_config, save_template_style_config, save_templates,
+};
+pub use update_commands::{
+    cancel_update_download, download_update_installer, fetch_latest_release,
+    launch_update_installer,
 };
 pub use vault_commands::{
     copy_external_vault_file, copy_text_to_clipboard, copy_vault_entry, create_vault_entry,

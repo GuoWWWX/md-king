@@ -14,8 +14,10 @@ import { ConvertPage } from "@/pages/convert/convert-page";
 import { HistoryPage } from "@/pages/history/history-page";
 import { SettingsPage } from "@/pages/settings/settings-page";
 import { TemplatesPage } from "@/pages/templates/templates-page";
+import { UpdateDialog } from "@/components/update/update-dialog";
 import { getAppConfig, getAppStatus, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
 import { useAppStore } from "@/stores/app-store";
+import { useUpdaterStore } from "@/stores/updater-store";
 
 const navigation = [
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
@@ -143,7 +145,10 @@ function App() {
     };
 
     // 首屏展示后再独立读取数据，单个请求异常或缓慢都不会阻塞其他状态更新。
-    updateWhenResolved(getAppStatus(), setAppStatus);
+    updateWhenResolved(getAppStatus(), (status) => {
+      setAppStatus(status);
+      useUpdaterStore.getState().setCurrentVersion(status.version);
+    });
     updateWhenResolved(getAppConfig(), setAppConfig);
     updateWhenResolved(listTemplates(), setTemplates);
     updateWhenResolved(listHistory(), setHistory);
@@ -152,6 +157,24 @@ function App() {
       cancelled = true;
     };
   }, [bootReady, setAppConfig, setAppStatus, setHistory, setTemplates]);
+
+  useEffect(() => {
+    if (!bootReady) return;
+    // 启动 3 秒后静默检查更新，不打扰用户首屏启动流程
+    const initialTimer = window.setTimeout(() => {
+      void useUpdaterStore.getState().checkForUpdates({ silent: true });
+    }, 3000);
+
+    // 后台每隔 4 小时静默轮询一次最新 Release
+    const pollInterval = window.setInterval(() => {
+      void useUpdaterStore.getState().checkForUpdates({ silent: true });
+    }, 4 * 60 * 60 * 1000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(pollInterval);
+    };
+  }, [bootReady]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -255,6 +278,7 @@ function App() {
         <ConvertPage workspaceContent={workspaceContent} />
       </AppShell>
       <Toaster position="top-center" closeButton visibleToasts={3} />
+      <UpdateDialog />
     </>
   );
 }

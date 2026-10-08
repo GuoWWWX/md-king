@@ -1,9 +1,10 @@
-import { Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Sun, type LucideIcon } from "lucide-react";
+import { Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Sun, Sparkles, Download, type LucideIcon } from "lucide-react";
 import type { AppStatus, Template, ThemeMode } from "@/types";
 import { PrimaryActionButton } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
 import { TooltipAnchor, TooltipButton } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useUpdaterStore } from "@/stores/updater-store";
 
 export type NavigationItem = {
   id: string;
@@ -69,6 +70,13 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
   const navButtonBase = collapsed ? "mk-nav-collapsed size-10 rounded-[8px] p-0" : "h-10 w-full rounded-[8px] max-[980px]:size-10 max-[980px]:rounded-[8px] max-[980px]:p-0";
   const navButtonLayout = collapsed ? "justify-center" : "justify-start gap-2.5 px-3 max-[980px]:justify-center max-[980px]:px-0";
 
+  const hasUpdate = useUpdaterStore((state) => state.hasUpdate);
+  const updateStatus = useUpdaterStore((state) => state.status);
+  const latestRelease = useUpdaterStore((state) => state.latestRelease);
+  const downloadProgress = useUpdaterStore((state) => state.downloadProgress);
+  const setDialogOpen = useUpdaterStore((state) => state.setDialogOpen);
+  const checkForUpdates = useUpdaterStore((state) => state.checkForUpdates);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PrimaryActionButton className={cn("h-10 overflow-hidden text-sm font-bold whitespace-nowrap", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" tooltipSide="right" aria-label="新建转换">
@@ -108,6 +116,33 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
       </div>
 
       <div className={cn("mk-sidebar-footer shrink-0 space-y-3 border-t border-slate-200/80 pt-3 dark:border-zinc-700", collapsed && "items-center")}>
+        {hasUpdate && (
+          <Button
+            variant="ghost"
+            className={cn(
+              "relative overflow-hidden rounded-[8px] bg-amber-500/15 text-xs font-bold text-amber-700 hover:bg-amber-500/25 hover:text-amber-800 dark:bg-amber-400/20 dark:text-amber-300 dark:hover:bg-amber-400/30 transition animate-in fade-in",
+              collapsed ? "mx-auto size-9 justify-center p-0" : "h-9 w-full justify-start gap-2 px-2.5 max-[980px]:mx-auto max-[980px]:size-9 max-[980px]:justify-center max-[980px]:p-0",
+            )}
+            onClick={() => setDialogOpen(true)}
+            title={updateStatus === "downloading" ? `正在下载更新: ${downloadProgress.percent.toFixed(0)}%` : `发现新版本 ${latestRelease?.tag_name} (点击更新)`}
+            tooltipSide="right"
+            aria-label="软件更新"
+          >
+            {updateStatus === "downloading" ? (
+              <Download className="size-4 shrink-0 animate-bounce" />
+            ) : (
+              <Sparkles className="size-4 shrink-0" />
+            )}
+            <span className={sidebarLabelClass}>
+              {updateStatus === "downloading" ? `下载中 ${downloadProgress.percent.toFixed(0)}%` : `更新 ${latestRelease?.tag_name}`}
+            </span>
+            <span className="absolute top-1.5 right-1.5 flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
+            </span>
+          </Button>
+        )}
+
         <ThemeModeButton collapsed={collapsed} themeMode={themeMode} onToggleThemeMode={onToggleThemeMode} onThemeModeChange={onThemeModeChange} />
         <Button
           variant="outline"
@@ -124,7 +159,17 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
           <span className={sidebarLabelClass}>{collapsed ? "展开侧栏" : "收起侧栏"}</span>
         </Button>
         <div className={cn("flex items-center overflow-hidden text-xs text-slate-400", collapsed ? "justify-center px-0" : "justify-between px-2 max-[980px]:justify-center")}>
-          <span className={sidebarLabelClass}>{appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}</span>
+          <button
+            type="button"
+            className={cn(
+              "text-left transition hover:text-slate-600 dark:hover:text-zinc-300 cursor-pointer",
+              sidebarLabelClass,
+            )}
+            onClick={() => void checkForUpdates({ silent: false, currentVer: appStatus?.version })}
+            title="点击检查更新"
+          >
+            {appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}
+          </button>
           <TooltipAnchor content="本地运行" tooltipSide="right">
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-blue-600" />

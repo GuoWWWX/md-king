@@ -1,9 +1,11 @@
-import { Braces, ClipboardPaste, Code2, Cpu, HardDrive, Heading, History, Image, Layers3, Link2, List, Quote, ShieldCheck, Table2, Workflow, type LucideIcon } from "lucide-react";
+import { Braces, ClipboardPaste, Code2, Cpu, HardDrive, Heading, History, Image, Layers3, Link2, List, Quote, ShieldCheck, Table2, Workflow, Sparkles, RefreshCw, type LucideIcon } from "lucide-react";
 import { WorkspacePageHeader } from "@/components/layout/page-header";
 import { appPageMeta } from "@/components/layout/page-meta";
 import { AppSurface } from "@/components/ui/app-surface";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
+import { useUpdaterStore } from "@/stores/updater-store";
 
 type MarkdownGuideItem = {
   icon: LucideIcon;
@@ -26,6 +28,10 @@ const markdownGuideItems: MarkdownGuideItem[] = [
 export function AboutPage() {
   const { appConfig, appStatus, pandocStatus } = useAppStore();
   const appVersion = appStatus?.version ?? "0.1.8";
+  const hasUpdate = useUpdaterStore((state) => state.hasUpdate);
+  const updateStatus = useUpdaterStore((state) => state.status);
+  const checkForUpdates = useUpdaterStore((state) => state.checkForUpdates);
+  const setDialogOpen = useUpdaterStore((state) => state.setDialogOpen);
   const platformLabel = getPlatformLabel(appStatus?.platform);
   const isBrowserPreview = appStatus?.platform === "browser-preview";
   const pandocValue = isBrowserPreview
@@ -85,9 +91,34 @@ export function AboutPage() {
                   <span className="text-muted-foreground">名称</span>
                   <span>{appStatus?.name ?? "md-king"}</span>
                 </div>
-                <div className="flex justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">版本</span>
-                  <span>{appVersion}</span>
+                  <div className="flex items-center gap-2">
+                    <span>{appVersion}</span>
+                    {hasUpdate ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 gap-1 border-amber-300 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                        onClick={() => setDialogOpen(true)}
+                      >
+                        <Sparkles className="size-3" />
+                        <span>可升级</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                        disabled={updateStatus === "checking"}
+                        onClick={() => void checkForUpdates({ silent: false, currentVer: appVersion })}
+                        title="检查新版本"
+                      >
+                        <RefreshCw className={cn("size-3", updateStatus === "checking" && "animate-spin")} />
+                        <span>{updateStatus === "checking" ? "检查中..." : "检查更新"}</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-muted-foreground">平台</span>

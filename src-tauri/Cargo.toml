@@ -31,6 +31,7 @@ base64 = "0.22"
 notify = "8"
 sha2 = "0.10"
 quick-xml = "0.39"
+ureq = { version = "2.10", default-features = false, features = ["tls"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }

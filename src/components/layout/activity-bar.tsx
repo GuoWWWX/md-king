@@ -1,7 +1,8 @@
-import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, type LucideIcon } from "lucide-react";
+import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, Sparkles, Download, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { handleTauriWindowDrag, handleTauriWindowDoubleClick } from "@/lib/tauri";
+import { useUpdaterStore } from "@/stores/updater-store";
 import type { ThemeMode } from "@/types";
 
 export type ActivityBarItem = {
@@ -43,6 +44,12 @@ export function ActivityBar({
   const ThemeIcon = activeTheme.icon;
   const primaryNavigation = navigation.filter((item) => item.id !== "settings");
 
+  const hasUpdate = useUpdaterStore((state) => state.hasUpdate);
+  const status = useUpdaterStore((state) => state.status);
+  const latestRelease = useUpdaterStore((state) => state.latestRelease);
+  const downloadProgress = useUpdaterStore((state) => state.downloadProgress);
+  const setDialogOpen = useUpdaterStore((state) => state.setDialogOpen);
+
   return (
     <aside
       data-collapsed="true"
@@ -80,6 +87,27 @@ export function ActivityBar({
       />
 
       <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700">
+        {hasUpdate && (
+          <Button
+            variant="ghost"
+            className="relative size-10 shrink-0 justify-center rounded-[8px] p-0 bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 hover:text-amber-700 dark:bg-amber-400/20 dark:text-amber-300 dark:hover:bg-amber-400/30 transition animate-in fade-in"
+            onClick={() => setDialogOpen(true)}
+            title={status === "downloading" ? `正在下载更新: ${downloadProgress.percent.toFixed(0)}%` : `发现新版本 ${latestRelease?.tag_name} (点击更新)`}
+            tooltipSide="right"
+            aria-label="软件更新"
+          >
+            {status === "downloading" ? (
+              <Download className="size-4 animate-bounce" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+            <span className="absolute top-1.5 right-1.5 flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
+            </span>
+          </Button>
+        )}
+
         <Button
           variant="outline"
           className="mk-theme-cycle-button mk-sidebar-icon-button size-9 shrink-0 justify-center rounded-[8px] px-0"

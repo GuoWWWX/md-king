@@ -604,5 +604,40 @@ export function handleTauriWindowDoubleClick(
   triggerTauriWindowToggleMaximize(windowGetter);
 }
 
+export type DownloadProgressPayload = {
+  percent: number;
+  transferred: number;
+  total: number;
+  speed_bytes_per_sec: number;
+};
 
+export async function fetchLatestRelease(repo?: string): Promise<string> {
+  if (!isTauriEnvironment()) {
+    const repoName = repo ?? "GuoWWWX/md-king";
+    const resp = await fetch(`https://api.github.com/repos/${repoName}/releases/latest`);
+    if (!resp.ok) {
+      throw new Error(`获取 Release 失败: HTTP ${resp.status}`);
+    }
+    return resp.text();
+  }
+  return invoke<string>("fetch_latest_release", { repo });
+}
 
+export async function downloadUpdateInstaller(downloadUrl: string, version: string): Promise<string> {
+  if (!isTauriEnvironment()) {
+    throw new Error("浏览器预览模式不支持直接下载安装更新包");
+  }
+  return invoke<string>("download_update_installer", { downloadUrl, version });
+}
+
+export async function launchUpdateInstaller(installerPath: string, silent = false): Promise<void> {
+  if (!isTauriEnvironment()) {
+    throw new Error("浏览器预览模式不支持启动安装程序");
+  }
+  return invoke<void>("launch_update_installer", { installerPath, silent });
+}
+
+export async function cancelUpdateDownload(): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  return invoke<void>("cancel_update_download");
+}
