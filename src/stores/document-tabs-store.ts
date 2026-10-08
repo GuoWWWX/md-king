@@ -69,8 +69,8 @@ type DocumentTabsState = {
   updateTabDiskVersion: (id: string, file: { eol?: VaultEol; hasBom?: boolean; modifiedMs?: number }) => void;
   /// 磁盘文件被删除后保留正文，并转成需要另存的临时标签。
   detachMissingTab: (id: string) => void;
-  markTabClean: (id: string, modifiedMs?: number) => void;
-  markTabSavedAs: (id: string, file: { path: string; absolutePath: string; title: string; eol: VaultEol; hasBom: boolean; modifiedMs: number }) => void;
+  markTabClean: (id: string, savedContent: string, modifiedMs?: number) => void;
+  markTabSavedAs: (id: string, file: { path: string; absolutePath: string; title: string; eol: VaultEol; hasBom: boolean; modifiedMs: number }, savedContent: string) => void;
   closeTab: (id: string) => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
@@ -265,15 +265,15 @@ export const useDocumentTabsStore = create<DocumentTabsState>((set, get) => ({
       : tab),
   })),
 
-  markTabClean: (id, modifiedMs) => set((state) => ({
+  markTabClean: (id, savedContent, modifiedMs) => set((state) => ({
     tabs: state.tabs.map((tab) => (tab.id === id
-      ? { ...tab, dirty: false, modifiedMs: modifiedMs ?? tab.modifiedMs }
+      ? { ...tab, dirty: tab.content !== savedContent, modifiedMs: modifiedMs ?? tab.modifiedMs }
       : tab)),
   })),
 
-  markTabSavedAs: (id, file) => set((state) => ({
+  markTabSavedAs: (id, file, savedContent) => set((state) => ({
     tabs: state.tabs.map((tab) => (tab.id === id
-      ? { ...tab, ...file, kind: "vault", dirty: false, titleEdited: false }
+      ? { ...tab, ...file, kind: "vault", dirty: tab.content !== savedContent, titleEdited: false }
       : tab)),
   })),
 

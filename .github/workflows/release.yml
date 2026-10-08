@@ -5,9 +5,18 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag, e.g. v1.1.9'
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -16,18 +25,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           lfs: true
           fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -42,17 +50,46 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate release versions and signing configuration
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Only stable X.Y.Z versions are supported" }
+          if ($env:RELEASE_TAG -cne "v$version" -or $tauriVersion -cne $version) { throw "Release versions do not match" }
+          if (!(Select-String -Path src-tauri/Cargo.toml -SimpleMatch -Pattern "version = `"$version`"" -Quiet)) { throw "Cargo version does not match" }
+          if (!$env:UPDATE_SIGNING_PRIVATE_KEY) { throw "Missing UPDATE_SIGNING_PRIVATE_KEY repository secret" }
+
+      - run: pnpm build
+      - run: pnpm audit --prod --audit-level=high
+      - run: pnpm test:unit
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
       - name: Build Tauri app
         run: pnpm tauri:build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sign update manifest
+        run: node scripts/sign-update.mjs
+        env:
+          GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
             src-tauri/target/release/bundle/nsis/*-setup.exe
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/update-manifest.json
+            src-tauri/target/release/bundle/nsis/update-manifest.sig
+            src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+          fail_on_unmatched_files: true
           generate_release_notes: true
           draft: false
           prerelease: false

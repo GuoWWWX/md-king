@@ -43,43 +43,45 @@ AI 默认输出极佳的结构化 Markdown；但一旦直接**复制粘贴到 Wo
 
 ## 📸 软件截图与核心功能展示
 
+以下七张应用界面图均为 **v1.1.9 生产构建在浏览器中实际运行的 1920 × 1080 截图**，使用[技术报告示例](docs/examples/technical-report.md)展示表格、公式、时序图与代码；没有使用概念图。浏览器只用于前端展示，文件系统操作、Pandoc 转换、系统集成和自动安装更新需要 Windows 桌面版。DOCX 导出图是文档页面，保留原始纸张比例。
+
 ### 1. 沉浸式 Markdown 双栏工作台
 所见即所得的极客工作台：实时渲染 Markdown、高亮代码块、KaTeX 数学公式与 Mermaid 专业图表，右侧并列展现高保真 Word/WPS DOCX 纸张排版双页视图。
 
-![沉浸式 Markdown 工作台](docs/images/feature-workbench.png)
+![沉浸式 Markdown 工作台](docs/images/feature-workbench.jpg)
 
 ---
 
 ### 2. 侧边大纲目录导航
 支持智能解析多级标题层级，一键展开右侧文档侧栏，快速搜索与高亮定位长篇文档结构。
 
-![侧边大纲目录导航](docs/images/feature-workbench-outline.png)
+![侧边大纲目录导航](docs/images/feature-workbench-outline.jpg)
 
 ---
 
 ### 3. 极客深色模式与智能图表自适应
 全面支持系统级深色/浅色模式无缝自适应切换。Mermaid 时序图自适应微光暗调背景与节点文字对比度反转，夜间写作沉浸舒适。
 
-![极客深色模式](docs/images/feature-dark-mode.png)
+![极客深色模式](docs/images/feature-dark-mode.jpg)
 
 ---
 
 ### 4. 专业级 Word / WPS 样式编辑设计器
 细粒度掌控全篇排版细节：标题级别（1~6 级）、正文字体（宋体/Times New Roman 等）、中英文混排、字号字重、行距行高、首行缩进、段前段后间距及多级自动编号。
 
-![专业样式编辑设计器](docs/images/feature-style-manager.png)
+![专业样式编辑设计器](docs/images/feature-style-manager.jpg)
 
 ---
 
 ### 5. 强大的样式模板中心
 内置官方公文规范、技术方案、学术论文等多套工业级预设模板，支持自定义模板导入与分组管理，一键换装应用。
 
-![模板中心与样式管理](docs/images/feature-templates.png)
+![模板中心与样式管理](docs/images/feature-templates.jpg)
 
 ---
 
 ### 6. 真实 DOCX 导出排版效果
-告别手动调格式！标题自动编号、表格智能分栏、图表高清矢量光栅化与自动题注居中，开箱即达出版级排版水准。
+导出文档支持标题编号、表格、图表和题注；下图为此前生成的 DOCX 文档页，具体分页仍需在目标 Word/WPS 环境中核对。
 
 ![DOCX 真实导出效果](docs/images/feature-word-preview.png)
 
@@ -88,14 +90,14 @@ AI 默认输出极佳的结构化 Markdown；但一旦直接**复制粘贴到 Wo
 ### 7. 深度个性化设置与引擎维护
 提供输出目录自定义、Pandoc 内核版本检测与维护、主题配色定制及全局快捷操作配置。
 
-![深度设置中心](docs/images/feature-settings.png)
+![深度设置中心](docs/images/feature-settings.jpg)
 
 ---
 
 ### 8. 关于面板与应用内一键自动推送更新
-集成客户端版本自检、Markdown 语法速览与应用内自动静默升级，时刻保持最新生产力体验。
+桌面客户端支持版本检查与自动安装更新。下图展示浏览器中的关于页面和 Markdown 语法速览，安装更新链路在 Windows 桌面版运行。
 
-![关于与版本中心](docs/images/feature-about.png)
+![关于与版本中心](docs/images/feature-about.jpg)
 
 ---
 
@@ -103,7 +105,7 @@ AI 默认输出极佳的结构化 Markdown；但一旦直接**复制粘贴到 Wo
 
 - [x] **本地优先 (Local First)**：所有转换与文档处理均在本机完成，隐私数据绝不上传云端，无网络亦可流畅使用。
 - [x] **完整语法生态支持**：
-  - **公式支持**：深度集成 KaTeX，完美支持行内公式 `$...$` 与独立块级公式 `$$...$$`；
+  - **公式支持**：集成 KaTeX，支持行内公式 `$...$` 与独立块级公式 `$$...$$`；
   - **图表渲染**：支持 Mermaid 流程图、时序图（带深色自适应与微光暗调背景）、类图、状态图；
   - **富文本元素**：Callout 提示框、任务清单、自定义题注、表格列宽自适应。
 - [x] **Word 模板复用机制**：基于先进的样式映射引擎，可自由绑定公司/学术 Word 模版，保留原有字体、边距与标题层级。
@@ -118,16 +120,20 @@ AI 默认输出极佳的结构化 Markdown；但一旦直接**复制粘贴到 Wo
 
 | 版本 | 文件类型 | 适用系统 | 下载说明 |
 | :--- | :--- | :--- | :--- |
-| **最新正式版** | `md-king_x.x.x_x64-setup.exe` | Windows 10 / 11 (64-bit) | 双击运行安装即可，内置全套排版引擎 |
+| **最新正式版** | `md-king_1.1.9_x64-setup.exe` | Windows 10 / 11 (64-bit) | 双击运行安装即可，内置排版引擎 |
 
 ---
 
 ## 🔄 应用内自动更新
 
-MD King 客户端内置了顺滑的**自动版本推送与无缝更新体系**：
-1. **自动推送**：启动后应用会自动检测远端是否有新版本；当有新版本时，**软件左侧栏下半部分**会亮起炫酷的更新提醒按钮；
-2. **更新进度弹窗**：点击该提醒按钮即可唤出更新面板，清晰查阅本次更新的 Release 日志与修复详情；
-3. **一键下载并静默升级**：点击“立即更新”，软件将实时展示下载进度条与瞬时网速；下载完成后自动安全启动安装程序并覆盖升级！
+Windows 客户端在启动后检查新版本，之后每 4 小时检查一次；也可以在“关于”页手动检查。
+
+1. 新版本提示出现在左侧栏下半部分，点击可查看 Release 更新说明。
+2. 点击“立即更新”，弹窗显示已下载 / 总字节数、百分比和网速；支持取消与失败重试。
+3. 客户端先验证内置公钥对应的 Ed25519 清单签名，再验证安装包大小和 SHA-256；校验不通过会阻止安装。
+4. 下载校验完成后，保存当前草稿会话并自动静默安装，覆盖当前安装目录后重启。草稿存储失败或安装程序启动失败时保留当前应用，允许重试。
+
+更新来源固定为本仓库正式 Release。Windows 的权限确认仍需用户处理。网络不可用时不会自动退出当前应用。
 
 ---
 
@@ -135,18 +141,21 @@ MD King 客户端内置了顺滑的**自动版本推送与无缝更新体系**�
 
 本项目采用清晰的双分支研发规范，欢迎提交 Issue 与 Pull Request：
 
-- **`main` 分支**：主分支，保持稳定可发布状态，每一次发版均打有对应版本的 Git Tag（如 `v1.1.8`）；
+- **`main` 分支**：主分支，保持稳定可发布状态，每一次发版均打有对应版本的 Git Tag（如 `v1.1.9`）；
 - **`develop` 分支**：开发分支，承载日常功能开发与特性合流，新功能提 PR 请合并至此分支。
 
 ### 本地启动与构建
+
+需要 Node.js 24.3+、pnpm 10.33.0、Rust stable、Git LFS；Windows 桌面构建还需要 Visual Studio 的 C++ 工具链与 Windows SDK。发布时 `main` 与 `develop` 同步到同一提交，开发中的 `develop` 可以先于 `main`。
 
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/GuoWWWX/md-king.git
 cd md-king
+git lfs pull
 
 # 2. 安装前端依赖
-pnpm install
+pnpm install --frozen-lockfile
 
 # 3. 运行前端开发模式
 pnpm dev
@@ -157,6 +166,26 @@ pnpm tauri dev
 # 5. 打包生产安装包
 pnpm tauri:build
 ```
+
+---
+
+### 测试、发布与本地路径
+
+```powershell
+pnpm build
+pnpm test:unit
+# Windows 本机可使用 MSVC 环境包装器
+pnpm test:msvc
+scripts\cargo-msvc.bat tauri-build
+```
+
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.9_x64-setup.exe`。
+- MSI 安装包：`src-tauri/target/release/bundle/msi/`。
+- 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
+
+CI 对 `main`、`develop` 和 Pull Request 执行前端构建、单元测试与 Rust 测试。发版时同步修改 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 中的版本，推送对应 `vX.Y.Z` 标签。Release 工作流会先测试，再构建 EXE/MSI，并上传签名清单与校验文件。
+
+客户端公钥位于 `src-tauri/update-public-key.txt`。GitHub 仓库 Secret `UPDATE_SIGNING_PRIVATE_KEY` 保存匹配的 Ed25519 PKCS#8 私钥（Base64）；私钥不能提交到仓库。签名脚本会检查私钥、公钥与版本是否匹配，不匹配则终止发布。密钥维护与验收步骤见[发布维护说明](docs/RELEASING.md)。
 
 ---
 

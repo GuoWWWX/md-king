@@ -1,0 +1,22 @@
+import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+
+const version = JSON.parse(readFileSync("package.json", "utf8")).version;
+if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Only stable X.Y.Z versions are supported");
+const tag = process.env.GITHUB_REF_NAME;
+if (tag && tag !== `v${version}`) throw new Error(`Tag ${tag} does not match package version v${version}`);
+const bundle = resolve("src-tauri/target/release/bundle/nsis");
+const asset = `md-king_${version}_x64-setup.exe`;
+const installer = readFileSync(resolve(bundle, asset));
+const key = createPrivateKey({ key: Buffer.from(process.env.UPDATE_SIGNING_PRIVATE_KEY ?? "", "base64"), type: "pkcs8", format: "der" });
+const publicBytes = Buffer.from(readFileSync("src-tauri/update-public-key.txt", "utf8").trim(), "base64");
+const publicKey = createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), publicBytes]), type: "spki", format: "der" });
+const manifest = Buffer.from(JSON.stringify({ version: `v${version}`, asset, size: installer.length, sha256: createHash("sha256").update(installer).digest("hex") }) + "\n");
+const signature = sign(null, manifest, key);
+if (!verify(null, manifest, publicKey, signature)) throw new Error("Signing key does not match the client public key");
+writeFileSync(resolve(bundle, "update-manifest.json"), manifest);
+writeFileSync(resolve(bundle, "update-manifest.sig"), signature.toString("base64") + "\n");
+const checksums = readdirSync(bundle).filter(name => name.endsWith(".exe")).map(name => `${createHash("sha256").update(readFileSync(resolve(bundle, name))).digest("hex")}  ${name}`).join("\n") + "\n";
+writeFileSync(resolve(bundle, "SHA256SUMS.txt"), checksums);
+console.log(`Signed update manifest for v${version}: ${asset} (${installer.length} bytes)`);

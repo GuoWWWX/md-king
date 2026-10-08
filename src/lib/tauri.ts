@@ -19,7 +19,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.1.8",
+  version: "1.1.9",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -615,6 +615,7 @@ export async function fetchLatestRelease(repo?: string): Promise<string> {
   if (!isTauriEnvironment()) {
     const repoName = repo ?? "GuoWWWX/md-king";
     const resp = await fetch(`https://api.github.com/repos/${repoName}/releases/latest`);
+    if (resp.status === 404) return "null";
     if (!resp.ok) {
       throw new Error(`获取 Release 失败: HTTP ${resp.status}`);
     }

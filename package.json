@@ -1,7 +1,18 @@
 {
   "name": "md-king",
   "private": true,
-  "version": "1.1.8",
+  "version": "1.1.9",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24.3.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "linkify-it": "5.0.2",
+      "katex": "0.18.2",
+      "esbuild": "^0.28.1"
+    }
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -37,16 +48,15 @@
     "@vscode/markdown-it-katex": "^1.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "katex": "^0.18.1",
+    "katex": "^0.18.2",
     "lucide-react": "^1.17.0",
-    "markdown-it": "^14.2.0",
+    "markdown-it": "^14.3.2",
     "mermaid": "^11.17.2",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.78.0",
-    "shadcn": "^4.11.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
@@ -61,6 +71,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "shadcn": "^4.11.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   }

@@ -168,6 +168,7 @@ if (!$makensis) {
 Push-Location $nsisDir
 try {
   & $makensis "installer.nsi"
+  if ($LASTEXITCODE -ne 0) { throw "NSIS compiler failed with exit code $LASTEXITCODE" }
 } finally {
   Pop-Location
 }

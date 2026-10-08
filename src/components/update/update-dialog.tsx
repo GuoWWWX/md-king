@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -48,12 +47,12 @@ export function UpdateDialog() {
     ignoreCurrentRelease,
   } = useUpdaterStore();
 
-  const [silentInstall, setSilentInstall] = useState(true);
-
   if (!latestRelease) return null;
 
   const newVersion = latestRelease.tag_name;
-  const isDownloading = status === "downloading";
+  const isDownloading = status === "downloading" || status === "cancelling";
+  const isInstalling = status === "installing";
+  const isBusy = isDownloading || isInstalling;
   const isReady = status === "ready_to_install";
   const isError = status === "error";
 
@@ -80,8 +79,8 @@ export function UpdateDialog() {
   }
 
   return (
-    <Dialog open={dialogOpen} onOpenChange={(open) => !isDownloading && setDialogOpen(open)}>
-      <DialogContent className="max-w-[480px] p-6 sm:max-w-[500px]" showCloseButton={!isDownloading}>
+    <Dialog open={dialogOpen} onOpenChange={(open) => !isBusy && setDialogOpen(open)}>
+      <DialogContent className="max-w-[480px] p-6 sm:max-w-[500px]" showCloseButton={!isBusy}>
         <DialogHeader className="space-y-2.5">
           <div className="flex items-center gap-2.5">
             <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-400">
@@ -129,7 +128,7 @@ export function UpdateDialog() {
             <div className="space-y-2 rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-amber-700 dark:text-amber-300">
-                  正在下载安装包...
+                  {status === "cancelling" ? "正在取消下载..." : downloadProgress.percent >= 100 ? "正在校验安装包..." : "正在下载安装包..."}
                 </span>
                 <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-200">
                   {downloadProgress.percent.toFixed(1)}%
@@ -148,8 +147,12 @@ export function UpdateDialog() {
           {isReady && (
             <div className="flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <span>安装包已准备就绪，点击下方按钮即可启动安装。升级时软件将安全关闭。</span>
+              <span>安装包已通过校验。{errorMessage ? "自动安装未完成：" + errorMessage + "。请重试安装。" : "正在准备安装。"}</span>
             </div>
+          )}
+
+          {isInstalling && (
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">正在安装更新，软件即将关闭并自动重启。</p>
           )}
 
           {isError && (
@@ -164,6 +167,10 @@ export function UpdateDialog() {
             </div>
           )}
         </div>
+
+        {!isBusy && !isReady && (
+          <p className="mt-3 text-[11px] text-slate-500 dark:text-zinc-400">立即更新会下载并校验安装包，保存草稿后自动静默升级、重启。Windows 可能要求确认系统权限。</p>
+        )}
 
         {/* 底部操作按钮 */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
@@ -181,7 +188,7 @@ export function UpdateDialog() {
           </div>
 
           <div className="flex items-center gap-2">
-            {!isDownloading && !isReady && (
+            {!isBusy && !isReady && !isError && (
               <>
                 <Button
                   variant="ghost"
@@ -215,6 +222,7 @@ export function UpdateDialog() {
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400"
+                disabled={status === "cancelling"}
                 onClick={cancelDownload}
               >
                 <X className="size-3.5" />
@@ -224,15 +232,6 @@ export function UpdateDialog() {
 
             {isReady && (
               <>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer select-none mr-1">
-                  <input
-                    type="checkbox"
-                    checked={silentInstall}
-                    onChange={(e) => setSilentInstall(e.target.checked)}
-                    className="size-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-zinc-700"
-                  />
-                  <span>静默升级</span>
-                </label>
                 <Button
                   variant="outline"
                   size="sm"
@@ -244,7 +243,7 @@ export function UpdateDialog() {
                 <Button
                   size="sm"
                   className="h-8 gap-1.5 bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400"
-                  onClick={() => installAndRelaunch(silentInstall)}
+                  onClick={() => installAndRelaunch(true)}
                 >
                   <Rocket className="size-3.5" />
                   <span>立即安装升级</span>

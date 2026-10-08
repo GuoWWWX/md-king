@@ -1,10 +1,50 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { useDocumentTabsStore } from "./document-tabs-store.ts";
+import { createDocumentSession } from "../lib/document-session.ts";
 
 function resetTabs() {
   useDocumentTabsStore.getState().closeAllTabs();
 }
+
+test("保存期间的新编辑保持未保存状态并进入会话备份", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openVaultTab({
+      path: "review.md", absolutePath: "D:/review.md", title: "review.md", content: "旧内容", modifiedMs: 1,
+    });
+    useDocumentTabsStore.getState().updateTabContent(id, "提交保存的内容");
+    const submitted = useDocumentTabsStore.getState().tabs[0]!.content;
+    useDocumentTabsStore.getState().updateTabContent(id, "保存期间的新内容");
+    useDocumentTabsStore.getState().markTabClean(id, submitted, 2);
+    const tab = useDocumentTabsStore.getState().tabs[0]!;
+    assert.equal(tab.dirty, true);
+    assert.equal(tab.modifiedMs, 2);
+    assert.equal(createDocumentSession([tab], id, undefined, "convert", []).tabs[0]?.content, "保存期间的新内容");
+    useDocumentTabsStore.getState().markTabClean(id, tab.content, 3);
+    assert.equal(useDocumentTabsStore.getState().tabs[0]?.dirty, false);
+  } finally {
+    resetTabs();
+  }
+});
+
+test("另存为期间的新编辑保留在新文件标签且不允许直接关闭", () => {
+  resetTabs();
+  try {
+    const id = useDocumentTabsStore.getState().openScratchTab({ title: "草稿", content: "提交的内容", dirty: true });
+    useDocumentTabsStore.getState().updateTabContent(id, "后续编辑");
+    useDocumentTabsStore.getState().markTabSavedAs(id, {
+      path: "D:/review.md", absolutePath: "D:/review.md", title: "review.md", eol: "lf", hasBom: false, modifiedMs: 2,
+    }, "提交的内容");
+    const tab = useDocumentTabsStore.getState().tabs[0]!;
+    assert.equal(tab.kind, "vault");
+    assert.equal(tab.content, "后续编辑");
+    assert.equal(tab.dirty, true);
+    assert.equal(tab.modifiedMs, 2);
+  } finally {
+    resetTabs();
+  }
+});
 
 test("首次同步相同内容不会把刚打开的 Vault 文件标成脏状态", () => {
   resetTabs();
@@ -54,7 +94,7 @@ test("临时文档另存后转为干净的磁盘标签", () => {
       eol: "lf",
       hasBom: false,
       modifiedMs: 10,
-    });
+    }, "正文");
 
     const tab = useDocumentTabsStore.getState().tabs[0];
     assert.equal(tab?.kind, "vault");

@@ -6,3 +6,4 @@ pub mod pandoc;
 pub mod template;
 pub mod template_style;
 pub mod vault;
+pub mod update;

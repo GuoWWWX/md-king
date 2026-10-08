@@ -998,13 +998,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         expectedModifiedMs: tab.modifiedMs,
         allowEmpty: true,
       });
-      markTabClean(tab.id, saved.modifiedMs);
+      markTabClean(tab.id, tab.content, saved.modifiedMs);
+      const fullySaved = !useDocumentTabsStore.getState().tabs.find((item) => item.id === tab.id)?.dirty;
       if (isCurrentTab()) {
         setActiveFileModifiedMs(saved.modifiedMs);
-        setSaveState("saved");
+        setSaveState(fullySaved ? "saved" : "dirty");
       }
-      if (!silent) toast.success("文档已保存");
-      return true;
+      if (!silent && fullySaved) toast.success("文档已保存");
+      return fullySaved;
     } catch (error) {
       const { code, message } = parseVaultError(error, "保存文档失败");
       if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
@@ -1043,14 +1044,15 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           eol,
           hasBom,
           modifiedMs: saved.modifiedMs,
-        });
+        }, tab.content);
         setOutputNameEdited(false);
       } else {
-        markTabClean(tab.id, saved.modifiedMs);
+        markTabClean(tab.id, tab.content, saved.modifiedMs);
       }
-      if (isCurrentTab()) setSaveState("saved");
-      if (!silent) toast.success(`文档已保存：${fileName}`);
-      return true;
+      const fullySaved = !useDocumentTabsStore.getState().tabs.find((item) => item.id === tab.id)?.dirty;
+      if (isCurrentTab()) setSaveState(fullySaved ? "saved" : "dirty");
+      if (!silent && fullySaved) toast.success(`文档已保存：${fileName}`);
+      return fullySaved;
     } catch (error) {
       const { code, message } = parseVaultError(error, "保存文档失败");
       if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
@@ -1132,7 +1134,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     const delay = Math.min(10_000, Math.max(300, appConfig.autoSaveDelayMs || 1000));
     const timer = window.setTimeout(() => void saveActiveDocument(true), delay);
     return () => window.clearTimeout(timer);
-  }, [activeTab?.dirty, activeTab?.id, activeTab?.path, activeTabHasExternalChange, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canAutoSaveActiveDocument, markdown]);
+  }, [activeTab?.dirty, activeTab?.id, activeTab?.path, activeTab?.modifiedMs, activeTabHasExternalChange, appConfig?.autoSave, appConfig?.autoSaveDelayMs, canAutoSaveActiveDocument, markdown]);
 
   async function copyActiveDocumentPath(path: string | undefined) {
     if (!path) return;

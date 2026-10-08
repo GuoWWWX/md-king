@@ -68,7 +68,12 @@ set "LIB=%MSVC_ROOT%\lib\x64;%SDK_ROOT%\Lib\%SDK_VER%\ucrt\x64;%SDK_ROOT%\Lib\%S
 set "INCLUDE=%MSVC_ROOT%\include;%SDK_ROOT%\Include\%SDK_VER%\ucrt;%SDK_ROOT%\Include\%SDK_VER%\um;%SDK_ROOT%\Include\%SDK_VER%\shared;%SDK_ROOT%\Include\%SDK_VER%\winrt"
 
 cd /d "%~dp0.."
+if "%~1"=="tauri-build" goto :tauri_build
 cargo %*
+exit /b %ERRORLEVEL%
+
+:tauri_build
+call pnpm tauri:build
 exit /b %ERRORLEVEL%
 
 REM --- Subroutines ---

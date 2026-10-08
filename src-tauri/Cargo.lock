@@ -2273,7 +2273,7 @@ dependencies = [
 
 [[package]]
 name = "md-king"
-version = "1.1.8"
+version = "1.1.9"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2281,6 +2281,7 @@ dependencies = [
  "notify",
  "quick-xml",
  "regex",
+ "ring",
  "serde",
  "serde_json",
  "sha2",
