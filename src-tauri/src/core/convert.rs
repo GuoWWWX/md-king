@@ -5769,7 +5769,16 @@ fn split_text_by_emoji(text: &str) -> Vec<(String, bool)> {
     for character in text.chars() {
         let emoji = is_emoji_character(character) || matches!(character as u32, 0x200D | 0xFE0E | 0xFE0F);
         if let Some((current, current_emoji)) = segments.last_mut() {
-            if *current_emoji == emoji {
+            if matches!(character, '\u{fe0e}' | '\u{fe0f}')
+                && current.chars().next().and_then(circle_color).is_some()
+            {
+                current.push(character);
+                continue;
+            }
+            if *current_emoji == emoji
+                && circle_color(character).is_none()
+                && current.chars().next().and_then(circle_color).is_none()
+            {
                 current.push(character);
                 continue;
             }
@@ -5780,6 +5789,15 @@ fn split_text_by_emoji(text: &str) -> Vec<(String, bool)> {
 }
 
 fn emoji_run_xml(run_attributes: &str, properties_inner: &str, content: &str, emoji: bool) -> String {
+    // Colored circle emoji have monochrome, patterned fallback glyphs in Word/WPS.
+    // Use an ordinary filled circle with an explicit text color instead.
+    let text = paragraph_plain_text(content);
+    if let Some(color) = text.chars().next().and_then(circle_color) {
+        let properties = strip_emoji_run_overrides(properties_inner);
+        let content = content.replace(text.chars().next().unwrap(), "●")
+            .replace(['\u{fe0e}', '\u{fe0f}'], "");
+        return format!(r#"<w{run_attributes}><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial" /><w:color w:val="{color}" />{properties}</w:rPr>{content}</w:r>"#);
+    }
     let properties = if emoji {
         let properties_inner = strip_emoji_run_overrides(properties_inner);
         format!("<w:rPr>{EMOJI_FONT_XML}{properties_inner}</w:rPr>")
@@ -5789,6 +5807,19 @@ fn emoji_run_xml(run_attributes: &str, properties_inner: &str, content: &str, em
         format!("<w:rPr>{properties_inner}</w:rPr>")
     };
     format!("<w{run_attributes}>{properties}{content}</w:r>")
+}
+
+fn circle_color(character: char) -> Option<&'static str> {
+    match character {
+        '🔴' => Some("FF3B30"),
+        '🟠' => Some("FF9500"),
+        '🟡' => Some("FFCC00"),
+        '🟢' => Some("00C853"),
+        '🔵' => Some("007AFF"),
+        '🟣' => Some("AF52DE"),
+        '🟤' => Some("A2845E"),
+        _ => None,
+    }
 }
 
 fn strip_emoji_run_overrides(properties_inner: &str) -> String {
@@ -11693,6 +11724,22 @@ mod tests {
         assert!(output.contains(&format!(
             r#"<a:ext cx="{expected_width}" cy="{max_height}"/>"#
         )));
+    }
+
+    #[test]
+    fn exports_colored_circles_with_explicit_colors_without_changing_text_or_other_emoji() {
+        let input = r#"<w:r><w:rPr><w:color w:val="111827"/><w:b/><w:sz w:val="24"/></w:rPr><w:t xml:space="preserve">🔴P0 🟡P1 🟢P2 🔵🟣🟠🟤 ✅ 正文</w:t></w:r>"#;
+        let output = normalize_emoji_runs(input);
+        for color in ["FF3B30", "FFCC00", "00C853", "007AFF", "AF52DE", "FF9500", "A2845E"] {
+            assert!(output.contains(&format!(r#"<w:color w:val="{color}" />"#)));
+        }
+        assert_eq!(output.matches('●').count(), 7);
+        assert!(output.contains("Segoe UI Emoji"));
+        assert!(output.contains("✅"));
+        assert!(output.contains("P0 "));
+        assert!(output.contains("正文"));
+        assert!(output.contains(r#"<w:sz w:val="24"/>"#));
+        assert_eq!(normalize_emoji_runs(&output), output);
     }
 
     #[test]

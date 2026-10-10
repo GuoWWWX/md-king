@@ -24,6 +24,14 @@ pub fn config_path() -> io::Result<PathBuf> {
 }
 
 pub fn history_path() -> io::Result<PathBuf> {
+    // 转换历史属于应用运行数据，跟随安装目录保存，卸载时由安装器一并清理。
+    // current_exe 在已安装桌面端和 CLI 中都指向实际程序目录；测试或异常环境
+    // 无法解析时回退到旧的应用数据目录，避免历史功能因路径解析失败而不可用。
+    if let Ok(executable) = env::current_exe() {
+        if let Some(parent) = executable.parent() {
+            return Ok(parent.join("history.json"));
+        }
+    }
     Ok(app_data_dir()?.join("history.json"))
 }
 

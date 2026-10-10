@@ -234,10 +234,33 @@ pub fn import_vault_image_data(
 }
 
 #[tauri::command]
+pub fn paste_clipboard_image(root: String, target_dir: String) -> Result<Option<VaultEntry>, String> {
+    let root = resolve_root(&root)?;
+    #[cfg(windows)]
+    {
+        let script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $image=[System.Windows.Forms.Clipboard]::GetImage(); if ($null -ne $image) { $stream=New-Object System.IO.MemoryStream; try { $image.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png); if ($stream.Length -gt 20971520) { throw '图片超过 20 MB，无法导入。' }; [Console]::Write([Convert]::ToBase64String($stream.ToArray())) } finally { $stream.Dispose(); $image.Dispose() } }";
+        let output = hidden_powershell_command()
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output().map_err(|error| format!("读取剪贴板图片失败：{error}"))?;
+        if !output.status.success() {
+            return Err(format!("读取剪贴板图片失败：{}", String::from_utf8_lossy(&output.stderr).trim()));
+        }
+        let data = String::from_utf8_lossy(&output.stdout);
+        if data.trim().is_empty() { return Ok(None); }
+        return crate::core::vault::paste_image_data(&root, &target_dir, &data).map(Some);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (root, target_dir);
+        Err("图片剪贴板当前仅支持 Windows。".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
     #[cfg(windows)]
     {
-        let script = "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Get-Clipboard -Format FileDropList -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }";
+        let script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); [System.Windows.Forms.Clipboard]::GetFileDropList() | ForEach-Object { [Console]::WriteLine($_) }";
         let output = hidden_powershell_command()
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .output()
@@ -324,11 +347,12 @@ pub fn set_vault_entry_clipboard(root: String, paths: Vec<String>) -> Result<(),
     {
         let escaped_paths = absolutes
             .iter()
-            .map(|path| powershell_single_quoted(&path.to_string_lossy()))
+            .map(|path| powershell_single_quoted(&display_path(path)))
             .collect::<Vec<_>>()
             .join(", ");
-        let script =
-            format!("$ErrorActionPreference='Stop'; Set-Clipboard -LiteralPath @({escaped_paths})");
+        let script = format!(
+            "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $files=New-Object System.Collections.Specialized.StringCollection; $files.AddRange([string[]]@({escaped_paths})); [System.Windows.Forms.Clipboard]::SetFileDropList($files)"
+        );
         let output = hidden_powershell_command()
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
@@ -357,12 +381,55 @@ fn powershell_single_quoted(value: &str) -> String {
 #[cfg(windows)]
 fn hidden_powershell_command() -> Command {
     let mut command = Command::new("powershell.exe");
+    command.arg("-Sta");
     command.creation_flags(CREATE_NO_WINDOW);
     command
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes the real Windows clipboard; run explicitly with clipboard backup"]
+    fn windows_clipboard_file_and_image_roundtrip() {
+        use super::*;
+        use std::fs;
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory = std::env::temp_dir().join(format!("mdking-clipboard-{}-{unique}", std::process::id()));
+        fs::create_dir_all(directory.join("vault/目标")).unwrap();
+        fs::create_dir_all(directory.join("vault/已移动")).unwrap();
+        fs::create_dir_all(directory.join("external")).unwrap();
+        let root = directory.join("vault").to_string_lossy().to_string();
+        fs::write(directory.join("vault/说明.md"), "markdown").unwrap();
+        set_vault_entry_clipboard(root.clone(), vec!["说明.md".into()]).unwrap();
+        let paths = read_clipboard_file_paths().unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], display_path(&fs::canonicalize(directory.join("vault/说明.md")).unwrap()));
+        assert_eq!(fs::canonicalize(&paths[0]).unwrap(), fs::canonicalize(directory.join("vault/说明.md")).unwrap());
+        let copied = copy_vault_entry(root.clone(), "说明.md".into(), "目标".into()).unwrap();
+        assert_eq!(copied.path, "目标/说明.md");
+        let moved = move_vault_entry(root.clone(), "目标/说明.md".into(), "已移动".into()).unwrap();
+        assert_eq!(moved.path, "已移动/说明.md");
+        assert!(!directory.join("vault/目标/说明.md").exists());
+        for name in ["外部.txt", "外部.md", "外部.png"] {
+            let source = directory.join("external").join(name);
+            fs::write(&source, b"external").unwrap();
+            let script = format!("Add-Type -AssemblyName System.Windows.Forms; $files=New-Object System.Collections.Specialized.StringCollection; $files.Add({}) > $null; [System.Windows.Forms.Clipboard]::SetFileDropList($files)", powershell_single_quoted(&source.to_string_lossy()));
+            assert!(hidden_powershell_command().args(["-NoProfile", "-Command", &script]).status().unwrap().success());
+            let paths = read_clipboard_file_paths().unwrap();
+            assert_eq!(paths.len(), 1);
+            let entry = copy_external_vault_file(root.clone(), paths[0].clone(), "目标".into()).unwrap();
+            assert_eq!(fs::read(directory.join("vault").join(entry.path)).unwrap(), b"external");
+        }
+        let script = "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $image=New-Object System.Drawing.Bitmap 2,2; try { $image.SetPixel(0,0,[System.Drawing.Color]::Red); [System.Windows.Forms.Clipboard]::SetImage($image) } finally { $image.Dispose() }";
+        assert!(hidden_powershell_command().args(["-NoProfile", "-Command", script]).status().unwrap().success());
+        assert!(read_clipboard_file_paths().unwrap().is_empty());
+        let entry = paste_clipboard_image(root, "目标".into()).unwrap().unwrap();
+        let image = fs::read(directory.join("vault").join(entry.path)).unwrap();
+        assert!(image.starts_with(b"\x89PNG\r\n\x1a\n"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn quotes_text_for_powershell_clipboard_command() {

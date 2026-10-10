@@ -92,7 +92,13 @@ $pandocCacheBlock = @'
 '@
 $pandocCacheBlock = $pandocCacheBlock.Replace('__PANDOC_VERSION__', $pandocVersion).Replace('__PANDOC_SOURCE__', $pandocFileMatch.Groups['source'].Value).Replace('__PANDOC_VERSION_FILE__', $pandocVersionFile)
 if (!$content.Contains("pandoc_version_check:")) {
-  $content = $content.Replace($pandocDirectory, $pandocCacheBlock).Replace($pandocFileMatch.Value, "")
+  # Remove the generated copy instruction before inserting the cache block.
+  # Removing it afterwards would also remove the identical instruction inside
+  # the new block and silently produce an installer without pandoc.exe.
+  $content = $content.Replace($pandocFileMatch.Value, "").Replace($pandocDirectory, $pandocCacheBlock)
+}
+if ($content -notmatch '(?m)^\s*File /a "/oname=pandoc\\windows\\pandoc\.exe" "[^"]+"\r?$') {
+  throw "Bundled Pandoc executable copy instruction is missing from the NSIS script."
 }
 
 $pandocDelete = '    Delete "$INSTDIR\pandoc\windows\pandoc.exe"'
@@ -102,6 +108,15 @@ if (!$content.Contains($pandocVersionDelete)) {
     throw "Could not find the Pandoc uninstall instruction."
   }
   $content = $content.Replace($pandocDelete, "$pandocDelete`r`n$pandocVersionDelete")
+}
+
+$historyDelete = '    Delete "$INSTDIR\history.json"'
+if (!$content.Contains($historyDelete)) {
+  $uninstallAnchor = '  Delete "$INSTDIR\${MAINBINARYNAME}.exe"'
+  if (!$content.Contains($uninstallAnchor)) {
+    throw "Could not find the main executable uninstall instruction."
+  }
+  $content = $content.Replace($uninstallAnchor, "$uninstallAnchor`r`n$historyDelete")
 }
 
 Set-Content -LiteralPath $installerScript -Value $content -NoNewline -Encoding utf8

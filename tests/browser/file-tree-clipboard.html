@@ -1,0 +1,17 @@
+<!doctype html>
+<html><body style="margin:0;height:100vh"><div id="root"></div>
+<script type="module">
+import "/src/index.css";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { FileTreePanel } from "/src/components/vault/file-tree-panel.tsx";
+import { TooltipProvider } from "/src/components/ui/tooltip.tsx";
+import { useVaultStore } from "/src/stores/vault-store.ts";
+import { openVault } from "/src/lib/vault.ts";
+const listing = await openVault("D:/示例仓库");
+useVaultStore.setState({ vaultRoot: listing.root, entries: listing.entries, expandedDirs: new Set(["草稿", "笔记"]), isLoadingTree: false });
+createRoot(document.getElementById("root")).render(createElement(TooltipProvider, null, createElement(FileTreePanel, {
+  width: 350, onOpenFile() {}, onOpenImage() {}, className: "h-screen"
+})));
+window.fixture = { store: useVaultStore };
+</script></body></html>

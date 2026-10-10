@@ -579,3 +579,8 @@ export async function readPathsFromClipboard(): Promise<string[]> {
   if (!isTauriEnvironment()) return [];
   return invoke<string[]>("read_clipboard_file_paths");
 }
+
+export async function pasteClipboardImage(root: string, targetDir: string): Promise<VaultEntry | null> {
+  if (!isTauriEnvironment()) return null;
+  return invoke<VaultEntry | null>("paste_clipboard_image", { root, targetDir });
+}
