@@ -47,7 +47,7 @@ export function AboutPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 overflow-hidden">
       <WorkspacePageHeader meta={appPageMeta.about} />
-      <div className="mk-about-workspace flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
+      <div className="mk-about-workspace flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         <div className="mk-about-summary-grid grid shrink-0 grid-cols-[minmax(0,1fr)_320px] gap-1">
           <section className="min-w-0 space-y-1">
             <AppSurface as="section" className="space-y-3">
@@ -145,7 +145,7 @@ export function AboutPage() {
           </aside>
         </div>
 
-        <AppSurface as="section" padding="none" className="mk-about-guide flex min-h-0 flex-1 flex-col overflow-hidden">
+        <AppSurface as="section" padding="none" className="mk-about-guide flex shrink-0 flex-col overflow-hidden">
           <div className="shrink-0 border-b border-slate-100 px-4 py-3 dark:border-zinc-800">
             <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
               <Braces className="size-4" />
@@ -153,7 +153,7 @@ export function AboutPage() {
             </h3>
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">优先使用标准 Markdown；表格、代码、链接、图片和 Mermaid 可直接在编辑器中预览。</p>
           </div>
-          <div className="mk-about-guide-grid grid min-h-0 flex-1 auto-rows-fr grid-cols-1 sm:grid-cols-2">
+          <div className="mk-about-guide-grid grid auto-rows-fr grid-cols-1 sm:grid-cols-2">
             {markdownGuideItems.map((item) => (
               <MarkdownGuideRow key={item.title} {...item} />
             ))}
