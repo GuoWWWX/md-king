@@ -1,6 +1,6 @@
 [package]
 name = "md-king"
-version = "1.1.11"
+version = "1.1.12"
 description = "AI Markdown to Word/WPS document converter"
 authors = ["md-king contributors"]
 edition = "2021"
