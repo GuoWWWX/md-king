@@ -13,7 +13,7 @@ import { VaultSwitcher } from "@/components/vault/vault-switcher";
 import { clipboardContainsVaultEntry, topLevelVaultEntries, vaultPasteTarget, type VaultClipboardEntry, type VaultClipboardItem } from "@/lib/vault-clipboard";
 import { isTauriEnvironment } from "@/lib/tauri";
 import { openVaultProjectWindow, restorableVaultRoot, vaultProjectWindowRoot } from "@/lib/vault-window";
-import { copyExternalVaultFile, copyTextToClipboard, copyVaultEntry, createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, readPathsFromClipboard, removeRecentVault as removeRecentVaultRecord, renameVaultEntry, selectVaultDirectory, setVaultEntryClipboard, showInExplorer } from "@/lib/vault";
+import { copyExternalVaultFile, copyTextToClipboard, copyVaultEntry, createVaultEntry, deleteVaultEntry, listVaultEntries, moveVaultEntry, openVault, pasteClipboardImage, readPathsFromClipboard, removeRecentVault as removeRecentVaultRecord, renameVaultEntry, selectVaultDirectory, setVaultEntryClipboard, showInExplorer } from "@/lib/vault";
 import { parseVaultError } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -869,7 +869,17 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
 
     if (internal) setClipboardEntry(undefined);
     if (systemPaths.length === 0) {
-      toast.error("剪贴板中没有可粘贴的 Markdown 文档");
+      try {
+        const image = await pasteClipboardImage(vaultRoot, targetDir);
+        if (image) {
+          await handleRefresh();
+          if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
+          return;
+        }
+        toast.error("剪贴板中没有可粘贴的图片、TXT 或 Markdown 文档");
+      } catch (error) {
+        toast.error(parseVaultError(error, "粘贴图片失败").message);
+      }
       return;
     }
 
@@ -1412,7 +1422,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
               if (event.target instanceof Element && event.target.closest("[role='treeitem']")) return;
               replaceSelectedEntries([]);
             }}
-            onKeyDown={(event) => {
+            onKeyDownCapture={(event) => {
               if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)) return;
               const key = event.key.toLowerCase();
               const modifier = event.ctrlKey || event.metaKey;

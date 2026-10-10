@@ -15,7 +15,7 @@ use commands::{
     get_app_config, get_app_status, get_template_style_config, get_template_style_configs,
     import_template, import_vault_image_data, import_vault_image_from_path, list_history,
     list_templates, list_vault_entries, load_preview_image, move_vault_entry, open_output_path,
-    open_vault, read_clipboard_file_paths, read_markdown_file, read_vault_file,
+    open_vault, paste_clipboard_image, read_clipboard_file_paths, read_markdown_file, read_vault_file,
     remove_recent_vault, rename_vault_entry, reset_template_style_config, reveal_output_path,
     save_app_config, save_history, save_template_style_config, save_templates, search_vault,
     set_vault_entry_clipboard, show_in_explorer, write_temp_image, write_vault_file,
@@ -84,6 +84,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            paste_clipboard_image,
             get_app_status,
             get_app_config,
             save_app_config,

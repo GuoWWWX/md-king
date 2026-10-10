@@ -1327,6 +1327,29 @@ pub fn copy_external_file(
     entry_at(root, &target_relative)
 }
 
+/// 将剪贴板 PNG 保存到文件树选中的目录。
+pub fn paste_image_data(root: &Path, target_dir: &str, data_base64: &str) -> Result<VaultEntry, String> {
+    let bytes = STANDARD.decode(data_base64.trim())
+        .map_err(|error| vault_err(CODE_INVALID_NAME, &format!("图片数据解码失败：{error}")))?;
+    if bytes.len() as u64 > MAX_VAULT_FILE_BYTES {
+        return Err(vault_err(CODE_TOO_LARGE, "图片超过 20 MB，无法导入。"));
+    }
+    let destination = if target_dir.is_empty() {
+        root.to_path_buf()
+    } else {
+        resolve_in_vault(root, target_dir)?
+    };
+    if !destination.is_dir() {
+        return Err(vault_err(CODE_NOT_FOUND, "目标不是文件夹。"));
+    }
+    let name = format!("截图-{}.png", Local::now().format("%Y%m%d-%H%M%S-%3f"));
+    let (_, path) = find_available_name(&destination, &name)?;
+    write_atomic_durable(&path, &bytes).map_err(|error| io_error_message("粘贴图片", &error))?;
+    let relative = path.strip_prefix(root)
+        .map_err(|_| vault_err(CODE_OUT_OF_VAULT, "目标路径超出 vault 范围。"))?;
+    entry_at(root, &to_relative_string(relative))
+}
+
 /// 把磁盘上的图片复制到 vault 根目录的 `.md-king/img`。应用生成的资源集中存放，
 /// 文档引用始终相对当前 Markdown 文件计算，随整个 vault 移动时不会断链。
 pub fn import_image_from_path(
@@ -2163,6 +2186,21 @@ mod tests {
     }
 
     #[test]
+    fn clipboard_image_is_saved_in_selected_directory_and_cannot_escape_vault() {
+        let vault = Scratch::new("clipboard-image");
+        vault.dir("images");
+        let png = b"\x89PNG\r\n\x1a\n";
+        let data = STANDARD.encode(png);
+        let image = paste_image_data(vault.vault(), "images", &data).unwrap();
+        assert!(image.path.starts_with("images/截图-"));
+        assert!(image.path.ends_with(".png"));
+        assert_eq!(fs::read(vault.join(&image.path)).unwrap(), png);
+        assert!(paste_image_data(vault.vault(), "../outside", &data).is_err());
+        assert!(paste_image_data(vault.vault(), &image.path, &data).is_err());
+        assert!(paste_image_data(vault.vault(), "", "invalid base64").is_err());
+    }
+
+    #[test]
     fn external_visible_file_copy_uses_target_directory_and_renames_conflicts() {
         let vault = Scratch::new("external-copy-vault");
         let external = Scratch::new("external-copy-source");
@@ -2182,6 +2220,11 @@ mod tests {
         let image = copy_external_file(vault.vault(), &external.join("image.png"), "")
             .expect("supported images should be copied");
         assert_eq!(image.path, "image.png");
+
+        external.file("说明.txt", b"text");
+        let text = copy_external_file(vault.vault(), &external.join("说明.txt"), "草稿").unwrap();
+        assert_eq!(text.path, "草稿/说明.txt");
+        assert_eq!(fs::read(vault.join(&text.path)).unwrap(), b"text");
 
         external.file("report.docx", b"PK");
         let error = copy_external_file(vault.vault(), &external.join("report.docx"), "")
