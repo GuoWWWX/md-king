@@ -3,6 +3,18 @@ import test from "node:test";
 
 import { createDefaultTemplateStyleConfig, defaultPageSettings, mergeTemplateStyleConfig } from "./style-manager-data.ts";
 
+test("内置模板正文默认左对齐，并保留用户主动选择的两端对齐", () => {
+  for (const templateId of ["default-report", "official-document", "technical-spec"]) {
+    const config = createDefaultTemplateStyleConfig(templateId);
+    assert.equal(config.styles.normal.align, "left");
+    assert.equal(config.styles["body-text"].align, "left");
+  }
+  const saved = createDefaultTemplateStyleConfig("default-report");
+  saved.styles.normal.align = "justify";
+  saved.styles["body-text"].align = "justify";
+  assert.equal(mergeTemplateStyleConfig("default-report", saved).styles.normal.align, "justify");
+});
+
 test("默认报告模板使用 Word 中文字号和表格排版规范", () => {
   const config = createDefaultTemplateStyleConfig("default-report");
   const normal = config.styles.normal;

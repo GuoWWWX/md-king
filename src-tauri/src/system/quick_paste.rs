@@ -106,29 +106,7 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
     let output_path = work_dir.join(format!("{stem}.docx"));
     fs::write(&input_path, markdown).map_err(|error| format!("写入临时 Markdown 失败：{error}"))?;
 
-    let request = ConvertRequest {
-        input: input_path.to_string_lossy().to_string(),
-        input_kind: Some("path".to_string()),
-        source_path: None,
-        output: Some(output_path.to_string_lossy().to_string()),
-        template_id: Some(template_id),
-        open_after_convert: Some(false),
-        overwrite: Some(true),
-        conflict_strategy: Some("overwrite".to_string()),
-        heading_numbering: None,
-        toc_page_numbers: None,
-        update_fields: Some("auto".to_string()),
-        toc_depth: None,
-        toc_position: None,
-        body_page_start: None,
-        front_page_number: None,
-        mermaid_format: None,
-        mermaid_scale: None,
-        image_policy: None,
-        no_compress_pictures: None,
-        lint_only: None,
-        strict: None,
-    };
+    let request = quick_paste_request(&input_path, &output_path, template_id);
     let convert_result = convert_markdown(app, request);
     let _ = fs::remove_file(&input_path);
 
@@ -141,6 +119,32 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
     insert_docx_into_word_or_wps(&output_path)?;
     let _ = fs::remove_file(&output_path);
     Ok(())
+}
+
+fn quick_paste_request(input_path: &Path, output_path: &Path, template_id: String) -> ConvertRequest {
+    ConvertRequest {
+        input: input_path.to_string_lossy().to_string(),
+        input_kind: Some("path".to_string()),
+        source_path: None,
+        output: Some(output_path.to_string_lossy().to_string()),
+        template_id: Some(template_id),
+        open_after_convert: Some(false),
+        overwrite: Some(true),
+        conflict_strategy: Some("overwrite".to_string()),
+        heading_numbering: None,
+        toc_page_numbers: None,
+        update_fields: Some("auto".to_string()),
+        toc_depth: None,
+        toc_position: Some("none".to_string()),
+        body_page_start: None,
+        front_page_number: None,
+        mermaid_format: None,
+        mermaid_scale: None,
+        image_policy: None,
+        no_compress_pictures: None,
+        lint_only: None,
+        strict: None,
+    }
 }
 
 fn emit_status(app: &AppHandle, level: &str, message: &str) {
@@ -303,11 +307,25 @@ fn encode_powershell_command(script: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::quick_paste_request;
+    use std::path::Path;
     use std::str::FromStr;
     use tauri_plugin_global_shortcut::Shortcut;
 
     #[test]
     fn default_quick_paste_shortcut_is_parseable() {
         assert!(Shortcut::from_str("Ctrl+Alt+V").is_ok());
+    }
+
+    #[test]
+    fn quick_paste_overrides_template_toc_without_changing_selected_template() {
+        let request = quick_paste_request(
+            Path::new("input.md"),
+            Path::new("output.docx"),
+            "default-report".to_string(),
+        );
+        assert_eq!(request.toc_position.as_deref(), Some("none"));
+        assert_eq!(request.template_id.as_deref(), Some("default-report"));
+        assert_eq!(request.open_after_convert, Some(false));
     }
 }

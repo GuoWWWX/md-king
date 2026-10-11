@@ -589,7 +589,7 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       firstLineIndent: 2,
       beforeSpacing: 0,
       afterSpacing: 8,
-      align: "justify",
+      align: "left",
       autoNumbering: false,
     };
   }
