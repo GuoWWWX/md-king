@@ -3477,7 +3477,14 @@ fn document_style_config_from_value(config: &Value) -> Option<DocumentStyleConfi
     // 这几项在界面上没有独立入口，历史配置里可能整体缺失、也可能只写了一部分字段。
     // 直接 or_else 只能兜住「整体缺失」，残缺对象会让没写到的字段静默落回 Rust 默认值，
     // 所以这里改成字段级合并：先取基准样式，再用自身已有的字段覆盖。
-    let body_text = merge_style_value(styles.get("normal"), styles.get("body-text"));
+    let mut body_text = merge_style_value(styles.get("normal"), styles.get("body-text"));
+    // BodyText has no separate alignment control in the UI. Its old stored value
+    // must not override the alignment the user selects for ordinary body text.
+    if let Some(align) = styles.get("normal").and_then(|style| style.get("align")) {
+        if let Some(body) = body_text.as_mut().and_then(Value::as_object_mut) {
+            body.insert("align".to_string(), align.clone());
+        }
+    }
     let bullet_list = merge_style_value(styles.get("normal"), styles.get("bullet-list"));
     let numbered_list = merge_style_value(styles.get("normal"), styles.get("numbered-list"));
 
@@ -5386,7 +5393,7 @@ fn normalize_docx(
 
         let rewrite = match name.as_str() {
             "word/document.xml" => true,
-            "word/styles.xml" => apply_default_template_style || document_style.is_some(),
+            "word/styles.xml" => true,
             "word/numbering.xml" => {
                 !ordered_list_num_ids.is_empty()
                     || heading_numbering
@@ -5439,9 +5446,7 @@ fn normalize_docx(
             } else {
                 xml.into_bytes()
             };
-        } else if name == "word/styles.xml"
-            && (apply_default_template_style || document_style.is_some())
-        {
+        } else if name == "word/styles.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 styles.xml 失败：{error}"))?;
             data = normalize_template_styles_xml(
@@ -6794,7 +6799,7 @@ fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> Strin
         bool_val(bold),
     );
     let replacement = format!(
-        r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading" /><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:jc w:val="{align}" /></w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{title}</w:t></w:r></w:p>"#,
+        r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading" /><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="0" w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0" /><w:jc w:val="{align}" /></w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{title}</w:t></w:r></w:p>"#,
     );
     format!(
         "{}{}{}",
@@ -6835,14 +6840,20 @@ fn populate_empty_toc_result(
 
     empty_toc
         .replace(xml, |captures: &Captures| {
+            // Field delimiter paragraphs are part of the TOC as well and must
+            // not inherit the first-line indentation from Normal.
+            let prefix = ensure_image_paragraph_aligned(
+                captures.get(1).map(|value| value.as_str()).unwrap_or(""),
+                "left",
+            );
             format!(
                 "{}{}{}{}{}",
-                captures.get(1).map(|value| value.as_str()).unwrap_or(""),
+                prefix,
                 captures.get(2).map(|value| value.as_str()).unwrap_or(""),
                 "</w:r></w:p>",
                 entries,
                 format!(
-                    "<w:p><w:r>{}{}",
+                    "<w:p><w:pPr><w:pStyle w:val=\"TOC1\" /></w:pPr><w:r>{}{}",
                     captures.get(3).map(|value| value.as_str()).unwrap_or(""),
                     captures.get(4).map(|value| value.as_str()).unwrap_or("")
                 )
@@ -6901,7 +6912,7 @@ fn toc_cached_entries_xml(
             // 即使一级缩进为 0 也必须显式写入，避免目录段落从 Normal
             // 样式继承正文的首行缩进。
             let indent_xml =
-                format!(r#"<w:ind w:left="{indent}" w:firstLine="0" w:hanging="0" />"#);
+                format!(r#"<w:ind w:left="{indent}" w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0" />"#);
             let tabs = if page_settings.toc_show_page_numbers {
                 format!(
                     r#"<w:tabs><w:tab w:val="right" w:leader="{tab_leader}" w:pos="{tab_position}" /></w:tabs>"#
@@ -6949,7 +6960,7 @@ fn toc_cached_entries_xml(
                 })
                 .unwrap_or(visible_run);
             Some(format!(
-                r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" />{indent_xml}{tabs}</w:pPr>{visible_entry}{}{}</w:p>"#,
+                r#"<w:p><w:pPr><w:pStyle w:val="TOC{level}" /><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" />{indent_xml}{tabs}</w:pPr>{visible_entry}{}{}</w:p>"#,
                 if page_settings.toc_show_page_numbers {
                     r#"<w:r><w:tab /></w:r>"#
                 } else {
@@ -7682,8 +7693,17 @@ fn normalize_template_styles_xml(
     apply_default_template_style: bool,
 ) -> String {
     let style = Regex::new(r#"(?s)<w:style\b.*?</w:style>"#).expect("valid style regex");
-    style
+    let mut output = style
         .replace_all(xml, |captures: &Captures| {
+            if !apply_default_template_style
+                && document_style.is_none()
+                && capture_style_id(&captures[0])
+                    .as_deref()
+                    .and_then(toc_style_level)
+                    .is_none()
+            {
+                return captures[0].to_string();
+            }
             normalize_template_style_xml(
                 &captures[0],
                 markdown_features,
@@ -7691,7 +7711,54 @@ fn normalize_template_styles_xml(
                 apply_default_template_style,
             )
         })
-        .to_string()
+        .to_string();
+    // Word creates missing TOC styles from Normal during field updates, inheriting
+    // the body's first-line indent. Define them before that update happens.
+    for level in 1..=9 {
+        let style_id = format!("TOC{level}");
+        if !style.find_iter(&output).any(|matched| {
+            capture_style_id(matched.as_str()).as_deref() == Some(style_id.as_str())
+        }) {
+            let definition = normalize_toc_style_xml(
+                &format!(r#"<w:style w:type="paragraph" w:styleId="{style_id}"><w:name w:val="toc {level}" /><w:basedOn w:val="Normal" /></w:style>"#),
+                level,
+            );
+            output = output.replace("</w:styles>", &format!("{definition}</w:styles>"));
+        }
+    }
+    output
+}
+
+fn normalize_toc_style_xml(style_xml: &str, level: u32) -> String {
+    let paragraph = Regex::new(r#"(?s)<w:pPr\b[^>]*(?:/>|>.*?</w:pPr>)"#)
+        .expect("valid TOC style properties regex");
+    let indent = level.saturating_sub(1) * 480;
+    let properties = paragraph
+        .find(style_xml)
+        .map(|matched| matched.as_str())
+        .unwrap_or("<w:pPr></w:pPr>");
+    let properties = align_paragraph_properties(properties, "left")
+        .replace(r#"w:left="0""#, &format!(r#"w:left="{indent}""#))
+        .replace(
+            r#"w:firstLineChars="0""#,
+            r#"w:firstLineChars="0" w:hanging="0" w:hangingChars="0""#,
+        );
+    if paragraph.is_match(style_xml) {
+        paragraph.replace(style_xml, properties).to_string()
+    } else {
+        style_xml.replace("</w:style>", &format!("{properties}</w:style>"))
+    }
+}
+
+fn toc_style_level(style_id: &str) -> Option<u32> {
+    if style_id == "TOCHeading" {
+        return Some(0);
+    }
+    style_id
+        .strip_prefix("TOC")?
+        .parse::<u32>()
+        .ok()
+        .filter(|level| (1..=9).contains(level))
 }
 
 fn normalize_template_style_xml(
@@ -7701,6 +7768,9 @@ fn normalize_template_style_xml(
     apply_default_template_style: bool,
 ) -> String {
     let word_style_id = capture_style_id(style_xml);
+    if let Some(level) = word_style_id.as_deref().and_then(toc_style_level) {
+        return normalize_toc_style_xml(style_xml, level);
+    }
     if let Some(template_style_id) = word_style_id
         .as_deref()
         .and_then(template_style_id_for_word_style)
@@ -7908,7 +7978,7 @@ fn ensure_style_paragraph_properties(style_xml: &str, first_line_indent: bool) -
         r#"<w:ind w:firstLine="0" />"#
     };
     let properties = format!(
-        r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="both" />{indent}</w:pPr>"#
+        r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="left" />{indent}</w:pPr>"#
     );
 
     ensure_style_paragraph_properties_xml(style_xml, &properties)
@@ -12172,6 +12242,52 @@ mod tests {
     }
 
     #[test]
+    fn default_body_alignment_is_left_and_toc_styles_do_not_inherit_first_line_indent() {
+        let input = r#"<w:styles><w:style w:type="paragraph" w:styleId="Normal"><w:pPr><w:jc w:val="both" /><w:ind w:firstLine="480" /></w:pPr></w:style><w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1" /><w:basedOn w:val="Normal" /><w:pPr><w:tabs><w:tab w:val="right" w:pos="9000" /></w:tabs><w:ind w:firstLine="480" w:firstLineChars="200" w:hangingChars="100" /></w:pPr></w:style></w:styles>"#;
+        let output = normalize_template_styles_xml(input, &default_markdown_feature_config(), None, true);
+        for style_id in ["Normal", "TOC1", "TOC2", "TOC9"] {
+            let pattern = Regex::new(&format!(r#"(?s)<w:style\b[^>]*w:styleId="{style_id}"[^>]*>.*?</w:style>"#)).unwrap();
+            let style = pattern.find(&output).unwrap().as_str();
+            assert!(style.contains(r#"<w:jc w:val="left" />"#), "{style_id} alignment");
+            if style_id != "Normal" {
+                assert!(style.contains(r#"w:firstLine="0""#));
+                assert!(style.contains(r#"w:firstLineChars="0""#));
+                assert!(style.contains(r#"w:hangingChars="0""#));
+            }
+        }
+        assert!(output.contains(r#"<w:tab w:val="right" w:pos="9000" />"#));
+        let imported = normalize_template_styles_xml(input, &default_markdown_feature_config(), None, false);
+        let normal = Regex::new(r#"(?s)<w:style\b[^>]*w:styleId="Normal"[^>]*>.*?</w:style>"#).unwrap();
+        assert!(normal.find(&imported).unwrap().as_str().contains(r#"<w:jc w:val="both" />"#));
+    }
+
+    #[test]
+    fn body_text_alignment_follows_visible_body_setting_instead_of_stale_hidden_setting() {
+        for align in ["left", "justify", "center"] {
+            let config = document_style_config_from_value(&json!({
+                "styles": {
+                    "normal": { "align": align },
+                    "body-text": { "align": "right", "fontSize": 14 }
+                }
+            })).unwrap();
+            assert_eq!(config.styles["body-text"].align, align);
+            assert_eq!(config.styles["body-text"].font_size, 14.0);
+        }
+    }
+
+    #[test]
+    fn bundled_reference_template_body_alignment_is_left() {
+        let data = include_bytes!("../../resources/templates/default-report/reference.docx");
+        let mut archive = ZipArchive::new(Cursor::new(data)).unwrap();
+        let mut xml = String::new();
+        archive.by_name("word/styles.xml").unwrap().read_to_string(&mut xml).unwrap();
+        for style_id in ["Normal", "BodyText"] {
+            let pattern = Regex::new(&format!(r#"(?s)<w:style\b[^>]*w:styleId="{style_id}"[^>]*>.*?</w:style>"#)).unwrap();
+            assert!(pattern.find(&xml).unwrap().as_str().contains(r#"<w:jc w:val="left""#), "{style_id} bundled alignment");
+        }
+    }
+
+    #[test]
     fn normalizes_default_body_style_to_songti_zero_spacing() {
         let input = r#"<w:styles><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal" /><w:pPr><w:spacing w:after="120" w:line="420" w:lineRule="auto" /><w:ind w:firstLine="480" /></w:pPr><w:rPr><w:rFonts w:eastAsia="微软雅黑" /><w:sz w:val="20" /></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Compact"><w:name w:val="Compact" /><w:pPr><w:spacing w:after="120" w:line="420" w:lineRule="auto" /></w:pPr></w:style></w:styles>"#;
 
@@ -12961,8 +13077,8 @@ mod tests {
         assert!(output.contains(r#"<w:t xml:space="preserve">1 概览</w:t>"#), "{output}");
         assert!(output.contains(r#"<w:t xml:space="preserve">1. 已有编号</w:t>"#));
         assert!(!output.contains("1.1 1. 已有编号"));
-        assert!(output.contains(r#"<w:ind w:left="0" w:firstLine="0" w:hanging="0" />"#));
-        assert!(output.contains(r#"<w:ind w:left="480" w:firstLine="0" w:hanging="0" />"#));
+        assert!(output.contains(r#"<w:ind w:left="0" w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0" />"#));
+        assert!(output.contains(r#"<w:ind w:left="480" w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0" />"#));
     }
 
     #[test]
