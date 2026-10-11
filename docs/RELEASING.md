@@ -7,6 +7,8 @@
 3. 推送 `vX.Y.Z` 标签。Release 工作流自动运行测试、构建和签名，再发布正式版本。手动运行工作流时输入已存在的版本标签。
 4. 确认 Release 包含 EXE、MSI、`update-manifest.json`、`update-manifest.sig`、`SHA256SUMS.txt`，并检查工作流成功状态。
 
+EXE/MSI 安装包只上传到 GitHub Releases，不提交到 Git 源码仓库。构建缓存和发布输出位于已忽略的 `src-tauri/target/`。内置 Pandoc 的 `src-tauri/resources/pandoc/windows/pandoc.exe` 是构建所需资源，通过 Git LFS 管理，应继续保留。
+
 ## 更新签名密钥
 
 本项目使用 Ed25519 对更新清单的原始 UTF-8 字节签名。清单包含版本、安装包文件名、大小和 SHA-256。客户端固定可信仓库地址、校验清单签名，并在安装前再次校验文件。

@@ -160,6 +160,21 @@ pnpm tauri dev
 pnpm tauri:build
 ```
 
+### 目录用途
+
+| 目录 | 内容 |
+| :--- | :--- |
+| `src/` | React 页面、组件、状态与前端工具。 |
+| `src-tauri/src/` | Rust 命令、转换核心、存储、系统集成与 CLI。 |
+| `src-tauri/resources/`、`src-tauri/icons/` | 打包所需的 Pandoc、Mermaid、默认 Word 模板与图标。 |
+| `public/` | 前端运行时静态资源。 |
+| `scripts/` | 开发服务器启动、Windows 构建、安装器修补与更新签名脚本。 |
+| `tests/browser/` | 浏览器回归测试与页面夹具。 |
+| `tests/fixtures/conversion/` | 转换冒烟测试的 Markdown 和图片素材。 |
+| `docs/` | 产品、架构、设计与发布说明；`images/` 保存 README 截图，`design-assets/` 保存采用的设计参考。 |
+
+本地日志和临时验证输出放在 `.codex/`，构建输出位于 `dist/` 与 `src-tauri/target/`，均由 Git 忽略。EXE/MSI 安装包发布到 GitHub Releases，不提交到源码仓库。
+
 ---
 
 ### 测试、发布与本地路径

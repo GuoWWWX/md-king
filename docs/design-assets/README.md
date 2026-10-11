@@ -1,6 +1,6 @@
 # md-king 设计资产
 
-本目录保存 md-king 的视觉探索和页面设计稿。当前主方向是 Variant C：柔和玻光蓝。
+本目录保留文档采用的 Variant C 页面设计参考和当前 Logo 的高清源图。实际界面以应用代码为准，README 中的应用截图位于 `../images/`。
 
 ## C 风格页面
 
@@ -14,7 +14,7 @@
 | 设置中心 | `md-king-c-06-settings.html` | `md-king-c-06-settings-full.png` |
 | 关于与系统状态 | `md-king-c-07-about-status.html` | `md-king-c-07-about-status-full.png` |
 
-同名 `.png` 文件是 Stitch 返回的 512px 缩略图；`*-full.png` 是用本地 Chrome 从 HTML 渲染的 2560x2048 高清参考图。
+`*-full.png` 是用本地 Chrome 从 HTML 渲染的 2560x2048 高清参考图；重复缩略图和已淘汰的探索稿不再保留。
 
 ## 使用说明
 
@@ -22,20 +22,8 @@
 - HTML 用于查看布局和提取局部结构，但不要直接复制生成代码到 React 页面。
 - 视觉 token 和实现原则见 [../UI_STYLE_DIRECTION.md](../UI_STYLE_DIRECTION.md)。
 
-### 排序示例
+## Logo
 
-本目录附带可独立运行的 Java 排序示例。使用 JDK 在本目录执行：
-
-```bash
-javac BubbleSort.java QuickSort.java
-java QuickSort
-```
-
-`QuickSort` 使用原地快速排序将 `int[]` 升序排列；其 `main` 会输出排序后的示例数组。
-
-## 旧探索稿
-
-- `md-king-blue-variant-c-glass.*`：用户选中的 C 风格主屏原始稿。
-- `md-king-blue-variant-a-office.*`：A 风格，已淘汰。
-- `md-king-dimensional-blue-workspace*`：早期蓝色立体探索稿，已作为参考，不作为主方向。
-- `md-king-style-board*`：风格板探索稿。
+- [当前 Logo 高清源图](logo/source.png)：用于重新生成应用图标。
+- 应用使用的 PNG 位于 `../../public/md-king-logo.png`，桌面安装与窗口图标位于 `../../src-tauri/icons/`。
+- 候选图、旧 Logo、任务栏检查截图和重复导出图不再保留。
