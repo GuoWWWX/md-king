@@ -4,11 +4,11 @@
 
 ## 文档索引
 
-- [产品需求文档](docs/PRODUCT_REQUIREMENTS.md)：核心场景、用户价值、MVP 范围和产品原则。
-- [界面设计规划](docs/UI_SCREEN_PLAN.md)：主窗口信息架构、关键页面布局、视觉系统和页面优先级。
-- [UI 风格方向](docs/UI_STYLE_DIRECTION.md)：已选定的“柔和玻光蓝”视觉方向、设计 token 和实现顺序。
-- [设计资产目录](docs/design-assets/README.md)：Stitch 设计稿、HTML 与高清 PNG 参考图。
-- [技术架构文档](docs/TECHNICAL_ARCHITECTURE.md)：Tauri + React + shadcn/ui + Rust + Pandoc + CLI 的具体架构设计。
+- [产品需求文档](PRODUCT_REQUIREMENTS.md)：核心场景、用户价值、MVP 范围和产品原则。
+- [界面设计规划](UI_SCREEN_PLAN.md)：主窗口信息架构、关键页面布局、视觉系统和页面优先级。
+- [UI 风格方向](UI_STYLE_DIRECTION.md)：已选定的“柔和玻光蓝”视觉方向、设计 token 和实现顺序。
+- [设计资产目录](design-assets/README.md)：页面设计参考、HTML 与高清 PNG。
+- [技术架构文档](TECHNICAL_ARCHITECTURE.md)：Tauri + React + shadcn/ui + Rust + Pandoc + CLI 的具体架构设计。
 
 ## 当前实现状态（2026-06）
 

@@ -25,17 +25,28 @@ dist-ssr
 
 # Local tooling and workspace files
 .codex/
+/.codex-*
 .claude/
 .playwright-mcp/
 __scaffold_md_king/
 scripts/*.local.bat
+
+# Release installers belong in GitHub Releases, not Git
+*-setup.exe
+*.msi
+
+# Local browser inspection outputs
+/page-snapshot*.md
+/settings-*.png
+/convert-after-appshell.png
+/md-king-convert-desktop.png
 
 # Tauri / Rust build outputs
 src-tauri/target/
 src-tauri/gen/schemas/
 
 # 冒烟测试的一次性调试脚本与生成产物（保留 .md 素材本身）
-docs/conversion-smoke-test/mk-*.cjs
-docs/conversion-smoke-test/**/*.docx
-docs/conversion-smoke-test/**/*.pdf
-docs/conversion-smoke-test/word-rendered/
+tests/fixtures/conversion/mk-*.cjs
+tests/fixtures/conversion/**/*.docx
+tests/fixtures/conversion/**/*.pdf
+tests/fixtures/conversion/word-rendered/

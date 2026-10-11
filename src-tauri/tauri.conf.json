@@ -4,7 +4,7 @@
   "version": "1.1.12",
   "identifier": "com.mdking.app",
   "build": {
-    "beforeDevCommand": "node ensure-dev-server.mjs",
+    "beforeDevCommand": "node scripts/ensure-dev-server.mjs",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "node node_modules/typescript/bin/tsc && node node_modules/vite/bin/vite.js build",
     "frontendDist": "../dist"

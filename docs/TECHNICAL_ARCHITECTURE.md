@@ -969,7 +969,17 @@ md-king-mcp-server
 md-king/
 ├─ README.md
 ├─ docs/
-│  └─ TECHNICAL_ARCHITECTURE.md
+│  ├─ TECHNICAL_ARCHITECTURE.md
+│  ├─ UI_DESIGN_SPEC.md
+│  ├─ RELEASING.md
+│  ├─ design-assets/            # 采用的页面参考与当前 Logo 源图
+│  ├─ images/                   # README 使用的应用截图
+│  └─ examples/                 # 用户使用示例
+├─ scripts/                     # 开发、构建、安装器与发布脚本
+│  └─ ensure-dev-server.mjs
+├─ tests/
+│  ├─ browser/                  # 浏览器回归测试
+│  └─ fixtures/conversion/      # 转换冒烟测试素材
 ├─ package.json
 ├─ vite.config.ts
 ├─ tsconfig.json
@@ -985,6 +995,8 @@ md-king/
 │  │  ├─ layout/
 │  │  └─ command-preview/
 │  ├─ pages/
+│  ├─ app/
+│  ├─ hooks/
 │  ├─ stores/
 │  ├─ lib/
 │  ├─ types/
@@ -994,17 +1006,20 @@ md-king/
 │  ├─ Cargo.toml
 │  ├─ tauri.conf.json
 │  ├─ build.rs
+│  ├─ resources/                # Pandoc、Mermaid 与默认 Word 模板
+│  ├─ icons/                    # 桌面与安装器图标
 │  └─ src/
 │     ├─ main.rs
 │     ├─ lib.rs
+│     ├─ bin/                   # Rust CLI 入口
 │     ├─ commands/
 │     ├─ core/
 │     ├─ system/
 │     └─ storage/
-└─ __scaffold_md_king/          # 初始脚手架参考目录，可后续清理
+└─ public/                      # 前端静态资源
 ```
 
-`tailwind.config.ts`、`src/app/`、`src/hooks/`、`src-tauri/src/cli/`、根目录 `templates/` 与 `tests/` 仍属于后续可选补充结构，不是当前实现的一部分。
+前端单元测试与被测模块放在一起（`src/**/*.test.ts`）；浏览器回归测试与转换素材集中在 `tests/`。本地日志和临时验证输出放在 `.codex/`，前端构建输出位于 `dist/`，Rust 缓存与安装包位于 `src-tauri/target/`，这些生成目录不提交到 Git。
 
 ---
 
