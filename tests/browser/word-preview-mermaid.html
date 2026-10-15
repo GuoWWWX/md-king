@@ -18,7 +18,7 @@ ${diagram('A', nodes)}
 
 > 后续引用：引用也应继续使用剩余空间。
 
-${scenario === 'consecutive' ? diagram('B', 5) + '\n\n第二图后文' : ''}`;
+${scenario === 'consecutive' ? diagram('B', 4) + '\n\n第二图后文' : ''}`;
 createRoot(document.querySelector('#app')).render(createElement(WordPreviewPage, {
   markdown, paginate: true, showHeader: false, showPageFooter: false,
   paperTheme: params.get('theme') || 'light',

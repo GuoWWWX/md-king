@@ -28,10 +28,17 @@ try {
       }));
       const empty = { images: 0, following: false, quote: false, second: false, overflow: false };
       const withText = { ...empty, images: 1, following: true, quote: true };
-      const expected = scenario === 'fit' ? [withText]
+      let expected = scenario === 'fit' ? [withText]
         : scenario === 'move' ? [empty, withText]
         : scenario === 'large' ? [{ ...empty, images: 1 }, { ...empty, following: true, quote: true }]
         : [withText, { ...empty, images: 1, second: true }];
+      // Native Mermaid 12 themes can make the large diagram fill a whole page.
+      // Preceding text may then occupy its own page; it must never be blank.
+      if (scenario === 'large' && pages.length === 3) {
+        const firstPageText = await page.locator('[data-preview-page-index]').first().textContent();
+        assert.ok(firstPageText.includes('前置正文'), `${theme}: unexpected empty page before large diagram`);
+        expected = [empty, ...expected];
+      }
       assert.deepEqual(pages, expected, `${theme} / ${scenario}`);
       await page.close();
     }
