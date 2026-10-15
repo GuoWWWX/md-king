@@ -3,7 +3,7 @@ import { Check, Info, Moon, Palette, Sun, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { renderMermaid } from "@/lib/mermaid";
 import { MERMAID_DIAGRAM_TYPES, MERMAID_THEMES, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "@/lib/mermaid-config.js";
@@ -101,10 +101,9 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
   }
 
   return <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next); }}>
-    <DialogContent className="flex max-h-[92dvh] w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]">
-      <DialogHeader className="shrink-0 border-b border-slate-200 p-5 pr-12 dark:border-zinc-700">
+    <DialogContent aria-describedby={undefined} className="flex max-h-[92dvh] w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]">
+      <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-3 pr-12 dark:border-zinc-700">
         <DialogTitle className="flex items-center gap-2"><Palette className="size-5" />Mermaid 图表主题</DialogTitle>
-        <DialogDescription className="text-xs">选择默认配色，也可按图表类型单独设置。</DialogDescription>
       </DialogHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="grid lg:grid-cols-[1.08fr_1fr]">
@@ -161,9 +160,8 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
               </label>)}</div>
             </section>
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold">按图表类型设置</h3>
-              <p className="text-xs text-slate-500 dark:text-zinc-400">默认跟随全局；单独设置优先于默认主题。</p>
-              <div className="max-h-[280px] overflow-auto rounded-lg border border-slate-200 dark:border-zinc-700">
+              <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">按图表类型设置</h3><button className="text-xs text-[var(--app-primary)] disabled:opacity-40" type="button" disabled={saving || !Object.keys(draft.diagrams).length} onClick={() => setDraft({ ...draft, diagrams: {} })}>清除单独设置</button></div>
+              <div className="max-h-[340px] overflow-auto rounded-lg border border-slate-200 dark:border-zinc-700">
                 <table className="w-full table-fixed text-xs"><thead className="sticky top-0 z-10 bg-slate-100 text-left text-slate-500 dark:bg-zinc-800 dark:text-zinc-400"><tr><th className="w-[26%] p-2 font-medium">图表类型</th><th className="w-[37%] p-2 font-medium">浅色主题</th><th className="p-2 font-medium">深色主题</th></tr></thead>
                   <tbody>{MERMAID_DIAGRAM_TYPES.map((type) => <tr key={type.id} className="border-t border-slate-200 dark:border-zinc-700">
                     <th className="p-2 text-left font-normal"><button type="button" className="text-left hover:underline" onClick={() => setPreviewType(type.id)}>{type.label}{draft.diagrams[type.id] && <span className="ml-1 text-blue-500" aria-label="已单独设置">●</span>}</button></th>
@@ -171,7 +169,6 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
                   </tr>)}</tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-500 dark:text-zinc-400">已单独设置 {Object.keys(draft.diagrams).length} 种图表</span><button className="text-[var(--app-primary)] disabled:opacity-40" type="button" disabled={saving || !Object.keys(draft.diagrams).length} onClick={() => setDraft({ ...draft, diagrams: {} })}>清除单独设置</button></div>
             </section>
           </div>
           <div className="min-w-0 space-y-3 border-t border-slate-200 p-5 dark:border-zinc-700 lg:border-t-0">
