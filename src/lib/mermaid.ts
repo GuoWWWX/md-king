@@ -1,4 +1,4 @@
-import { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "./mermaid-config.js";
+import { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "./mermaid-config.js";
 import { calculateRasterSize, svgDataUrl } from "./svg-image.ts";
 
 /**
@@ -119,6 +119,10 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
   root.setAttribute("height", String(size.height));
   document.body.append(host);
   try {
+    if (layoutMermaidKanban(root)) {
+      size.height = Math.ceil(root.viewBox.baseVal.height);
+      root.setAttribute("height", String(size.height));
+    }
     styleMermaidEdgeLabels(root, dark);
 
     // 嵌套子图防遮挡与标题避让：使用相对于 SVG 的绝对屏幕全局几何坐标，精准判定父子包含关系

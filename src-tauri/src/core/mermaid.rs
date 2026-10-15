@@ -593,7 +593,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    const {{mermaidConfig,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
+    const {{mermaidConfig,layoutMermaidKanban,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
     const themes={themes_json};
     const config=mermaidConfig('default',resolveMermaidTheme(source,false,themes));
     config.htmlLabels={html_labels};
@@ -606,6 +606,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     const host=document.getElementById('diagram'); host.innerHTML=rendered.svg;
     const svg=host.querySelector('svg');
     if(!svg) throw new Error('Mermaid 未生成 SVG');
+    layoutMermaidKanban(svg);
     let view=svg.viewBox&&svg.viewBox.baseVal;
     let width=view&&view.width>0?view.width:svg.getBoundingClientRect().width;
     let height=view&&view.height>0?view.height:svg.getBoundingClientRect().height;
@@ -661,6 +662,8 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
       }});
     }};
     for(const text of svg.querySelectorAll('text')) normalizeOfficeTextRows(text);
+    // Word text-row normalization changes the bounds of multiline headings.
+    layoutMermaidKanban(svg);
     for(const element of svg.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse,text,tspan')){{
       const computed=getComputedStyle(element);
       for(const property of officeSvgProperties){{
@@ -1160,6 +1163,7 @@ mod tests {
         let config = include_str!("../../../src/lib/mermaid-config.js");
         assert!(config.contains("redux-dark-color"));
         assert!(html.contains("ensureMermaidContrast(svg,false)"));
+        assert!(html.contains("layoutMermaidKanban(svg)"));
         assert!(config.contains("subGraphTitleMargin: { top: 16, bottom: 32 }"));
         assert!(html.contains("dataset.stage='syntax'"));
         assert!(html.contains("await mermaid.parse(source)"));

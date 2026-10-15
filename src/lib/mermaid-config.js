@@ -167,6 +167,36 @@ function mermaidConfig(theme, selectedTheme) {
   };
 }
 
+/** Kanban lays out tasks before accounting for the full column heading height. */
+function layoutMermaidKanban(root) {
+  if (root.getAttribute("aria-roledescription") !== "kanban") return false;
+  const columns = [...root.querySelectorAll(".sections > .cluster")].map(group => ({
+    rect: group.querySelector("rect"), label: group.querySelector(".cluster-label"),
+  })).filter(column => column.rect && column.label);
+  if (!columns.length) return false;
+  for (const { label } of columns) {
+    for (const row of label.querySelectorAll("text,tspan.row")) {
+      row.style.setProperty("text-anchor", "middle");
+      row.setAttribute("x", "0");
+    }
+  }
+  const headingHeight = Math.max(...columns.map(column => column.label.getBBox().height));
+  const items = root.querySelector(".items");
+  const firstItemTop = items?.querySelector(".node") ? items.getBBox().y : Infinity;
+  for (const { rect, label } of columns) {
+    const box = rect.getBBox(), heading = label.getBBox();
+    const top = Math.min(box.y, firstItemTop - headingHeight - 24);
+    rect.setAttribute("y", String(top));
+    rect.setAttribute("height", String(box.height + box.y - top));
+    label.setAttribute("transform", `translate(${box.x + (box.width - heading.width) / 2 - heading.x}, ${top + 12 - heading.y})`);
+  }
+  // Extend upwards without moving or shrinking any task cards.
+  const view = root.viewBox.baseVal;
+  const top = Math.min(view.y, root.getBBox().y - 16);
+  root.setAttribute("viewBox", `${view.x} ${top} ${view.width} ${view.height + view.y - top}`);
+  return true;
+}
+
 /** Preserve readable, complete relationship labels in both live SVG and Word images. */
 function styleMermaidEdgeLabels(root, dark) {
   // 同级分组按 SVG 绘制顺序覆盖；嵌套分组会覆盖外层分组底色。
@@ -307,5 +337,5 @@ function ensureMermaidContrast(root, dark) {
   }
 }
 
-export { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
+export { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
   MERMAID_THEMES, MERMAID_DIAGRAM_TYPES, normalizeMermaidThemes, mermaidDiagramType, resolveMermaidTheme };
