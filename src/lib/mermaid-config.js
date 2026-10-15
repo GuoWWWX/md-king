@@ -84,7 +84,7 @@ const MERMAID_DIAGRAM_TYPES = [
   ["c4", "C4 架构图"], ["info", "引擎信息"],
 ].map(([id, label]) => ({ id, label }));
 
-function normalizeMermaidThemes(value) {
+function normalizeMermaidSelection(value) {
   const validTheme = id => MERMAID_THEMES.some(theme => theme.id === id);
   const diagrams = {};
   for (const { id } of MERMAID_DIAGRAM_TYPES) {
@@ -100,6 +100,18 @@ function normalizeMermaidThemes(value) {
     dark: validTheme(value?.dark) ? value.dark : "redux-dark-color",
     diagrams,
   };
+}
+
+function normalizeMermaidThemes(value) {
+  const settings = normalizeMermaidSelection(value);
+  const presets = [];
+  for (const preset of Array.isArray(value?.presets) ? value.presets : []) {
+    const name = typeof preset?.name === "string" ? preset.name.trim() : "";
+    if (!name || presets.some(item => item.name === name)) continue;
+    presets.push({ name, ...normalizeMermaidSelection(preset) });
+  }
+  if (presets.length) settings.presets = presets;
+  return settings;
 }
 
 /** Read the diagram header only; labels, comments and frontmatter must not select a type. */

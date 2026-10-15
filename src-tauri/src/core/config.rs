@@ -71,6 +71,17 @@ pub struct MermaidThemeSettings {
     pub light: String,
     pub dark: String,
     pub diagrams: BTreeMap<String, MermaidDiagramThemes>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub presets: Vec<MermaidThemePreset>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct MermaidThemePreset {
+    pub name: String,
+    pub light: String,
+    pub dark: String,
+    #[serde(default)]
+    pub diagrams: BTreeMap<String, MermaidDiagramThemes>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -84,7 +95,7 @@ pub struct MermaidDiagramThemes {
 
 impl Default for MermaidThemeSettings {
     fn default() -> Self {
-        Self { light: "redux-color".into(), dark: "redux-dark-color".into(), diagrams: BTreeMap::new() }
+        Self { light: "redux-color".into(), dark: "redux-dark-color".into(), diagrams: BTreeMap::new(), presets: Vec::new() }
     }
 }
 
@@ -217,17 +228,29 @@ pub fn save_config(config: AppConfig) -> Result<AppConfig, String> {
     Ok(config)
 }
 
-fn normalize_config(mut config: AppConfig) -> AppConfig {
-    if !valid_mermaid_theme(&config.mermaid_themes.light) {
-        config.mermaid_themes.light = MermaidThemeSettings::default().light;
+fn normalize_mermaid_selection(light: &mut String, dark: &mut String, diagrams: &mut BTreeMap<String, MermaidDiagramThemes>) {
+    if !valid_mermaid_theme(light) {
+        *light = MermaidThemeSettings::default().light;
     }
-    if !valid_mermaid_theme(&config.mermaid_themes.dark) {
-        config.mermaid_themes.dark = MermaidThemeSettings::default().dark;
+    if !valid_mermaid_theme(dark) {
+        *dark = MermaidThemeSettings::default().dark;
     }
-    config.mermaid_themes.diagrams.retain(|_, pair| {
+    diagrams.retain(|_, pair| {
         pair.light = pair.light.take().filter(|theme| valid_mermaid_theme(theme));
         pair.dark = pair.dark.take().filter(|theme| valid_mermaid_theme(theme));
         pair.light.is_some() || pair.dark.is_some()
+    });
+}
+
+fn normalize_config(mut config: AppConfig) -> AppConfig {
+    let themes = &mut config.mermaid_themes;
+    normalize_mermaid_selection(&mut themes.light, &mut themes.dark, &mut themes.diagrams);
+    let mut preset_names = std::collections::HashSet::new();
+    themes.presets.retain_mut(|preset| {
+        preset.name = preset.name.trim().to_string();
+        if preset.name.is_empty() || !preset_names.insert(preset.name.clone()) { return false; }
+        normalize_mermaid_selection(&mut preset.light, &mut preset.dark, &mut preset.diagrams);
+        true
     });
     let normalized_path = config
         .pandoc_path
@@ -490,5 +513,26 @@ mod tests {
         assert!(!normalized.mermaid_themes.diagrams.contains_key("class"));
         let reloaded: AppConfig = serde_json::from_str(&serde_json::to_string(&normalized).unwrap()).unwrap();
         assert_eq!(reloaded.mermaid_themes, normalized.mermaid_themes);
+    }
+
+    #[test]
+    fn mermaid_presets_preserve_cross_mode_choices_after_reload() {
+        let mut config = default_config();
+        config.mermaid_themes = serde_json::from_str(r#"{"light":"dark","dark":"default","diagrams":{"state":{"light":"neo-dark","dark":"forest"}},"presets":[{"name":"  我的组合  ","light":"dark","dark":"default","diagrams":{"state":{"light":"neo-dark","dark":"forest"}}},{"name":"我的组合","light":"neo","dark":"dark"},{"name":" ","light":"neo","dark":"dark"},{"name":"修正无效项","light":"bad","dark":"default","diagrams":{"class":{"light":"bad","dark":"forest"}}}]}"#).unwrap();
+        let normalized = normalize_config(config);
+        let themes = &normalized.mermaid_themes;
+        assert_eq!(themes.light, "dark");
+        assert_eq!(themes.dark, "default");
+        assert_eq!(themes.presets.len(), 2);
+        assert_eq!(themes.presets[0].name, "我的组合");
+        assert_eq!(themes.presets[0].light, themes.light);
+        assert_eq!(themes.presets[0].dark, themes.dark);
+        assert_eq!(themes.presets[0].diagrams, themes.diagrams);
+        assert_eq!(themes.presets[1].light, "redux-color");
+        assert_eq!(themes.presets[1].dark, "default");
+        assert!(themes.presets[1].diagrams["class"].light.is_none());
+        assert_eq!(themes.presets[1].diagrams["class"].dark.as_deref(), Some("forest"));
+        let reloaded: AppConfig = serde_json::from_str(&serde_json::to_string(&normalized).unwrap()).unwrap();
+        assert_eq!(normalize_config(reloaded).mermaid_themes, *themes);
     }
 }

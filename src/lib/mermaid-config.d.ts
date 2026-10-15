@@ -1,7 +1,9 @@
 import type { MermaidConfig } from "mermaid";
 
 export type MermaidThemeId = "redux-color" | "redux-dark-color" | "redux" | "redux-dark" | "neo" | "neo-dark" | "default" | "dark" | "forest" | "neutral" | "base";
-export type MermaidThemeSettings = { light: MermaidThemeId; dark: MermaidThemeId; diagrams: Record<string, { light?: MermaidThemeId; dark?: MermaidThemeId }> };
+export type MermaidThemeSelection = { light: MermaidThemeId; dark: MermaidThemeId; diagrams: Record<string, { light?: MermaidThemeId; dark?: MermaidThemeId }> };
+export type MermaidThemePreset = MermaidThemeSelection & { name: string };
+export type MermaidThemeSettings = MermaidThemeSelection & { presets?: MermaidThemePreset[] };
 export const MERMAID_THEMES: ReadonlyArray<{ id: MermaidThemeId; label: string }>;
 export const MERMAID_DIAGRAM_TYPES: ReadonlyArray<{ id: string; label: string }>;
 export function normalizeMermaidThemes(value?: Partial<MermaidThemeSettings>): MermaidThemeSettings;
