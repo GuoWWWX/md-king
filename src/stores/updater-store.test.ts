@@ -256,3 +256,20 @@ test("已校验的旧包在检测到新版后不能再启动安装", async () =>
   await useUpdaterStore.getState().installAndRelaunch();
   assert.ok(!commands.includes("launch_update_installer"));
 });
+
+test("增量下载与还原阶段使用真实传输大小，完成后不显示完整包体积", async () => {
+  failStorage = true;
+  invokeCommand = async command => {
+    if (command === "download_update_installer") {
+      progressListener({ payload: { version: "v1.1.10", percent: 100, transferred: 1, total: 1, speed_bytes_per_sec: 0, is_delta: true, applying_delta: true } });
+      assert.equal(useUpdaterStore.getState().downloadProgress.applyingDelta, true);
+      return "C:/temp/reconstructed.exe";
+    }
+    return 1;
+  };
+  await useUpdaterStore.getState().startDownload();
+  assert.equal(useUpdaterStore.getState().status, "ready_to_install");
+  assert.equal(useUpdaterStore.getState().downloadProgress.total, 1);
+  assert.equal(useUpdaterStore.getState().downloadProgress.transferred, 1);
+  assert.equal(useUpdaterStore.getState().downloadProgress.applyingDelta, false);
+});

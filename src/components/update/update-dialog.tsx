@@ -170,7 +170,7 @@ export function UpdateDialog() {
             <div className="space-y-2 rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-amber-700 dark:text-amber-300">
-                  {!isDownloading ? `已保留 ${downloadVersion} 下载进度` : status === "cancelling" ? "正在取消下载..." : downloadProgress.percent >= 100 ? "正在校验安装包..." : `正在下载 ${downloadVersion} 安装包...`}
+                  {!isDownloading ? `已保留 ${downloadVersion} 下载进度` : status === "cancelling" ? "正在取消下载..." : downloadProgress.applyingDelta ? "正在还原并校验安装包..." : downloadProgress.percent >= 100 ? "正在校验安装包..." : `正在下载 ${downloadVersion} ${downloadProgress.isDelta ? "增量包" : "安装包"}...`}
                 </span>
                 <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-200">
                   {downloadProgress.percent.toFixed(1)}%

@@ -610,6 +610,8 @@ export type DownloadProgressPayload = {
   transferred: number;
   total: number;
   speed_bytes_per_sec: number;
+  is_delta?: boolean;
+  applying_delta?: boolean;
 };
 
 export async function fetchLatestRelease(repo?: string): Promise<string> {

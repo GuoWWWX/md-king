@@ -15,18 +15,21 @@ pub struct DownloadProgress {
     pub transferred: u64,
     pub total: u64,
     pub speed_bytes_per_sec: f64,
+    pub is_delta: bool,
+    pub applying_delta: bool,
 }
 
 // Called only after verifying the release's signed manifest, when the user starts downloading.
-fn prepare_download(cache: &Path, manifest: &UpdateManifest) -> Result<PathBuf, String> {
+pub(crate) fn prepare_download(cache: &Path, manifest: &UpdateManifest) -> Result<PathBuf, String> {
     fs::create_dir_all(cache).map_err(|e| e.to_string())?;
-    let path = cache.join("installer.exe");
+    let path = cache.join(if manifest.asset.ends_with(".patch") { "update.patch" } else { "installer.exe" });
     let metadata_path = cache.join("manifest.json");
     let previous = fs::read(&metadata_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<UpdateManifest>(&bytes).ok());
     if previous.as_ref() != Some(manifest) {
-        remove_partial(&path)?;
+        remove_partial(&cache.join("installer.exe"))?;
+        remove_partial(&cache.join("update.patch"))?;
         write_atomic(
             &metadata_path,
             &serde_json::to_string(manifest).map_err(|e| e.to_string())?,
@@ -75,6 +78,8 @@ pub fn download_installer(
         transferred,
         total: manifest.size,
         speed_bytes_per_sec,
+        is_delta: manifest.asset.ends_with(".patch"),
+        applying_delta: false,
     };
     emit(progress(offset, 0.0));
     check_cancelled()?;
@@ -91,6 +96,7 @@ pub fn download_installer(
             200 => {
                 offset = 0;
             } // The server ignored Range; replace rather than append its full response.
+            404 | 410 => return Err("更新文件不存在，请重试或下载完整安装包。".into()),
             _ => return Err("服务器返回的下载范围无效，已保留原有下载进度。".into()),
         }
         let mut file = OpenOptions::new()
@@ -188,6 +194,7 @@ mod tests {
             asset: "setup.exe".into(),
             size: 6,
             sha256: format!("{:x}", Sha256::digest(b"abcdef")),
+            delta: None,
         }
     }
     fn serve(response: &'static str) -> (String, thread::JoinHandle<String>) {

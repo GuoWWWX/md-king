@@ -8,3 +8,4 @@ pub mod template_style;
 pub mod vault;
 pub mod update;
 pub mod update_download;
+pub mod update_delta;

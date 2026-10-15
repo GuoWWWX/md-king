@@ -1,5 +1,5 @@
 use crate::core::update::{installer_arguments, release_directory, verify_installer, verify_manifest, UpdateManifest};
-use crate::core::update_download::download_installer;
+use crate::core::update_delta::download_with_delta;
 use crate::storage::paths::app_data_dir;
 use crate::system::update_http;
 use std::fs::OpenOptions;
@@ -63,10 +63,12 @@ pub async fn download_update_installer(app: AppHandle, download_url: String, ver
         let signature_bytes = fetch_update_metadata(&format!("{directory}/update-manifest.sig"))?;
         let signature = std::str::from_utf8(&signature_bytes).map_err(|_| "更新签名格式无效。")?;
         let manifest = verify_manifest(&manifest_bytes, signature, &version, &download_url)?;
-        let cache = app_data_dir().map_err(|e| e.to_string())?.join("update-download");
+        let data_dir = app_data_dir().map_err(|e| e.to_string())?;
+        let cache = data_dir.join("update-download");
+        let base = data_dir.join("update-base").join("installer.exe");
         // Starting a download invalidates the previous launch permission; detection alone does not.
         *VERIFIED_INSTALLER.lock().map_err(|e| e.to_string())? = None;
-        let path = download_installer(&download_url, &cache, &manifest, &CANCEL_DOWNLOAD, |progress| {
+        let path = download_with_delta(&download_url, &cache, &base, &app.package_info().version.to_string(), &manifest, &CANCEL_DOWNLOAD, |progress| {
             let _ = app.emit("update-download-progress", progress);
         })?;
         if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {

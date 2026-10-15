@@ -35,6 +35,8 @@ export type DownloadProgress = {
   transferred: number;
   total: number;
   speedBytesPerSec: number;
+  isDelta?: boolean;
+  applyingDelta?: boolean;
 };
 
 export interface UpdaterState {
@@ -220,7 +222,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       errorMessage: null,
       installerPath: null,
       downloadVersion: latestRelease.tag_name,
-      downloadProgress: downloadVersion === latestRelease.tag_name ? { ...get().downloadProgress, speedBytesPerSec: 0 } : {
+      downloadProgress: downloadVersion === latestRelease.tag_name ? { ...get().downloadProgress, speedBytesPerSec: 0, applyingDelta: false } : {
         percent: 0,
         transferred: 0,
         total: setupAsset.size,
@@ -235,12 +237,17 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
         unlisten = await listen<DownloadProgressPayload>("update-download-progress", (event) => {
           const payload = event.payload;
           if (payload.version !== latestRelease.tag_name) return;
+          if (get().downloadProgress.isDelta && payload.is_delta === false) {
+            toast.info("增量包不可用，已切换为完整安装包下载");
+          }
           set({
             downloadProgress: {
               percent: Math.min(100, Math.max(0, payload.percent)),
               transferred: payload.transferred,
               total: payload.total || setupAsset.size,
               speedBytesPerSec: payload.speed_bytes_per_sec,
+              isDelta: payload.is_delta ?? false,
+              applyingDelta: payload.applying_delta ?? false,
             },
           });
         });
@@ -262,14 +269,17 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
           return;
         }
 
+        const downloadedTotal = get().downloadProgress.total || setupAsset.size;
         set({
           status: "ready_to_install",
           installerPath,
           downloadProgress: {
+            ...get().downloadProgress,
             percent: 100,
-            transferred: setupAsset.size,
-            total: setupAsset.size,
+            transferred: downloadedTotal,
+            total: downloadedTotal,
             speedBytesPerSec: 0,
+            applyingDelta: false,
           },
         });
 

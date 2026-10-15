@@ -15,6 +15,28 @@ pub struct UpdateManifest {
     pub asset: String,
     pub size: u64,
     pub sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<DeltaManifest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DeltaManifest {
+    pub base_version: String,
+    pub base_size: u64,
+    pub base_sha256: String,
+    pub asset: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+pub fn delta_asset_name(base_version: &str, version: &str) -> Result<String, String> {
+    release_directory(base_version)?;
+    release_directory(version)?;
+    Ok(format!("md-king_{}_to_{}_x64.patch", base_version.trim_start_matches('v'), version.trim_start_matches('v')))
+}
+
+fn valid_hash(hash: &str) -> bool {
+    hash.len() == 64 && hash.bytes().all(|c| c.is_ascii_hexdigit())
 }
 
 pub fn release_directory(version: &str) -> Result<String, String> {
@@ -40,9 +62,16 @@ fn verify_manifest_with_key(bytes: &[u8], signature: &str, version: &str, url: &
     let expected_asset = format!("md-king_{normalized}_x64-setup.exe");
     if manifest.version != format!("v{normalized}") || manifest.asset != expected_asset
         || url != format!("{}/{}", release_directory(version)?, expected_asset)
-        || manifest.size == 0 || manifest.sha256.len() != 64
-        || !manifest.sha256.bytes().all(|c| c.is_ascii_hexdigit()) {
+        || manifest.size == 0 || !valid_hash(&manifest.sha256) {
         return Err("安装包来源、版本或校验信息与签名清单不一致。".into());
+    }
+    if let Some(delta) = &manifest.delta {
+        if !delta.base_version.starts_with('v') || delta.base_version == manifest.version || delta.base_size == 0
+            || !valid_hash(&delta.base_sha256) || !valid_hash(&delta.sha256)
+            || delta.size == 0 || delta.size >= manifest.size
+            || delta.asset != delta_asset_name(&delta.base_version, &manifest.version)? {
+            return Err("增量更新信息无效。".into());
+        }
     }
     Ok(manifest)
 }
@@ -98,7 +127,7 @@ mod tests {
     fn rechecks_downloaded_file_before_execution() {
         let path = std::env::temp_dir().join(format!("mdking-update-test-{}.exe", std::process::id()));
         std::fs::write(&path, b"abc").unwrap();
-        let manifest = UpdateManifest { version: "v1.1.9".into(), asset: "setup.exe".into(), size: 3, sha256: format!("{:x}", Sha256::digest(b"abc")) };
+        let manifest = UpdateManifest { version: "v1.1.9".into(), asset: "setup.exe".into(), size: 3, sha256: format!("{:x}", Sha256::digest(b"abc")), delta: None };
         assert!(verify_installer(&path, &manifest).is_ok());
         std::fs::write(&path, b"xyz").unwrap();
         assert!(verify_installer(&path, &manifest).is_err());
@@ -111,5 +140,21 @@ mod tests {
     fn silent_updates_restart_and_preserve_custom_install_directory() {
         assert_eq!(installer_arguments(true, Path::new("G:\\md-king")), ["/S", "/UPDATE", "/R", "/D=G:\\md-king"]);
         assert_eq!(installer_arguments(false, Path::new("G:\\md-king")), ["/UPDATE", "/R", "/D=G:\\md-king"]);
+    }
+
+    #[test]
+    fn delta_metadata_is_signed_and_restricted_to_the_release_asset() {
+        let keys = Ed25519KeyPair::from_pkcs8(Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap().as_ref()).unwrap();
+        let mut manifest = serde_json::json!({ "version":"v1.1.18", "asset":"md-king_1.1.18_x64-setup.exe", "size":4096, "sha256":"a".repeat(64),
+            "delta": { "base_version":"v1.1.17", "base_size":4096, "base_sha256":"b".repeat(64), "asset":"md-king_1.1.17_to_1.1.18_x64.patch", "size":128, "sha256":"c".repeat(64) } });
+        let url = format!("{RELEASE_BASE}/v1.1.18/md-king_1.1.18_x64-setup.exe");
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let sig = STANDARD.encode(keys.sign(&bytes).as_ref());
+        assert!(verify_manifest_with_key(&bytes, &sig, "v1.1.18", &url, keys.public_key().as_ref()).unwrap().delta.is_some());
+        manifest["delta"]["asset"] = "../../other.patch".into();
+        let modified = serde_json::to_vec(&manifest).unwrap();
+        assert!(verify_manifest_with_key(&modified, &sig, "v1.1.18", &url, keys.public_key().as_ref()).is_err());
+        let bad_sig = STANDARD.encode(keys.sign(&modified).as_ref());
+        assert!(verify_manifest_with_key(&modified, &bad_sig, "v1.1.18", &url, keys.public_key().as_ref()).is_err());
     }
 }
