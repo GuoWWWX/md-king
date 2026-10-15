@@ -17,6 +17,7 @@ import { isExternalDocumentLink, nextMarkdownHeadingAnchor, normalizeBareExterna
 import { obsidianWikilinkPlugin } from "@/lib/obsidian-wikilinks";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
+import { useAppStore } from "@/stores/app-store";
 import { calculatePreviewContentHeight, estimateImageBlockHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewImageSize, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
 import { svgDataUrl } from "@/lib/svg-image";
 import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCalloutTone } from "@/lib/markdown-callout";
@@ -529,10 +530,11 @@ function CodeLanguageLabel({ label, backgroundColor }: { label: string; backgrou
 /**
  * Word 预览里的 Mermaid 图。
  *
- * 和编辑器共用 lib/mermaid 的渲染与缓存，所以左右两栏拿到的是同一张图。
+ * 和编辑器共用 lib/mermaid 的渲染与缓存，Word 预览固定使用浅色配置以匹配导出。
  * 渲染是异步的，先给一个占位再补上——直接返回空会让分页测高拿到 0 高度。
  */
 function MermaidBlock({ source, dark, maxHeight, style, className, onSize }: { source: string; dark: boolean; maxHeight: number; style?: CSSProperties; className?: string; onSize?: (source: string, dark: boolean, size: PreviewMermaidSize) => void }) {
+  const mermaidThemes = useAppStore((state) => state.appConfig?.mermaidThemes);
   const [svg, setSvg] = useState(() => getCachedMermaidSvg(source, dark)?.svg);
   const [error, setError] = useState<string>();
 
@@ -562,7 +564,7 @@ function MermaidBlock({ source, dark, maxHeight, style, className, onSize }: { s
     return () => {
       cancelled = true;
     };
-  }, [dark, onSize, source]);
+  }, [dark, onSize, source, mermaidThemes]);
 
   if (error) {
     return (
@@ -1609,7 +1611,7 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
   return { before: 0, after: 0 };
 }
 
-function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>, previewDark = false) {
+function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     const lineHeight = resolveLineHeightPx(draft);
@@ -1633,9 +1635,7 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   if (block.type === "code") {
     if (isMermaidLanguage(block.language)) {
-      const backgroundColor = drafts.code.backgroundColor === "transparent" ? undefined : drafts.code.backgroundColor;
-      const dark = previewDark || Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
-      const size = mermaidSizes?.[mermaidSizeKey(block.text, dark)] ?? getCachedMermaidSvg(block.text, dark);
+      const size = mermaidSizes?.[mermaidSizeKey(block.text, false)] ?? getCachedMermaidSvg(block.text, false);
       const marginHeight = ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing);
       const diagramHeight = estimateMermaidBlockHeight({
         size,
@@ -1723,9 +1723,9 @@ function splitTextByLength(text: string, maxChars: number) {
   return chunks;
 }
 
-function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>, previewDark = false) {
+function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
   return blocks.flatMap((block) => {
-    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes, previewDark) <= pageContentHeight) return [block];
+    if (estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes) <= pageContentHeight) return [block];
 
     if (block.type === "paragraph") {
       return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth, paragraphDraft(block, drafts)) * 24).map((text) => ({ ...block, segments: textSegments(text) }));
@@ -1772,8 +1772,8 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
   });
 }
 
-function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>, previewDark = false) {
-  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes, previewDark);
+function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+  const estimateHeight = (block: PreviewBlock) => estimateBlockHeight(block, drafts, tableDraft, contentWidth, mermaidSizes, pageContentHeight, imageSizes);
 
   const minimumFollowingHeight = (block: PreviewBlock, following: PreviewBlock) => {
     if (block.type !== "heading") return 0;
@@ -2194,14 +2194,9 @@ function renderMarkdownBlocks({
       const languageLabel = block.continuedFromPrevious ? undefined : codeLanguageLabel(block.language);
       const backgroundColor = drafts.code.backgroundColor === "transparent" ? undefined : drafts.code.backgroundColor;
 
-      // mermaid 块渲染成图而不是代码。外框沿用代码块的背景与边框，
-      // 这样它和编辑器里那个带 MERMAID 标签的框看起来是同一个东西。
+      // Mermaid 在 Word 中作为图片，预览使用与导出相同的浅色主题。
       if (isMermaidLanguage(block.language)) {
-        // 模板通常给代码块配置浅色背景；深色纸张下这个内联颜色不会被页面
-        // 深色 CSS 覆盖，图表会留下突兀的白底。因此 Mermaid 外框与 SVG 主题
-        // 必须同时随预览纸张切换。
-        const mermaidBackgroundColor = previewDark ? "#202124" : backgroundColor;
-        const mermaidDark = previewDark || Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45);
+        const mermaidBackgroundColor = previewDark || Boolean(backgroundColor && hexToLuminance(backgroundColor) < 0.45) ? "#fff" : backgroundColor;
         const mermaidMarginHeight = ptToPx(drafts.code.beforeSpacing + drafts.code.afterSpacing);
         const mermaidImageMaxHeight = Math.max(
           1,
@@ -2223,7 +2218,7 @@ function renderMarkdownBlocks({
               marginRight: 0,
             }}
           >
-            <MermaidBlock source={block.text} dark={mermaidDark} maxHeight={mermaidImageMaxHeight} onSize={onMermaidSize} />
+            <MermaidBlock source={block.text} dark={false} maxHeight={mermaidImageMaxHeight} onSize={onMermaidSize} />
           </div>
         );
         const caption = block.caption ? (
@@ -2635,8 +2630,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     })
     : [];
   const documentBlocks = tocPages.length > 0 ? blocksWithTableColumnWidths : [...metadataBlocks, ...blocksWithTableColumnWidths];
-  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes, paperTheme === "dark") : documentBlocks;
-  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes, paperTheme === "dark") : [previewBlocks];
+  const previewBlocks = shouldPaginate ? splitLargeBlocks(documentBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes) : documentBlocks;
+  const documentPages = shouldPaginate ? paginateBlocks(previewBlocks, pageContentHeight, previewDrafts, table, contentWidth, mermaidSizes, imageSizes) : [previewBlocks];
   const documentPageNumberOffset = footerStartPage + (pageNumberStartAt === "document" ? tocPages.length : 0);
   const previewOutline = documentPages.flatMap((pageBlocks, pageIndex) => pageBlocks.flatMap((block) => {
     if (block.type !== "heading" || block.isDocumentTitle || !block.anchorId) return [];

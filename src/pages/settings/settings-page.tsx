@@ -1,10 +1,12 @@
-import { Check, Database, FolderOpen, HardDrive, Keyboard, MousePointer2, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
+import { Check, Database, FolderOpen, HardDrive, Keyboard, MousePointer2, Palette, RefreshCcw, RotateCcw, Save, Settings2, ShieldCheck, Terminal, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { WorkspacePageHeader } from "@/components/layout/page-header";
 import { appPageMeta } from "@/components/layout/page-meta";
 import { SettingRow } from "@/components/settings/setting-row";
 import { SettingsSection } from "@/components/settings/settings-section";
+import { MermaidThemeDialog } from "@/components/settings/mermaid-theme-dialog";
+import type { MermaidThemeSettings } from "@/lib/mermaid-config.js";
 import { PrimaryActionButton, SoftActionButton } from "@/components/ui/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,7 @@ export function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
+  const [mermaidThemeOpen, setMermaidThemeOpen] = useState(false);
 
   useEffect(() => {
     setDraft(appConfig ? normalizeSettingsDraft(appConfig) : undefined);
@@ -78,6 +81,18 @@ export function SettingsPage() {
       toast.success("设置已保存");
     } catch (error) {
       toast.error(userFacingErrorMessage(error, "保存设置失败"));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSaveMermaid(mermaidThemes: MermaidThemeSettings) {
+    if (!draft) return;
+    setIsSaving(true);
+    try {
+      const saved = await saveAppConfig({ ...draft, mermaidThemes });
+      setAppConfig(saved);
+      toast.success("Mermaid 主题配置已保存");
     } finally {
       setIsSaving(false);
     }
@@ -174,7 +189,7 @@ export function SettingsPage() {
           </div>
         </SettingsSection>
 
-        <SettingsSection title="外观" description="主题模式与全局强调色。" icon={Settings2}>
+        <SettingsSection title="外观" description="主题模式、全局强调色与图表配色。" icon={Settings2}>
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500 dark:text-zinc-400">外观主题</Label>
             <Select value={draft.themeMode ?? "light"} onValueChange={(value) => updateDraft("themeMode", value as AppConfig["themeMode"])}>
@@ -205,6 +220,10 @@ export function SettingsPage() {
                 );
               })}
             </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-zinc-700">
+            <div className="min-w-0 space-y-1"><p className="text-sm font-medium">Mermaid 图表主题</p><p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">分别配置浅色、深色默认主题，也可按图表类型单独选择。</p></div>
+            <Button variant="outline" size="sm" disabled={isSaving} onClick={() => setMermaidThemeOpen(true)}><Palette className="size-4" />配置主题</Button>
           </div>
         </SettingsSection>
 
@@ -290,6 +309,7 @@ export function SettingsPage() {
         </SettingsSection>
         </div>
       </div>
+      <MermaidThemeDialog open={mermaidThemeOpen} onOpenChange={setMermaidThemeOpen} value={draft.mermaidThemes} onSave={handleSaveMermaid} />
       <Dialog open={clearHistoryConfirmOpen} onOpenChange={setClearHistoryConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

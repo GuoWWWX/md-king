@@ -1,3 +1,5 @@
+import type { MermaidThemeSettings } from "../lib/mermaid-config.js";
+
 export type ThemeMode = "system" | "light" | "dark";
 export type AccentColor = "indigo" | "blue" | "emerald" | "sky" | "slate" | "rose" | "amber";
 export type DefaultConflictStrategy = "overwrite" | "rename" | "ask";
@@ -19,6 +21,7 @@ export type AppConfig = {
   language: "zh" | "en";
   themeMode: ThemeMode;
   accentColor: AccentColor;
+  mermaidThemes?: MermaidThemeSettings;
   defaultConflictStrategy: DefaultConflictStrategy;
   keepConversionLog: boolean;
   vaultRoot?: string;

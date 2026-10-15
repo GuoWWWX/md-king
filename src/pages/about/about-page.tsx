@@ -51,7 +51,7 @@ export function AboutPage() {
       <WorkspacePageHeader meta={appPageMeta.about} />
       <div className="mk-about-workspace flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         <div className="mk-about-summary-grid grid shrink-0 grid-cols-[minmax(0,1fr)_320px] gap-1">
-          <section className="min-w-0 space-y-1">
+          <section className="row-span-2 grid min-w-0 grid-rows-subgrid gap-1">
             <AppSurface as="section" className="space-y-3">
               <div>
                 <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
@@ -72,7 +72,7 @@ export function AboutPage() {
               </div>
             </AppSurface>
 
-            <div className="grid gap-1 md:grid-cols-2">
+            <div className="grid auto-rows-fr gap-1 md:grid-cols-2">
               <Capability icon={ClipboardPaste} title="粘贴转换" text="复制 AI 对话内容后快速生成 DOCX。" />
               <Capability icon={Layers3} title="模板样式" text="复用参考 DOCX 控制 Word 样式。" />
               <Capability icon={History} title="转换历史" text="保留最近结果，方便回看和定位输出。" />
@@ -80,7 +80,7 @@ export function AboutPage() {
             </div>
           </section>
 
-          <aside className="flex min-w-0 flex-col gap-1">
+          <aside className="row-span-2 grid min-w-0 grid-rows-subgrid gap-1">
             <AppSurface as="section" className="space-y-3">
               <div>
                 <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
@@ -153,7 +153,7 @@ export function AboutPage() {
               </div>
             </AppSurface>
 
-            <AppSurface as="section" className="flex-1 space-y-3">
+            <AppSurface as="section" className="space-y-3">
               <div>
                 <h3 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-zinc-50">
                   <ShieldCheck className="size-4" />

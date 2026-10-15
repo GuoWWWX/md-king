@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use crate::core::config::{load_config, MermaidThemeSettings};
 use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
@@ -49,6 +50,7 @@ pub fn preprocess_mermaid_for_word(
     format: &str,
 ) -> MermaidPreprocessResult {
     let prefer_svg = !format.trim().eq_ignore_ascii_case("png");
+    let themes = load_config().mermaid_themes;
     replace_mermaid_fences(markdown, prefer_svg, |source, block_index, attributes| {
         let script = mermaid_script
             .ok_or_else(|| "未找到内置 Mermaid 运行时资源，已保留源码".to_string())?;
@@ -59,6 +61,7 @@ pub fn preprocess_mermaid_for_word(
             scale,
             attributes.compact,
             prefer_svg,
+            &themes,
         )
     })
 }
@@ -372,6 +375,7 @@ fn render_mermaid_image(
     scale: u32,
     compact: bool,
     prefer_svg: bool,
+    themes: &MermaidThemeSettings,
 ) -> Result<PathBuf, String> {
     render_mermaid_with_retry(|| {
         render_mermaid_image_once(
@@ -381,6 +385,7 @@ fn render_mermaid_image(
             scale,
             compact,
             prefer_svg,
+            themes,
         )
     })
 }
@@ -414,6 +419,7 @@ fn render_mermaid_image_once(
     scale: u32,
     compact: bool,
     prefer_svg: bool,
+    themes: &MermaidThemeSettings,
 ) -> Result<PathBuf, String> {
     if !mermaid_script.is_file() {
         return Err(format!(
@@ -434,7 +440,7 @@ fn render_mermaid_image_once(
         let image_path = work_dir.join("diagram.png");
         let inspect_profile = work_dir.join("profile-inspect");
         let capture_profile = work_dir.join("profile-capture");
-        let html = renderer_html(mermaid_script, source, compact, prefer_svg);
+        let html = renderer_html(mermaid_script, source, compact, prefer_svg, themes);
         fs::write(&html_path, html)
             .map_err(|error| format!("阶段=页面准备；写入 Mermaid 渲染页面失败：{error}"))?;
 
@@ -560,6 +566,7 @@ fn renderer_html(
     source: &str,
     compact: bool,
     prefer_svg: bool,
+    themes: &MermaidThemeSettings,
 ) -> String {
     let source_json = serde_json::to_string(source)
         .unwrap_or_else(|_| "\"\"".to_string())
@@ -568,6 +575,8 @@ fn renderer_html(
         .replace('&', "\\u0026");
     let script_url = file_url(mermaid_script);
     let renderer_config = BASE64_STANDARD.encode(include_bytes!("../../../src/lib/mermaid-config.js"));
+    let themes_json = serde_json::to_string(themes).unwrap_or_else(|_| "{}".to_string())
+        .replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026");
     let node_spacing = if compact { 20 } else { 50 };
     let rank_spacing = if compact { 25 } else { 60 };
     // PNG 由浏览器直接截图，保留 Mermaid 原生 HTML 标签可获得最完整的
@@ -584,8 +593,9 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    const {{mermaidConfig,styleMermaidEdgeLabels,ensureMermaidContrast}}=await import('data:text/javascript;base64,{renderer_config}');
-    const config=mermaidConfig('default');
+    const {{mermaidConfig,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
+    const themes={themes_json};
+    const config=mermaidConfig('default',resolveMermaidTheme(source,false,themes));
     config.htmlLabels={html_labels};
     Object.assign(config.flowchart,{{htmlLabels:{html_labels},useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}});
     mermaid.initialize(config);
@@ -1138,11 +1148,12 @@ mod tests {
             "A[</script>]",
             true,
             true,
+            &MermaidThemeSettings::default(),
         );
         assert!(!html.contains("A[</script>]"));
         assert!(html.contains("\\u003c/script\\u003e"));
         assert!(html.contains("await import('data:text/javascript;base64,"));
-        assert!(html.contains("const config=mermaidConfig('default')"));
+        assert!(html.contains("const config=mermaidConfig('default',resolveMermaidTheme(source,false,themes))"));
         assert!(html.contains("config.htmlLabels=false"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));
@@ -1179,6 +1190,7 @@ mod tests {
             CLASSDEF_BRANCHING_FLOWCHART,
             false,
             false,
+            &MermaidThemeSettings::default(),
         );
         assert!(html.contains("classDef crypto"));
         assert!(html.contains("classDef action"));
@@ -1187,6 +1199,15 @@ mod tests {
         assert!(html.contains("const pngSvg=svg.cloneNode(true)"));
         assert!(html.contains("host.replaceChildren(pngSvg)"));
         assert!(html.contains("svg.querySelectorAll('style')"));
+    }
+
+    #[test]
+    fn word_renderer_receives_saved_light_and_type_themes() {
+        let themes: MermaidThemeSettings = serde_json::from_str(r#"{"light":"forest","dark":"dark","diagrams":{"state":{"light":"neo"}}}"#).unwrap();
+        let html = renderer_html(Path::new("mermaid.min.js"), "stateDiagram-v2\nA-->B", false, false, &themes);
+        assert!(html.contains(r#""light":"forest""#));
+        assert!(html.contains(r#""state":{"light":"neo"}"#));
+        assert!(html.contains("resolveMermaidTheme(source,false,themes)"));
     }
 
     #[test]
@@ -1209,8 +1230,9 @@ mod tests {
                 source,
                 false,
                 false,
+                &MermaidThemeSettings::default(),
             );
-            assert!(html.contains("const config=mermaidConfig('default')"));
+            assert!(html.contains("const config=mermaidConfig('default',resolveMermaidTheme(source,false,themes))"));
             assert!(html.contains("nodeSpacing:50"));
             assert!(html.contains("rankSpacing:60"));
             assert!(html.contains("config.htmlLabels=true"));

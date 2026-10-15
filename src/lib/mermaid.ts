@@ -1,4 +1,4 @@
-import { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast } from "./mermaid-config.js";
+import { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "./mermaid-config.js";
 import { calculateRasterSize, svgDataUrl } from "./svg-image.ts";
 
 /**
@@ -19,25 +19,31 @@ const inflight = new Map<string, Promise<RenderResult>>();
 let renderQueue: Promise<void> = Promise.resolve();
 
 let mermaidReady: Promise<typeof import("mermaid").default> | undefined;
-let currentTheme: "default" | "dark" = "default";
+let currentTheme = "";
+let activeThemes = normalizeMermaidThemes();
 
-async function loadMermaid(dark: boolean) {
+export function setMermaidThemes(settings?: MermaidThemeSettings) {
+  activeThemes = normalizeMermaidThemes(settings);
+}
+
+async function loadMermaid(dark: boolean, selectedTheme: MermaidThemeId) {
   const wanted = dark ? "dark" : "default";
+  const identity = `${wanted}:${selectedTheme}`;
   if (!mermaidReady) {
     mermaidReady = import("mermaid").then(({ default: mermaid }) => {
-      mermaid.initialize(mermaidConfig(wanted));
-      currentTheme = wanted;
+      mermaid.initialize(mermaidConfig(wanted, selectedTheme));
+      currentTheme = identity;
       return mermaid;
     });
   }
 
   const mermaid = await mermaidReady;
-  if (currentTheme !== wanted) {
+  if (currentTheme !== identity) {
     // 主题变了要重新初始化 mermaid 引擎，但保留已有的 svgCache 和 pngCache：
-    // cacheKey 已经由 "d:" / "l:" 天然区分深浅色，保留缓存可让用户来回切换深浅色时瞬间秒开，
+    // cacheKey 同时区分画布深浅和所选主题，保留缓存可让用户来回切换时直接复用，
     // 彻底避免图表高度瞬间坍缩导致页面滚动位置丢失。
-    mermaid.initialize(mermaidConfig(wanted));
-    currentTheme = wanted;
+    mermaid.initialize(mermaidConfig(wanted, selectedTheme));
+    currentTheme = identity;
   }
   return mermaid;
 }
@@ -59,8 +65,8 @@ export function normalizeMermaidSource(source: string): string {
   return s;
 }
 
-function cacheKey(source: string, dark: boolean) {
-  return `${dark ? "d" : "l"}:${source}`;
+function cacheKey(source: string, dark: boolean, settings = activeThemes) {
+  return `${dark ? "d" : "l"}:${resolveMermaidTheme(source, dark, settings)}:${source}`;
 }
 
 let renderSeq = 0;
@@ -70,9 +76,10 @@ export function getCachedMermaidSvg(source: string, dark: boolean): RenderResult
   return svgCache.get(cacheKey(normalizeMermaidSource(source), dark));
 }
 
-export async function renderMermaid(source: string, dark: boolean): Promise<RenderResult> {
+export async function renderMermaid(source: string, dark: boolean, settings = activeThemes): Promise<RenderResult> {
   const normalized = normalizeMermaidSource(source);
-  const key = cacheKey(normalized, dark);
+  const selectedTheme = resolveMermaidTheme(normalized, dark, settings);
+  const key = cacheKey(normalized, dark, settings);
 
   const cached = svgCache.get(key);
   if (cached) return cached;
@@ -81,7 +88,7 @@ export async function renderMermaid(source: string, dark: boolean): Promise<Rend
   if (pending) return pending;
 
   const task = renderQueue.then(async () => {
-    const mermaid = await loadMermaid(dark);
+    const mermaid = await loadMermaid(dark, selectedTheme);
     renderSeq += 1;
     // id 必须唯一：mermaid 会用它做 DOM 元素 id 和 SVG 内部的 clip-path 引用，
     // 重复 id 会让同一页里的多张图互相串。

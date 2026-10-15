@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { setMermaidThemes } from "../lib/mermaid.ts";
 import type { AppConfig, AppStatus, HistoryItem, PandocStatus, Template } from "@/types";
 
 type AppState = {
@@ -53,7 +54,10 @@ export const useAppStore = create<AppState>((set) => ({
   }),
   closeAllPageTabs: () => set({ activePage: "convert", pageTabs: [] }),
   setAppStatus: (appStatus) => set({ appStatus }),
-  setAppConfig: (appConfig) => set({ appConfig }),
+  setAppConfig: (appConfig) => {
+    setMermaidThemes(appConfig.mermaidThemes);
+    set({ appConfig });
+  },
   setPandocStatus: (pandocStatus) => set({ pandocStatus }),
   setTemplates: (templates) => set({ templates }),
   setHistory: (history) => set({ history }),
