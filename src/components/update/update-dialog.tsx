@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useUpdaterStore } from "@/stores/updater-store";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { LiveMarkdownEditor } from "@/components/editor/live-markdown-editor";
+import { useAppStore } from "@/stores/app-store";
+import { isExternalDocumentLink } from "@/lib/document-links";
 import {
   Download,
   ExternalLink,
@@ -47,6 +50,10 @@ export function UpdateDialog() {
     ignoreCurrentRelease,
   } = useUpdaterStore();
 
+  const themeMode = useAppStore((state) => state.appConfig?.themeMode ?? "light");
+  const isDark = themeMode === "dark"
+    || (themeMode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
   if (!latestRelease) return null;
 
   const newVersion = latestRelease.tag_name;
@@ -55,6 +62,17 @@ export function UpdateDialog() {
   const isBusy = isDownloading || isInstalling;
   const isReady = status === "ready_to_install";
   const isError = status === "error";
+
+  async function handleReleaseNotesLink(target: string) {
+    if (!latestRelease) return;
+    const url = new URL(target, latestRelease.html_url).href;
+    if (!isExternalDocumentLink(url)) return;
+    try {
+      await openUrl(url);
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   async function handleOpenBrowser() {
     if (!latestRelease) return;
@@ -80,8 +98,8 @@ export function UpdateDialog() {
 
   return (
     <Dialog open={dialogOpen} onOpenChange={(open) => !isBusy && setDialogOpen(open)}>
-      <DialogContent className="max-w-[480px] p-6 sm:max-w-[500px]" showCloseButton={!isBusy}>
-        <DialogHeader className="space-y-2.5">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col gap-4 overflow-y-auto p-5 sm:max-w-[600px] sm:p-6" showCloseButton={!isBusy}>
+        <DialogHeader className="shrink-0 space-y-2.5 pr-4">
           <div className="flex items-center gap-2.5">
             <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-400">
               <Sparkles className="size-5" />
@@ -113,17 +131,30 @@ export function UpdateDialog() {
         </DialogHeader>
 
         {/* 更新日志区域 */}
-        <div className="mt-3 space-y-1.5">
-          <div className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+        <div className="flex min-h-0 flex-col gap-2">
+          <div className="shrink-0 text-xs font-semibold text-slate-700 dark:text-zinc-300">
             {latestRelease.name || "更新内容"}
           </div>
-          <div className="max-h-[160px] overflow-y-auto rounded-lg border border-slate-200/80 bg-slate-50/70 p-3 text-xs leading-relaxed text-slate-600 whitespace-pre-wrap dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
-            {latestRelease.body || "本次发布包含稳定性增强与问题修复。"}
+          <div
+            className="mk-editor-surface flex h-[min(45dvh,360px)] min-h-0 flex-col overflow-hidden rounded-lg"
+            role="region"
+            aria-label="版本更新说明"
+          >
+            <LiveMarkdownEditor
+              documentKey={`release-notes:${latestRelease.tag_name}:${latestRelease.body}`}
+              initialContent={latestRelease.body?.trim() || "本次发布包含稳定性增强与问题修复。"}
+              readOnly
+              isDark={isDark}
+              onDocChanged={() => undefined}
+              onOpenLink={handleReleaseNotesLink}
+              openLinksOnClick
+              className="h-full [&_.cm-content]:p-4"
+            />
           </div>
         </div>
 
         {/* 状态与进度反馈区 */}
-        <div className="mt-4 space-y-3">
+        <div className="shrink-0 space-y-3 empty:hidden">
           {isDownloading && (
             <div className="space-y-2 rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div className="flex items-center justify-between text-xs">
@@ -169,11 +200,11 @@ export function UpdateDialog() {
         </div>
 
         {!isBusy && !isReady && (
-          <p className="mt-3 text-[11px] text-slate-500 dark:text-zinc-400">立即更新会下载并校验安装包，保存草稿后自动静默升级、重启。Windows 可能要求确认系统权限。</p>
+          <p className="shrink-0 text-[11px] text-slate-500 dark:text-zinc-400">立即更新会下载并校验安装包，保存草稿后自动静默升级、重启。Windows 可能要求确认系统权限。</p>
         )}
 
         {/* 底部操作按钮 */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
           <div className="flex items-center gap-1.5">
             <Button
               variant="ghost"
