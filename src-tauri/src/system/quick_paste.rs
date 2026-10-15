@@ -53,8 +53,14 @@ pub fn sync_quick_paste(app: &AppHandle, config: &AppConfig) -> Result<(), Strin
                 return;
             }
 
+            #[cfg(windows)]
+            let target_window = unsafe {
+                windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() as isize
+            };
+            #[cfg(not(windows))]
+            let target_window = 0;
             let app = app.clone();
-            std::thread::spawn(move || handle_quick_paste(app));
+            std::thread::spawn(move || handle_quick_paste(app, target_window));
         })
         .map_err(|_| {
             format!(
@@ -65,14 +71,14 @@ pub fn sync_quick_paste(app: &AppHandle, config: &AppConfig) -> Result<(), Strin
     Ok(())
 }
 
-fn handle_quick_paste(app: AppHandle) {
+fn handle_quick_paste(app: AppHandle, target_window: isize) {
     if QUICK_PASTE_RUNNING.swap(true, Ordering::SeqCst) {
         emit_status(&app, "info", "快捷粘贴正在处理中，请稍候。");
         return;
     }
 
     emit_status(&app, "info", "正在把剪贴板 Markdown 转为 Word/WPS 格式...");
-    let result = quick_paste_inner(&app);
+    let result = quick_paste_inner(&app, target_window);
     QUICK_PASTE_RUNNING.store(false, Ordering::SeqCst);
 
     match result {
@@ -85,7 +91,7 @@ fn handle_quick_paste(app: AppHandle) {
     }
 }
 
-fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
+fn quick_paste_inner(app: &AppHandle, target_window: isize) -> Result<(), String> {
     let markdown = read_clipboard_text()?;
     if markdown.trim().is_empty() {
         return Err("剪贴板里没有可粘贴的 Markdown 文本。".to_string());
@@ -116,9 +122,9 @@ fn quick_paste_inner(app: &AppHandle) -> Result<(), String> {
             .unwrap_or_else(|| "剪贴板 Markdown 转换失败。".to_string()));
     }
 
-    insert_docx_into_word_or_wps(&output_path)?;
+    let insert_result = insert_docx_into_word_or_wps(&output_path, target_window);
     let _ = fs::remove_file(&output_path);
-    Ok(())
+    insert_result
 }
 
 fn quick_paste_request(input_path: &Path, output_path: &Path, template_id: String) -> ConvertRequest {
@@ -133,7 +139,7 @@ fn quick_paste_request(input_path: &Path, output_path: &Path, template_id: Strin
         conflict_strategy: Some("overwrite".to_string()),
         heading_numbering: None,
         toc_page_numbers: None,
-        update_fields: Some("auto".to_string()),
+        update_fields: Some("none".to_string()),
         toc_depth: None,
         toc_position: Some("none".to_string()),
         body_page_start: None,
@@ -168,14 +174,17 @@ fn quick_paste_dir() -> Result<PathBuf, String> {
 fn read_clipboard_text() -> Result<String, String> {
     #[cfg(windows)]
     {
-        let script = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Clipboard -Raw";
+        let script = "$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; try { Get-Clipboard -Raw } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
+        let encoded = encode_powershell_command(script);
         let output = hidden_powershell_command()
             .args([
                 "-NoProfile",
+                "-NonInteractive",
+                "-STA",
                 "-ExecutionPolicy",
                 "Bypass",
-                "-Command",
-                script,
+                "-EncodedCommand",
+                &encoded,
             ])
             .output()
             .map_err(|error| format!("读取剪贴板失败：{error}"))?;
@@ -196,14 +205,16 @@ fn read_clipboard_text() -> Result<String, String> {
     }
 }
 
-fn insert_docx_into_word_or_wps(path: &Path) -> Result<(), String> {
+fn insert_docx_into_word_or_wps(path: &Path, target_window: isize) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let script = insert_docx_script(path);
+        let script = insert_docx_script(path, target_window);
         let encoded = encode_powershell_command(&script);
         let output = hidden_powershell_command()
             .args([
                 "-NoProfile",
+                "-NonInteractive",
+                "-STA",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-EncodedCommand",
@@ -228,7 +239,7 @@ fn insert_docx_into_word_or_wps(path: &Path) -> Result<(), String> {
 
     #[cfg(not(windows))]
     {
-        let _ = path;
+        let _ = (path, target_window);
         Err("快捷粘贴当前先支持 Windows 桌面端。".to_string())
     }
 }
@@ -241,36 +252,11 @@ fn hidden_powershell_command() -> Command {
 }
 
 #[cfg(windows)]
-fn insert_docx_script(path: &Path) -> String {
+fn insert_docx_script(path: &Path, target_window: isize) -> String {
     let escaped_path = path.to_string_lossy().replace('\'', "''");
-    format!(
-        r#"
-$ErrorActionPreference = 'Stop'
-try {{
-  $path = '{escaped_path}'
-  $progIds = @('Word.Application', 'KWPS.Application', 'WPS.Application', 'kwps.Application', 'wps.Application')
-  foreach ($progId in $progIds) {{
-    try {{
-      $office = [Runtime.InteropServices.Marshal]::GetActiveObject($progId)
-      if ($null -ne $office) {{
-        $selection = $office.Selection
-        if ($null -eq $selection) {{
-          throw '未找到当前光标位置'
-        }}
-        $selection.InsertFile($path)
-        exit 0
-      }}
-    }} catch {{
-      $null = $_
-    }}
-  }}
-  throw '没有找到正在运行的 Word/WPS，请先打开文档并把光标放到插入位置。'
-}} catch {{
-  [Console]::Error.WriteLine($_.Exception.Message)
-  exit 1
-}}
-"#
-    )
+    include_str!("quick_paste_insert.ps1")
+        .replace("__MD_KING_TARGET_WINDOW__", &target_window.to_string())
+        .replace("__MD_KING_DOCX_PATH__", &escaped_path)
 }
 
 #[cfg(windows)]
@@ -327,5 +313,47 @@ mod tests {
         assert_eq!(request.toc_position.as_deref(), Some("none"));
         assert_eq!(request.template_id.as_deref(), Some("default-report"));
         assert_eq!(request.open_after_convert, Some(false));
+        assert_eq!(request.update_fields.as_deref(), Some("none"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_reports_chinese_errors_as_utf8() {
+        let path = std::env::temp_dir().join(format!(
+            "md-king-missing-{}-{}.docx",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        assert!(!path.exists());
+        let error = super::insert_docx_into_word_or_wps(&path, 0).unwrap_err();
+        assert_eq!(error, "插入 Word/WPS 失败：待插入的临时文档已不存在，请重新复制 Markdown 后再试。");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "opens an isolated visible Word/WPS test window; requires Office installed"]
+    fn inserts_into_the_target_office_window_and_preserves_errors() {
+        use base64::Engine;
+        let insert_script = base64::engine::general_purpose::STANDARD
+            .encode(include_str!("quick_paste_insert.ps1").as_bytes());
+        let script = include_str!("../../tests/quick_paste_office.ps1")
+            .replace("__INSERT_SCRIPT_BASE64__", &insert_script);
+        let encoded = super::encode_powershell_command(&script);
+        let output = super::hidden_powershell_command()
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-STA",
+                "-EncodedCommand",
+                &encoded,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

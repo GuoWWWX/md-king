@@ -1,6 +1,6 @@
 [package]
 name = "md-king"
-version = "1.1.14"
+version = "1.1.15"
 description = "AI Markdown to Word/WPS document converter"
 authors = ["md-king contributors"]
 edition = "2021"
@@ -35,4 +35,4 @@ quick-xml = "0.39"
 ureq = { version = "2.10", default-features = false, features = ["tls"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
