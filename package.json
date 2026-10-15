@@ -17,6 +17,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "mermaid:bundle": "node scripts/bundle-mermaid.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -51,7 +52,7 @@
     "katex": "^0.18.2",
     "lucide-react": "^1.17.0",
     "markdown-it": "^14.3.2",
-    "mermaid": "^11.17.2",
+    "mermaid": "^12.2.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.5.0",
     "react": "^19.1.0",

@@ -1,4 +1,4 @@
-import { mermaidConfig, styleMermaidEdgeLabels } from "./mermaid-config.js";
+import { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast } from "./mermaid-config.js";
 import { calculateRasterSize, svgDataUrl } from "./svg-image.ts";
 
 /**
@@ -15,6 +15,8 @@ const svgCache = new Map<string, RenderResult>();
 const pngCache = new Map<string, string>();
 /** 同一段源码并发渲染时共用一个 promise，避免重复初始化 mermaid。 */
 const inflight = new Map<string, Promise<RenderResult>>();
+// Mermaid's theme is global: initialization and rendering must run together.
+let renderQueue: Promise<void> = Promise.resolve();
 
 let mermaidReady: Promise<typeof import("mermaid").default> | undefined;
 let currentTheme: "default" | "dark" = "default";
@@ -78,7 +80,7 @@ export async function renderMermaid(source: string, dark: boolean): Promise<Rend
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const task = (async () => {
+  const task = renderQueue.then(async () => {
     const mermaid = await loadMermaid(dark);
     renderSeq += 1;
     // id 必须唯一：mermaid 会用它做 DOM 元素 id 和 SVG 内部的 clip-path 引用，
@@ -88,7 +90,8 @@ export async function renderMermaid(source: string, dark: boolean): Promise<Rend
     const result = { svg: readableEdgeLabels(svg, size, dark), ...size };
     svgCache.set(key, result);
     return result;
-  })();
+  });
+  renderQueue = task.then(() => {}, () => {});
 
   inflight.set(key, task);
   try {
@@ -215,19 +218,9 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       seq.style.setProperty("text-anchor", "middle", "important");
       seq.style.setProperty("font-size", "11px", "important");
       seq.style.setProperty("font-weight", "700", "important");
-      if (dark) {
-        seq.style.setProperty("fill", "#fef3c7", "important");
-        seq.style.setProperty("color", "#fef3c7", "important");
-      }
     }
 
-    // 方块颜色与文字颜色智能联动：
-    // 当改变方块颜色时（自定义 stroke/fill），内部文字若未显式指定颜色，默认使用边框颜色；
-    // 使得边框与文字始终同色系（如默认橙框橙字、绿框绿字、蓝框蓝字），无论深浅模式都完美清晰协调。
-    applyNodeTextBorderColor(root, dark);
-
-    // 时序图背景高亮框（rect rgb(...) 指令）深色模式自适应与文字高对比度保证
-    adaptSequenceDiagramRects(root, dark);
+    ensureMermaidContrast(root, dark);
 
     // 全图 ViewBox 动态安全呼吸边距自适应：检测最顶、最底、最左、最右的几何边界，
     // 确保任何图形、圆角边框、标题文字与视口边缘至少有 12~16px 的充裕呼吸留白，100% 杜绝裁切与紧贴压抑。
@@ -410,158 +403,4 @@ function withExplicitSize(svg: string, width: number, height: number) {
 /** 判断一个代码块的语言标记是不是 mermaid。 */
 export function isMermaidLanguage(language: string | undefined) {
   return language?.trim().toLowerCase() === "mermaid";
-}
-
-/**
- * 节点文字颜色智能联动与微透暗底适配：
- * 当改变方块颜色时（自定义 stroke/fill），内部文字若未显式指定颜色，默认使用边框颜色；
- * 使得边框与文字始终同色系（如默认橙框橙字、绿框绿字、蓝框蓝字），无论深浅模式都完美清晰协调。
- */
-export function applyNodeTextBorderColor(root: Element, dark: boolean) {
-  for (const node of root.querySelectorAll<SVGGElement>(".node")) {
-    const shapes = node.querySelectorAll<SVGElement>("rect, polygon, circle, ellipse, path");
-    let customStroke: string | null = null;
-
-    for (const shape of shapes) {
-      const styleAttr = shape.getAttribute("style") || "";
-      const fillMatch = styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;!]+)/i);
-      const strokeMatch = styleAttr.match(/(?:^|;)\s*stroke\s*:\s*([^;!]+)/i);
-      const inlineFill = fillMatch?.[1]?.trim() || shape.getAttribute("fill");
-      const inlineStroke = strokeMatch?.[1]?.trim() || shape.getAttribute("stroke");
-
-      const hasFill = inlineFill && inlineFill !== "none" && inlineFill !== "transparent";
-      const hasStroke = inlineStroke && inlineStroke !== "none" && inlineStroke !== "transparent";
-
-      if (hasStroke || hasFill) {
-        customStroke = (hasStroke ? inlineStroke! : inlineFill!).trim();
-        if (dark) {
-          shape.style.setProperty("stroke", customStroke, "important");
-          shape.style.setProperty("stroke-width", "2px", "important");
-          shape.style.setProperty("fill", `color-mix(in srgb, ${customStroke} 20%, #202020)`, "important");
-        }
-      }
-    }
-
-    // 如果未显式指定文字颜色，让文字默认使用边框颜色
-    const nodeStyle = node.getAttribute("style") || "";
-    const hasExplicitTextColor = /(?:^|;)\s*color\s*:\s*([^;!]+)/i.test(nodeStyle);
-
-    if (!hasExplicitTextColor) {
-      const targetColor = customStroke
-        ? (dark ? `color-mix(in srgb, ${customStroke} 75%, #ffffff)` : customStroke)
-        : (dark ? "#fde68a" : "#ea580c");
-      for (const textEl of node.querySelectorAll<HTMLElement | SVGElement>("div, span, p, text, tspan")) {
-        const elStyle = textEl.getAttribute("style") || "";
-        if (!/(?:^|;)\s*(?:color|fill)\s*:\s*([^;!]+)/i.test(elStyle)) {
-          textEl.style.setProperty("color", targetColor, "important");
-          if (textEl.matches("text, tspan")) {
-            textEl.style.setProperty("fill", targetColor, "important");
-          }
-        }
-      }
-    }
-  }
-}
-
-function parseRgbColor(colorStr: string): [number, number, number] | null {
-  const trimmed = colorStr.trim().toLowerCase();
-  const rgbMatch = trimmed.match(/rgba?\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/);
-  if (rgbMatch) {
-    return [parseFloat(rgbMatch[1]), parseFloat(rgbMatch[2]), parseFloat(rgbMatch[3])];
-  }
-  const hexMatch = trimmed.match(/^#([0-9a-f]{3,8})$/i);
-  if (hexMatch) {
-    const hex = hexMatch[1];
-    if (hex.length === 3) {
-      return [parseInt(hex[0] + hex[0], 16), parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16)];
-    }
-    if (hex.length >= 6) {
-      return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
-    }
-  }
-  return null;
-}
-
-function getRgbLuminance(r: number, g: number, b: number): number {
-  const linear = [r, g, b].map((c) => {
-    const v = c / 255;
-    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
-}
-
-/**
- * 时序图背景高亮框（rect rgb(...) 指令）深色模式自适应与对比度优化：
- * 1. 在深色模式下，将刺眼的亮浅色背景框（如 AliceBlue、FloralWhite 等）自适应转换为沉稳优雅的微透暗调底色，
- *    保留阶段区分色相（如阶段一暗蓝调、阶段二暗暖调），彻底避免深色模式下突兀的大白板；
- * 2. 对落在背景框区域内的消息文本（.messageText）与连线进行底色亮度检测，确保文字与底色始终保持极佳对比度，
- *    无论深色模式还是浅色模式都清晰可见。
- */
-export function adaptSequenceDiagramRects(root: Element, dark: boolean) {
-  const backgroundRects = Array.from(root.querySelectorAll<SVGRectElement>("rect.rect, rect[class*='rect'], rect[fill*='rgb'], rect[style*='fill']")).filter((rect) => {
-    return !rect.matches(".actor, .note, .labelBox, [class*='actor'], [class*='note'], [class*='labelBox']");
-  });
-
-  if (backgroundRects.length === 0) return;
-
-  const rectData = backgroundRects.map((rect) => {
-    const styleAttr = rect.getAttribute("style") || "";
-    const fillMatch = styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;!]+)/i);
-    const fillStr = fillMatch?.[1]?.trim() || rect.getAttribute("fill") || "";
-    const parsed = parseRgbColor(fillStr);
-    let luminance = parsed ? getRgbLuminance(parsed[0], parsed[1], parsed[2]) : 0.5;
-
-    return {
-      rect,
-      fillStr,
-      parsed,
-      luminance,
-      bounds: typeof rect.getBoundingClientRect === "function" ? rect.getBoundingClientRect() : null,
-    };
-  });
-
-  for (const item of rectData) {
-    if (!item.parsed) continue;
-
-    if (dark) {
-      // 深色模式下：如果背景是亮浅色（相对亮度 > 0.35）
-      if (item.luminance > 0.35) {
-        const rawColor = `rgb(${item.parsed[0]}, ${item.parsed[1]}, ${item.parsed[2]})`;
-        const darkFill = `color-mix(in srgb, ${rawColor} 18%, #202020)`;
-        const darkStroke = `color-mix(in srgb, ${rawColor} 45%, #f59e0b)`;
-        item.rect.style.setProperty("fill", darkFill, "important");
-        item.rect.style.setProperty("stroke", darkStroke, "important");
-        item.rect.style.setProperty("stroke-width", "1px", "important");
-        item.rect.style.setProperty("stroke-dasharray", "4 2", "important");
-        item.rect.style.setProperty("rx", "4px", "important");
-        item.rect.style.setProperty("ry", "4px", "important");
-        item.luminance = 0.08; // 转换为暗底
-      }
-    }
-  }
-
-  // 检查落在此背景框内的时序图消息文本 (.messageText)
-  const messageTexts = root.querySelectorAll<SVGTextElement>(".messageText, text.messageText");
-  for (const text of messageTexts) {
-    if (typeof text.getBoundingClientRect !== "function") continue;
-    const textBounds = text.getBoundingClientRect();
-    if (!textBounds.width && !textBounds.height) continue;
-    const tx = textBounds.x + textBounds.width / 2;
-    const ty = textBounds.y + textBounds.height / 2;
-
-    for (const item of rectData) {
-      if (!item.bounds) continue;
-      const b = item.bounds;
-      if (tx >= b.left && tx <= b.right && ty >= b.top && ty <= b.bottom) {
-        if (item.luminance > 0.4) {
-          text.style.setProperty("fill", "#1c1917", "important");
-          text.style.setProperty("color", "#1c1917", "important");
-        } else {
-          text.style.setProperty("fill", "#fef3c7", "important");
-          text.style.setProperty("color", "#fef3c7", "important");
-        }
-        break;
-      }
-    }
-  }
 }

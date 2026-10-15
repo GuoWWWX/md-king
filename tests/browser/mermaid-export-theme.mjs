@@ -17,6 +17,7 @@ class AUDIT audit;`;
 
 const browser = await chromium.launch({ channel: "msedge", headless: true });
 try {
+  let previewColors;
   for (const mode of ["preview-light", "preview-dark", "export-png", "export-svg"]) {
     const page = await browser.newPage({ viewport: { width: 1800, height: 1800 } });
     const base = process.env.TEST_BASE_URL || "http://127.0.0.1:1420";
@@ -35,22 +36,22 @@ try {
           script.onload = resolve; script.onerror = reject;
           document.head.append(script);
         });
-        const { mermaidConfig, styleMermaidEdgeLabels } = await import("/src/lib/mermaid-config.js");
+        const { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast } = await import("/src/lib/mermaid-config.js");
         const config = mermaidConfig("default");
         config.htmlLabels = mode === "export-png";
         Object.assign(config.flowchart, { htmlLabels: config.htmlLabels, useMaxWidth: false });
         window.mermaid.initialize(config);
         document.body.innerHTML = (await window.mermaid.render("export", source)).svg;
         styleMermaidEdgeLabels(document.querySelector("svg"), false);
+        ensureMermaidContrast(document.querySelector("svg"), false);
       }
       const root = document.querySelector("svg");
       root.style.maxWidth = "none";
       const rect = node => node.getBoundingClientRect().toJSON();
-      const nodes = [...root.querySelectorAll(".node")].map(node => ({
-        id: node.id, rect: rect(node),
-        fill: getComputedStyle(node.querySelector("rect")).fill,
-        stroke: getComputedStyle(node.querySelector("rect")).stroke,
-      }));
+      const nodes = [...root.querySelectorAll(".node")].map(node => {
+        const shape = [...node.querySelectorAll("rect,polygon,path,circle,ellipse")].find(shape => getComputedStyle(shape).fill !== "none");
+        return { id: node.id, rect: rect(node), fill: getComputedStyle(shape).fill, stroke: getComputedStyle(shape).stroke };
+      });
       return {
         nodes,
         titles: [...root.querySelectorAll(".cluster-label")].map(label => ({ text: label.textContent, rect: rect(label) })),
@@ -75,15 +76,17 @@ try {
       assert.ok(fo.scrollHeight <= fo.height + 1, `${mode}: text clipped by foreignObject`);
     }
     assert.equal(result.labels.length, 2, mode);
+    const colors = ["AUDIT", "ADMIN", "RUN"].map(id => result.nodes.find(node => node.id.includes(id)).fill);
+    if (mode === "preview-light") previewColors = colors;
+    if (mode === "export-png") assert.deepEqual(colors, previewColors, "offline engine and preview must produce the same native palette");
     if (mode !== "preview-dark") {
       assert.equal(result.nodes.find(node => node.id.includes("AUDIT")).fill, "rgb(228, 223, 236)", `${mode}: preserve explicit classDef color`);
-      assert.equal(result.nodes.find(node => node.id.includes("ADMIN")).fill, "rgb(254, 243, 199)", `${mode}: default amber fill`);
-      assert.equal(result.nodes.find(node => node.id.includes("ADMIN")).stroke, "rgb(245, 158, 11)", `${mode}: default amber border`);
+      assert.notEqual(result.nodes.find(node => node.id.includes("ADMIN")).fill, "rgb(254, 243, 199)", `${mode}: use the native palette instead of the old amber override`);
     }
     assert.ok(result.labels.every(label => label.shadow !== "none" || label.stroke !== "none"), `${mode}: lines must not obscure label text`);
     await page.close();
   }
-  console.log("PASS: preview and Word PNG/SVG share the amber theme, preserve explicit colors and keep Chinese titles/labels readable.");
+  console.log("PASS: preview and Word PNG/SVG share the native theme, preserve explicit colors and keep Chinese titles/labels readable.");
 } finally {
   await browser.close();
 }

@@ -63,441 +63,26 @@ g.classGroup .classTitle .nodeLabel,
 .edgeLabel foreignObject {
   overflow: visible !important;
 }
-/* 状态图 (State Diagram) 连线与箭头统一使用琥珀主橙色 #f59e0b */
-.transition,
-path.transition,
-.edgePaths .transition,
-.statediagram-state line,
-g.stateGroup line {
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-  fill: none !important;
-}
-defs [id*="barbEnd"],
-[id*="barbEnd"] path,
-marker[id*="barbEnd"] path,
-[id$="-barbEnd"],
-[id$="-barbEnd"] path {
-  fill: #f59e0b !important;
-  stroke: #f59e0b !important;
-}
-.node circle.state-start,
-circle.state-start,
-.node .fork-join,
-rect.fork-join {
-  fill: #f59e0b !important;
-  stroke: #f59e0b !important;
-}
 `;
 
 function mermaidConfig(theme) {
   const isDark = theme === "dark";
   return {
     startOnLoad: false,
-    theme: "default",
+    theme: isDark ? "redux-dark-color" : "redux-color",
+    look: "neo",
     securityLevel: "strict",
     htmlLabels: true,
     fontFamily: MERMAID_FONT_FAMILY,
     fontSize: MERMAID_FONT_SIZE,
     markdownAutoWrap: true,
     themeVariables: {
+      darkMode: isDark,
+      background: isDark ? "#202124" : "#ffffff",
       fontSize: `${MERMAID_FONT_SIZE}px`,
       fontFamily: MERMAID_FONT_FAMILY,
-      // 深浅色模式使用完全相同的核心主橙色 #f59e0b
-      lineColor: "#f59e0b",
-      primaryBorderColor: "#f59e0b",
-      nodeBorder: "#f59e0b",
-      actorBorder: "#f59e0b",
-      actorLineColor: "#f59e0b",
-      signalColor: "#f59e0b",
-      labelBoxBorderColor: "#f59e0b",
-      loopLineColor: "#f59e0b",
-      noteBorderColor: "#f59e0b",
-      sequenceNumberColor: isDark ? "#fef3c7" : "#1c1917",
-      // 方块填充：浅色模式 #fef3c7（正宗浅橙金色），深色模式 #382613（深黑棕夜光底）
-      primaryColor: isDark ? "#382613" : "#fef3c7",
-      actorBkg: isDark ? "#382613" : "#fef3c7",
-      labelBoxBkgColor: isDark ? "#382613" : "#fef3c7",
-      mainBkg: isDark ? "#382613" : "#fef3c7",
-      // 容器背景与便签背景
-      secondaryColor: isDark ? "#292015" : "#fffbeb",
-      tertiaryColor: isDark ? "#261e14" : "#fffbeb",
-      noteBkgColor: isDark ? "#292015" : "#fffbeb",
-      // 文本颜色
-      primaryTextColor: isDark ? "#fef3c7" : "#1c1917",
-      actorTextColor: isDark ? "#fef3c7" : "#1c1917",
-      signalTextColor: isDark ? "#fef3c7" : "#1c1917",
-      labelTextColor: isDark ? "#fef3c7" : "#78350f",
-      loopTextColor: isDark ? "#fef3c7" : "#78350f",
-      noteTextColor: isDark ? "#fef3c7" : "#1c1917",
     },
-    themeCSS: MERMAID_THEME_CSS + (isDark ? `
-/* ====== 深色模式：暖金/琥珀夜光体系 ====== */
-/* 流程图子图（Cluster）容器与标题 */
-.cluster rect {
-  fill: #261e14 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-  rx: 6px !important;
-  ry: 6px !important;
-}
-.cluster-label text, .cluster-label span, .cluster-label .nodeLabel {
-  fill: #fde68a !important;
-  color: #fde68a !important;
-  font-weight: 600 !important;
-}
-
-/* 流程图节点小方块（矩形、多边形/菱形、圆形等） */
-.node[id*="-flowchart-"] rect,
-.node[id*="-flowchart-"] polygon,
-.node[id*="-flowchart-"] circle,
-.node[id*="-flowchart-"] ellipse,
-.node[id*="-flowchart-"] path {
-  fill: #382613 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.node .nodeLabel,
-.node text,
-.node span {
-  fill: #fde68a !important;
-  color: #fde68a !important;
-}
-
-/* 连线与连线标签 */
-.relation, .edgePath .path {
-  stroke: #f59e0b !important;
-}
-[id$="-arrowhead"] path:not([fill]):not([style*="fill"]),
-[id$="-crosshead"] path:not([fill]):not([style*="fill"]),
-marker path:not([fill]):not([style*="fill"]) {
-  fill: #f59e0b !important;
-  stroke: #f59e0b !important;
-}
-.edgeLabel text, .edgeLabel span {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
-}
-
-/* 时序图 (Sequence Diagram) */
-rect.actor, rect[class*="actor"], .actor rect {
-  fill: #382613 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-text.actor, text[class*="actor"], .actor text, .actor tspan {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
-  stroke: none !important;
-}
-.actor-man line, line.actor-man {
-  stroke: #f59e0b !important;
-  stroke-width: 2px !important;
-}
-.actor-man circle, circle.actor-man {
-  stroke: #f59e0b !important;
-  stroke-width: 2px !important;
-  fill: #382613 !important;
-}
-.actor-line {
-  stroke: #f59e0b !important;
-}
-.messageText {
-  fill: #fef3c7 !important;
-}
-.messageLine0, .messageLine1 {
-  stroke: #f59e0b !important;
-}
-.note {
-  fill: #292015 !important;
-  stroke: #f59e0b !important;
-}
-.noteText, .noteText tspan {
-  fill: #fef3c7 !important;
-}
-/* 时序图 alt/loop 条件框体与其文字 */
-.labelBox {
-  fill: #382613 !important;
-  stroke: #f59e0b !important;
-}
-.labelText, .loopText, .loopText tspan {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
-  font-weight: 600 !important;
-}
-.sectionTitle, .sectionTitle text {
-  fill: #fde68a !important;
-  color: #fde68a !important;
-  font-weight: 600 !important;
-}
-.loopLine {
-  stroke: #f59e0b !important;
-}
-/* 时序图 autonumber 序号圆点与文字：紧凑精致，文字清晰不模糊，完美垂直居中 */
-[id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 7.5px !important;
-  fill: #382613 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.2px !important;
-}
-.sequenceNumber {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
-  font-weight: 700 !important;
-  font-size: 11px !important;
-  dominant-baseline: central !important;
-  text-anchor: middle !important;
-}
-
-/* 状态图 (State Diagram) */
-.statediagram-state rect {
-  fill: #382613 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.statediagram-cluster rect,
-.statediagram-cluster rect.outer {
-  fill: #261e14 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.statediagram-cluster .inner {
-  fill: #1c150e !important;
-}
-.node circle.state-end {
-  fill: #261e14 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.end-state-inner {
-  fill: #f59e0b !important;
-  stroke: none !important;
-}
-.state-title,
-.transitionLabel,
-.state-note,
-.statediagram-state text,
-.statediagram-note text,
-.state-title text,
-.stateLabel text,
-.statediagram .edgeLabel {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
-}
-.statediagram-note rect {
-  fill: #292015 !important;
-  stroke: #f59e0b !important;
-}
-
-/* 类图与 ER 图 */
-.classTitle text { fill: #fef3c7 !important; }
-.relationLabel { fill: #fef3c7 !important; }
-.node[id*="classId-"] .outer-path path:first-child,
-g.classGroup rect,
-.node[id*="classId-"] rect {
-  fill: #382613 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-g.classGroup line, .node[id*="classId-"] line, .divider {
-  stroke: #f59e0b !important;
-  stroke-width: 1px !important;
-}
-g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="classId-"] span {
-  fill: #fef3c7 !important;
-  color: #fef3c7 !important;
-}
-.er.entityBox { fill: #382613 !important; stroke: #f59e0b !important; }
-.er.attributeBoxOdd { fill: #261e14 !important; }
-.er.attributeBoxEven { fill: #382613 !important; }
-.er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
-  fill: #fef3c7 !important;
-}
-.er.relationshipLine { stroke: #f59e0b !important; }
-` : `
-/* ====== 浅色模式：暖金/琥珀日间体系 ====== */
-/* 流程图子图（Cluster）容器与标题 */
-.cluster rect {
-  fill: #fffbeb !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-  rx: 6px !important;
-  ry: 6px !important;
-}
-.cluster-label text, .cluster-label span, .cluster-label .nodeLabel {
-  fill: #78350f !important;
-  color: #78350f !important;
-  font-weight: 600 !important;
-}
-
-/* 流程图节点小方块（矩形、多边形/菱形、圆形等）：边框纯正橙色，中间浅一点的橙色 */
-.node[id*="-flowchart-"] rect,
-.node[id*="-flowchart-"] polygon,
-.node[id*="-flowchart-"] circle,
-.node[id*="-flowchart-"] ellipse,
-.node[id*="-flowchart-"] path {
-  fill: #fef3c7 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.node .nodeLabel,
-.node text,
-.node span {
-  fill: #ea580c !important;
-  color: #ea580c !important;
-}
-
-/* 连线与连线标签 */
-.relation, .edgePath .path {
-  stroke: #f59e0b !important;
-}
-[id$="-arrowhead"] path:not([fill]):not([style*="fill"]),
-[id$="-crosshead"] path:not([fill]):not([style*="fill"]),
-marker path:not([fill]):not([style*="fill"]) {
-  fill: #f59e0b !important;
-  stroke: #f59e0b !important;
-}
-.edgeLabel text, .edgeLabel span {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
-}
-
-/* 时序图 (Sequence Diagram)：方块边框纯正橙色，中间浅一点的橙色 */
-rect.actor, rect[class*="actor"], .actor rect {
-  fill: #fef3c7 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-text.actor, text[class*="actor"], .actor text, .actor tspan {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
-  stroke: none !important;
-}
-.actor-man line, line.actor-man {
-  stroke: #f59e0b !important;
-  stroke-width: 2px !important;
-}
-.actor-man circle, circle.actor-man {
-  stroke: #f59e0b !important;
-  stroke-width: 2px !important;
-  fill: #fef3c7 !important;
-}
-.actor-line {
-  stroke: #f59e0b !important;
-}
-.messageText {
-  fill: #1c1917 !important;
-}
-.messageLine0, .messageLine1 {
-  stroke: #f59e0b !important;
-}
-.note {
-  fill: #fffbeb !important;
-  stroke: #f59e0b !important;
-}
-.noteText, .noteText tspan {
-  fill: #1c1917 !important;
-}
-/* 时序图 alt/loop 条件框体与其文字 */
-.labelBox {
-  fill: #fef3c7 !important;
-  stroke: #f59e0b !important;
-}
-.labelText, .loopText, .loopText tspan {
-  fill: #78350f !important;
-  color: #78350f !important;
-  font-weight: 600 !important;
-}
-.sectionTitle, .sectionTitle text {
-  fill: #78350f !important;
-  color: #78350f !important;
-  font-weight: 600 !important;
-}
-.loopLine {
-  stroke: #f59e0b !important;
-}
-/* 时序图 autonumber 序号圆点与文字：紧凑精致，文字清晰不模糊，完美垂直居中 */
-[id$="-sequencenumber"] circle, marker[id*="sequencenumber"] circle {
-  r: 7.5px !important;
-  fill: #fef3c7 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.2px !important;
-}
-.sequenceNumber {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
-  font-weight: 700 !important;
-  font-size: 11px !important;
-  dominant-baseline: central !important;
-  text-anchor: middle !important;
-}
-
-/* 状态图 (State Diagram) */
-.statediagram-state rect {
-  fill: #fef3c7 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.statediagram-cluster rect,
-.statediagram-cluster rect.outer {
-  fill: #fffbeb !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.statediagram-cluster .inner {
-  fill: #fef3c7 !important;
-}
-.node circle.state-end {
-  fill: #fffbeb !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-.end-state-inner {
-  fill: #f59e0b !important;
-  stroke: none !important;
-}
-.state-title,
-.transitionLabel,
-.state-note,
-.statediagram-state text,
-.statediagram-note text,
-.state-title text,
-.stateLabel text,
-.statediagram .edgeLabel {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
-}
-.statediagram-note rect {
-  fill: #fffbeb !important;
-  stroke: #f59e0b !important;
-}
-
-/* 类图与 ER 图 */
-.classTitle text { fill: #1c1917 !important; }
-.relationLabel { fill: #1c1917 !important; }
-.node[id*="classId-"] .outer-path path:first-child,
-g.classGroup rect,
-.node[id*="classId-"] rect {
-  fill: #fef3c7 !important;
-  stroke: #f59e0b !important;
-  stroke-width: 1.5px !important;
-}
-g.classGroup line, .node[id*="classId-"] line, .divider {
-  stroke: #f59e0b !important;
-  stroke-width: 1px !important;
-}
-g.classGroup text, g.classGroup span, .node[id*="classId-"] text, .node[id*="classId-"] span {
-  fill: #1c1917 !important;
-  color: #1c1917 !important;
-}
-.er.entityBox { fill: #fef3c7 !important; stroke: #f59e0b !important; }
-.er.attributeBoxOdd { fill: #fffbeb !important; }
-.er.attributeBoxEven { fill: #fef3c7 !important; }
-.er.entityBox text, .er.attributeBoxOdd text, .er.attributeBoxEven text, .er.relationshipLabel text {
-  fill: #1c1917 !important;
-}
-.er.relationshipLine { stroke: #f59e0b !important; }
-`),
+    themeCSS: MERMAID_THEME_CSS,
     flowchart: {
       htmlLabels: true,
       useMaxWidth: true,
@@ -536,7 +121,7 @@ function styleMermaidEdgeLabels(root, dark) {
       return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
     });
     const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
-    const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#1c1917" : "#fef3c7";
+    const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#222222" : "#f5f5f5";
     const background = `rgb(${rgb.map((channel) => Math.round(channel)).join(", ")})`;
     // 内联到文字本身，SVG 单独展示和 PNG 栅格化时也能保留，不依赖页面 CSS。
     for (const element of [label, ...label.querySelectorAll("div,span,p,text,tspan")]) {
@@ -576,4 +161,79 @@ function styleMermaidEdgeLabels(root, dark) {
 
 }
 
-export { mermaidConfig, styleMermaidEdgeLabels };
+function contrastRatio(first, second) {
+  const luminance = channels => channels.slice(0, 3).map(channel => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }).reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const a = luminance(first), b = luminance(second);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+/** Keep semantic fills and readable custom colors; change only low-contrast ink. */
+function ensureMermaidContrast(root, dark) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const colors = new Map();
+  const rgb = color => {
+    if (!colors.has(color)) {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      colors.set(color, [...context.getImageData(0, 0, 1, 1).data]);
+    }
+    return colors.get(color);
+  };
+  const canvasColor = dark ? [32, 33, 36] : [255, 255, 255];
+  const shapes = [...root.querySelectorAll("rect,polygon,circle,ellipse,path")].map(shape => {
+    const style = getComputedStyle(shape);
+    return { bounds: shape.getBoundingClientRect(), color: style.fill === "none" ? null : rgb(style.fill), opacity: Number(style.opacity) * Number(style.fillOpacity) };
+  }).filter(shape => shape.color?.[3] && shape.bounds.width && shape.bounds.height && shape.opacity);
+  const backgroundAt = element => {
+    const bounds = element.getBoundingClientRect();
+    const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2;
+    let background = canvasColor;
+    for (const shape of shapes) {
+      const b = shape.bounds;
+      if (x < b.left || x > b.right || y < b.top || y > b.bottom) continue;
+      const alpha = shape.color[3] / 255 * shape.opacity;
+      background = background.map((channel, index) => shape.color[index] * alpha + channel * (1 - alpha));
+    }
+    return background;
+  };
+  const readableColor = background => contrastRatio([0, 0, 0], background) > contrastRatio([255, 255, 255], background) ? "#000000" : "#ffffff";
+  const readableLineColor = backgrounds => ["#000000", "#ffffff", "#777777"].sort((a, b) =>
+    Math.min(...backgrounds.map(background => contrastRatio(rgb(b), background))) - Math.min(...backgrounds.map(background => contrastRatio(rgb(a), background))))[0];
+  for (const text of root.querySelectorAll("text,tspan,.nodeLabel,.nodeLabel p,.nodeLabel span")) {
+    if (!text.textContent.trim()) continue;
+    const property = text.matches("text,tspan") ? "fill" : "color";
+    const color = getComputedStyle(text).getPropertyValue(property);
+    if (color === "none") continue;
+    const background = backgroundAt(text);
+    if (contrastRatio(rgb(color), background) >= 4.5) continue;
+    text.style.setProperty(property, readableColor(background), "important");
+  }
+  for (const line of root.querySelectorAll(".flowchart-link,.edgePath path,.relation,.messageLine0,.messageLine1,.actor-line,.transition,.relationshipLine")) {
+    const color = getComputedStyle(line).stroke;
+    const bounds = line.getBoundingClientRect();
+    const backgrounds = [canvasColor, ...shapes.filter(shape => {
+      const b = shape.bounds;
+      return b.right >= bounds.left && b.left <= bounds.right && b.bottom >= bounds.top && b.top <= bounds.bottom;
+    }).map(shape => shape.color)];
+    if (color !== "none" && backgrounds.some(background => contrastRatio(rgb(color), background) < 3)) {
+      line.style.setProperty("stroke", readableLineColor(backgrounds), "important");
+    }
+  }
+  for (const arrow of root.querySelectorAll("marker path,marker polygon")) {
+    for (const property of ["fill", "stroke"]) {
+      const color = getComputedStyle(arrow).getPropertyValue(property);
+      const backgrounds = [canvasColor, ...shapes.map(shape => shape.color)];
+      if (color !== "none" && backgrounds.some(background => contrastRatio(rgb(color), background) < 3)) {
+        arrow.style.setProperty(property, readableLineColor(backgrounds), "important");
+      }
+    }
+  }
+}
+
+export { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio };
