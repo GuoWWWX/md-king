@@ -66,12 +66,12 @@ g.classGroup .classTitle .nodeLabel,
 `;
 
 const MERMAID_THEMES = [
-  ["redux-color", "Redux Color", "light"], ["redux-dark-color", "Redux Dark Color", "dark"],
-  ["redux", "Redux", "light"], ["redux-dark", "Redux Dark", "dark"],
-  ["neo", "Neo", "light"], ["neo-dark", "Neo Dark", "dark"],
-  ["default", "Default", "both"], ["dark", "Dark", "dark"],
-  ["forest", "Forest", "both"], ["neutral", "Neutral", "both"], ["base", "Base", "both"],
-].map(([id, label, mode]) => ({ id, label, mode }));
+  ["redux-color", "Redux Color"], ["redux-dark-color", "Redux Dark Color"],
+  ["redux", "Redux"], ["redux-dark", "Redux Dark"],
+  ["neo", "Neo"], ["neo-dark", "Neo Dark"],
+  ["default", "Default"], ["dark", "Dark"],
+  ["forest", "Forest"], ["neutral", "Neutral"], ["base", "Base"],
+].map(([id, label]) => ({ id, label }));
 
 const MERMAID_DIAGRAM_TYPES = [
   ["flowchart", "流程图"], ["state", "状态图"], ["sequence", "时序图"],

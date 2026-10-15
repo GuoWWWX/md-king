@@ -4,7 +4,7 @@ export type MermaidThemeId = "redux-color" | "redux-dark-color" | "redux" | "red
 export type MermaidThemeSelection = { light: MermaidThemeId; dark: MermaidThemeId; diagrams: Record<string, { light?: MermaidThemeId; dark?: MermaidThemeId }> };
 export type MermaidThemePreset = MermaidThemeSelection & { name: string };
 export type MermaidThemeSettings = MermaidThemeSelection & { presets?: MermaidThemePreset[] };
-export const MERMAID_THEMES: ReadonlyArray<{ id: MermaidThemeId; label: string; mode: "light" | "dark" | "both" }>;
+export const MERMAID_THEMES: ReadonlyArray<{ id: MermaidThemeId; label: string }>;
 export const MERMAID_DIAGRAM_TYPES: ReadonlyArray<{ id: string; label: string }>;
 export function normalizeMermaidThemes(value?: Partial<MermaidThemeSettings>): MermaidThemeSettings;
 export function mermaidDiagramType(source: string): string;

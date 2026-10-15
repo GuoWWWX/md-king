@@ -34,14 +34,6 @@ test("全部 11 个原生主题均可用于全局和图类型设置，不改写�
   }
 });
 
-test("通用主题同时出现在深浅列表，专用主题仅出现在对应模式", () => {
-  const light = MERMAID_THEMES.filter((theme) => theme.mode === "both" || theme.mode === "light").map((theme) => theme.id);
-  const dark = MERMAID_THEMES.filter((theme) => theme.mode === "both" || theme.mode === "dark").map((theme) => theme.id);
-  assert.deepEqual(light, ["redux-color", "redux", "neo", "default", "forest", "neutral", "base"]);
-  assert.deepEqual(dark, ["redux-dark-color", "redux-dark", "neo-dark", "default", "dark", "forest", "neutral", "base"]);
-  assert.deepEqual(light.filter((theme) => dark.includes(theme)), ["default", "forest", "neutral", "base"]);
-});
-
 test("自定义组合保留跨模式主题与图类型覆盖，序列化后仍可复用", () => {
   const selection = { light: "dark", dark: "default", diagrams: { sequence: { light: "neo-dark", dark: "forest" } } } as const;
   const settings = normalizeMermaidThemes({ ...selection, presets: [{ name: "  我的组合  ", ...selection }] });

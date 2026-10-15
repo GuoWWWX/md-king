@@ -27,35 +27,15 @@ const selectClass = "w-full min-w-0 rounded-md border-slate-200 bg-white text-xs
 const contentClass = "mk-mermaid-theme-select w-[var(--radix-select-trigger-width)] min-w-0 rounded-lg border border-slate-200 bg-white p-1 text-slate-800 shadow-xl shadow-slate-900/12 ring-0 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-black/30";
 const itemClass = "min-h-9 cursor-pointer rounded-md px-2 pr-8 text-xs";
 
-function dialogThemes(value?: MermaidThemeSettings) {
-  const next = normalizeMermaidThemes(value);
-  // Repair dedicated variants saved by the earlier unrestricted dropdowns.
-  for (const selection of [next, ...(next.presets ?? [])]) {
-    for (const mode of ["light", "dark"] as const) {
-      function inMode(id: MermaidThemeId) {
-        const themeMode = MERMAID_THEMES.find((theme) => theme.id === id)?.mode;
-        if (themeMode === "both" || themeMode === mode) return id;
-        return themePairs.find((pair) => pair[mode === "light" ? "dark" : "light"] === id)?.[mode] ?? (mode === "light" ? "default" : "dark");
-      }
-      selection[mode] = inMode(selection[mode]);
-      for (const pair of Object.values(selection.diagrams)) {
-        if (pair[mode]) pair[mode] = inMode(pair[mode]);
-      }
-    }
-  }
-  return next;
-}
-
 function ThemeSelect({ label, mode, value, inherit, disabled, onChange }: { label: string; mode: "light" | "dark"; value: string; inherit?: string; disabled?: boolean; onChange: (value: string) => void }) {
   const Icon = mode === "dark" ? Moon : Sun;
-  const themes = MERMAID_THEMES.filter((theme) => theme.mode === "both" || theme.mode === mode);
   return <Select value={value} disabled={disabled} onValueChange={onChange}>
     <SelectTrigger aria-label={label} data-value={value} className={selectClass}><SelectValue /></SelectTrigger>
-    <SelectContent className={contentClass}>
+    <SelectContent className={`${contentClass} w-64 max-h-[min(16rem,var(--radix-select-content-available-height))] [&_[data-radix-select-viewport]]:min-w-0!`}>
       {inherit && <><SelectItem className={itemClass} value="inherit" data-value="inherit">{inherit}</SelectItem><SelectSeparator className="mx-0 my-1 bg-slate-100 dark:bg-zinc-800" /></>}
       <SelectGroup>
-        <SelectLabel className="flex items-center gap-1.5 px-2 py-2 text-[11px] text-slate-500 dark:text-zinc-400"><Icon className="size-3.5" />{mode === "dark" ? "深色模式" : "浅色模式"} · {themes.length} 款</SelectLabel>
-        {themes.map((theme) => <SelectItem key={theme.id} className={itemClass} value={theme.id} data-value={theme.id}>{theme.label}</SelectItem>)}
+        <SelectLabel className="flex items-center gap-1.5 px-2 py-2 text-[11px] text-slate-500 dark:text-zinc-400"><Icon className="size-3.5" />{mode === "dark" ? "深色模式" : "浅色模式"} · 全部 {MERMAID_THEMES.length} 款</SelectLabel>
+        {MERMAID_THEMES.map((theme) => <SelectItem key={theme.id} className={itemClass} value={theme.id} data-value={theme.id}>{theme.label}</SelectItem>)}
       </SelectGroup>
     </SelectContent>
   </Select>;
@@ -86,12 +66,12 @@ function ThemePreview({ type, dark, settings }: { type: string; dark: boolean; s
 }
 
 export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; value?: MermaidThemeSettings; onSave: (settings: MermaidThemeSettings) => Promise<void> }) {
-  const [draft, setDraft] = useState(() => dialogThemes(value));
+  const [draft, setDraft] = useState(() => normalizeMermaidThemes(value));
   const [presetName, setPresetName] = useState("");
   const [previewType, setPreviewType] = useState("flowchart");
   const [saving, setSaving] = useState(false);
   const selectedPair = themePairs.find((pair) => pair.light === draft.light && pair.dark === draft.dark);
-  useEffect(() => { if (open) { setDraft(dialogThemes(value)); setPresetName(""); } }, [open, value]);
+  useEffect(() => { if (open) { setDraft(normalizeMermaidThemes(value)); setPresetName(""); } }, [open, value]);
 
   function savePreset() {
     const name = presetName.trim();
@@ -173,7 +153,6 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
             </section>
             <section className="space-y-3">
               <h3 className="text-sm font-semibold">默认主题</h3>
-              <p className="text-xs text-slate-500 dark:text-zinc-400">通用主题两种模式均可选择，专用配色按深浅模式区分。</p>
               <div className="grid grid-cols-2 gap-3">{(["light", "dark"] as const).map((mode) => <label key={mode} className="min-w-0 space-y-2">
                 <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400">{mode === "light" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-blue-400" />}{mode === "light" ? "浅色模式" : "深色模式"}</span>
                 <ThemeSelect label={`${mode === "light" ? "浅色" : "深色"}默认主题`} mode={mode} value={draft[mode]} disabled={saving} onChange={(theme) => setDraft({ ...draft, [mode]: theme as MermaidThemeId })} />
