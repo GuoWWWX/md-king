@@ -42,6 +42,8 @@ export interface UpdaterState {
   latestRelease: GitHubRelease | null;
   hasUpdate: boolean;
   status: UpdateStatus;
+  checking: boolean;
+  downloadVersion: string | null;
   errorMessage: string | null;
   downloadProgress: DownloadProgress;
   installerPath: string | null;
@@ -77,12 +79,16 @@ export function compareSemver(v1: string, v2: string): number {
 }
 
 const DEFAULT_REPO = "GuoWWWX/md-king";
+let versionCheck: Promise<boolean> | null = null;
+let activeDownload: Promise<void> | null = null;
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
   currentVersion: "1.1.11",
   latestRelease: null,
   hasUpdate: false,
   status: "idle",
+  checking: false,
+  downloadVersion: null,
   errorMessage: null,
   downloadProgress: {
     percent: 0,
@@ -119,63 +125,85 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     const { silent = false, currentVer } = options;
     const effectiveCurrentVer = currentVer ?? get().currentVersion;
 
-    if (["checking", "downloading", "cancelling", "installing", "ready_to_install"].includes(get().status)) {
+    const { status, checking } = get();
+    if (checking || status === "checking" || status === "cancelling" || status === "installing"
+      || (silent && ["downloading", "ready_to_install"].includes(status))) {
       return false;
     }
 
-    set({ status: "checking", errorMessage: null });
+    set({ checking: true, ...(status === "downloading" || status === "ready_to_install" ? {} : { status: "checking" }) });
 
-    try {
-      const jsonStr = await fetchLatestRelease(DEFAULT_REPO);
-      const release: GitHubRelease | null = JSON.parse(jsonStr);
-      if (!release) {
-        set({ latestRelease: null, hasUpdate: false, status: "idle" });
-        if (!silent) toast.info("暂未发布可下载版本");
-        return false;
-      }
+    const task = (async () => {
+      try {
+        const jsonStr = await fetchLatestRelease(DEFAULT_REPO);
+        const release: GitHubRelease | null = JSON.parse(jsonStr);
+        if (!release) {
+          if (get().status === "checking") set({ status: get().hasUpdate ? "available" : "idle" });
+          if (!silent) toast.info("暂未发布可下载版本");
+          return false;
+        }
 
-      const latestVer = release.tag_name;
-      const isNewer = compareSemver(latestVer, effectiveCurrentVer) > 0;
-      const isIgnored = get().ignoredVersions.includes(latestVer);
+        const latestVer = release.tag_name;
+        const isNewer = compareSemver(latestVer, effectiveCurrentVer) > 0;
+        const isIgnored = get().ignoredVersions.includes(latestVer);
 
-      if (isNewer && !isIgnored) {
+        if (isNewer && !isIgnored) {
+          set({
+            latestRelease: release,
+            hasUpdate: true,
+            ...(get().status === "checking" ? { status: "available" } : {}),
+            ...(get().status === "ready_to_install" && get().downloadVersion !== latestVer
+              ? { status: "available", installerPath: null } : {}),
+            errorMessage: null,
+          });
+
+          if (!silent) {
+            set({ dialogOpen: true });
+            toast.success(`最新可下载版本：${latestVer}`);
+          }
+          return true;
+        }
+
         set({
-          latestRelease: release,
-          hasUpdate: true,
-          status: "available",
+          hasUpdate: false,
+          ...(get().status === "checking" ? { latestRelease: release, status: "idle" } : {}),
           errorMessage: null,
         });
 
         if (!silent) {
-          set({ dialogOpen: true });
+          toast.success(`当前已是最新版本 (v${effectiveCurrentVer})`);
         }
-        return true;
+        return false;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (get().status === "checking") set({ status: "error", errorMessage: msg });
+        if (!silent) {
+          toast.error(`检查更新失败: ${msg}`);
+        }
+        return false;
+      } finally {
+        set({ checking: false });
       }
-
-      set({
-        latestRelease: release,
-        hasUpdate: false,
-        status: "idle",
-        errorMessage: null,
-      });
-
-      if (!silent) {
-        toast.success(`当前已是最新版本 (v${effectiveCurrentVer})`);
-      }
-      return false;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      set({ status: "error", errorMessage: msg });
-      if (!silent) {
-        toast.error(`检查更新失败: ${msg}`);
-      }
-      return false;
+    })();
+    versionCheck = task;
+    try {
+      return await task;
+    } finally {
+      if (versionCheck === task) versionCheck = null;
     }
   },
 
   startDownload: async () => {
-    const { latestRelease, status } = get();
-    if (!latestRelease || ["checking", "downloading", "cancelling", "installing"].includes(status)) return;
+    const { latestRelease, status, checking, downloadVersion } = get();
+    if (!latestRelease || checking || ["checking", "cancelling", "installing"].includes(status)) return;
+    if (status === "downloading") {
+      if (!downloadVersion || compareSemver(latestRelease.tag_name, downloadVersion) <= 0) return;
+      const previousDownload = activeDownload;
+      await get().cancelDownload();
+      if (get().status === "downloading") return;
+      await previousDownload;
+      return get().startDownload();
+    }
 
     // 寻找 Windows 安装包 asset（优先 *-setup.exe）
     const setupAsset = latestRelease.assets.find((a) => a.name === `md-king_${latestRelease.tag_name.replace(/^v/, "")}_x64-setup.exe`);
@@ -191,7 +219,8 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       status: "downloading",
       errorMessage: null,
       installerPath: null,
-      downloadProgress: {
+      downloadVersion: latestRelease.tag_name,
+      downloadProgress: downloadVersion === latestRelease.tag_name ? { ...get().downloadProgress, speedBytesPerSec: 0 } : {
         percent: 0,
         transferred: 0,
         total: setupAsset.size,
@@ -199,54 +228,69 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       },
     });
 
-    let unlisten: (() => void) | undefined;
+    const task = (async () => {
+      let unlisten: (() => void) | undefined;
 
-    try {
-      unlisten = await listen<DownloadProgressPayload>("update-download-progress", (event) => {
-        const payload = event.payload;
+      try {
+        unlisten = await listen<DownloadProgressPayload>("update-download-progress", (event) => {
+          const payload = event.payload;
+          if (payload.version !== latestRelease.tag_name) return;
+          set({
+            downloadProgress: {
+              percent: Math.min(100, Math.max(0, payload.percent)),
+              transferred: payload.transferred,
+              total: payload.total || setupAsset.size,
+              speedBytesPerSec: payload.speed_bytes_per_sec,
+            },
+          });
+        });
+
+        if (get().status === "cancelling") {
+          set({ status: "available" });
+          return;
+        }
+        const installerPath = await downloadUpdateInstaller(setupAsset.browser_download_url, latestRelease.tag_name);
+        // A concurrent version check must finish before deciding which package to install.
+        await versionCheck;
+
+        if (get().status === "cancelling") {
+          set({ status: "available" });
+          return;
+        }
+        if (compareSemver(get().latestRelease?.tag_name ?? latestRelease.tag_name, latestRelease.tag_name) > 0) {
+          set({ status: "available", installerPath: null });
+          return;
+        }
+
         set({
+          status: "ready_to_install",
+          installerPath,
           downloadProgress: {
-            percent: Math.min(100, Math.max(0, payload.percent)),
-            transferred: payload.transferred,
-            total: payload.total || setupAsset.size,
-            speedBytesPerSec: payload.speed_bytes_per_sec,
+            percent: 100,
+            transferred: setupAsset.size,
+            total: setupAsset.size,
+            speedBytesPerSec: 0,
           },
         });
-      });
 
-      if (get().status === "cancelling") {
-        set({ status: "available" });
-        return;
+        await get().installAndRelaunch(true);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (get().status === "cancelling" || msg.includes("下载已被用户取消")) {
+          set({ status: "available", errorMessage: null });
+          return;
+        }
+        set({ status: "error", errorMessage: msg });
+        toast.error(`下载更新失败: ${msg}`);
+      } finally {
+        unlisten?.();
       }
-      const installerPath = await downloadUpdateInstaller(setupAsset.browser_download_url, latestRelease.tag_name);
-
-      if (get().status === "cancelling") {
-        set({ status: "available" });
-        return;
-      }
-
-      set({
-        status: "ready_to_install",
-        installerPath,
-        downloadProgress: {
-          percent: 100,
-          transferred: setupAsset.size,
-          total: setupAsset.size,
-          speedBytesPerSec: 0,
-        },
-      });
-
-      await get().installAndRelaunch(true);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (get().status === "cancelling" || msg.includes("下载已被用户取消")) {
-        set({ status: "available", errorMessage: null });
-        return;
-      }
-      set({ status: "error", errorMessage: msg });
-      toast.error(`下载更新失败: ${msg}`);
+    })();
+    activeDownload = task;
+    try {
+      await task;
     } finally {
-      unlisten?.();
+      if (activeDownload === task) activeDownload = null;
     }
   },
 
@@ -264,7 +308,8 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
 
   installAndRelaunch: async (silent = true) => {
     if (get().status === "installing") return;
-    const { installerPath } = get();
+    const { installerPath, checking, downloadVersion, latestRelease } = get();
+    if (checking || downloadVersion !== latestRelease?.tag_name) return;
     if (!installerPath) {
       toast.error("未找到已下载的安装程序");
       return;

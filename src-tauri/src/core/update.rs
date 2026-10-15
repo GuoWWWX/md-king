@@ -9,7 +9,7 @@ use std::path::Path;
 pub const RELEASE_BASE: &str = "https://github.com/GuoWWWX/md-king/releases/download";
 const PUBLIC_KEY: &str = include_str!("../../update-public-key.txt");
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct UpdateManifest {
     pub version: String,
     pub asset: String,

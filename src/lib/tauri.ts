@@ -605,6 +605,7 @@ export function handleTauriWindowDoubleClick(
 }
 
 export type DownloadProgressPayload = {
+  version: string;
   percent: number;
   transferred: number;
   total: number;
