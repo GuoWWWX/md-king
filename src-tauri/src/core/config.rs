@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::storage::atomic::write_atomic;
@@ -40,6 +41,8 @@ pub struct AppConfig {
     pub theme_mode: String,
     #[serde(default = "default_accent_color")]
     pub accent_color: String,
+    #[serde(default)]
+    pub mermaid_themes: MermaidThemeSettings,
     #[serde(default = "default_conflict_strategy")]
     pub default_conflict_strategy: String,
     #[serde(default = "default_keep_conversion_log")]
@@ -60,6 +63,33 @@ pub struct AppConfig {
     pub file_tree_width: Option<u32>,
     #[serde(default)]
     pub last_opened_file: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MermaidThemeSettings {
+    pub light: String,
+    pub dark: String,
+    pub diagrams: BTreeMap<String, MermaidDiagramThemes>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default)]
+pub struct MermaidDiagramThemes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dark: Option<String>,
+}
+
+impl Default for MermaidThemeSettings {
+    fn default() -> Self {
+        Self { light: "redux-color".into(), dark: "redux-dark-color".into(), diagrams: BTreeMap::new() }
+    }
+}
+
+fn valid_mermaid_theme(theme: &str) -> bool {
+    matches!(theme, "redux-color" | "redux-dark-color" | "redux" | "redux-dark" | "neo" | "neo-dark" | "default" | "dark" | "forest" | "neutral" | "base")
 }
 
 /// 最近打开的目录保留几条。
@@ -96,6 +126,7 @@ pub fn default_config() -> AppConfig {
         language: default_language(),
         theme_mode: default_theme_mode(),
         accent_color: default_accent_color(),
+        mermaid_themes: MermaidThemeSettings::default(),
         default_conflict_strategy: default_conflict_strategy(),
         keep_conversion_log: default_keep_conversion_log(),
         vault_root: None,
@@ -187,6 +218,17 @@ pub fn save_config(config: AppConfig) -> Result<AppConfig, String> {
 }
 
 fn normalize_config(mut config: AppConfig) -> AppConfig {
+    if !valid_mermaid_theme(&config.mermaid_themes.light) {
+        config.mermaid_themes.light = MermaidThemeSettings::default().light;
+    }
+    if !valid_mermaid_theme(&config.mermaid_themes.dark) {
+        config.mermaid_themes.dark = MermaidThemeSettings::default().dark;
+    }
+    config.mermaid_themes.diagrams.retain(|_, pair| {
+        pair.light = pair.light.take().filter(|theme| valid_mermaid_theme(theme));
+        pair.dark = pair.dark.take().filter(|theme| valid_mermaid_theme(theme));
+        pair.light.is_some() || pair.dark.is_some()
+    });
     let normalized_path = config
         .pandoc_path
         .as_deref()
@@ -309,7 +351,7 @@ fn normalize_vault_fields(config: &mut AppConfig) {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_config, normalize_config, AppConfig, MAX_RECENT_VAULTS};
+    use super::{default_config, normalize_config, AppConfig, MermaidThemeSettings, MAX_RECENT_VAULTS};
 
     fn config_with(mutate: impl FnOnce(&mut AppConfig)) -> AppConfig {
         let mut config = default_config();
@@ -433,5 +475,20 @@ mod tests {
         assert_eq!(config.page_zoom_percent, 100);
         assert!(config.recent_vaults.is_empty());
         assert!(config.vault_root.is_none());
+        assert_eq!(config.mermaid_themes, MermaidThemeSettings::default());
+    }
+
+    #[test]
+    fn mermaid_themes_roundtrip_and_invalid_entries_inherit() {
+        let mut config = default_config();
+        config.mermaid_themes = serde_json::from_str(r#"{"light":"forest","dark":"bad","diagrams":{"state":{"light":"neo","dark":"bad"},"class":{"light":"bad"}}}"#).unwrap();
+        let normalized = normalize_config(config);
+        assert_eq!(normalized.mermaid_themes.light, "forest");
+        assert_eq!(normalized.mermaid_themes.dark, "redux-dark-color");
+        assert_eq!(normalized.mermaid_themes.diagrams["state"].light.as_deref(), Some("neo"));
+        assert!(normalized.mermaid_themes.diagrams["state"].dark.is_none());
+        assert!(!normalized.mermaid_themes.diagrams.contains_key("class"));
+        let reloaded: AppConfig = serde_json::from_str(&serde_json::to_string(&normalized).unwrap()).unwrap();
+        assert_eq!(reloaded.mermaid_themes, normalized.mermaid_themes);
     }
 }

@@ -65,11 +65,70 @@ g.classGroup .classTitle .nodeLabel,
 }
 `;
 
-function mermaidConfig(theme) {
+const MERMAID_THEMES = [
+  ["redux-color", "Redux Color"], ["redux-dark-color", "Redux Dark Color"],
+  ["redux", "Redux"], ["redux-dark", "Redux Dark"],
+  ["neo", "Neo"], ["neo-dark", "Neo Dark"],
+  ["default", "Default"], ["dark", "Dark"],
+  ["forest", "Forest"], ["neutral", "Neutral"], ["base", "Base"],
+].map(([id, label]) => ({ id, label }));
+
+const MERMAID_DIAGRAM_TYPES = [
+  ["flowchart", "流程图"], ["state", "状态图"], ["sequence", "时序图"],
+  ["class", "类图"], ["er", "实体关系图"], ["mindmap", "思维导图"],
+  ["gantt", "甘特图"], ["pie", "饼图"], ["journey", "用户旅程图"],
+  ["gitGraph", "Git 分支图"], ["timeline", "时间线"], ["quadrant", "象限图"],
+  ["xychart", "XY 图"], ["requirement", "需求图"], ["block", "块图"],
+  ["packet", "数据包图"], ["architecture", "架构图"], ["kanban", "看板"],
+  ["sankey", "桑基图"], ["radar", "雷达图"], ["treemap", "矩形树图"],
+  ["c4", "C4 架构图"], ["info", "引擎信息"],
+].map(([id, label]) => ({ id, label }));
+
+function normalizeMermaidThemes(value) {
+  const validTheme = id => MERMAID_THEMES.some(theme => theme.id === id);
+  const diagrams = {};
+  for (const { id } of MERMAID_DIAGRAM_TYPES) {
+    const entry = value?.diagrams?.[id];
+    const pair = {};
+    for (const mode of ["light", "dark"]) {
+      if (validTheme(entry?.[mode])) pair[mode] = entry[mode];
+    }
+    if (Object.keys(pair).length) diagrams[id] = pair;
+  }
+  return {
+    light: validTheme(value?.light) ? value.light : "redux-color",
+    dark: validTheme(value?.dark) ? value.dark : "redux-dark-color",
+    diagrams,
+  };
+}
+
+/** Read the diagram header only; labels, comments and frontmatter must not select a type. */
+function mermaidDiagramType(source) {
+  const header = source.trim().replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
+    .replace(/%%\{[\s\S]*?\}%%/g, "").replace(/^\s*%%[^\n]*(?:\n|$)/gm, "").trim();
+  const name = header.match(/^[\w-]+/)?.[0] ?? "";
+  if (/^(graph|flowchart)(-elk)?$/.test(name)) return "flowchart";
+  if (/^stateDiagram(-v2)?$/.test(name)) return "state";
+  if (/^classDiagram(-v2)?$/.test(name)) return "class";
+  if (name === "sequenceDiagram") return "sequence";
+  if (name === "erDiagram") return "er";
+  if (name === "quadrantChart") return "quadrant";
+  if (/^requirement(Diagram)?$/.test(name)) return "requirement";
+  if (/^C4(Context|Container|Component|Dynamic|Deployment)$/.test(name)) return "c4";
+  return name.replace(/-beta$/, "");
+}
+
+function resolveMermaidTheme(source, dark, settings) {
+  const themes = normalizeMermaidThemes(settings);
+  const mode = dark ? "dark" : "light";
+  return themes.diagrams[mermaidDiagramType(source)]?.[mode] ?? themes[mode];
+}
+
+function mermaidConfig(theme, selectedTheme) {
   const isDark = theme === "dark";
   return {
     startOnLoad: false,
-    theme: isDark ? "redux-dark-color" : "redux-color",
+    theme: selectedTheme ?? (isDark ? "redux-dark-color" : "redux-color"),
     look: "neo",
     securityLevel: "strict",
     htmlLabels: true,
@@ -236,4 +295,5 @@ function ensureMermaidContrast(root, dark) {
   }
 }
 
-export { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio };
+export { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
+  MERMAID_THEMES, MERMAID_DIAGRAM_TYPES, normalizeMermaidThemes, mermaidDiagramType, resolveMermaidTheme };

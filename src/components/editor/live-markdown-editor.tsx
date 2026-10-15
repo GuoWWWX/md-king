@@ -26,11 +26,13 @@ import { markdownCursorExtension } from "./cm/cursor";
 import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-keymap";
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
+import { mermaidLanguageDescription } from "./cm/mermaid-language";
 import { revealHighlightExtension } from "./cm/reveal-highlight";
 import { resetTableDisplaySettingsEffect, setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./cm/table-display-settings";
 import { tableBlockPasteExtension } from "./cm/table-block-paste";
 import { markdownEditorTheme } from "./cm/theme";
 import { refreshLiveMermaidTheme } from "./cm/widgets";
+import { useAppStore } from "@/stores/app-store";
 
 export type { TableDisplayContext } from "./cm/live-preview";
 export type { TableWidthMode } from "./cm/table-display-settings";
@@ -420,6 +422,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const mermaidThemes = useAppStore((state) => state.appConfig?.mermaidThemes);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
   const cursorCompartment = useRef(new Compartment()).current;
@@ -697,7 +700,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // codeLanguages 是代码块高亮的开关：不传的话 lang-markdown 只把围栏内
       // 认成一整块 monospace，语言级 token 无从区分，编辑器和 Word 预览的
       // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
-      markdown({ base: livePreviewMarkdownLanguage, extensions: GFM, codeLanguages: languages, addKeymap: false }),
+      markdown({ base: livePreviewMarkdownLanguage, extensions: GFM, codeLanguages: [mermaidLanguageDescription, ...languages], addKeymap: false }),
       livePreviewCompartment.of(livePreviewPlugin),
       documentTitleCompartment.of(documentTitleExtension(
         documentTitle,
@@ -892,7 +895,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     if (view.scrollDOM.scrollTop !== pinnedScrollTop) {
       view.scrollDOM.scrollTop = pinnedScrollTop;
     }
-  }, [cursorCompartment, isDark, themeCompartment]);
+  }, [cursorCompartment, isDark, themeCompartment, mermaidThemes]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
