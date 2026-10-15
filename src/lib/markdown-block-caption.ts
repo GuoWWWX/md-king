@@ -32,7 +32,14 @@ export function normalizeAdjacentBoldTableCaptions(markdown: string) {
   const consumed = new Set<number>();
   const insertBefore = new Map<number, string>();
   for (const table of tables) {
-    const candidates = [table.end + 1, table.start - 1];
+    const separatedCandidates = [table.start - 1, table.end + 1].map((start, index) => {
+      let line = start;
+      while (line >= 0 && line < lines.length && !lines[line].trim()) line += index === 0 ? -1 : 1;
+      const caption = markdownCaptionText(lines[line]);
+      // Across blank lines, only an explicit numbered table title is a caption.
+      return line === start || /^(?:表|Table)\s*\d/i.test(caption ?? "") ? line : -1;
+    });
+    const candidates = [table.end + 1, table.start - 1, ...separatedCandidates];
     const captionLine = candidates.find((line) => line >= 0
       && line < lines.length
       && !consumed.has(line)

@@ -2964,6 +2964,27 @@ fn migrate_default_report_style_baseline(config: &mut Value) {
                 caption.insert("afterSpacing".to_string(), Value::from(0.0));
             }
         }
+
+        for (style_id, old_weight, old_font) in [
+            ("caption", "700", "宋体"),
+            ("table-caption", "400", "微软雅黑"),
+        ] {
+            let Some(style) = styles.get_mut(style_id).and_then(Value::as_object_mut) else {
+                continue;
+            };
+            if style.get("fontSize").and_then(Value::as_f64) == Some(10.0)
+                && style.get("fontWeight").and_then(Value::as_str) == Some(old_weight)
+                && style.get("chineseFont").and_then(Value::as_str) == Some(old_font)
+                && style.get("captionAlign").and_then(Value::as_str) == Some("center")
+                && style.get("firstLineIndent").and_then(Value::as_f64) == Some(0.0)
+                && style.get("color").and_then(Value::as_str)
+                    .is_some_and(|color| color.eq_ignore_ascii_case("#334155"))
+            {
+                style.insert("fontSize".to_string(), Value::from(10.5));
+                style.insert("fontWeight".to_string(), Value::from("700"));
+                style.insert("chineseFont".to_string(), Value::from("宋体"));
+            }
+        }
     }
 
     let Some(page_settings) = config
@@ -3555,9 +3576,13 @@ fn merge_style_value(base: Option<&Value>, override_value: Option<&Value>) -> Op
 }
 
 fn caption_style_config_from_value(style_id: &str, style: &Value) -> CaptionStyleConfig {
+    let mut text = text_style_config_from_value(style_id, style);
+    if style.get("fontSize").is_none() { text.font_size = 10.5; }
+    if style.get("fontWeight").is_none() && style.get("bold").is_none() { text.bold = true; }
+    if style.get("chineseFont").is_none() { text.chinese_font = "宋体".to_string(); }
     CaptionStyleConfig {
-        text: text_style_config_from_value(style_id, style),
-        position: read_style_string(style, "captionPosition", "below"),
+        text,
+        position: read_style_string(style, "captionPosition", if style_id == "table-caption" { "above" } else { "below" }),
         numbering: style
             .get("captionNumbering")
             .and_then(Value::as_bool)
@@ -5011,17 +5036,30 @@ fn normalize_adjacent_bold_captions(markdown: &str) -> String {
 
     let mut consumed = vec![false; lines.len()];
     let mut insert_after = HashMap::<usize, String>::new();
+    let image_prefix = Regex::new(r"(?i)^(?:图|Figure)\s*\d").expect("valid figure caption prefix");
+    let table_prefix = Regex::new(r"(?i)^(?:表|Table)\s*\d").expect("valid table caption prefix");
     for (start, end) in objects {
-        let after = end
-            .checked_add(1)
-            .filter(|candidate| *candidate < lines.len())
-            .filter(|candidate| !consumed[*candidate])
-            .and_then(|candidate| markdown_bold_caption(lines[candidate]).map(|caption| (candidate, caption)));
-        let before = start
-            .checked_sub(1)
-            .filter(|candidate| !consumed[*candidate])
-            .and_then(|candidate| markdown_bold_caption(lines[candidate]).map(|caption| (candidate, caption)));
-        if let Some((caption_line, caption)) = after.or(before) {
+        let prefix = if markdown_image_only_line(lines[start]) { &image_prefix } else { &table_prefix };
+        let adjacent_caption = |object_line: usize, direction: isize| {
+            let mut candidate = object_line as isize + direction;
+            let mut separated = false;
+            while candidate >= 0 && (candidate as usize) < lines.len() && lines[candidate as usize].trim().is_empty() {
+                separated = true;
+                candidate += direction;
+            }
+            if candidate < 0 || candidate as usize >= lines.len() || consumed[candidate as usize] {
+                return None;
+            }
+            let candidate = candidate as usize;
+            let caption = markdown_bold_caption(lines[candidate])?;
+            (!separated || prefix.is_match(caption)).then_some((candidate, caption))
+        };
+        let after = adjacent_caption(end, 1);
+        let before = adjacent_caption(start, -1);
+        let caption = after.filter(|(line, _)| *line == end + 1)
+            .or(before.filter(|(line, _)| *line + 1 == start))
+            .or_else(|| if markdown_image_only_line(lines[start]) { after.or(before) } else { before.or(after) });
+        if let Some((caption_line, caption)) = caption {
             consumed[caption_line] = true;
             insert_after.insert(end, caption.to_string());
         }
@@ -6001,26 +6039,27 @@ fn ensure_paragraph_tab_stop(paragraph_xml: &str, position: u32) -> String {
 fn normalize_document_captions(xml: &str, document_style: Option<&DocumentStyleConfig>) -> String {
     let xml = deduplicate_image_alt_captions(xml);
     let Some(document_style) = document_style else {
-        return normalize_image_caption_paragraph_layout(&xml, "center");
+        let xml = normalize_caption_paragraph_layout(&xml, "center", is_image_caption_paragraph);
+        return normalize_caption_paragraph_layout(&xml, "center", is_table_caption_paragraph);
     };
     let xml = document_style
         .image_caption
         .as_ref()
         .map(|style| normalize_image_captions(&xml, style))
-        .unwrap_or_else(|| normalize_image_caption_paragraph_layout(&xml, "center"));
+        .unwrap_or_else(|| normalize_caption_paragraph_layout(&xml, "center", is_image_caption_paragraph));
     document_style
         .table_caption
         .as_ref()
         .map(|style| normalize_table_captions(&xml, style))
-        .unwrap_or(xml)
+        .unwrap_or_else(|| normalize_caption_paragraph_layout(&xml, "center", is_table_caption_paragraph))
 }
 
-fn normalize_image_caption_paragraph_layout(xml: &str, align: &str) -> String {
+fn normalize_caption_paragraph_layout(xml: &str, align: &str, is_caption: fn(&str) -> bool) -> String {
     Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#)
         .expect("valid paragraph regex")
         .replace_all(xml, |captures: &Captures| {
             let paragraph = &captures[0];
-            if !is_image_caption_paragraph(paragraph) {
+            if !is_caption(paragraph) {
                 return paragraph.to_string();
             }
             ensure_image_paragraph_aligned(paragraph, align)
@@ -7834,7 +7873,7 @@ fn normalize_default_report_style_xml(
             normalize_body_style_xml(style_xml, true)
         }
         Some("Compact") => normalize_body_style_xml(style_xml, false),
-        Some("ImageCaption") => normalize_default_image_caption_style_xml(style_xml),
+        Some("ImageCaption" | "Caption" | "TableCaption") => normalize_default_caption_style_xml(style_xml),
         Some("VerbatimChar") if markdown_features.inline_code => {
             normalize_inline_code_style_xml(style_xml)
         }
@@ -9110,10 +9149,10 @@ fn ensure_no_picture_compression(xml: &str) -> String {
     )
 }
 
-fn normalize_default_image_caption_style_xml(style_xml: &str) -> String {
-    let paragraph_properties = r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="center" /><w:ind w:firstLine="0" /></w:pPr>"#;
-    let run_properties = r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" /><w:color w:val="334155" /><w:sz w:val="20" /><w:szCs w:val="20" /><w:b w:val="1" /><w:bCs w:val="1" />"#;
-    let style_xml = ensure_style_paragraph_properties_xml(style_xml, paragraph_properties);
+fn normalize_default_caption_style_xml(style_xml: &str) -> String {
+    let paragraph_properties = format!(r#"<w:pPr>{}<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto" /><w:jc w:val="center" /><w:ind w:firstLine="0" w:firstLineChars="0" /></w:pPr>"#, preserved_style_paragraph_flow_xml(style_xml));
+    let run_properties = r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" /><w:color w:val="334155" /><w:sz w:val="21" /><w:szCs w:val="21" /><w:b w:val="1" /><w:bCs w:val="1" />"#;
+    let style_xml = ensure_style_paragraph_properties_xml(style_xml, &paragraph_properties);
     ensure_style_run_properties(&style_xml, run_properties)
 }
 
@@ -12330,6 +12369,22 @@ mod tests {
         ));
         assert!(output.contains(r#"<w:b w:val="1" /><w:bCs w:val="1" />"#));
         assert!(!output.contains("微软雅黑"));
+        assert!(output.contains(r#"<w:sz w:val="21" /><w:szCs w:val="21" />"#));
+    }
+
+    #[test]
+    fn normalizes_table_caption_defaults_without_inheriting_body_indent() {
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Caption" /><w:ind w:firstLine="480" w:firstLineChars="200" /></w:pPr><w:r><w:t>表4-1 测试指标</w:t></w:r></w:p><w:tbl></w:tbl></w:body></w:document>"#;
+        let output = normalize_document_captions(input, None);
+        assert!(output.contains("表4-1 测试指标"));
+        assert!(output.contains(r#"<w:jc w:val="center" />"#));
+        assert!(output.contains(r#"w:firstLine="0" w:firstLineChars="0""#));
+        assert!(!output.contains(r#"w:firstLineChars="200""#));
+        let styles = r#"<w:styles><w:style w:type="paragraph" w:styleId="TableCaption"><w:basedOn w:val="Normal" /><w:pPr><w:keepNext /></w:pPr><w:rPr><w:sz w:val="24" /></w:rPr></w:style></w:styles>"#;
+        let output = normalize_default_report_styles_xml(styles, &default_markdown_feature_config());
+        assert!(output.contains(r#"<w:sz w:val="21" /><w:szCs w:val="21" />"#));
+        assert!(output.contains(r#"<w:b w:val="1" /><w:bCs w:val="1" />"#));
+        assert!(output.contains("<w:keepNext />"));
     }
 
     #[test]
@@ -13514,6 +13569,41 @@ mod tests {
         assert!(output.contains("Table: 表2-1 后置表格题注"));
         assert!(output.contains("**普通加粗正文**"));
         assert!(!output.contains("MD_KING_BLOCK_CAPTION:"));
+    }
+
+    #[test]
+    fn recognizes_numbered_captions_across_blank_lines_without_consuming_body() {
+        let input = "**表4-1 仿真指标**\n\n| 项目 | 结果 |\n| --- | --- |\n| 测试 | 通过 |\n\n正文\n\n![图](figure.png)\n\n**图3-1 系统图**\n\n**普通加粗正文**\n";
+        let output = preprocess_markdown_for_word(input);
+        assert!(output.contains("Table: 表4-1 仿真指标"));
+        assert!(output.contains("::: {custom-style=\"Image Caption\"}\n图3-1 系统图\n:::"));
+        assert!(output.contains("**普通加粗正文**"));
+        assert!(!output.contains("**表4-1"));
+    }
+
+    #[test]
+    fn keeps_separate_numbered_captions_for_consecutive_tables() {
+        let input = "**表1-1 第一表**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n**表1-2 第二表**\n\n| C | D |\n| --- | --- |\n| 3 | 4 |";
+        let output = preprocess_markdown_for_word(input);
+        assert!(output.find("Table: 表1-1 第一表").unwrap() < output.find("| C | D |").unwrap());
+        assert!(output.find("Table: 表1-2 第二表").unwrap() > output.find("| 3 | 4 |").unwrap());
+        assert!(!output.contains("**表1-"));
+    }
+
+    #[test]
+    fn migrates_default_caption_font_without_overwriting_custom_sizes() {
+        let mut config = json!({"styles": {
+            "caption": {"fontSize":10,"fontWeight":"700","chineseFont":"宋体","captionAlign":"center","firstLineIndent":0,"color":"#334155"},
+            "table-caption": {"fontSize":10,"fontWeight":"400","chineseFont":"微软雅黑","captionAlign":"center","firstLineIndent":0,"color":"#334155"}
+        }});
+        migrate_default_report_style_baseline(&mut config);
+        for id in ["caption", "table-caption"] {
+            assert_eq!(config["styles"][id]["fontSize"], json!(10.5));
+            assert_eq!(config["styles"][id]["fontWeight"], json!("700"));
+        }
+        config["styles"]["caption"]["fontSize"] = json!(11);
+        migrate_default_report_style_baseline(&mut config);
+        assert_eq!(config["styles"]["caption"]["fontSize"], json!(11));
     }
 
     #[test]

@@ -39,12 +39,18 @@ export function extractExplicitImageCaptions(markdown: string): ImageCaptionExtr
 
     const boldCaption = markdownCaptionText(line);
     if (boldCaption) {
-      if (index > 0 && imageOnlyLine.test(lines[index - 1]) && imageIndex >= 0) {
+      let before = index - 1;
+      let after = index + 1;
+      if (/^(?:图|Figure)\s*\d/i.test(boldCaption)) {
+        while (before >= 0 && !lines[before].trim()) before -= 1;
+        while (after < lines.length && !lines[after].trim()) after += 1;
+      }
+      if (before >= 0 && imageOnlyLine.test(lines[before]) && imageIndex >= 0) {
         captionsByImageIndex.set(imageIndex, boldCaption);
         imageCanReceiveCaption = false;
         continue;
       }
-      if (index + 1 < lines.length && imageOnlyLine.test(lines[index + 1])) {
+      if (after < lines.length && imageOnlyLine.test(lines[after])) {
         captionForNextImage = boldCaption;
         continue;
       }
