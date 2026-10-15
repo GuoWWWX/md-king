@@ -73,7 +73,7 @@ export const captionPositionOptions: { value: CaptionPosition; label: string; de
   { value: "below", label: "对象下方", description: "题注显示在图片或表格下方" },
 ];
 
-export const captionNumberFormatOptions = ["图 1", "图 1-1", "Figure 1", "1.", "表 1", "表 1-1", "Table 1"] as const;
+export const captionNumberFormatOptions = ["图 1", "图 1.1", "图 1-1", "Figure 1", "1.", "表 1", "表 1.1", "表 1-1", "Table 1"] as const;
 
 export const imageWidthModeOptions: { value: ImageWidthMode; label: string; description: string }[] = [
   { value: "content", label: "铺满正文宽度", description: "图片宽度等于去掉页边距后的内容宽度" },
@@ -221,7 +221,7 @@ export const defaultStyleDraft: StyleDraft = {
   bodyLineHeight: "1.5",
   bodyBackgroundColor: "#FFFFFF",
   captionAlign: "center",
-  captionNumbering: true,
+  captionNumbering: false,
   captionPosition: "above",
   captionNumberFormat: "表 1-1",
   imageAlign: "center",
@@ -695,7 +695,7 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
       align: "center",
       firstLineIndent: 0,
       captionAlign: "center",
-      captionNumbering: true,
+      captionNumbering: false,
       captionPosition: isTableCaption ? "above" : "below",
       captionNumberFormat: isTableCaption ? "表 1-1" : "图 1-1",
       autoNumbering: false,
