@@ -684,10 +684,10 @@ export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
     const isTableCaption = styleId === "table-caption";
     return {
       ...draft,
-      chineseFont: isTableCaption ? draft.chineseFont : "宋体",
+      chineseFont: "宋体",
       latinFont: "Times New Roman",
-      fontSize: 10,
-      fontWeight: isTableCaption ? "400" : "700",
+      fontSize: 10.5,
+      fontWeight: "700",
       color: "#334155",
       lineHeight: isTableCaption ? draft.lineHeight : "1.25",
       beforeSpacing: isTableCaption ? draft.beforeSpacing : 0,
@@ -1007,6 +1007,15 @@ export function mergeTemplateStyleConfig(templateId: string, config?: Partial<Te
       && caption.beforeSpacing === 12
       && caption.afterSpacing === 6) {
       styles.caption = defaults.styles.caption;
+    }
+
+    for (const [styleId, oldWeight, oldFont] of [["caption", "700", "宋体"], ["table-caption", "400", "微软雅黑"]] as const) {
+      const current = styles[styleId];
+      if (current?.fontSize === 10 && current.fontWeight === oldWeight
+        && current.chineseFont === oldFont && current.captionAlign === "center"
+        && current.firstLineIndent === 0 && current.color.toUpperCase() === "#334155") {
+        styles[styleId] = { ...current, fontSize: 10.5, fontWeight: "700", chineseFont: "宋体" };
+      }
     }
 
     // 旧版本默认报告模板使用浅灰/蓝灰边框；仅迁移这组精确的旧默认值，

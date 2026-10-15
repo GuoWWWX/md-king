@@ -1,0 +1,23 @@
+<!doctype html><html><body><main id="app"></main><script type="module">
+import '/src/index.css';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { WordPreviewPage } from '/src/components/templates/word-preview-page.tsx';
+import { createDefaultTemplateStyleConfig } from '/src/lib/style-manager-data.ts';
+const markdown = `正文应保留自己的段落格式。
+
+**表4-1 仿真测试指标**
+
+| 项目 | 结果 |
+| --- | --- |
+| 测试 | 通过 |
+
+![示意图](/md-king-logo.png)
+
+**图3-1 系统示意图**`;
+createRoot(document.querySelector('#app')).render(createElement(WordPreviewPage, {
+  markdown, styleConfig: createDefaultTemplateStyleConfig('default-report'),
+  zoom: 100, showHeader: false, showPageFooter: false,
+  paperTheme: new URLSearchParams(location.search).get('theme') || 'light',
+}));
+</script></body></html>

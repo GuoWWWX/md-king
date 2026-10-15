@@ -3,6 +3,30 @@ import test from "node:test";
 
 import { createDefaultTemplateStyleConfig, defaultPageSettings, mergeTemplateStyleConfig } from "./style-manager-data.ts";
 
+test("图片和表格题注默认五号加粗居中且不首行缩进", () => {
+  const config = createDefaultTemplateStyleConfig("default-report");
+  for (const id of ["caption", "table-caption"]) {
+    const caption = config.styles[id];
+    assert.equal(caption.fontSize, 10.5);
+    assert.equal(caption.fontWeight, "700");
+    assert.equal(caption.captionAlign, "center");
+    assert.equal(caption.firstLineIndent, 0);
+  }
+});
+
+test("旧默认题注迁移为五号加粗，保留主动调整过的样式", () => {
+  const saved = createDefaultTemplateStyleConfig("default-report");
+  saved.styles.caption = { ...saved.styles.caption, fontSize: 10 };
+  saved.styles["table-caption"] = { ...saved.styles["table-caption"], fontSize: 10, fontWeight: "400", chineseFont: "微软雅黑" };
+  const migrated = mergeTemplateStyleConfig("default-report", saved);
+  assert.equal(migrated.styles.caption.fontSize, 10.5);
+  assert.equal(migrated.styles["table-caption"].fontSize, 10.5);
+  assert.equal(migrated.styles["table-caption"].fontWeight, "700");
+  saved.styles.caption = { ...saved.styles.caption, fontSize: 11, captionAlign: "right" };
+  assert.equal(mergeTemplateStyleConfig("default-report", saved).styles.caption.fontSize, 11);
+  assert.equal(mergeTemplateStyleConfig("default-report", saved).styles.caption.captionAlign, "right");
+});
+
 test("内置模板正文默认左对齐，并保留用户主动选择的两端对齐", () => {
   for (const templateId of ["default-report", "official-document", "technical-spec"]) {
     const config = createDefaultTemplateStyleConfig(templateId);

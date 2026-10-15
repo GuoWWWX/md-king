@@ -3,6 +3,14 @@ import test from "node:test";
 
 import { extractExplicitImageCaptions } from "./markdown-image-caption.ts";
 
+test("隔空行的编号图片题注仍关联图片，保留原编号", () => {
+  for (const source of ["**图3-1 系统图**\n\n![示意图](a.png)", "![示意图](a.png)\n\n**图3-1 系统图**"]) {
+    const result = extractExplicitImageCaptions(source);
+    assert.equal(result.captionsByImageIndex.get(0), "图3-1 系统图");
+    assert.ok(!result.markdown.includes("**图3-1"));
+  }
+});
+
 test("将紧邻图片的 Pandoc Image Caption Div 转为预览题注", () => {
   const extracted = extractExplicitImageCaptions([
     "![辅助说明](network.png)",
