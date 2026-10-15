@@ -121,6 +121,8 @@ Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。
 
 检测到新版本时，左侧栏下半部分会显示提示。点击后查看发布说明，再点击“立即更新”，弹窗显示下载字节数、百分比和网速。客户端验证签名和安装包哈希后，保存草稿会话，启动覆盖安装并重启。Windows 权限确认仍需用户处理。
 
+下载中可再次检测版本；点击下载更高版本时才清理旧下载。同一版本在取消、断网或重启后可继续下载，Windows 下载会跟随系统代理。支持增量更新的客户端在旧安装包缓存和版本匹配时优先下载差分包，还原并校验完整安装包；无法使用差分时回退完整包。旧客户端首次升级仍需完整安装包。Pandoc 版本未变且本地文件存在时复用，版本更新或文件缺失时自动补装。
+
 <details>
 <summary>更新校验与异常处理</summary>
 
@@ -187,7 +189,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.16_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.17_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 
