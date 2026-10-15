@@ -84,7 +84,7 @@ const MERMAID_DIAGRAM_TYPES = [
   ["c4", "C4 架构图"], ["info", "引擎信息"],
 ].map(([id, label]) => ({ id, label }));
 
-function normalizeMermaidThemes(value) {
+function normalizeMermaidSelection(value) {
   const validTheme = id => MERMAID_THEMES.some(theme => theme.id === id);
   const diagrams = {};
   for (const { id } of MERMAID_DIAGRAM_TYPES) {
@@ -100,6 +100,18 @@ function normalizeMermaidThemes(value) {
     dark: validTheme(value?.dark) ? value.dark : "redux-dark-color",
     diagrams,
   };
+}
+
+function normalizeMermaidThemes(value) {
+  const settings = normalizeMermaidSelection(value);
+  const presets = [];
+  for (const preset of Array.isArray(value?.presets) ? value.presets : []) {
+    const name = typeof preset?.name === "string" ? preset.name.trim() : "";
+    if (!name || presets.some(item => item.name === name)) continue;
+    presets.push({ name, ...normalizeMermaidSelection(preset) });
+  }
+  if (presets.length) settings.presets = presets;
+  return settings;
 }
 
 /** Read the diagram header only; labels, comments and frontmatter must not select a type. */
@@ -153,6 +165,36 @@ function mermaidConfig(theme, selectedTheme) {
       curve: "basis",
     },
   };
+}
+
+/** Kanban lays out tasks before accounting for the full column heading height. */
+function layoutMermaidKanban(root) {
+  if (root.getAttribute("aria-roledescription") !== "kanban") return false;
+  const columns = [...root.querySelectorAll(".sections > .cluster")].map(group => ({
+    rect: group.querySelector("rect"), label: group.querySelector(".cluster-label"),
+  })).filter(column => column.rect && column.label);
+  if (!columns.length) return false;
+  for (const { label } of columns) {
+    for (const row of label.querySelectorAll("text,tspan.row")) {
+      row.style.setProperty("text-anchor", "middle");
+      row.setAttribute("x", "0");
+    }
+  }
+  const headingHeight = Math.max(...columns.map(column => column.label.getBBox().height));
+  const items = root.querySelector(".items");
+  const firstItemTop = items?.querySelector(".node") ? items.getBBox().y : Infinity;
+  for (const { rect, label } of columns) {
+    const box = rect.getBBox(), heading = label.getBBox();
+    const top = Math.min(box.y, firstItemTop - headingHeight - 24);
+    rect.setAttribute("y", String(top));
+    rect.setAttribute("height", String(box.height + box.y - top));
+    label.setAttribute("transform", `translate(${box.x + (box.width - heading.width) / 2 - heading.x}, ${top + 12 - heading.y})`);
+  }
+  // Extend upwards without moving or shrinking any task cards.
+  const view = root.viewBox.baseVal;
+  const top = Math.min(view.y, root.getBBox().y - 16);
+  root.setAttribute("viewBox", `${view.x} ${top} ${view.width} ${view.height + view.y - top}`);
+  return true;
 }
 
 /** Preserve readable, complete relationship labels in both live SVG and Word images. */
@@ -295,5 +337,5 @@ function ensureMermaidContrast(root, dark) {
   }
 }
 
-export { mermaidConfig, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
+export { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
   MERMAID_THEMES, MERMAID_DIAGRAM_TYPES, normalizeMermaidThemes, mermaidDiagramType, resolveMermaidTheme };

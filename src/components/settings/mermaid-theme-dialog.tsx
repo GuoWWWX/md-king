@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Check, Info, Moon, Palette, Sun } from "lucide-react";
+import { Check, Info, Moon, Palette, Sun, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { renderMermaid } from "@/lib/mermaid";
 import { MERMAID_DIAGRAM_TYPES, MERMAID_THEMES, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "@/lib/mermaid-config.js";
@@ -18,42 +19,23 @@ const presets: Array<{ name: string; light: MermaidThemeId; dark: MermaidThemeId
 ];
 
 const themePairs = [...presets,
-  { name: "森林", light: "forest" as const, dark: "dark" as const },
-  { name: "中性", light: "neutral" as const, dark: "dark" as const },
-  { name: "基础", light: "base" as const, dark: "dark" as const },
+  { name: "森林", light: "forest" as const, dark: "forest" as const },
+  { name: "中性", light: "neutral" as const, dark: "neutral" as const },
+  { name: "基础", light: "base" as const, dark: "base" as const },
 ];
-const darkThemes = new Set<MermaidThemeId>(["redux-dark-color", "redux-dark", "neo-dark", "dark"]);
 const selectClass = "w-full min-w-0 rounded-md border-slate-200 bg-white text-xs text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate";
 const contentClass = "mk-mermaid-theme-select w-[var(--radix-select-trigger-width)] min-w-0 rounded-lg border border-slate-200 bg-white p-1 text-slate-800 shadow-xl shadow-slate-900/12 ring-0 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-black/30";
 const itemClass = "min-h-9 cursor-pointer rounded-md px-2 pr-8 text-xs";
 
-/** Convert a selection made in the earlier preview to its matching mode on dialog open. */
-function dialogThemes(value?: MermaidThemeSettings) {
-  const next = normalizeMermaidThemes(value);
-  function inMode(theme: MermaidThemeId, mode: "light" | "dark") {
-    if (darkThemes.has(theme) === (mode === "dark")) return theme;
-    const pair = themePairs.find((item) => item[mode === "dark" ? "light" : "dark"] === theme);
-    return pair?.[mode] ?? (mode === "dark" ? "dark" : "default");
-  }
-  for (const mode of ["light", "dark"] as const) {
-    next[mode] = inMode(next[mode], mode);
-    for (const pair of Object.values(next.diagrams)) {
-      if (pair[mode]) pair[mode] = inMode(pair[mode], mode);
-    }
-  }
-  return next;
-}
-
 function ThemeSelect({ label, mode, value, inherit, disabled, onChange }: { label: string; mode: "light" | "dark"; value: string; inherit?: string; disabled?: boolean; onChange: (value: string) => void }) {
-  const themes = MERMAID_THEMES.filter((theme) => darkThemes.has(theme.id) === (mode === "dark"));
   const Icon = mode === "dark" ? Moon : Sun;
   return <Select value={value} disabled={disabled} onValueChange={onChange}>
     <SelectTrigger aria-label={label} data-value={value} className={selectClass}><SelectValue /></SelectTrigger>
-    <SelectContent className={contentClass}>
+    <SelectContent className={`${contentClass} w-64 max-h-[min(16rem,var(--radix-select-content-available-height))] [&_[data-radix-select-viewport]]:min-w-0!`}>
       {inherit && <><SelectItem className={itemClass} value="inherit" data-value="inherit">{inherit}</SelectItem><SelectSeparator className="mx-0 my-1 bg-slate-100 dark:bg-zinc-800" /></>}
       <SelectGroup>
-        <SelectLabel className="flex items-center gap-1.5 px-2 py-2 text-[11px] text-slate-500 dark:text-zinc-400"><Icon className="size-3.5" />{mode === "dark" ? "深色主题" : "浅色主题"} · {themes.length} 款</SelectLabel>
-        {themes.map((theme) => <SelectItem key={theme.id} className={itemClass} value={theme.id} data-value={theme.id}>{theme.label}</SelectItem>)}
+        <SelectLabel className="flex items-center gap-1.5 px-2 py-2 text-[11px] text-slate-500 dark:text-zinc-400"><Icon className="size-3.5" />{mode === "dark" ? "深色模式" : "浅色模式"} · 全部 {MERMAID_THEMES.length} 款</SelectLabel>
+        {MERMAID_THEMES.map((theme) => <SelectItem key={theme.id} className={itemClass} value={theme.id} data-value={theme.id}>{theme.label}</SelectItem>)}
       </SelectGroup>
     </SelectContent>
   </Select>;
@@ -84,11 +66,24 @@ function ThemePreview({ type, dark, settings }: { type: string; dark: boolean; s
 }
 
 export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; value?: MermaidThemeSettings; onSave: (settings: MermaidThemeSettings) => Promise<void> }) {
-  const [draft, setDraft] = useState(() => dialogThemes(value));
+  const [draft, setDraft] = useState(() => normalizeMermaidThemes(value));
+  const [presetName, setPresetName] = useState("");
   const [previewType, setPreviewType] = useState("flowchart");
   const [saving, setSaving] = useState(false);
   const selectedPair = themePairs.find((pair) => pair.light === draft.light && pair.dark === draft.dark);
-  useEffect(() => { if (open) setDraft(dialogThemes(value)); }, [open, value]);
+  useEffect(() => { if (open) { setDraft(normalizeMermaidThemes(value)); setPresetName(""); } }, [open, value]);
+
+  function savePreset() {
+    const name = presetName.trim();
+    if (!name) return;
+    const preset = { name, light: draft.light, dark: draft.dark, diagrams: draft.diagrams };
+    const saved = draft.presets ?? [];
+    const presets = saved.some((item) => item.name === name)
+      ? saved.map((item) => item.name === name ? preset : item) : [...saved, preset];
+    setDraft(normalizeMermaidThemes({ ...draft, presets }));
+    setPresetName(name);
+    toast.success("组合已加入待保存配置");
+  }
 
   function setOverride(type: string, mode: "light" | "dark", theme: string) {
     setDraft((current) => normalizeMermaidThemes({ ...current, diagrams: { ...current.diagrams, [type]: { ...current.diagrams[type], [mode]: theme === "inherit" ? undefined : theme as MermaidThemeId } } }));
@@ -106,10 +101,9 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
   }
 
   return <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next); }}>
-    <DialogContent className="flex max-h-[92dvh] w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]">
-      <DialogHeader className="shrink-0 border-b border-slate-200 p-5 pr-12 dark:border-zinc-700">
+    <DialogContent aria-describedby={undefined} className="flex max-h-[92dvh] w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]">
+      <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-3 pr-12 dark:border-zinc-700">
         <DialogTitle className="flex items-center gap-2"><Palette className="size-5" />Mermaid 图表主题</DialogTitle>
-        <DialogDescription className="text-xs">选择默认配色，也可按图表类型单独设置。</DialogDescription>
       </DialogHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="grid lg:grid-cols-[1.08fr_1fr]">
@@ -142,6 +136,21 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
                 </Select>
               </div>
             </section>
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">我的组合</h3>
+              <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">保存深浅默认主题及各图表的单独设置，之后一键复用。</p>
+              <div className="flex gap-2">
+                <Input aria-label="组合名称" placeholder="输入组合名称" maxLength={40} value={presetName} disabled={saving} onChange={(event) => setPresetName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); savePreset(); } }} className="min-w-0 flex-1 text-xs" />
+                <Button variant="outline" disabled={saving || !presetName.trim()} onClick={savePreset}>{draft.presets?.some((preset) => preset.name === presetName.trim()) ? "更新同名组合" : "保存为组合"}</Button>
+              </div>
+              {!!draft.presets?.length && <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-1 dark:border-zinc-700">
+                {draft.presets.map((preset) => <div key={preset.name} className="flex min-w-0 items-center gap-1">
+                  <button type="button" disabled={saving} aria-label={`应用组合：${preset.name}`} className="min-w-0 flex-1 rounded-md px-2 py-2 text-left text-xs hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-zinc-800" onClick={() => { setDraft(normalizeMermaidThemes({ ...draft, light: preset.light, dark: preset.dark, diagrams: preset.diagrams })); setPresetName(preset.name); }}><span className="block truncate font-medium">{preset.name}</span><span className="mt-0.5 block truncate text-[11px] text-slate-500 dark:text-zinc-400">{MERMAID_THEMES.find((theme) => theme.id === preset.light)?.label} / {MERMAID_THEMES.find((theme) => theme.id === preset.dark)?.label} · {Object.keys(preset.diagrams).length} 种单独设置</span></button>
+                  <Button size="icon" variant="ghost" disabled={saving} aria-label={`删除组合：${preset.name}`} onClick={() => { setDraft(normalizeMermaidThemes({ ...draft, presets: draft.presets?.filter((item) => item.name !== preset.name) })); if (presetName === preset.name) setPresetName(""); }}><Trash2 className="size-3.5" /></Button>
+                </div>)}
+              </div>}
+              <p className="text-[11px] leading-5 text-slate-500 dark:text-zinc-400">组合的新增、更新和删除会随底部“保存配置”一起保存。</p>
+            </section>
             <section className="space-y-3">
               <h3 className="text-sm font-semibold">默认主题</h3>
               <div className="grid grid-cols-2 gap-3">{(["light", "dark"] as const).map((mode) => <label key={mode} className="min-w-0 space-y-2">
@@ -150,9 +159,8 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
               </label>)}</div>
             </section>
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold">按图表类型设置</h3>
-              <p className="text-xs text-slate-500 dark:text-zinc-400">默认跟随全局；单独设置优先于默认主题。</p>
-              <div className="max-h-[280px] overflow-auto rounded-lg border border-slate-200 dark:border-zinc-700">
+              <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">按图表类型设置</h3><button className="text-xs text-[var(--app-primary)] disabled:opacity-40" type="button" disabled={saving || !Object.keys(draft.diagrams).length} onClick={() => setDraft({ ...draft, diagrams: {} })}>清除单独设置</button></div>
+              <div className="max-h-[340px] overflow-auto rounded-lg border border-slate-200 dark:border-zinc-700">
                 <table className="w-full table-fixed text-xs"><thead className="sticky top-0 z-10 bg-slate-100 text-left text-slate-500 dark:bg-zinc-800 dark:text-zinc-400"><tr><th className="w-[26%] p-2 font-medium">图表类型</th><th className="w-[37%] p-2 font-medium">浅色主题</th><th className="p-2 font-medium">深色主题</th></tr></thead>
                   <tbody>{MERMAID_DIAGRAM_TYPES.map((type) => <tr key={type.id} className="border-t border-slate-200 dark:border-zinc-700">
                     <th className="p-2 text-left font-normal"><button type="button" className="text-left hover:underline" onClick={() => setPreviewType(type.id)}>{type.label}{draft.diagrams[type.id] && <span className="ml-1 text-blue-500" aria-label="已单独设置">●</span>}</button></th>
@@ -160,7 +168,6 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
                   </tr>)}</tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-500 dark:text-zinc-400">已单独设置 {Object.keys(draft.diagrams).length} 种图表</span><button className="text-[var(--app-primary)] disabled:opacity-40" type="button" disabled={saving || !Object.keys(draft.diagrams).length} onClick={() => setDraft({ ...draft, diagrams: {} })}>清除单独设置</button></div>
             </section>
           </div>
           <div className="min-w-0 space-y-3 border-t border-slate-200 p-5 dark:border-zinc-700 lg:border-t-0">
@@ -173,7 +180,7 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-5 py-3 dark:border-zinc-700">
-        <span className="text-xs text-slate-500 dark:text-zinc-400">仅影响 Mermaid 图表</span><div className="flex gap-2"><Button variant="ghost" disabled={saving} onClick={() => setDraft(normalizeMermaidThemes())}>恢复默认</Button><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={saving} onClick={() => void save()}>{saving ? "正在保存…" : "保存配置"}</Button></div>
+        <span className="text-xs text-slate-500 dark:text-zinc-400">仅影响 Mermaid 图表</span><div className="flex gap-2"><Button variant="ghost" disabled={saving} onClick={() => setDraft(normalizeMermaidThemes({ presets: draft.presets }))}>恢复默认</Button><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>取消</Button><Button disabled={saving} onClick={() => void save()}>{saving ? "正在保存…" : "保存配置"}</Button></div>
       </div>
     </DialogContent>
   </Dialog>;

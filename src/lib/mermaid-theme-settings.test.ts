@@ -33,3 +33,24 @@ test("全部 11 个原生主题均可用于全局和图类型设置，不改写�
     assert.equal(mermaidConfig("default", id).theme, id);
   }
 });
+
+test("自定义组合保留跨模式主题与图类型覆盖，序列化后仍可复用", () => {
+  const selection = { light: "dark", dark: "default", diagrams: { sequence: { light: "neo-dark", dark: "forest" } } } as const;
+  const settings = normalizeMermaidThemes({ ...selection, presets: [{ name: "  我的组合  ", ...selection }] });
+  const reloaded = normalizeMermaidThemes(JSON.parse(JSON.stringify(settings)));
+  assert.deepEqual(reloaded.presets, [{ name: "我的组合", ...selection }]);
+  const applied = normalizeMermaidThemes(reloaded.presets![0]);
+  assert.equal(resolveMermaidTheme("flowchart LR\n A --> B", true, applied), "default");
+  assert.equal(resolveMermaidTheme("sequenceDiagram", false, applied), "neo-dark");
+  assert.equal(resolveMermaidTheme("sequenceDiagram", true, applied), "forest");
+  assert.equal(applied.presets, undefined);
+});
+
+test("组合清理空名称和重复名称，并只修正无效主题，不嵌套保存组合", () => {
+  const settings = normalizeMermaidThemes(JSON.parse(JSON.stringify({ presets: [
+    { name: " ", light: "forest" },
+    { name: "工作", light: "bad", dark: "default", diagrams: { state: { dark: "forest", light: "bad" } }, presets: [{ name: "不应嵌套" }] },
+    { name: " 工作 ", light: "neo" },
+  ] })));
+  assert.deepEqual(settings.presets, [{ name: "工作", light: "redux-color", dark: "default", diagrams: { state: { dark: "forest" } } }]);
+});

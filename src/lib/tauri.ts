@@ -19,7 +19,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.1.16",
+  version: "1.1.17",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -605,10 +605,13 @@ export function handleTauriWindowDoubleClick(
 }
 
 export type DownloadProgressPayload = {
+  version: string;
   percent: number;
   transferred: number;
   total: number;
   speed_bytes_per_sec: number;
+  is_delta?: boolean;
+  applying_delta?: boolean;
 };
 
 export async function fetchLatestRelease(repo?: string): Promise<string> {

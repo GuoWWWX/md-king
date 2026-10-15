@@ -1,14 +1,8 @@
-param(
-  [string]$OutputName
-)
-
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $nsisDir = Join-Path $projectRoot "src-tauri\target\release\nsis\x64"
 $installerScript = Join-Path $nsisDir "installer.nsi"
-$outputExe = Join-Path $nsisDir "nsis-output.exe"
-$bundleDir = Join-Path $projectRoot "src-tauri\target\release\bundle\nsis"
 $pandocExe = Join-Path $projectRoot "src-tauri\resources\pandoc\windows\pandoc.exe"
 $pandocVersionFile = Join-Path $nsisDir "pandoc.version"
 
@@ -119,31 +113,24 @@ if (!$content.Contains($historyDelete)) {
   $content = $content.Replace($uninstallAnchor, "$uninstallAnchor`r`n$historyDelete")
 }
 
+$baseCacheBlock = @'
+  ; Keep one exact installer as the source for the next signed binary delta.
+  CreateDirectory "$APPDATA\md-king\update-base"
+  ClearErrors
+  CopyFiles /SILENT "$EXEPATH" "$APPDATA\md-king\update-base\installer.exe"
+  ${If} ${Errors}
+    DetailPrint "Update base could not be cached; the next update will use a full download."
+    ClearErrors
+  ${EndIf}
+
+'@
+if (!$content.Contains('; Keep one exact installer as the source')) {
+  $cacheAnchor = '  WriteUninstaller "$INSTDIR\uninstall.exe"'
+  if (!$content.Contains($cacheAnchor)) { throw 'Could not find the NSIS installer cache anchor.' }
+  $content = $content.Replace($cacheAnchor, "$baseCacheBlock`r`n$cacheAnchor")
+}
+
 Set-Content -LiteralPath $installerScript -Value $content -NoNewline -Encoding utf8
 
-$makensis = Join-Path $env:LOCALAPPDATA "tauri\NSIS\makensis.exe"
-if (!(Test-Path $makensis)) {
-  throw "Could not find makensis.exe under $env:LOCALAPPDATA\tauri\NSIS."
-}
-
-Push-Location $nsisDir
-try {
-  & $makensis "installer.nsi"
-  if ($LASTEXITCODE -ne 0) { throw "NSIS compiler failed with exit code $LASTEXITCODE" }
-} finally {
-  Pop-Location
-}
-
-if (!(Test-Path $outputExe)) {
-  throw "NSIS did not produce $outputExe"
-}
-
-if (!$OutputName) {
-  $packageJson = Get-Content -LiteralPath (Join-Path $projectRoot "package.json") -Raw | ConvertFrom-Json
-  $OutputName = "md-king_$($packageJson.version)_x64-setup.exe"
-}
-
-$installerExe = Join-Path $bundleDir $OutputName
-Copy-Item -LiteralPath $outputExe -Destination $installerExe -Force
-Write-Host "NSIS installer written to:"
-Write-Host $installerExe
+# Apply all installer patches before patch-nsis-installer.ps1 compiles once.
+Write-Host "NSIS resource updates written to: $installerScript"

@@ -46,6 +46,9 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          shared-key: windows-msvc-build
+          # Reuse main's cache instead of saving one isolated to this tag.
+          save-if: 'false'
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -63,15 +66,42 @@ jobs:
           if (!(Select-String -Path src-tauri/Cargo.toml -SimpleMatch -Pattern "version = `"$version`"" -Quiet)) { throw "Cargo version does not match" }
           if (!$env:UPDATE_SIGNING_PRIVATE_KEY) { throw "Missing UPDATE_SIGNING_PRIVATE_KEY repository secret" }
 
-      - run: pnpm build
       - run: pnpm audit --prod --audit-level=high
       - run: pnpm test:unit
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri app
+        # beforeBuildCommand performs the frontend build once.
         run: pnpm tauri:build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create optional delta from the previous stable release
+        id: delta
+        # A missing historical asset must not prevent a valid full-installer release.
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $bundle = Join-Path $PWD 'src-tauri/target/release/bundle/nsis'
+          $metadata = Join-Path $bundle 'update-delta.json'
+          if (Test-Path -LiteralPath $metadata) { Remove-Item -LiteralPath $metadata }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $previous = @(gh release list --limit 30 --json tagName,isPrerelease,isDraft | ConvertFrom-Json) |
+            Where-Object { !$_.isPrerelease -and !$_.isDraft -and $_.tagName -match '^v\d+\.\d+\.\d+$' -and [version]$_.tagName.Substring(1) -lt [version]$version } |
+            Sort-Object { [version]$_.tagName.Substring(1) } -Descending | Select-Object -First 1
+          if (!$previous) { Write-Host 'No older stable release; publishing full installer only.'; exit 0 }
+          $base = $previous.tagName.Substring(1)
+          $sourceDir = Join-Path $env:RUNNER_TEMP 'md-king-delta-base'
+          New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+          gh release download $previous.tagName --pattern "md-king_${base}_x64-setup.exe" --dir $sourceDir --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the delta base installer' }
+          & ./scripts/create-update-delta.ps1 -SourceInstaller (Join-Path $sourceDir "md-king_${base}_x64-setup.exe") -BaseVersion $previous.tagName
+          if (Test-Path -LiteralPath $metadata) {
+            $delta = Get-Content -LiteralPath $metadata -Raw | ConvertFrom-Json
+            "asset=src-tauri/target/release/bundle/nsis/$($delta.asset)" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Sign update manifest
         run: node scripts/sign-update.mjs
@@ -89,6 +119,7 @@ jobs:
             src-tauri/target/release/bundle/nsis/update-manifest.json
             src-tauri/target/release/bundle/nsis/update-manifest.sig
             src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+            ${{ steps.delta.outputs.asset }}
           fail_on_unmatched_files: true
           generate_release_notes: true
           draft: false
