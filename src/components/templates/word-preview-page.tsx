@@ -22,6 +22,7 @@ import { svgDataUrl } from "@/lib/svg-image";
 import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
 import { extractExplicitImageCaptions } from "@/lib/markdown-image-caption";
+import { formatCaptionText } from "@/lib/caption-numbering";
 import { normalizeAdjacentBoldTableCaptions } from "@/lib/markdown-block-caption";
 import { parseHorizontalRuleText } from "@/lib/horizontal-rule-text";
 import { isConventionalUnnumberedHeading, parseUnnumberedHeadingText } from "@/lib/markdown-heading-attributes";
@@ -263,10 +264,6 @@ function resolveBorderStyle(style: StyleDraft["borderStyle"]) {
 
 function border(width: number, style: StyleDraft["borderStyle"], color: string) {
   return `${width}px ${resolveBorderStyle(style)} ${color}`;
-}
-
-function captionText(draft: StyleDraft, fallbackTitle: string) {
-  return draft.captionNumbering ? `${draft.captionNumberFormat}  ${fallbackTitle}` : fallbackTitle;
 }
 
 function imageWidthPercent(draft: StyleDraft) {
@@ -2599,11 +2596,20 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const markdownPreview = markdown?.trim() ? parseMarkdownPreview(markdown) : undefined;
   const markdownBlocks = markdownPreview?.blocks ?? [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
-  const fallbackBlocks = createFallbackBlocks(captionText(caption, "图片样式预览"), captionText(tableCaption, "表格样式预览"));
+  const fallbackBlocks = createFallbackBlocks("图片样式预览", "表格样式预览");
+  let figureNumber = 0;
+  let tableNumber = 0;
   const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures)
-    .map((block) => block.type === "image" && !block.caption && block.alt
-      ? { ...block, caption: captionText(caption, block.alt) }
-      : block);
+    .map((block) => {
+      if (block.type === "table" && block.caption) {
+        return { ...block, caption: formatCaptionText(block.caption, ++tableNumber, tableCaption) };
+      }
+      if (block.type === "image" || (block.type === "code" && isMermaidLanguage(block.language))) {
+        const text = block.caption ?? (block.type === "image" ? block.alt : undefined);
+        if (text) return { ...block, caption: formatCaptionText(text, ++figureNumber, caption) };
+      }
+      return block;
+    });
   const mappedBlocks = applyHeadingMappings(activeBlocks, styleConfig?.markdownRules?.headingMappings ?? defaultMarkdownRules.headingMappings);
   const previewDrafts = { title, "heading-1": heading1, "heading-2": heading2, "heading-3": heading3, "heading-4": heading4, "heading-5": heading5, "heading-6": heading6, normal, quote, code, image, caption, "table-header": tableHeader, "table-body": tableBody, "table-caption": tableCaption, "inline-code": inlineCode, "horizontal-rule": horizontalRule, "bullet-list": bulletList, "numbered-list": numberedList, "nested-list": nestedList };
   // 页脚绝对定位在底部边距内，不占正文流；这里只扣除真正位于正文流中的页眉。

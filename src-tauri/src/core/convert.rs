@@ -3586,7 +3586,7 @@ fn caption_style_config_from_value(style_id: &str, style: &Value) -> CaptionStyl
         numbering: style
             .get("captionNumbering")
             .and_then(Value::as_bool)
-            .unwrap_or(true),
+            .unwrap_or(false),
         number_format: read_style_string(
             style,
             "captionNumberFormat",
@@ -6055,7 +6055,8 @@ fn normalize_document_captions(xml: &str, document_style: Option<&DocumentStyleC
 }
 
 fn normalize_caption_paragraph_layout(xml: &str, align: &str, is_caption: fn(&str) -> bool) -> String {
-    Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#)
+    // Empty <w:p /> separators must not consume the following caption paragraph.
+    Regex::new(r#"(?s)<w:p(?:\s[^>]*[^/])?\s*>.*?</w:p>"#)
         .expect("valid paragraph regex")
         .replace_all(xml, |captures: &Captures| {
             let paragraph = &captures[0];
@@ -6068,7 +6069,7 @@ fn normalize_caption_paragraph_layout(xml: &str, align: &str, is_caption: fn(&st
 }
 
 fn deduplicate_image_alt_captions(xml: &str) -> String {
-    let paragraph = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*[^/])?\s*>.*?</w:p>"#).expect("valid paragraph regex");
     let mut blocks = Vec::new();
     let mut cursor = 0;
     for matched in paragraph.find_iter(xml) {
@@ -6117,7 +6118,7 @@ fn deduplicate_image_alt_captions(xml: &str) -> String {
 }
 
 fn normalize_image_captions(xml: &str, style: &CaptionStyleConfig) -> String {
-    let paragraph = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+    let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*[^/])?\s*>.*?</w:p>"#).expect("valid paragraph regex");
     let mut blocks = Vec::new();
     let mut cursor = 0;
     for matched in paragraph.find_iter(xml) {
@@ -6171,7 +6172,7 @@ fn normalize_image_captions(xml: &str, style: &CaptionStyleConfig) -> String {
 }
 
 fn normalize_table_captions(xml: &str, style: &CaptionStyleConfig) -> String {
-    let block = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>|<w:tbl>.*?</w:tbl>"#)
+    let block = Regex::new(r#"(?s)<w:p(?:\s[^>]*[^/])?\s*>.*?</w:p>|<w:tbl>.*?</w:tbl>"#)
         .expect("valid document block regex");
     let mut blocks = Vec::new();
     let mut cursor = 0;
@@ -6341,15 +6342,16 @@ fn normalize_caption_paragraph(
     style: &CaptionStyleConfig,
     number: usize,
 ) -> String {
-    let text = strip_caption_number_prefix(&paragraph_plain_text(paragraph_xml));
+    let text = paragraph_plain_text(paragraph_xml);
     let text = if style.numbering {
+        let text = strip_caption_number_prefix(&text);
         format!(
             "{} {}",
             caption_number_label(&style.number_format, number),
             text.trim()
         )
     } else {
-        text.trim().to_string()
+        text
     };
     let paragraph_properties = align_paragraph_properties(
         &text_style_paragraph_properties_xml(&style.text),
@@ -6370,20 +6372,20 @@ fn normalize_caption_paragraph(
 }
 
 fn strip_caption_number_prefix(text: &str) -> String {
-    let prefix = Regex::new(r#"^\s*(?:(?:图|表|Figure|Table)\s*)?(?:[A-Za-z][.-])?\d+(?:-\d+)?[.、:：]?\s*"#)
+    let prefix = Regex::new(r#"^\s*(?:(?:图|表|Figure|Table)\s*)?(?:[A-Za-z][.-])?\d+(?:[.-]\d+)*[.、:：]?\s*"#)
         .expect("valid caption number prefix regex");
     prefix.replace(text, "").to_string()
 }
 
 fn caption_number_label(format: &str, number: usize) -> String {
-    let number_pattern = Regex::new(r#"\d+(?:-\d+)?"#).expect("valid caption number regex");
+    let number_pattern = Regex::new(r#"\d+(?:[.-]\d+)*"#).expect("valid caption number regex");
     let Some(found) = number_pattern.find(format) else {
         return format!("{} {}", format.trim(), number).trim().to_string();
     };
 
     let current = found.as_str();
-    let replacement = if let Some((prefix, _)) = current.rsplit_once('-') {
-        format!("{prefix}-{number}")
+    let replacement = if let Some(separator) = current.rfind(|ch| ch == '-' || ch == '.') {
+        format!("{}{number}", &current[..=separator])
     } else {
         number.to_string()
     };
@@ -13607,6 +13609,55 @@ mod tests {
             assert_eq!(super::strip_caption_number_prefix(source), title);
         }
         assert_eq!(super::caption_number_label("表 A-1", 2), "表 A-2");
+    }
+
+    #[test]
+    fn preserves_source_caption_labels_unless_numbering_is_explicitly_enabled() {
+        for styles in [json!({"caption": {}, "table-caption": {}}), json!({"caption": {"captionNumbering": false}, "table-caption": {"captionNumbering": false}})] {
+            let style = document_style_config_from_value(&json!({"styles": styles})).unwrap();
+            for (paragraph_style, text) in [("TableCaption", "表A-1 权限矩阵"), ("TableCaption", "表 1.1 权限矩阵"), ("TableCaption", "表 1 权限矩阵"), ("ImageCaption", "图A-1 系统图"), ("ImageCaption", "图 1.1 系统图")] {
+                let input = format!(r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="{paragraph_style}" /></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p><w:tbl></w:tbl></w:body></w:document>"#);
+                let output = normalize_document_captions(&input, Some(&style));
+                assert!(output.contains(&format!(">{text}</w:t>")));
+            }
+        }
+        assert_eq!(super::caption_number_label("图 1.1", 2), "图 1.2");
+        assert_eq!(super::strip_caption_number_prefix("图 1.1 系统图"), "系统图");
+    }
+
+    #[test]
+    fn explicitly_enabled_caption_numbering_applies_configured_formats() {
+        let style = document_style_config_from_value(&json!({"styles": {
+            "caption": {"captionNumbering": true, "captionNumberFormat": "图 1.1"},
+            "table-caption": {"captionNumbering": true, "captionNumberFormat": "表 1"}
+        }})).unwrap();
+        let input = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>图A-1 第一图</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="ImageCaption" /></w:pPr><w:r><w:t>图 1.1 第二图</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="TableCaption" /></w:pPr><w:r><w:t>表A-1 第一表</w:t></w:r></w:p><w:tbl></w:tbl><w:p><w:pPr><w:pStyle w:val="TableCaption" /></w:pPr><w:r><w:t>表B-1 第二表</w:t></w:r></w:p><w:tbl></w:tbl></w:body></w:document>"#;
+        let output = normalize_document_captions(input, Some(&style));
+        for text in ["图 1.1 第一图", "图 1.2 第二图", "表 1 第一表", "表 2 第二表"] {
+            assert!(output.contains(&format!(">{text}</w:t>")));
+        }
+        assert!(!output.contains("图A-1"));
+        assert!(!output.contains("表A-1"));
+    }
+
+    #[test]
+    fn caption_styles_preserve_self_closing_separator_paragraphs() {
+        for empty in ["<w:p />", "<w:p/>", r#"<w:p w:rsidR="00000001" />"#] {
+            for numbering in [false, true] {
+                let style = document_style_config_from_value(&json!({"styles": {
+                    "caption": {"captionNumbering": numbering, "captionNumberFormat": "图 1.1"},
+                    "table-caption": {"captionNumbering": numbering, "captionNumberFormat": "表 1"}
+                }})).unwrap();
+                for (paragraph_style, text) in [("ImageCaption", "图A-1 图片题注"), ("TableCaption", "表A-1 表格题注")] {
+                    let input = format!(r#"<w:document><w:body><w:tbl></w:tbl>{empty}<w:p><w:pPr><w:pStyle w:val="{paragraph_style}" /></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p><w:tbl></w:tbl></w:body></w:document>"#);
+                    let output = normalize_document_captions(&input, Some(&style));
+                    validate_xml_part("word/document.xml", output.as_bytes())
+                        .unwrap_or_else(|error| panic!("{error}; empty={empty}; style={paragraph_style}; numbering={numbering}; {output}"));
+                    assert!(output.contains(empty));
+                    if !numbering { assert!(output.contains(text)); }
+                }
+            }
+        }
     }
 
     #[test]

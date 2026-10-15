@@ -171,3 +171,13 @@ test("旧版标题编号格式会恢复二到四级的编号开关", () => {
   assert.equal(config.styles["heading-4"].autoNumbering, true);
   assert.equal(config.styles["heading-4"].numberFormat, "1.1.1.1");
 });
+test("题注默认保留原文，显式启用的自动编号设置仍保留", () => {
+  const defaults = createDefaultTemplateStyleConfig("default-report");
+  assert.equal(defaults.styles.caption.captionNumbering, false);
+  assert.equal(defaults.styles["table-caption"].captionNumbering, false);
+  defaults.styles.caption.captionNumbering = true;
+  defaults.styles.caption.captionNumberFormat = "图 1.1";
+  const merged = mergeTemplateStyleConfig("default-report", defaults);
+  assert.equal(merged.styles.caption.captionNumbering, true);
+  assert.equal(merged.styles.caption.captionNumberFormat, "图 1.1");
+});

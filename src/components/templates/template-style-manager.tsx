@@ -1454,11 +1454,12 @@ function StyleProperties({
               <Field label="题注对齐"><SimpleAlignSelect value={draft.captionAlign} onChange={(value) => updateDraft("captionAlign", value)} /></Field>
               <SettingSwitch label="题注自动编号" checked={draft.captionNumbering} onCheckedChange={(checked) => updateDraft("captionNumbering", checked)} />
               <Field label="编号格式">
-                <Select value={draft.captionNumberFormat} onValueChange={(value) => updateDraft("captionNumberFormat", value)}>
+                <Select disabled={!draft.captionNumbering} value={draft.captionNumberFormat} onValueChange={(value) => updateDraft("captionNumberFormat", value)}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
                   <SelectContent>{captionNumberFormatOptions.map((format) => <SelectItem key={format} value={format}>{format}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
+              <p className="text-xs text-slate-500 sm:col-span-2 dark:text-zinc-400">关闭时保留题注原文；开启后按所选格式重新编号。</p>
             </div>
           </PropertyCard>
         ) : null}

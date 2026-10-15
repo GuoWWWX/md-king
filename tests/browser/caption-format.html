@@ -25,8 +25,15 @@ const markdown = `正文应保留自己的段落格式。
 ![附录图](/md-king-logo.png)
 
 **图A-1 附录系统图**`;
+const styleConfig = createDefaultTemplateStyleConfig('default-report');
+if (new URLSearchParams(location.search).get('numbering') === 'auto') {
+  styleConfig.styles.caption.captionNumbering = true;
+  styleConfig.styles.caption.captionNumberFormat = '图 1.1';
+  styleConfig.styles['table-caption'].captionNumbering = true;
+  styleConfig.styles['table-caption'].captionNumberFormat = '表 1';
+}
 createRoot(document.querySelector('#app')).render(createElement(WordPreviewPage, {
-  markdown, styleConfig: createDefaultTemplateStyleConfig('default-report'),
+  markdown, styleConfig,
   zoom: 100, showHeader: false, showPageFooter: false,
   paperTheme: new URLSearchParams(location.search).get('theme') || 'light',
 }));
