@@ -567,8 +567,9 @@ fn renderer_html(
         .replace('>', "\\u003e")
         .replace('&', "\\u0026");
     let script_url = file_url(mermaid_script);
-    let node_spacing = if compact { 20 } else { 40 };
-    let rank_spacing = if compact { 25 } else { 40 };
+    let renderer_config = BASE64_STANDARD.encode(include_bytes!("../../../src/lib/mermaid-config.js"));
+    let node_spacing = if compact { 20 } else { 50 };
+    let rank_spacing = if compact { 25 } else { 60 };
     // PNG 由浏览器直接截图，保留 Mermaid 原生 HTML 标签可获得最完整的
     // Markdown 标签、自动换行和水平/垂直居中效果。仅在显式导出 SVG 时关闭
     // HTML 标签，避免 Word/WPS 无法显示 foreignObject。
@@ -583,7 +584,11 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict',htmlLabels:{html_labels},fontFamily:'Microsoft YaHei, Segoe UI Emoji, sans-serif',fontSize:14,markdownAutoWrap:true,themeVariables:{{fontSize:'14px'}},themeCSS:'.nodeLabel{{display:inline-block;max-width:160px;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;text-align:center}}.nodeLabel p{{margin:0}}.edgeLabel,.edgeLabel *,.edgeLabel p,.edgeLabel span,.edgeLabel foreignObject,.edgeLabel foreignObject>div{{background:transparent!important;background-color:transparent!important}}.edgeLabel rect{{fill:transparent!important;stroke:none!important}}.edgeLabel text,.edgeLabel tspan{{fill:#222!important;paint-order:stroke;stroke:#fff!important;stroke-width:3px!important}}.edgeLabel span,.edgeLabel p{{color:#222!important;text-shadow:1.5px 0 #fff,-1.5px 0 #fff,0 1.5px #fff,0 -1.5px #fff!important}}',flowchart:{{htmlLabels:{html_labels},useMaxWidth:false,wrappingWidth:160,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing},padding:8}}}});
+    const {{mermaidConfig,styleMermaidEdgeLabels}}=await import('data:text/javascript;base64,{renderer_config}');
+    const config=mermaidConfig('default');
+    config.htmlLabels={html_labels};
+    Object.assign(config.flowchart,{{htmlLabels:{html_labels},useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}});
+    mermaid.initialize(config);
     document.body.dataset.stage='syntax';
     await mermaid.parse(source);
     document.body.dataset.stage='layout';
@@ -600,6 +605,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     // Office 兼容处理会重写多行文本坐标。它只应影响序列化出的 SVG，
     // 不能污染随后用于 PNG 截图的 Mermaid 原生 DOM，否则多行文字会贴到
     // 节点上边缘。先保留原生副本，序列化完成后再放回页面截图。
+    styleMermaidEdgeLabels(svg,false);
     const pngSvg=svg.cloneNode(true);
     const officeSvgProperties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linecap','stroke-linejoin','opacity','color','font-family','font-size','font-weight','font-style','text-anchor','dominant-baseline'];
     const inlineOfficeRule=rule=>{{
@@ -1134,23 +1140,14 @@ mod tests {
         );
         assert!(!html.contains("A[</script>]"));
         assert!(html.contains("\\u003c/script\\u003e"));
-        assert!(html.contains("securityLevel:'strict'"));
-        assert!(html.contains("htmlLabels:false"));
-        assert!(html.contains("fontSize:14"));
-        assert!(html.contains("markdownAutoWrap:true"));
-        assert!(html.contains("wrappingWidth:160"));
-        assert!(html.contains("white-space:normal!important"));
-        assert!(html.contains("overflow-wrap:anywhere"));
-        assert!(html.contains("word-break:break-word"));
-        assert!(html.contains(".edgeLabel,.edgeLabel *"));
-        assert!(html.contains("background:transparent!important"));
-        assert!(html.contains("fill:transparent!important"));
-        // 导出画布是白色，标签使用深色字，并以同色背景的小范围描边擦除连线。
-        assert!(html.contains("fill:#222!important;paint-order:stroke;stroke:#fff!important"));
-        assert!(html.contains("color:#222!important;text-shadow:1.5px 0 #fff"));
-        assert!(html.contains("padding:8"));
+        assert!(html.contains("await import('data:text/javascript;base64,"));
+        assert!(html.contains("const config=mermaidConfig('default')"));
+        assert!(html.contains("config.htmlLabels=false"));
         assert!(html.contains("nodeSpacing:20"));
         assert!(html.contains("rankSpacing:25"));
+        let config = include_str!("../../../src/lib/mermaid-config.js");
+        assert!(config.contains("primaryBorderColor: \"#f59e0b\""));
+        assert!(config.contains("subGraphTitleMargin: { top: 16, bottom: 32 }"));
         assert!(html.contains("dataset.stage='syntax'"));
         assert!(html.contains("await mermaid.parse(source)"));
         assert!(html.contains("dataset.stage='layout'"));
@@ -1184,7 +1181,7 @@ mod tests {
         assert!(html.contains("classDef crypto"));
         assert!(html.contains("classDef action"));
         assert!(html.contains("flowchart LR"));
-        assert!(html.contains("htmlLabels:true"));
+        assert!(html.contains("config.htmlLabels=true"));
         assert!(html.contains("const pngSvg=svg.cloneNode(true)"));
         assert!(html.contains("host.replaceChildren(pngSvg)"));
         assert!(html.contains("svg.querySelectorAll('style')"));
@@ -1211,14 +1208,10 @@ mod tests {
                 false,
                 false,
             );
-            assert!(html.contains("fontSize:14"));
-            assert!(html.contains("markdownAutoWrap:true"));
-            assert!(html.contains("wrappingWidth:160"));
-            assert!(html.contains("white-space:normal!important"));
-            assert!(html.contains("overflow-wrap:anywhere"));
-            assert!(html.contains("word-break:break-word"));
-            assert!(html.contains("padding:8"));
-            assert!(html.contains("htmlLabels:true"));
+            assert!(html.contains("const config=mermaidConfig('default')"));
+            assert!(html.contains("nodeSpacing:50"));
+            assert!(html.contains("rankSpacing:60"));
+            assert!(html.contains("config.htmlLabels=true"));
             assert!(html.contains("normalizeOfficeTextRows=text=>"));
             assert!(html.contains("host.replaceChildren(pngSvg)"));
             assert!(html.contains(label));
