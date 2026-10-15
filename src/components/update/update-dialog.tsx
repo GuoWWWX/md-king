@@ -148,7 +148,7 @@ export function UpdateDialog() {
               onDocChanged={() => undefined}
               onOpenLink={handleReleaseNotesLink}
               openLinksOnClick
-              className="h-full [&_.cm-content]:p-4"
+              className="h-full [&_.cm-content]:p-4!"
             />
           </div>
         </div>
