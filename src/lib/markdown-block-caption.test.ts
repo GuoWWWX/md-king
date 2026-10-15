@@ -51,3 +51,18 @@ test("连续表格优先使用各自的前置编号题注", () => {
   assert.ok(output.includes("**表1-1 第一表**\n| A | B |"));
   assert.ok(output.includes("**表1-2 第二表**\n| C | D |"));
 });
+
+test("附录字母编号表题跨空行识别，连续表格保留各自题注", () => {
+  for (const title of ["表A-1 附录矩阵", "表 B.2 附录清单", "Table C-3 Appendix matrix"]) {
+    for (const source of [
+      `**${title}**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |`,
+      `| A | B |\n| --- | --- |\n| 1 | 2 |\n\n**${title}**`,
+    ]) {
+      assert.ok(normalizeAdjacentBoldTableCaptions(source).includes(`**${title}**\n| A | B |`));
+    }
+  }
+  const source = "**表A-1 第一表**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n**表B-1 第二表**\n\n| C | D |\n| --- | --- |\n| 3 | 4 |";
+  const output = normalizeAdjacentBoldTableCaptions(source);
+  assert.ok(output.includes("**表A-1 第一表**\n| A | B |"));
+  assert.ok(output.includes("**表B-1 第二表**\n| C | D |"));
+});

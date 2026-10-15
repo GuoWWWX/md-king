@@ -41,7 +41,7 @@ export function extractExplicitImageCaptions(markdown: string): ImageCaptionExtr
     if (boldCaption) {
       let before = index - 1;
       let after = index + 1;
-      if (/^(?:图|Figure)\s*\d/i.test(boldCaption)) {
+      if (/^(?:图|Figure)\s*(?:[a-z][.-])?\d/i.test(boldCaption)) {
         while (before >= 0 && !lines[before].trim()) before -= 1;
         while (after < lines.length && !lines[after].trim()) after += 1;
       }

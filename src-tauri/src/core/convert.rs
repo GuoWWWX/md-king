@@ -5036,8 +5036,8 @@ fn normalize_adjacent_bold_captions(markdown: &str) -> String {
 
     let mut consumed = vec![false; lines.len()];
     let mut insert_after = HashMap::<usize, String>::new();
-    let image_prefix = Regex::new(r"(?i)^(?:图|Figure)\s*\d").expect("valid figure caption prefix");
-    let table_prefix = Regex::new(r"(?i)^(?:表|Table)\s*\d").expect("valid table caption prefix");
+    let image_prefix = Regex::new(r"(?i)^(?:图|Figure)\s*(?:[a-z][.-])?\d").expect("valid figure caption prefix");
+    let table_prefix = Regex::new(r"(?i)^(?:表|Table)\s*(?:[a-z][.-])?\d").expect("valid table caption prefix");
     for (start, end) in objects {
         let prefix = if markdown_image_only_line(lines[start]) { &image_prefix } else { &table_prefix };
         let adjacent_caption = |object_line: usize, direction: isize| {
@@ -6370,7 +6370,7 @@ fn normalize_caption_paragraph(
 }
 
 fn strip_caption_number_prefix(text: &str) -> String {
-    let prefix = Regex::new(r#"^\s*(?:(?:图|表|Figure|Table)\s*)?\d+(?:-\d+)?[.、:：]?\s*"#)
+    let prefix = Regex::new(r#"^\s*(?:(?:图|表|Figure|Table)\s*)?(?:[A-Za-z][.-])?\d+(?:-\d+)?[.、:：]?\s*"#)
         .expect("valid caption number prefix regex");
     prefix.replace(text, "").to_string()
 }
@@ -13588,6 +13588,25 @@ mod tests {
         assert!(output.find("Table: 表1-1 第一表").unwrap() < output.find("| C | D |").unwrap());
         assert!(output.find("Table: 表1-2 第二表").unwrap() > output.find("| 3 | 4 |").unwrap());
         assert!(!output.contains("**表1-"));
+    }
+
+    #[test]
+    fn recognizes_appendix_captions_across_blank_lines() {
+        for (table, figure) in [("表A-1 附录矩阵", "图A-1 附录图"), ("Table B.2 Appendix matrix", "Figure B.2 Appendix diagram")] {
+            let input = format!("**{table}**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n正文\n\n![图](a.png)\n\n**{figure}**\n");
+            let output = preprocess_markdown_for_word(&input);
+            assert!(output.contains(&format!("Table: {table}")));
+            assert!(output.contains(&format!("::: {{custom-style=\"Image Caption\"}}\n{figure}\n:::")));
+            assert!(!output.contains(&format!("**{table}**")));
+        }
+    }
+
+    #[test]
+    fn renumbers_appendix_captions_without_duplicating_the_old_label() {
+        for (source, title) in [("表A-1 附录矩阵", "附录矩阵"), ("图 B.2 附录示意", "附录示意"), ("Table C-3 Appendix matrix", "Appendix matrix")] {
+            assert_eq!(super::strip_caption_number_prefix(source), title);
+        }
+        assert_eq!(super::caption_number_label("表 A-1", 2), "表 A-2");
     }
 
     #[test]
