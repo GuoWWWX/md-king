@@ -32,7 +32,9 @@ notify = "8"
 sha2 = "0.10"
 ring = "0.17"
 quick-xml = "0.39"
+
+[target.'cfg(not(windows))'.dependencies]
 ureq = { version = "2.10", default-features = false, features = ["tls"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Networking_WinHttp"] }

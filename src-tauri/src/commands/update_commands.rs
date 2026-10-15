@@ -1,6 +1,7 @@
 use crate::core::update::{installer_arguments, release_directory, verify_installer, verify_manifest, UpdateManifest};
 use crate::core::update_download::download_installer;
 use crate::storage::paths::app_data_dir;
+use crate::system::update_http;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::PathBuf;
@@ -27,24 +28,25 @@ pub fn cancel_update_download() -> Result<(), String> {
 pub async fn fetch_latest_release(repo: Option<String>) -> Result<String, String> {
     let repo_name = repo.unwrap_or_else(|| "GuoWWWX/md-king".to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        let response = ureq::get(&format!("https://api.github.com/repos/{repo_name}/releases/latest"))
-            .set("User-Agent", "md-king-updater")
-            .set("Accept", "application/vnd.github+json")
-            .timeout(Duration::from_secs(15)).call();
-        match response {
-            Ok(resp) => resp.into_string().map_err(|e| format!("读取 Release 响应失败: {e}")),
-            Err(ureq::Error::Status(404, _)) => Ok("null".into()),
-            Err(e) => Err(format!("请求 GitHub Release 失败: {e}")),
+        let mut response = update_http::get(&format!("https://api.github.com/repos/{repo_name}/releases/latest"), None,
+            Some("application/vnd.github+json"), Duration::from_secs(15))?;
+        match response.status {
+            200 => {
+                let mut json = String::new();
+                response.body.read_to_string(&mut json).map_err(|e| format!("读取 Release 响应失败: {e}"))?;
+                Ok(json)
+            },
+            404 => Ok("null".into()),
+            status => Err(format!("请求 GitHub Release 失败: HTTP {status}")),
         }
     }).await.map_err(|e| format!("异步任务执行失败: {e}"))?
 }
 
 fn fetch_update_metadata(url: &str) -> Result<Vec<u8>, String> {
-    let response = ureq::get(url).set("User-Agent", "md-king-updater")
-        .timeout(Duration::from_secs(30)).call()
-        .map_err(|e| format!("读取更新签名清单失败: {e}"))?;
+    let response = update_http::get(url, None, None, Duration::from_secs(30))?;
+    if response.status != 200 { return Err(format!("读取更新签名清单失败: HTTP {}", response.status)); }
     let mut bytes = Vec::new();
-    response.into_reader().take(64 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    response.body.take(64 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
     if bytes.len() > 64 * 1024 { return Err("更新清单过大。".into()); }
     Ok(bytes)
 }

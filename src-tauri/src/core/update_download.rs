@@ -1,5 +1,6 @@
 use super::update::{verify_installer, UpdateManifest};
 use crate::storage::atomic::write_atomic;
+use crate::system::update_http;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -79,23 +80,11 @@ pub fn download_installer(
     check_cancelled()?;
     if offset < manifest.size {
         // Bound stalled reads without imposing a time limit on the whole large download.
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(15))
-            .timeout_read(Duration::from_secs(15))
-            .build();
-        let mut request = agent
-            .get(url)
-            .set("User-Agent", "md-king-updater")
-            .set("Accept-Encoding", "identity");
-        if offset > 0 {
-            request = request.set("Range", &format!("bytes={offset}-"));
-        }
-        let response = request
-            .call()
-            .map_err(|e| format!("发起下载连接失败: {e}"))?;
+        let range = (offset > 0).then(|| format!("bytes={offset}-"));
+        let response = update_http::get(url, range.as_deref(), None, Duration::from_secs(15))?;
         check_cancelled()?;
-        match response.status() {
-            206 if response.header("Content-Range")
+        match response.status {
+            206 if response.content_range.as_deref()
                 == Some(
                     format!("bytes {offset}-{}/{}", manifest.size - 1, manifest.size).as_str(),
                 ) => {}
@@ -112,7 +101,7 @@ pub fn download_installer(
             .open(&path)
             .map_err(|e| format!("无法写入安装包：{e}"))?;
         emit(progress(offset, 0.0));
-        let mut reader = response.into_reader();
+        let mut reader = response.body;
         let mut transferred = offset;
         let mut buffer = [0u8; 64 * 1024];
         let start = Instant::now();

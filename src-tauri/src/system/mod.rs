@@ -4,4 +4,5 @@ pub mod open_file;
 pub mod quick_paste;
 pub mod startup_files;
 pub mod tray;
+pub mod update_http;
 pub mod vault_watcher;
