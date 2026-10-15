@@ -10458,15 +10458,24 @@ fn table_run_properties(style: &TableCellStyleConfig) -> String {
 }
 
 fn ensure_heading_numbering_xml(xml: &str, heading_numbering: &HeadingNumberingConfig) -> String {
-    let without_existing = remove_existing_heading_numbering(xml);
-    without_existing.replace(
-        "</w:numbering>",
-        &format!(
-            "{}{}",
-            heading_numbering_xml_body(heading_numbering),
-            "</w:numbering>"
-        ),
-    )
+    let mut numbering = remove_existing_heading_numbering(xml);
+    let body = heading_numbering_xml_body(heading_numbering);
+    let (abstract_num, num) = body.split_at(body.find("<w:num ").expect("heading numbering instance"));
+    let Some(end) = numbering
+        .find("<w:numIdMacAtCleanup")
+        .or_else(|| numbering.find("</w:numbering>"))
+    else {
+        return numbering;
+    };
+    // Word requires all abstractNum definitions before num instances, followed
+    // by numIdMacAtCleanup. Appending an abstractNum after lists loses their numbers.
+    let first_num = Regex::new(r"<w:num\b")
+        .expect("valid numbering instance opening regex")
+        .find(&numbering)
+        .map_or(end, |value| value.start());
+    numbering.insert_str(end, num);
+    numbering.insert_str(first_num, abstract_num);
+    numbering
 }
 
 fn normalize_ordered_list_numbering_xml(
@@ -10561,9 +10570,9 @@ fn ordered_list_numbering_pattern(level: usize, configured_format: &str) -> (&'s
 
 fn remove_existing_heading_numbering(xml: &str) -> String {
     let abstract_num =
-        Regex::new(r#"(?s)<w:abstractNum\s+w:abstractNumId="9100">.*?</w:abstractNum>"#)
+        Regex::new(r#"(?s)<w:abstractNum\b[^>]*\bw:abstractNumId="9100"[^>]*>.*?</w:abstractNum>"#)
             .expect("valid heading abstract numbering regex");
-    let num = Regex::new(r#"(?s)<w:num\s+w:numId="9100">.*?</w:num>"#)
+    let num = Regex::new(r#"(?s)<w:num\b[^>]*\bw:numId="9100"[^>]*>.*?</w:num>"#)
         .expect("valid heading numbering regex");
     let xml = abstract_num.replace_all(xml, "");
     num.replace_all(&xml, "").to_string()
@@ -10640,7 +10649,7 @@ mod tests {
         detect_adjacent_image_caption_diagnostics, detect_adjacent_image_caption_warnings,
         detect_heading_level_jumps,
         detect_missing_local_images, detect_wide_markdown_tables, document_style_config_from_value,
-        embed_svg_png_fallbacks, ensure_no_picture_compression, ensure_toc_fields_update_on_open,
+        embed_svg_png_fallbacks, ensure_heading_numbering_xml, ensure_no_picture_compression, ensure_toc_fields_update_on_open,
         footer_page_number_xml,
         has_supported_text_extension,
         filter_benign_pandoc_svg_fallback_warning,
@@ -14087,6 +14096,30 @@ mod tests {
         assert!(numbering.contains(r#"<w:lvlText w:val="%1.%2.%3" />"#));
         assert!(numbering.contains(r#"<w:lvl w:ilvl="0"><w:start w:val="1" /><w:numFmt w:val="decimal" /><w:lvlText w:val="%1" /><w:suff w:val="space" /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="0" w:hanging="0" /></w:pPr></w:lvl>"#));
         assert!(numbering.contains(r#"<w:lvl w:ilvl="1"><w:start w:val="1" /><w:numFmt w:val="decimal" /><w:lvlText w:val="%1.%2" /><w:suff w:val="space" /><w:lvlJc w:val="left" /><w:pPr><w:ind w:left="0" w:hanging="0" /></w:pPr></w:lvl>"#));
+    }
+
+    #[test]
+    fn keeps_list_numbers_when_adding_heading_numbering_for_word() {
+        let input = r#"<w:numbering><w:abstractNum w:abstractNumId="7"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /></w:lvl></w:abstractNum><w:num w:numId="18" w16cid:durableId="123"><w:abstractNumId w:val="7" /></w:num><w:numIdMacAtCleanup w:val="19" /></w:numbering>"#;
+        let config = default_report_heading_numbering_config();
+        let output = ensure_heading_numbering_xml(input, &config);
+        let heading_abstract = output.find(r#"<w:abstractNum w:abstractNumId="9100""#).unwrap();
+        let list_instance = output.find(r#"<w:num w:numId="18""#).unwrap();
+        let heading_instance = output.find(r#"<w:num w:numId="9100""#).unwrap();
+        let cleanup = output.find("<w:numIdMacAtCleanup").unwrap();
+        assert!(heading_abstract < list_instance);
+        assert!(heading_instance < cleanup);
+        assert!(output.contains(r#"<w:num w:numId="18" w16cid:durableId="123"><w:abstractNumId w:val="7" /></w:num>"#));
+        assert_eq!(ensure_heading_numbering_xml(&output, &config), output);
+    }
+
+    #[test]
+    fn replaces_heading_numbering_with_office_metadata_without_duplicates() {
+        let input = r#"<w:numbering><w:abstractNum w15:restartNumberingAfterBreak="0" w:abstractNumId="9100"><w:lvl w:ilvl="0" /></w:abstractNum><w:num w16cid:durableId="456" w:numId="9100"><w:abstractNumId w:val="9100" /></w:num></w:numbering>"#;
+        let output = ensure_heading_numbering_xml(input, &default_report_heading_numbering_config());
+        assert_eq!(output.matches(r#"w:abstractNumId="9100""#).count(), 1);
+        assert_eq!(output.matches(r#"w:numId="9100""#).count(), 1);
+        assert!(!output.contains("durableId"));
     }
 
     #[test]
