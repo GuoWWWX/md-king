@@ -12,9 +12,19 @@ const markdown = `正文应保留自己的段落格式。
 | --- | --- |
 | 测试 | 通过 |
 
+**表A-1 附录权限矩阵**
+
+| 角色 | 权限 |
+| --- | --- |
+| 操作员 | 运行 |
+
 ![示意图](/md-king-logo.png)
 
-**图3-1 系统示意图**`;
+**图3-1 系统示意图**
+
+![附录图](/md-king-logo.png)
+
+**图A-1 附录系统图**`;
 createRoot(document.querySelector('#app')).render(createElement(WordPreviewPage, {
   markdown, styleConfig: createDefaultTemplateStyleConfig('default-report'),
   zoom: 100, showHeader: false, showPageFooter: false,

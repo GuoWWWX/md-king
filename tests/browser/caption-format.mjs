@@ -6,7 +6,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 1300 } });
   for (const theme of ["light", "dark"]) {
     await page.goto(`${process.env.TEST_BASE_URL || "http://127.0.0.1:1420"}/tests/browser/caption-format.html?theme=${theme}`);
-    for (const text of ["表4-1 仿真测试指标", "图3-1 系统示意图"]) {
+    for (const text of ["表4-1 仿真测试指标", "表A-1 附录权限矩阵", "图3-1 系统示意图", "图A-1 附录系统图"]) {
       const caption = page.getByText(text, { exact: true });
       await caption.waitFor();
       const style = await caption.evaluate(el => {
