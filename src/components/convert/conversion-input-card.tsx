@@ -11,6 +11,7 @@ import { markdownFileAccept, readMarkdownFile } from "@/lib/markdown-files";
 import { markdownOutlineRevealEvent, type MarkdownOutlineRevealTarget } from "@/lib/document-outline";
 import { imageFileExtension } from "@/lib/image-files";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
+import { readClipboardText } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { setRevealHighlightEffect } from "@/components/editor/cm/reveal-highlight";
 
@@ -262,7 +263,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           // 某些 WebView 只允许 paste 事件读取图片；右键菜单仍继续尝试文本粘贴。
         }
       }
-      const text = await navigator.clipboard.readText();
+      const text = await readClipboardText();
       if (!text) return;
       const { from, to } = view.state.selection.main;
       view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });

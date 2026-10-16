@@ -18,6 +18,13 @@ pub async fn convert_markdown(
 }
 
 #[tauri::command]
+pub async fn read_clipboard_text() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(crate::system::quick_paste::read_clipboard_text)
+        .await
+        .map_err(|error| format!("读取剪贴板后台任务异常：{error}"))?
+}
+
+#[tauri::command]
 pub fn read_markdown_file(path: String) -> Result<String, String> {
     let path = PathBuf::from(path.trim());
     if !path.is_file() || !is_supported_text_path(&path) {
