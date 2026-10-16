@@ -127,6 +127,16 @@ export function isTauriEnvironment() {
   return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
 }
 
+export async function readClipboardText(): Promise<string> {
+  if (isTauriEnvironment()) {
+    return invoke<string>("read_clipboard_text");
+  }
+  if (!navigator.clipboard?.readText) {
+    throw new Error("当前环境不支持读取剪贴板，请手动粘贴内容");
+  }
+  return navigator.clipboard.readText();
+}
+
 function normalizeDialogSelection(selected: string | string[] | null) {
   if (Array.isArray(selected)) {
     return selected[0];

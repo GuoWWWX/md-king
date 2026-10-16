@@ -24,7 +24,7 @@ import { clipboardReadErrorMessage } from "@/lib/clipboard-errors";
 import { actionableConversionWarnings, buildDocxOutputName, buildDocxOutputNameFromPath, buildOutputPath } from "@/lib/convert-utils";
 import { buildHistoryItem, limitHistory } from "@/lib/conversion-history";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
-import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles, selectMarkdownSavePath } from "@/lib/tauri";
+import { saveAppConfig, appendHistory, convertMarkdown, getTemplateStyleConfig, isTauriEnvironment, readClipboardText, revealOutputPath, selectDirectory, selectMarkdownFile, selectMarkdownFiles, selectMarkdownSavePath } from "@/lib/tauri";
 import { parseVaultError, userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -1616,12 +1616,12 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   }
 
   async function handleReadClipboard() {
-    if (!navigator.clipboard?.readText) {
+    if (!isTauriEnvironment() && !navigator.clipboard?.readText) {
       toast.error("当前环境不支持读取剪贴板，请手动粘贴 Markdown 内容");
       return;
     }
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await readClipboardText();
       // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
       openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text, dirty: true });
       setOutputNameEdited(false);

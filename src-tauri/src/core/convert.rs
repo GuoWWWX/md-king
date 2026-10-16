@@ -42,6 +42,7 @@ const BLOCK_CAPTION_MARKER_PREFIX: &str = "MD_KING_BLOCK_CAPTION:";
 const TASK_LIST_MARKER_PREFIX: &str = "MD_KING_TASK_LIST:";
 const UNNUMBERED_HEADING_MARKER: &str = "MD_KING_UNNUMBERED_HEADING:";
 const ORDERED_LIST_MARKER: &str = "<!--MD_KING_ORDERED_LIST-->";
+const LIST_CONTINUATION_MARKER: &str = "<!--MD_KING_LIST_CONTINUATION-->";
 const MERMAID_WIDTH_TITLE_PREFIX: &str = "MD_KING_MERMAID_WIDTH_";
 const WORD_TEXT_CHARACTER_SPACING_TWIPS: u32 = 4;
 
@@ -5368,6 +5369,14 @@ fn ordered_list_num_ids_from_numbering_xml(xml: &str) -> HashMap<String, String>
 }
 
 fn mark_ordered_list_num_ids(xml: &str, replacements: &HashMap<String, String>) -> String {
+    mark_list_num_ids(xml, replacements, ORDERED_LIST_MARKER)
+}
+
+fn mark_list_num_ids(
+    xml: &str,
+    replacements: &HashMap<String, String>,
+    marker: &str,
+) -> String {
     if replacements.is_empty() {
         return xml.to_string();
     }
@@ -5378,9 +5387,34 @@ fn mark_ordered_list_num_ids(xml: &str, replacements: &HashMap<String, String>) 
             if !replacements.contains_key(&captures[1]) {
                 return captures[0].to_string();
             }
-            format!("{ORDERED_LIST_MARKER}{}", &captures[0])
+            format!("{marker}{}", &captures[0])
         })
         .to_string()
+}
+
+fn list_continuation_num_ids_from_numbering_xml(xml: &str) -> HashMap<String, String> {
+    let abstract_num = Regex::new(
+        r#"(?s)<w:abstractNum\b[^>]*\bw:abstractNumId="([^"]+)"[^>]*>.*?</w:abstractNum>"#,
+    )
+    .expect("valid continuation abstract numbering regex");
+    let level_text = Regex::new(r#"<w:lvlText\b[^>]*\bw:val="([^"]*)"[^>]*/>"#)
+        .expect("valid continuation level text regex");
+    let blank_abstract_ids: HashSet<_> = abstract_num
+        .captures_iter(xml)
+        .filter(|captures| {
+            let mut markers = level_text.captures_iter(&captures[0]).peekable();
+            markers.peek().is_some() && markers.all(|marker| marker[1].trim().is_empty())
+        })
+        .map(|captures| captures[1].to_string())
+        .collect();
+    let num = Regex::new(
+        r#"(?s)<w:num\b[^>]*\bw:numId="([^"]+)"[^>]*>.*?<w:abstractNumId\s+w:val="([^"]+)"\s*/>.*?</w:num>"#,
+    )
+    .expect("valid continuation numbering instance regex");
+    num.captures_iter(xml)
+        .filter(|captures| blank_abstract_ids.contains(&captures[2]))
+        .map(|captures| (captures[1].to_string(), captures[2].to_string()))
+        .collect()
 }
 
 fn normalize_docx(
@@ -5410,6 +5444,9 @@ fn normalize_docx(
     let header_footer = page_settings.filter(|settings| page_settings_has_header_footer(settings));
     let task_list_markers = read_task_list_markers_from_docx(&mut archive);
     let ordered_list_num_ids = read_ordered_list_num_ids_from_docx(&mut archive);
+    let list_continuation_num_ids = read_numbering_xml_from_docx(&mut archive)
+        .map(|xml| list_continuation_num_ids_from_numbering_xml(&xml))
+        .unwrap_or_default();
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -5463,6 +5500,7 @@ fn normalize_docx(
                 .map_err(|error| format!("解析 document.xml 失败：{error}"))?;
             let xml = mark_task_list_paragraphs(&xml, &task_list_markers);
             let xml = mark_ordered_list_num_ids(&xml, &ordered_list_num_ids);
+            let xml = mark_list_num_ids(&xml, &list_continuation_num_ids, LIST_CONTINUATION_MARKER);
             let xml = normalize_document_xml(
                 &xml,
                 apply_default_template_style,
@@ -5667,7 +5705,7 @@ fn normalize_document_xml(
     let xml = if apply_default_table_style || has_list_style {
         normalize_list_markers(&xml, document_style)
     } else {
-        xml
+        xml.replace(LIST_CONTINUATION_MARKER, "")
     };
     let xml = normalize_explicit_line_indent(&xml, apply_default_table_style, document_style);
 
@@ -5748,6 +5786,12 @@ fn normalize_emoji_runs(xml: &str) -> String {
 
 const EMOJI_FONT_XML: &str =
     r#"<w:rFonts w:ascii="Segoe UI Emoji" w:hAnsi="Segoe UI Emoji" w:eastAsia="Segoe UI Emoji" w:cs="Segoe UI Emoji" w:hint="default" />"#;
+// Inherited text colors make Word/WPS render color emoji as monochrome glyphs.
+const EMOJI_COLOR_XML: &str = r#"<w:color w:val="auto" />"#;
+// Keep emoji out of inherited text effects and CJK character-grid stretching.
+const EMOJI_EFFECTS_XML: &str = r#"<w:b w:val="0" /><w:bCs w:val="0" /><w:i w:val="0" /><w:iCs w:val="0" /><w:outline w:val="0" /><w:shadow w:val="0" /><w:emboss w:val="0" /><w:imprint w:val="0" /><w:snapToGrid w:val="0" />"#;
+const EMOJI_SPACING_XML: &str = r#"<w:spacing w:val="0" />"#;
+const EMOJI_BORDER_XML: &str = r#"<w:effect w:val="none" /><w:bdr w:val="nil" /><w14:textOutline xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:w="0"><w14:noFill /></w14:textOutline>"#;
 
 fn split_emoji_run(run_xml: &str) -> Option<String> {
     let run_start = Regex::new(r#"<w:r\b[^>]*>"#).expect("valid emoji run start regex");
@@ -5839,11 +5883,11 @@ fn emoji_run_xml(run_attributes: &str, properties_inner: &str, content: &str, em
         let properties = strip_emoji_run_overrides(properties_inner);
         let content = content.replace(text.chars().next().unwrap(), "●")
             .replace(['\u{fe0e}', '\u{fe0f}'], "");
-        return format!(r#"<w{run_attributes}><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial" /><w:color w:val="{color}" />{properties}</w:rPr>{content}</w:r>"#);
+        return format!(r#"<w{run_attributes}><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial" />{EMOJI_EFFECTS_XML}<w:color w:val="{color}" />{EMOJI_SPACING_XML}{properties}{EMOJI_BORDER_XML}</w:rPr>{content}</w:r>"#);
     }
     let properties = if emoji {
         let properties_inner = strip_emoji_run_overrides(properties_inner);
-        format!("<w:rPr>{EMOJI_FONT_XML}{properties_inner}</w:rPr>")
+        format!("<w:rPr>{EMOJI_FONT_XML}{EMOJI_EFFECTS_XML}{EMOJI_COLOR_XML}{EMOJI_SPACING_XML}{properties_inner}{EMOJI_BORDER_XML}</w:rPr>")
     } else if properties_inner.is_empty() {
         String::new()
     } else {
@@ -5866,9 +5910,13 @@ fn circle_color(character: char) -> Option<&'static str> {
 }
 
 fn strip_emoji_run_overrides(properties_inner: &str) -> String {
-    let overrides = Regex::new(r#"<w:(?:rFonts|color|b|bCs|i|iCs)\b[^>]*/>"#)
+    let overrides = Regex::new(r#"<w:(?:rFonts|color|b|bCs|i|iCs|outline|shadow|emboss|imprint|snapToGrid|spacing|effect|bdr)\b[^>]*/>"#)
         .expect("valid emoji run override regex");
-    overrides.replace_all(properties_inner, "").to_string()
+    let text_outline = Regex::new(r#"(?s)<w14:textOutline\b[^>]*(?:/>|>.*?</w14:textOutline>)"#)
+        .expect("valid emoji text outline regex");
+    text_outline
+        .replace_all(&overrides.replace_all(properties_inner, ""), "")
+        .to_string()
 }
 
 fn is_emoji_character(value: char) -> bool {
@@ -5898,7 +5946,7 @@ fn ensure_emoji_run_font(run_xml: &str) -> String {
         return run_properties
             .replace(run_xml, |captures: &Captures| {
                 let inner = strip_emoji_run_overrides(&captures[1]);
-                format!("<w:rPr>{EMOJI_FONT_XML}{inner}</w:rPr>")
+                format!("<w:rPr>{EMOJI_FONT_XML}{EMOJI_EFFECTS_XML}{EMOJI_COLOR_XML}{EMOJI_SPACING_XML}{inner}{EMOJI_BORDER_XML}</w:rPr>")
             })
             .to_string();
     }
@@ -5906,7 +5954,7 @@ fn ensure_emoji_run_font(run_xml: &str) -> String {
     let run_start = Regex::new(r#"<w:r\b[^>]*>"#).expect("valid run start regex");
     run_start
         .replace(run_xml, |captures: &Captures| {
-            format!("{}<w:rPr>{EMOJI_FONT_XML}</w:rPr>", &captures[0])
+            format!("{}<w:rPr>{EMOJI_FONT_XML}{EMOJI_EFFECTS_XML}{EMOJI_COLOR_XML}{EMOJI_SPACING_XML}{EMOJI_BORDER_XML}</w:rPr>", &captures[0])
         })
         .to_string()
 }
@@ -9201,15 +9249,34 @@ fn normalize_list_markers(xml: &str, document_style: Option<&DocumentStyleConfig
         Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
     let mut ordered_counters: HashMap<String, usize> = HashMap::new();
     let mut list_level_ordered = [false; 4];
+    let mut list_properties: HashMap<usize, String> = HashMap::new();
+    let level = Regex::new(r#"<w:ilvl w:val="(\d+)" />"#).expect("valid list level regex");
+    let properties = Regex::new(r"(?s)<w:pPr>.*?</w:pPr>")
+        .expect("valid list paragraph properties regex");
 
     paragraph
         .replace_all(xml, |captures: &Captures| {
-            normalize_list_paragraph(
+            let output = normalize_list_paragraph(
                 &captures[0],
                 &mut ordered_counters,
                 &mut list_level_ordered,
                 document_style,
-            )
+                &list_properties,
+            );
+            if !captures[0].contains(LIST_CONTINUATION_MARKER) {
+                if let Some(level) = level.captures(&captures[0])
+                    .and_then(|value| value[1].parse::<usize>().ok())
+                    .filter(|_| capture_heading_style_id(&captures[0]).is_none())
+                {
+                    list_properties.retain(|key, _| *key <= level);
+                    if let Some(properties) = properties.find(&output) {
+                        list_properties.insert(level, properties.as_str().to_string());
+                    }
+                } else {
+                    list_properties.clear();
+                }
+            }
+            output
         })
         .to_string()
 }
@@ -9254,9 +9321,13 @@ fn normalize_list_paragraph(
     ordered_counters: &mut HashMap<String, usize>,
     list_level_ordered: &mut [bool; 4],
     document_style: Option<&DocumentStyleConfig>,
+    list_properties: &HashMap<usize, String>,
 ) -> String {
     let marked_as_ordered = paragraph_xml.contains(ORDERED_LIST_MARKER);
-    let paragraph_xml = paragraph_xml.replace(ORDERED_LIST_MARKER, "");
+    let is_continuation = paragraph_xml.contains(LIST_CONTINUATION_MARKER);
+    let paragraph_xml = paragraph_xml
+        .replace(ORDERED_LIST_MARKER, "")
+        .replace(LIST_CONTINUATION_MARKER, "");
     if capture_heading_style_id(&paragraph_xml).is_some() {
         clear_restart_ordered_counters(ordered_counters, document_style);
         return paragraph_xml;
@@ -9279,6 +9350,33 @@ fn normalize_list_paragraph(
     if num_id == "9100" {
         clear_restart_ordered_counters(ordered_counters, document_style);
         return paragraph_xml;
+    }
+
+    if is_continuation {
+        // Pandoc uses a blank list marker for subsequent paragraphs in one item.
+        // Keep the parent's text alignment without a marker or hanging first line.
+        let Some(parent_properties) = list_properties.get(&level) else {
+            return paragraph_xml;
+        };
+        let removable = Regex::new(
+            r#"(?s)<w:numPr>.*?</w:numPr>|<w:tabs>.*?</w:tabs>|\s+w:(?:hanging|hangingChars|firstLine|firstLineChars)="[^"]*""#,
+        )
+        .expect("valid continuation paragraph cleanup regex");
+        let properties = removable.replace_all(parent_properties, "");
+        let properties = properties.replace("<w:ind ", r#"<w:ind w:firstLine="0" "#);
+        let paragraph_properties = Regex::new(r"(?s)<w:pPr>.*?</w:pPr>")
+            .expect("valid continuation paragraph properties regex");
+        let output = paragraph_properties.replace(&paragraph_xml, properties).to_string();
+        let style = if list_level_ordered[level.min(3)] {
+            ordered_list_style(document_style, level)
+        } else {
+            document_style.and_then(|style| {
+                style.styles.get(if level > 0 { "nested-list" } else { "bullet-list" })
+            })
+        };
+        return style
+            .map(|style| apply_list_level_run_style(&output, style, level))
+            .unwrap_or_else(|| apply_default_list_run_style(&output));
     }
 
     let raw_is_ordered = marked_as_ordered
@@ -11863,6 +11961,71 @@ mod tests {
     }
 
     #[test]
+    fn removes_emoji_borders_and_effects_without_changing_surrounding_text() {
+        let input = r#"<w:r><w:rPr><w:bdr w:val="single" w:sz="8" w:color="000000"/><w:outline/><w:shadow/><w:emboss/><w:imprint/><w14:textOutline w14:w="12700"><w14:solidFill><w14:srgbClr w14:val="000000"/></w14:solidFill></w14:textOutline><w:spacing w:val="4"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">正文 👌 ✅</w:t></w:r>"#;
+        let output = normalize_emoji_runs(input);
+        let emoji_runs: Vec<_> = Regex::new(r#"(?s)<w:r><w:rPr><w:rFonts w:ascii="Segoe UI Emoji".*?</w:r>"#)
+            .expect("valid emoji run assertion regex")
+            .find_iter(&output)
+            .map(|matched| matched.as_str())
+            .collect();
+
+        assert_eq!(emoji_runs.len(), 2);
+        for run in emoji_runs {
+            assert!(run.contains(r#"<w:bdr w:val="nil" />"#));
+            assert!(run.contains(r#"<w:outline w:val="0" />"#));
+            assert!(run.contains(r#"<w:shadow w:val="0" />"#));
+            assert!(run.contains(r#"<w:emboss w:val="0" />"#));
+            assert!(run.contains(r#"<w:imprint w:val="0" />"#));
+            assert!(run.contains(r#"<w14:noFill />"#));
+            assert!(run.contains(r#"<w:spacing w:val="0" />"#));
+            assert!(run.contains(r#"<w:sz w:val="28"/>"#));
+            assert!(run.contains(r#"<w:color w:val="auto" />"#));
+            assert!(!run.contains("solidFill"));
+            assert!(!run.contains(r#"w:val="single""#));
+        }
+        assert!(output.contains(r#"<w:bdr w:val="single" w:sz="8" w:color="000000"/>"#));
+        assert!(output.contains(r#"<w:t xml:space="preserve">正文 </w:t>"#));
+        assert_eq!(normalize_emoji_runs(&output), output);
+    }
+
+    #[test]
+    fn explicitly_disables_inherited_emoji_bold_and_outline_in_fallback_runs() {
+        let input = r#"<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>👌</w:t><w:drawing><wp:inline/></w:drawing></w:r></w:p>"#;
+        let output = normalize_emoji_runs(input);
+        for property in ["b", "bCs", "i", "iCs", "outline", "shadow", "snapToGrid"] {
+            assert!(output.contains(&format!(r#"<w:{property} w:val="0" />"#)));
+        }
+        assert!(output.contains(r#"<w:bdr w:val="nil" />"#));
+        assert!(output.contains(r#"<w14:noFill />"#));
+        assert!(output.contains(r#"<w:pStyle w:val="Heading2"/>"#));
+        assert!(output.contains(r#"<w:drawing><wp:inline/></w:drawing>"#));
+        assert_eq!(normalize_emoji_runs(&output), output);
+    }
+
+    #[test]
+    fn resets_inherited_heading_colors_only_for_emoji_runs() {
+        let input = r#"<w:p><w:pPr><w:pStyle w:val="Heading2" /></w:pPr><w:r><w:rPr><w:color w:val="0F4761" w:themeColor="accent1" /><w:sz w:val="32" /></w:rPr><w:t xml:space="preserve">标题 👌 👍</w:t></w:r></w:p>"#;
+        let output = normalize_emoji_runs(input);
+        let emoji_runs: Vec<_> = Regex::new(r#"(?s)<w:r><w:rPr><w:rFonts w:ascii="Segoe UI Emoji".*?</w:r>"#)
+            .expect("valid emoji run assertion regex")
+            .find_iter(&output)
+            .map(|matched| matched.as_str())
+            .collect();
+
+        assert_eq!(emoji_runs.len(), 2);
+        for run in emoji_runs {
+            assert!(run.contains(r#"<w:color w:val="auto" />"#));
+            assert!(!run.contains("themeColor"));
+            assert!(run.contains(r#"<w:sz w:val="32" />"#));
+        }
+        assert!(output.contains(r#"<w:pStyle w:val="Heading2" />"#));
+        assert!(output.contains(r#"<w:color w:val="0F4761" w:themeColor="accent1" />"#));
+        assert!(output.contains("标题 "));
+        assert_eq!(normalize_emoji_runs(&output), output);
+    }
+
+    #[test]
     fn assigns_segoe_ui_emoji_only_to_runs_that_contain_emoji() {
         let input = r#"<w:document><w:body><w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="宋体" /><w:color w:val="111827" /><w:b /><w:i /><w:sz w:val="24" /></w:rPr><w:t>状态 ✅ 正常</w:t></w:r><w:r><w:t>普通正文</w:t></w:r></w:p></w:body></w:document>"#;
 
@@ -11876,9 +12039,10 @@ mod tests {
         assert_eq!(output.matches("Segoe UI Emoji").count(), 4);
         assert!(emoji_run.contains(r#"w:hint="default""#));
         assert!(!emoji_run.contains("Times New Roman"));
-        assert!(!emoji_run.contains(r#"<w:color"#));
-        assert!(!emoji_run.contains(r#"<w:b"#));
-        assert!(!emoji_run.contains(r#"<w:i"#));
+        assert!(emoji_run.contains(r#"<w:color w:val="auto" />"#));
+        assert!(!emoji_run.contains(r#"<w:color w:val="111827" />"#));
+        assert!(emoji_run.contains(r#"<w:b w:val="0" />"#));
+        assert!(emoji_run.contains(r#"<w:i w:val="0" />"#));
         assert!(output.contains(r#"<w:rFonts w:ascii="Times New Roman""#));
         assert!(output.contains(r#"<w:sz w:val="24" />"#));
         assert!(output.contains(r#"<w:r><w:t>普通正文</w:t></w:r>"#));
@@ -13856,6 +14020,75 @@ mod tests {
         assert!(output.contains(
             r#"<w:numPr><w:ilvl w:val="0" /><w:numId w:val="9100" /></w:numPr>"#
         ));
+    }
+
+    #[test]
+    fn preserves_list_continuation_paragraphs_without_adding_bullets() {
+        let document = r#"<w:document><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0" /><w:numId w:val="7" /></w:numPr></w:pPr><w:r><w:rPr><w:b /></w:rPr><w:t>服务运行身份与组合部署</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="0" /><w:numId w:val="42" /></w:numPr></w:pPr><w:r><w:t>此处的服务账号指操作系统层的进程运行身份。</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1" /><w:numId w:val="43" /></w:numPr></w:pPr><w:r><w:t>嵌套项目</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1" /><w:numId w:val="42" /></w:numPr></w:pPr><w:r><w:t>嵌套项目续段</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="0" /><w:numId w:val="42" /></w:numPr></w:pPr><w:r><w:t>外层项目续段</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="0" /><w:numId w:val="7" /></w:numPr></w:pPr><w:r><w:t>下一个编号项</w:t></w:r></w:p></w:body></w:document>"#;
+        let numbering = r#"<w:numbering><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal" /><w:lvlText w:val="%1." /></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet" /><w:lvlText w:val=" " /></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="bullet" /><w:lvlText w:val=" " /></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="1"><w:numFmt w:val="bullet" /><w:lvlText w:val="•" /></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="1" /></w:num><w:num w:numId="42"><w:abstractNumId w:val="2" /></w:num><w:num w:numId="43"><w:abstractNumId w:val="3" /></w:num></w:numbering>"#;
+        let custom_style = document_style_config_from_value(&json!({
+            "styles": {
+                "numbered-list": { "listIndent": 3, "listTextIndent": 1 },
+                "nested-list": { "listIndent": 3, "listTextIndent": 1 }
+            }
+        }))
+        .unwrap();
+        let paragraph = Regex::new(r"(?s)<w:p\b[^>]*>.*?</w:p>").unwrap();
+        let indent = Regex::new(r#"<w:ind\b[^>]*w:left="(\d+)"[^>]*/>"#).unwrap();
+
+        for (case, style) in [("default", None), ("custom", Some(&custom_style))] {
+            let path = std::env::temp_dir().join(format!(
+                "md-king-list-continuation-{case}-{}.docx",
+                std::process::id()
+            ));
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            for (name, xml) in [("word/document.xml", document), ("word/numbering.xml", numbering)] {
+                writer.start_file(name, SimpleFileOptions::default()).unwrap();
+                writer.write_all(xml.as_bytes()).unwrap();
+            }
+            fs::write(&path, writer.finish().unwrap().into_inner()).unwrap();
+            normalize_docx(
+                &path, true, None, &default_markdown_feature_config(),
+                None, None, None, style, None, None, true,
+            )
+            .unwrap();
+            let mut archive = ZipArchive::new(Cursor::new(fs::read(&path).unwrap())).unwrap();
+            let output = read_docx_text_part(&mut archive, "word/document.xml").unwrap();
+            let paragraphs: Vec<_> = paragraph.find_iter(&output).map(|p| p.as_str()).collect();
+
+            for (parent, continuation) in [(0, 1), (2, 3), (0, 4)] {
+                let continued = paragraphs[continuation];
+                assert!(!continued.contains("•"), "{case}: {continued}");
+                assert!(!continued.contains("◦"), "{case}: {continued}");
+                assert!(!continued.contains("<w:numPr>"), "{case}: {continued}");
+                assert!(!continued.contains("w:hanging="), "{case}: {continued}");
+                assert_eq!(
+                    &indent.captures(paragraphs[parent]).unwrap()[1],
+                    &indent.captures(continued).unwrap()[1],
+                    "{case}: continuation must align with its parent text"
+                );
+            }
+            assert!(paragraphs[0].contains(r#"<w:numId w:val="7" />"#));
+            assert!(paragraphs[5].contains(r#"<w:numId w:val="7" />"#));
+            if case == "default" {
+                assert!(paragraphs[2].contains(r#"<w:numId w:val="43" />"#));
+            } else {
+                assert!(paragraphs[2].contains("○"));
+            }
+            assert!(!output.contains("MD_KING_LIST_CONTINUATION"));
+            normalize_docx(
+                &path, true, None, &default_markdown_feature_config(),
+                None, None, None, style, None, None, true,
+            )
+            .unwrap();
+            let mut archive = ZipArchive::new(Cursor::new(fs::read(&path).unwrap())).unwrap();
+            let repeated = read_docx_text_part(&mut archive, "word/document.xml").unwrap();
+            let repeated_paragraphs: Vec<_> = paragraph.find_iter(&repeated).map(|p| p.as_str()).collect();
+            for continuation in [1, 3, 4] {
+                assert_eq!(repeated_paragraphs[continuation], paragraphs[continuation]);
+            }
+            let _ = fs::remove_file(path);
+        }
     }
 
     #[test]

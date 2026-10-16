@@ -171,10 +171,10 @@ fn quick_paste_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn read_clipboard_text() -> Result<String, String> {
+pub(crate) fn read_clipboard_text() -> Result<String, String> {
     #[cfg(windows)]
     {
-        let script = "$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; try { Get-Clipboard -Raw } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
+        let script = "$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; try { $text=Get-Clipboard -Raw; if ($null -ne $text) { [Console]::Write([string]$text) } } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
         let encoded = encode_powershell_command(script);
         let output = hidden_powershell_command()
             .args([

@@ -38,7 +38,7 @@ import type { MarkdownFrontmatterEntry } from "@/lib/markdown-frontmatter";
 import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 import { requestMediaPreview, svgDataUrl } from "@/components/media/image-viewer";
-import { resolvePreviewImageSource } from "@/lib/tauri";
+import { readClipboardText, resolvePreviewImageSource } from "@/lib/tauri";
 import {
   applyTableOperation,
   clearTableSelection,
@@ -1934,7 +1934,7 @@ export class TableWidget extends WidgetType {
       replaceTable(clearTableSelection(draft, selected()), selected());
     };
     const pasteSelection = async () => {
-      const text = await navigator.clipboard.readText();
+      const text = await readClipboardText();
       if (!text) return;
       const result = pasteTableTsv(draft, selectionOrigin(), text);
       replaceTable(result.table, result.selection);
