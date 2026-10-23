@@ -259,7 +259,56 @@ function styleMermaidEdgeLabels(root, dark) {
       }
     }
   }
+  layoutMermaidLabels(root);
+}
 
+/** Use the rendered text bounds: reciprocal edges and spanning notes can be undersized by Mermaid. */
+function layoutMermaidLabels(root) {
+  const gap = 8;
+  const overlaps = (a, b) => a.left < b.right + gap && a.right > b.left - gap
+    && a.top < b.bottom + gap && a.bottom > b.top - gap;
+  const nodes = [...root.querySelectorAll('.node, .cluster-label')].map(node => node.getBoundingClientRect());
+  const placed = [];
+  for (const label of root.querySelectorAll('g.edgeLabel')) {
+    const box = label.getBoundingClientRect();
+    if (!box.width || !box.height) continue;
+    const obstacles = [...nodes, ...placed];
+    const collisions = obstacles.filter(obstacle => overlaps(box, obstacle));
+    if (collisions.length) {
+      const xs = [0, ...collisions.flatMap(obstacle => [obstacle.left - gap - 1 - box.right, obstacle.right + gap + 1 - box.left])];
+      const ys = [0, ...collisions.flatMap(obstacle => [obstacle.top - gap - 1 - box.bottom, obstacle.bottom + gap + 1 - box.top])];
+      const candidates = xs.flatMap(dx => ys.map(dy => [dx, dy])).sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+      const container = [...root.querySelectorAll('.cluster > rect')].map(rect => rect.getBoundingClientRect())
+        .filter(rect => box.left >= rect.left && box.right <= rect.right && box.top >= rect.top && box.bottom <= rect.bottom)
+        .sort((a, b) => a.width * a.height - b.width * b.height)[0] ?? root.getBoundingClientRect();
+      for (const [dx, dy] of candidates) {
+        const moved = { left: box.left + dx, right: box.right + dx, top: box.top + dy, bottom: box.bottom + dy };
+        if (moved.left < container.left || moved.right > container.right || moved.top < container.top || moved.bottom > container.bottom) continue;
+        if (obstacles.some(obstacle => overlaps(moved, obstacle))) continue;
+        const inverse = label.parentElement.getScreenCTM().inverse();
+        const delta = new DOMPoint(dx, dy).matrixTransform(inverse);
+        const origin = new DOMPoint(0, 0).matrixTransform(inverse);
+        const matrix = label.transform.baseVal.consolidate()?.matrix ?? new DOMMatrix();
+        matrix.e += delta.x - origin.x;
+        matrix.f += delta.y - origin.y;
+        label.setAttribute('transform', `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`);
+        break;
+      }
+    }
+    placed.push(label.getBoundingClientRect());
+  }
+  for (const rect of root.querySelectorAll('g[data-et="note"] > rect.note')) {
+    const texts = [...rect.parentElement.querySelectorAll('.noteText')];
+    if (!texts.length) continue;
+    const bounds = texts.map(text => text.getBBox());
+    const x = Number(rect.getAttribute('x')), y = Number(rect.getAttribute('y'));
+    const left = Math.min(x, ...bounds.map(box => box.x - gap));
+    const top = Math.min(y, ...bounds.map(box => box.y - gap));
+    const right = Math.max(x + Number(rect.getAttribute('width')), ...bounds.map(box => box.x + box.width + gap));
+    const bottom = Math.max(y + Number(rect.getAttribute('height')), ...bounds.map(box => box.y + box.height + gap));
+    rect.setAttribute('x', String(left)); rect.setAttribute('y', String(top));
+    rect.setAttribute('width', String(right - left)); rect.setAttribute('height', String(bottom - top));
+  }
 }
 
 function contrastRatio(first, second) {
@@ -313,7 +362,9 @@ function ensureMermaidContrast(root, dark) {
     if (color === "none") continue;
     const background = backgroundAt(text);
     if (contrastRatio(rgb(color), background) >= 4.5) continue;
-    text.style.setProperty(property, readableColor(background), "important");
+    const readable = readableColor(background);
+    text.style.setProperty(property, readable, "important");
+    if (property === "fill") text.setAttribute("fill", readable);
   }
   for (const line of root.querySelectorAll(".flowchart-link,.edgePath path,.relation,.messageLine0,.messageLine1,.actor-line,.transition,.relationshipLine")) {
     const color = getComputedStyle(line).stroke;
@@ -337,5 +388,5 @@ function ensureMermaidContrast(root, dark) {
   }
 }
 
-export { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
+export { mermaidConfig, layoutMermaidKanban, layoutMermaidLabels, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
   MERMAID_THEMES, MERMAID_DIAGRAM_TYPES, normalizeMermaidThemes, mermaidDiagramType, resolveMermaidTheme };

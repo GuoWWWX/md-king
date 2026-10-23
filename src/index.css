@@ -1655,6 +1655,21 @@ select {
     flex: 1;
   }
 
+  /* 引用摘要按实际内容收缩；长内容在摘要区滚动，不沿用编辑器的写作留白。 */
+  [data-reference-preview] .cm-editor {
+    height: auto !important;
+    flex: none !important;
+  }
+
+  [data-reference-preview] .cm-content {
+    min-height: 0 !important;
+    padding: 12px !important;
+  }
+
+  [data-reference-preview] .cm-scroller {
+  max-height: min(300px, calc(100vh - 80px), var(--reference-preview-body-height, 300px));
+  }
+
   .mk-editor-medium .cm-content {
     max-width: 960px;
   }
@@ -3168,9 +3183,10 @@ select {
   .mk-cm-table-cell-content img {
     display: inline-block;
     width: auto;
-    max-width: 96px;
-    height: 1.5em;
-    margin: -0.2em 2px 0;
+    max-width: min(100%, 240px);
+    max-height: 160px;
+    height: auto;
+    margin: 4px 2px;
     vertical-align: middle;
     object-fit: contain;
   }

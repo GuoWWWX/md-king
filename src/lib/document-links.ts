@@ -25,6 +25,11 @@ function wikilinkPathPart(target: string) {
 /** `[[目录/文件.md]]` 在编辑器中默认展示为 `文件`，避免路径撑满整行。 */
 export function defaultObsidianWikilinkLabel(target: string) {
   const value = target.trim();
+  const lineRange = value.match(/#L([1-9]\d*)(?:-L?([1-9]\d*))?$/i);
+  if (lineRange) {
+    const path = wikilinkPathPart(value).split("/").filter(Boolean).pop()?.replace(/\.md$/i, "");
+    return `${path ? `${path} · ` : ""}line ${lineRange[1]}${lineRange[2] ? `-${lineRange[2]}` : ""}`;
+  }
   if (!value || value.startsWith("#") || isExternalDocumentLink(value)) return value;
 
   const path = wikilinkPathPart(value);

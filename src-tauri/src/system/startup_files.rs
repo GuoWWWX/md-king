@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 const OPEN_FILES_EVENT: &str = "open-files://available";
 
@@ -31,7 +31,7 @@ pub fn queue_open_files(app: &AppHandle, args: Vec<String>) -> bool {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
-    let _ = app.emit(OPEN_FILES_EVENT, ());
+    let _ = app.emit_to("main", OPEN_FILES_EVENT, ());
     true
 }
 
@@ -40,8 +40,15 @@ pub fn has_existing_file_argument(args: &[String]) -> bool {
 }
 
 #[tauri::command]
-pub fn take_open_files(state: State<'_, PendingOpenFiles>) -> Vec<String> {
-    state
+pub fn take_open_files(window: WebviewWindow, state: State<'_, PendingOpenFiles>) -> Vec<String> {
+    take_files_for_window(&state, window.label())
+}
+
+fn take_files_for_window(pending: &PendingOpenFiles, label: &str) -> Vec<String> {
+    if label != "main" {
+        return Vec::new();
+    }
+    pending
         .0
         .lock()
         .map(|mut pending| std::mem::take(&mut *pending))
@@ -77,9 +84,22 @@ fn is_supported_document(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_existing_file_argument, is_supported_document, supported_document_paths};
+    use super::{
+        has_existing_file_argument, is_supported_document, supported_document_paths,
+        take_files_for_window, PendingOpenFiles,
+    };
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn only_main_window_can_take_shell_open_files() {
+        let path = r"C:\测试 文件\文档.md".to_string();
+        let pending = PendingOpenFiles(std::sync::Mutex::new(vec![path.clone()]));
+        assert!(take_files_for_window(&pending, "floating-converter").is_empty());
+        assert!(take_files_for_window(&pending, "project-test").is_empty());
+        assert_eq!(take_files_for_window(&pending, "main"), vec![path]);
+        assert!(take_files_for_window(&pending, "main").is_empty());
+    }
 
     #[test]
     fn accepts_markdown_and_text_extensions_only() {

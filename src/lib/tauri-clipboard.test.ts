@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readClipboardText } from "./tauri.ts";
+import { readClipboardImage, readClipboardText } from "./tauri.ts";
 
 async function withClipboardRuntime(windowValue: unknown, readText: () => Promise<string>, run: () => Promise<void>) {
   const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -38,5 +38,23 @@ test("系统剪贴板失败时保留错误且不触发浏览器权限请求", as
     throw new Error("系统剪贴板暂时被占用");
   } } }, async () => { assert.fail("Must not fall back to browser permissions"); }, async () => {
     await assert.rejects(readClipboardText(), /系统剪贴板暂时被占用/);
+  });
+});
+
+test("桌面图片粘贴直接读取系统图片数据，不请求浏览器剪贴板权限", async () => {
+  await withClipboardRuntime({ __TAURI_INTERNALS__: { invoke: async (command: string) => {
+    assert.equal(command, "read_clipboard_image");
+    return btoa("png-bytes");
+  } } }, async () => { assert.fail("Must not use browser clipboard"); }, async () => {
+    const image = await readClipboardImage();
+    assert.equal(image?.type, "image/png");
+    assert.equal(await image?.text(), "png-bytes");
+  });
+});
+
+test("系统剪贴板没有图片时返回空，供表格继续粘贴文字", async () => {
+  await withClipboardRuntime({ __TAURI_INTERNALS__: { invoke: async (command: string) => command === "read_clipboard_image" ? null : "文字" } }, async () => "文字", async () => {
+    assert.equal(await readClipboardImage(), undefined);
+    assert.equal(await readClipboardText(), "文字");
   });
 });

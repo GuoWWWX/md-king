@@ -4918,6 +4918,10 @@ fn is_conventional_unnumbered_heading(text: &str) -> bool {
 
 fn preprocess_markdown_for_word(markdown: &str) -> String {
     let normalized_captions = normalize_adjacent_bold_captions(markdown);
+    let reference_anchor = Regex::new(r#"<!--md-king:range [a-zA-Z0-9-]+:(?:start|end)-->"#)
+        .expect("valid reference anchor regex");
+    let paragraph_id = Regex::new(r#"(?:^|[ \t])\^[a-zA-Z0-9-]+[ \t]*$"#)
+        .expect("valid paragraph reference ID regex");
     let mut output = Vec::new();
     let mut lines = normalized_captions.lines();
 
@@ -4983,7 +4987,9 @@ fn preprocess_markdown_for_word(markdown: &str) -> String {
             continue;
         }
 
-        output.push(preprocess_wikilinks_for_word(line));
+        let line = reference_anchor.replace_all(line, "");
+        let line = paragraph_id.replace(&line, "");
+        output.push(preprocess_wikilinks_for_word(&line));
     }
 
     let mut prepared = output.join("\n");
@@ -5447,6 +5453,10 @@ fn normalize_docx(
     let list_continuation_num_ids = read_numbering_xml_from_docx(&mut archive)
         .map(|xml| list_continuation_num_ids_from_numbering_xml(&xml))
         .unwrap_or_default();
+    let image_table_styles = archive.by_name("word/styles.xml").ok().and_then(|mut file| {
+        let mut xml = String::new();
+        file.read_to_string(&mut xml).ok().map(|_| xml)
+    });
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -5518,7 +5528,7 @@ fn normalize_docx(
                 toc_page_numbers,
             );
             data = if xml.contains("<w:drawing") {
-                normalize_document_images(&xml, page_settings, image_style).into_bytes()
+                normalize_document_images(&xml, page_settings, image_style, image_table_styles.as_deref()).into_bytes()
             } else {
                 xml.into_bytes()
             };
@@ -6449,6 +6459,7 @@ fn normalize_document_images(
     xml: &str,
     page_settings: Option<&PageSettingsConfig>,
     image_style: Option<&ImageStyleConfig>,
+    table_styles: Option<&str>,
 ) -> String {
     if !xml.contains("<w:drawing") {
         return xml.to_string();
@@ -6478,13 +6489,17 @@ fn normalize_document_images(
     let align = image_style
         .map(|style| word_alignment_value(&style.align))
         .unwrap_or("center");
-    let paragraph_re = Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid paragraph regex");
+    let containers = Regex::new(r#"(?s)<w:tbl\b[^>]*>.*?</w:tbl>|<w:p\b[^>]*>.*?</w:p>"#)
+        .expect("valid image container regex");
 
-    paragraph_re
+    containers
         .replace_all(xml, |captures: &Captures| {
             let paragraph = &captures[0];
             if !paragraph.contains("<w:drawing") {
                 return paragraph.to_string();
+            }
+            if paragraph.starts_with("<w:tbl") {
+                return normalize_table_images(paragraph, target_width_emu, target_height_emu, table_styles);
             }
 
             let mermaid_width = mermaid_width_percent(paragraph);
@@ -6504,6 +6519,74 @@ fn normalize_document_images(
             ensure_image_paragraph_aligned(&paragraph, align)
         })
         .to_string()
+}
+
+fn table_image_margins(xml: &str, mut margins: [u64; 2]) -> [u64; 2] {
+    let container = Regex::new(r#"(?s)<w:(?:tcMar|tblCellMar)\b[^>]*>(.*?)</w:(?:tcMar|tblCellMar)>"#)
+        .expect("valid image cell margin container regex");
+    if let Some(container) = container.captures(xml) {
+        for (index, side) in [(0, "left"), (1, "right"), (0, "start"), (1, "end")] {
+            let pattern = format!(r#"<w:{side}\b([^>]*)/>"#);
+            if let Some(value) = Regex::new(&pattern).expect("valid image cell margin regex")
+                .captures(&container[1]).and_then(|captures| numeric_attr(&captures[1], "w:w")) {
+                margins[index] = value;
+            }
+        }
+    }
+    margins
+}
+
+fn normalize_table_images(table_xml: &str, max_width_emu: u64, max_height_emu: u64, styles: Option<&str>) -> String {
+    let properties = Regex::new(r#"(?s)<w:tblPr\b[^>]*>(.*?)</w:tblPr>"#).expect("valid image table properties regex")
+        .captures(table_xml).map(|captures| captures[1].to_string()).unwrap_or_default();
+    let grid = Regex::new(r#"<w:gridCol\b([^>]*)/>"#).expect("valid image table grid regex")
+        .captures_iter(table_xml).filter_map(|captures| numeric_attr(&captures[1], "w:w")).collect::<Vec<_>>();
+    let style_id = Regex::new(r#"<w:tblStyle\b[^>]*\bw:val="([^"]+)""#).expect("valid image table style regex")
+        .captures(&properties).map(|captures| captures[1].to_string());
+    let mut style_id = style_id.unwrap_or_else(|| "TableNormal".to_string());
+    let mut visited = HashSet::new();
+    let mut chain = Vec::new();
+    while let Some(styles) = styles.filter(|_| visited.insert(style_id.clone())) {
+        let pattern = format!(r#"(?s)<w:style\b[^>]*\bw:styleId="{}"[^>]*>.*?</w:style>"#, regex::escape(&style_id));
+        let Some(style) = Regex::new(&pattern).expect("valid image table style lookup regex").find(styles).map(|style| style.as_str().to_string()) else { break; };
+        let parent = Regex::new(r#"<w:basedOn\b[^>]*\bw:val="([^"]+)""#).expect("valid image table parent style regex")
+            .captures(&style).map(|captures| captures[1].to_string());
+        chain.push(style);
+        let Some(parent) = parent else { break; };
+        style_id = parent;
+    }
+    let inherited = chain.iter().rev().fold([0, 0], |margins, style| table_image_margins(style, margins));
+    let margins = table_image_margins(&properties, inherited);
+    Regex::new(r#"(?s)<w:tr\b[^>]*>.*?</w:tr>"#).expect("valid image table row regex")
+        .replace_all(table_xml, |row: &Captures| {
+            let mut column = 0usize;
+            Regex::new(r#"(?s)<w:tc\b[^>]*>.*?</w:tc>"#).expect("valid image table cell regex")
+                .replace_all(&row[0], |cell: &Captures| {
+                    let span = Regex::new(r#"<w:gridSpan\b[^>]*\bw:val="(\d+)""#).expect("valid image cell span regex")
+                        .captures(&cell[0]).and_then(|captures| captures[1].parse::<usize>().ok()).unwrap_or(1).max(1);
+                    let width: u64 = grid.iter().skip(column).take(span).sum();
+                    column = column.saturating_add(span);
+                    normalize_table_cell_images(&cell[0], if width > 0 { (width * 635).min(max_width_emu) } else { max_width_emu }, max_height_emu, margins)
+                }).to_string()
+        }).to_string()
+}
+
+fn normalize_table_cell_images(cell_xml: &str, max_width_emu: u64, max_height_emu: u64, inherited_margins: [u64; 2]) -> String {
+    let properties = Regex::new(r#"(?s)<w:tcPr\b[^>]*>(.*?)</w:tcPr>"#)
+        .expect("valid cell properties regex")
+        .captures(cell_xml).map(|captures| captures[1].to_string()).unwrap_or_default();
+    let width = Regex::new(r#"<w:tcW\b([^>]*)/>"#).expect("valid cell width regex")
+        .captures(&properties).filter(|captures| captures[1].contains("\"dxa\""))
+        .and_then(|captures| numeric_attr(&captures[1], "w:w"));
+    let padding: u64 = table_image_margins(&properties, inherited_margins).iter().sum();
+    let available = width.unwrap_or(max_width_emu / 635).min(max_width_emu / 635)
+        .saturating_sub(padding).max(1) * 635;
+    Regex::new(r#"(?s)<w:drawing\b[^>]*>.*?</w:drawing>"#).expect("valid table image regex")
+        .replace_all(cell_xml, |captures: &Captures| {
+            let drawing = &captures[0];
+            let width = drawing_extent(drawing).map(|(width, _)| width.min(available)).unwrap_or(available);
+            normalize_image_drawings(drawing, width, max_height_emu)
+        }).to_string()
 }
 
 fn mermaid_width_percent(paragraph: &str) -> Option<u32> {
@@ -11874,7 +11957,7 @@ mod tests {
         let target_height = target_width / 2;
         let input = r#"<w:document><w:body><w:p><w:pPr><w:jc w:val="left" /></w:pPr><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
 
-        let output = normalize_document_images(input, Some(&page_settings), None);
+        let output = normalize_document_images(input, Some(&page_settings), None, None);
 
         assert!(output.contains(r#"<w:jc w:val="center" />"#));
         assert!(output.contains(
@@ -11887,6 +11970,36 @@ mod tests {
         assert!(output.contains(&format!(
             r#"<a:ext cx="{target_width}" cy="{target_height}"/>"#
         )));
+    }
+
+    #[test]
+    fn table_images_fit_cell_content_width_without_enlarging_or_changing_text_alignment() {
+        let drawing = |width, height| format!(r#"<w:r><w:drawing><wp:inline><wp:extent cx="{width}" cy="{height}"/><a:graphic><a:blip r:embed="rId5"/><a:ext cx="{width}" cy="{height}"/></a:graphic></wp:inline></w:drawing></w:r>"#);
+        let large = drawing(2_000_000, 1_000_000);
+        let small = drawing(1000, 500);
+        let input = format!(r#"<w:document><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:tcW w:type="dxa" w:w="1600"/><w:tcMar><w:left w:w="80"/><w:right w:w="120"/></w:tcMar></w:tcPr><w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>图片前</w:t></w:r>{large}{small}<w:r><w:t>图片后</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:type="dxa" w:w="800"/></w:tcPr><w:p>{large}</w:p></w:tc></w:tr></w:tbl><w:p>{large}</w:p></w:body></w:document>"#);
+        let output = normalize_document_images(&input, None, None, None);
+        let table = output.split("</w:tbl>").next().unwrap();
+        assert!(table.contains(r#"<wp:extent cx="889000" cy="444500"/>"#));
+        assert!(table.contains(r#"<a:ext cx="889000" cy="444500"/>"#));
+        assert!(table.contains(r#"<wp:extent cx="508000" cy="254000"/>"#));
+        assert!(table.contains(r#"<wp:extent cx="1000" cy="500"/>"#));
+        assert!(table.contains(r#"<w:jc w:val="left"/>"#));
+        assert!(table.contains("图片前") && table.contains("图片后"));
+        let body = output.split("</w:tbl>").nth(1).unwrap();
+        assert!(body.contains(r#"<w:jc w:val="center" />"#));
+        assert!(!body.contains(r#"<wp:extent cx="2000000""#));
+        let repeated = normalize_document_images(&output, None, None, None);
+        assert_eq!(repeated.split("</w:tbl>").next(), Some(table));
+    }
+
+    #[test]
+    fn table_images_use_grid_widths_and_inherited_template_padding_when_cell_width_is_automatic() {
+        let input = r#"<w:document><w:body><w:tbl><w:tblPr><w:tblStyle w:val="Custom"/></w:tblPr><w:tblGrid><w:gridCol w:w="1200"/><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:drawing><wp:extent cx="3000000" cy="1500000"/><a:blip r:embed="rId1"/></w:drawing></w:r></w:p></w:tc><w:tc><w:tcPr><w:gridSpan w:val="1"/><w:tcMar><w:start w:w="0"/></w:tcMar></w:tcPr><w:p><w:r><w:drawing><wp:extent cx="3000000" cy="1500000"/><a:blip r:embed="rId1"/></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
+        let styles = r#"<w:styles><w:style w:styleId="Custom"><w:basedOn w:val="Parent"/><w:tblPr><w:tblCellMar><w:right w:w="200"/></w:tblCellMar></w:tblPr></w:style><w:style w:styleId="Parent"><w:tblPr><w:tblCellMar><w:left w:w="100"/><w:right w:w="100"/></w:tblCellMar></w:tblPr></w:style></w:styles>"#;
+        let output = normalize_document_images(input, None, None, Some(styles));
+        assert!(output.contains(r#"<wp:extent cx="571500" cy="285750"/>"#));
+        assert!(output.contains(r#"<wp:extent cx="1397000" cy="698500"/>"#));
     }
 
     #[test]
@@ -11905,7 +12018,7 @@ mod tests {
         let target_height = target_width / 2;
         let input = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><wp:docPr id="1" name="Picture" title="MD_KING_MERMAID_WIDTH_80"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
 
-        let output = normalize_document_images(input, Some(&page_settings), None);
+        let output = normalize_document_images(input, Some(&page_settings), None, None);
 
         assert!(output.contains(&format!(
             r#"<wp:extent cx="{target_width}" cy="{target_height}"/>"#
@@ -12121,7 +12234,7 @@ mod tests {
         let target_height = target_width / 2;
         let input = r#"<w:document><w:body><w:p><w:pPr><w:jc w:val="left" /></w:pPr><w:r><w:drawing><wp:inline><wp:extent cx="1000" cy="500"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
 
-        let output = normalize_document_images(input, Some(&page_settings), Some(&image_style));
+        let output = normalize_document_images(input, Some(&page_settings), Some(&image_style), None);
 
         assert!(output.contains(r#"<w:jc w:val="right" />"#));
         assert!(output.contains(&format!(
@@ -13712,6 +13825,16 @@ mod tests {
         assert!(!footer.contains("NUMPAGES"));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn hides_reference_metadata_without_changing_code_examples_or_inline_links() {
+        let input = "正文 ^rule\n> **[[a.md#L2-L3]]**<!--md-king:range range:start-->\n末尾<!--md-king:range range:end-->\n\n| 引用 |\n| --- |\n| *[[a.md#^rule]]* |\n\n```md\n示例 ^keep\n<!--md-king:range keep:start-->\n```";
+        let output = preprocess_markdown_for_word(input);
+        assert!(output.starts_with("正文\n> **a.md#L2-L3**"));
+        assert!(!output.contains("range range:"));
+        assert!(output.contains("| *a.md#^rule* |"));
+        assert!(output.contains("示例 ^keep\n<!--md-king:range keep:start-->"));
     }
 
     #[test]

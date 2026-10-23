@@ -1,6 +1,6 @@
 import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
-import { ClipboardPaste, Files, FileText, FileUp, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease } from "lucide-react";
+import { ClipboardPaste, Files, FileText, FileUp, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease, Link2 } from "lucide-react";
 import { forwardRef, type ChangeEvent, type DragEvent, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { readClipboardText } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { setRevealHighlightEffect } from "@/components/editor/cm/reveal-highlight";
+import { createDocumentReference } from "@/lib/document-references";
+import { copyTextToClipboard } from "@/lib/vault";
 
 const contextMenuItemClass = "relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 const emptyStateActionClass = "w-full rounded-[5px] border-slate-200 bg-white px-4 text-blue-700 shadow-none hover:bg-blue-50 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 dark:hover:text-zinc-100";
@@ -30,6 +32,7 @@ type ConversionInputCardProps = {
   documentViewState?: LiveMarkdownViewState;
   onDocumentViewStateChange?: (documentId: string, viewState: LiveMarkdownViewState) => void;
   markdownSourcePath?: string;
+  referencePath?: string;
   /// 一个标签都没打开时显示引导区，而不是一个空编辑器。
   hasDocument?: boolean;
   /// 编辑卡片顶部的文档上下文信息，不单独渲染成卡片。
@@ -57,6 +60,7 @@ type ConversionInputCardProps = {
 export type ConversionInputCardHandle = {
   setTableWidthMode: (mode: TableWidthMode, tableFrom: number | null) => TableDisplayContext | null;
   insertText: (text: string) => boolean;
+  getValue: () => string | undefined;
 };
 
 export const ConversionInputCard = forwardRef<ConversionInputCardHandle, ConversionInputCardProps>(function ConversionInputCard({
@@ -68,6 +72,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   documentViewState,
   onDocumentViewStateChange,
   markdownSourcePath,
+  referencePath,
   hasDocument = true,
   documentInfo,
   disabled = false,
@@ -97,6 +102,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
   useImperativeHandle(ref, () => ({
     setTableWidthMode: (mode, tableFrom) => editorRef.current?.setTableWidthMode(mode, tableFrom) ?? null,
     insertText: (text) => editorRef.current?.insertText(text) ?? false,
+    getValue: () => editorRef.current?.getValue(),
   }), []);
 
   // 字符数统计去掉空白，行数排除空行，给用户有意义的计数。
@@ -116,15 +122,16 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
     const startColumn = Math.min(Math.max(0, target.matchStart ?? 0), lineLength);
     const endColumn = Math.min(Math.max(startColumn, target.matchEnd ?? startColumn), lineLength);
     const hasMatch = target.matchStart !== undefined && target.matchEnd !== undefined && endColumn > startColumn;
-    const from = hasMatch ? line.from + startColumn : line.from;
-    const to = hasMatch ? line.from + endColumn : line.from;
+    const selectsReference = target.selectionFrom !== undefined && target.selectionTo !== undefined;
+    const from = selectsReference ? Math.max(0, Math.min(target.selectionFrom!, view.state.doc.length)) : hasMatch ? line.from + startColumn : line.from;
+    const to = selectsReference ? Math.max(from, Math.min(target.selectionTo!, view.state.doc.length)) : hasMatch ? line.from + endColumn : line.from;
 
     if (revealHighlightTimerRef.current !== undefined) window.clearTimeout(revealHighlightTimerRef.current);
     const scrollY = target.y ?? (hasMatch ? "center" : "start");
     const scrollYMargin = target.yMargin ?? (scrollY === "start" ? 24 : 5);
 
     view.dispatch({
-      selection: { anchor: to },
+      selection: selectsReference ? { anchor: from, head: to } : { anchor: to },
       effects: [
         EditorView.scrollIntoView(from, { y: scrollY, yMargin: scrollYMargin }),
         setRevealHighlightEffect.of(hasMatch ? { from, to } : null),
@@ -295,6 +302,18 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
     setCodeIndentContext(open && view ? getCodeBlockIndentContext(view) : null);
   }
 
+  async function copyReference(kind: "heading" | "paragraph" | "lines") {
+    const view = getEditorView();
+    if (!view) return;
+    try {
+      const selection = view.state.selection.main;
+      const result = createDocumentReference(view.state.doc.toString(), selection.from, selection.to, kind, referencePath);
+      if (result.changes.length) view.dispatch({ changes: result.changes });
+      await copyTextToClipboard(result.reference);
+      toast.success(referencePath ? "已复制引用，可粘贴到当前文件或其他文档" : "已复制当前文件引用；跨文件引用请先保存文档");
+    } catch (error) { toast.error(userFacingErrorMessage(error, "复制引用失败")); }
+  }
+
   function changeCodeBlockIndent(delta: number) {
     const view = getEditorView();
     if (!view) return;
@@ -389,6 +408,10 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}><Copy /><span className="flex-1">复制</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+C</span></ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}><Clipboard /><span className="flex-1">粘贴</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+V</span></ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}><CheckSquare /><span className="flex-1">全选</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+A</span></ContextMenu.Item>
+          <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("heading")} disabled={!hasDocument}><Link2 /><span>复制章节引用</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("paragraph")} disabled={!hasDocument || disabled || readingMode}><Link2 /><span>复制段落引用</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("lines")} disabled={!hasDocument || disabled || readingMode}><Link2 /><span>复制行范围引用</span></ContextMenu.Item>
           {codeIndentContext ? (
             <>
               <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />

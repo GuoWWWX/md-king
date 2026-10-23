@@ -137,6 +137,25 @@ export async function readClipboardText(): Promise<string> {
   return navigator.clipboard.readText();
 }
 
+export async function readClipboardImage(): Promise<File | undefined> {
+  if (isTauriEnvironment()) {
+    const data = await invoke<string | null>("read_clipboard_image");
+    if (!data) return undefined;
+    const bytes = Uint8Array.from(atob(data), character => character.charCodeAt(0));
+    return new File([bytes], "clipboard.png", { type: "image/png" });
+  }
+  if (!navigator.clipboard?.read) return undefined;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(type => type.startsWith("image/"));
+      if (type) return new File([await item.getType(type)], "clipboard", { type });
+    }
+  } catch {
+    // Text-only clipboard permission may still be available in browser preview.
+  }
+  return undefined;
+}
+
 function normalizeDialogSelection(selected: string | string[] | null) {
   if (Array.isArray(selected)) {
     return selected[0];

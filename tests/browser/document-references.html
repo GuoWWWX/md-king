@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Document reference regression</title></head>
+<body><button id="outside">结束编辑</button><div style="display:flex;gap:24px"><main id="editor" style="width:850px;height:950px"></main><main id="preview" style="width:750px"></main></div>
+<script type="module">
+import '/src/index.css';
+import {createElement as h,createRef,useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {EditorView} from '@codemirror/view';
+import {ConversionInputCard} from '/src/components/convert/conversion-input-card.tsx';
+import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
+import {ReferenceHoverPreview} from '/src/components/editor/reference-hover-preview.tsx';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+import {loadDocumentReference} from '/src/lib/reference-document-loader.ts';
+import {markdownOutlineRevealEvent} from '/src/lib/document-outline.ts';
+const initial=['# 当前文档','','正文 [[b.md#目标章节]]','**[[b.md#^rule]]**','*[[b.md#L3-L4]]*','***[[b.md#L3-L4]]***','','> 引用块 **[[b.md#^rule]]**','','> [!NOTE] 提示','> ***[[b.md#L3-L4]]***','','| 类型 | 目标 |','| --- | --- |','| 普通 | [[b.md#L3-L4]] |','| 加粗 | **[[b.md#^rule]]** |','| 斜体 | *[[b.md#L3-L4]]* |','| 粗斜体 | ***[[b.md#L3-L4]]*** |','','[标准链接](b.md#L3-L4)','','```md','[[b.md#L3-L4]]','```','','# 同文件目标','本地段落 ^local','','[[#^local]]'].join('\n');
+const documents={'notes/a.md':initial,'notes/b.md':'# 目标章节\n\n未保存段落第一行\n未保存段落第二行 ^rule\n\n## 子章节\n内容\n\n# 其他章节\n其他内容'};
+let active='notes/a.md',generation=0,dark=false,reading=false,clipboard='',readRequests=[];
+const ref=createRef(); let refresh;
+window.__TAURI_INTERNALS__={invoke:async(command,args)=>{if(command==='copy_text_to_clipboard'){clipboard=args.text;return;}throw new Error(command);}};
+const view=()=>{const element=document.querySelector('#editor .cm-editor');return element?EditorView.findFromDOM(element):null;};
+const sync=()=>{if(view())documents[active]=view().state.doc.toString();};
+async function load(target){sync();return loadDocumentReference(target,{current:{path:active,content:documents[active]},openDocuments:Object.entries(documents).map(([path,content])=>({path,content})),availablePaths:[],readFile:async path=>{readRequests.push(path);throw new Error('不存在');}});}
+async function open(target){try{const result=await load(target);active=result.path;generation++;refresh();requestAnimationFrame(()=>window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent,{detail:{tabId:active,line:result.range.startLine,selectionFrom:result.range.from,selectionTo:result.range.to,y:'center'}})));}catch(error){window.fixture.error=error.message;}}
+function App(){const [,render]=useState(0);refresh=()=>render(value=>value+1);document.documentElement.classList.toggle('dark',dark);return h(TooltipProvider,null,h(ConversionInputCard,{ref,markdown:documents[active],documentKey:active+generation,documentTabId:active,referencePath:active,isDark:dark,readingMode:reading,onChange:content=>{documents[active]=content;refresh();},onFileTextLoad(){},onReadClipboard(){},onOpenLink:open}),h(ReferenceHoverPreview,{load,onOpen:open,revision:active+generation+documents[active],isDark:dark}));}
+const root=createRoot(document.querySelector('#editor'));
+window.fixture={get view(){return view();},get source(){return view()?.state.doc.toString();},get active(){return active;},get clipboard(){return clipboard;},get readRequests(){return readRequests;},reset(){sync();active='notes/a.md';generation++;refresh();},restore(){documents['notes/a.md']=initial;active='notes/a.md';generation++;refresh();},configure(config){dark=config.dark??dark;reading=config.reading??reading;generation++;refresh();},set(source){documents[active]=source;generation++;refresh();},setTarget(content){documents['notes/b.md']=content;},load,open,selected(){const v=view();return v.state.doc.sliceString(v.state.selection.main.from,v.state.selection.main.to);},preview(){createRoot(document.querySelector('#preview')).render(h(TooltipProvider,null,h(WordPreviewPage,{markdown:documents[active],onOpenLink:open})));}};
+root.render(h(App));
+</script></body></html>

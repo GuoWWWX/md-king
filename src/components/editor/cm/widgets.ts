@@ -1,4 +1,5 @@
 import { StateEffect } from "@codemirror/state";
+import { markdownLinkContext } from "./link-interactions";
 import { redo, undo } from "@codemirror/commands";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { createElement } from "react";
@@ -38,7 +39,8 @@ import type { MarkdownFrontmatterEntry } from "@/lib/markdown-frontmatter";
 import { orderedListMarker } from "./source-indent";
 import { getCachedMermaidSvg, renderMermaid } from "@/lib/mermaid";
 import { requestMediaPreview, svgDataUrl } from "@/components/media/image-viewer";
-import { readClipboardText, resolvePreviewImageSource } from "@/lib/tauri";
+import { readClipboardImage, readClipboardText, resolvePreviewImageSource } from "@/lib/tauri";
+import { editorImageContext, transferredImageFiles } from "./editor-images";
 import {
   applyTableOperation,
   clearTableSelection,
@@ -821,7 +823,13 @@ export class MarkdownWikilinkWidget extends WidgetType {
     icon.setAttribute("aria-hidden", "true");
     icon.innerHTML = iconMarkup(this.kind === "external" ? Globe2 : FileText);
     link.append(icon);
-    renderWikilinkFormattedLabel(link, this.label);
+    if (this.label === "@line") {
+      link.dataset.mkAutoLine = "true";
+      const label = document.createElement("span");
+      label.dataset.mkReferenceLabel = "true";
+      label.textContent = "line …";
+      link.append(label);
+    } else renderWikilinkFormattedLabel(link, this.label);
     return link;
   }
 
@@ -1019,6 +1027,7 @@ export class TableWidget extends WidgetType {
     private readonly documentSelectedRows: readonly number[],
     private readonly selectedFromToolbar: boolean,
     private readonly editable: boolean,
+    private readonly markdownSourcePath?: string,
   ) {
     super();
   }
@@ -1046,7 +1055,27 @@ export class TableWidget extends WidgetType {
       && other.tableTo === this.tableTo
       && other.widthMode === this.widthMode
       && other.selectedFromToolbar === this.selectedFromToolbar
+      && other.markdownSourcePath === this.markdownSourcePath
       && other.editable === this.editable;
+  }
+
+  private renderCell(source: string, view: EditorView): HTMLElement {
+    const content = renderTableInlineMarkdown(source, {
+      resolveSource: path => resolvePreviewImageSource(path, this.markdownSourcePath),
+      onLoad: () => view.requestMeasure(),
+    });
+    // Table widgets own their pointer events, so links must bypass cell editing/selection.
+    for (const link of content.querySelectorAll<HTMLElement>("[data-mk-link-target]")) {
+      const canOpen = (event: MouseEvent) => view.state.facet(markdownLinkContext)?.openLinksOnClick() || event.ctrlKey || event.metaKey;
+      link.addEventListener("pointerdown", event => { if (event.button === 0 && canOpen(event)) { event.preventDefault(); event.stopPropagation(); } });
+      link.addEventListener("mousedown", event => { if (event.button === 0 && canOpen(event)) { event.preventDefault(); event.stopPropagation(); } });
+      link.addEventListener("click", event => {
+        if (!canOpen(event)) return;
+        event.preventDefault(); event.stopPropagation();
+        if (!link.dataset.mkWikilinkInvalid) view.state.facet(markdownLinkContext)?.onOpenLink(link.dataset.mkLinkTarget!);
+      });
+    }
+    return content;
   }
 
   private applyDocumentSelectedRows(dom: HTMLElement): void {
@@ -1100,7 +1129,7 @@ export class TableWidget extends WidgetType {
         if (weight !== undefined) {
           element.style.minWidth = `${Math.max(48, Math.min(320, weight * 24))}px`;
         }
-        const content = renderTableInlineMarkdown(cell);
+        const content = this.renderCell(cell, view);
         content.removeAttribute("tabindex");
         if (alignment !== "none") {
           content.style.textAlign = alignment;
@@ -1349,6 +1378,12 @@ export class TableWidget extends WidgetType {
     // 默认按表格内容收缩，避免只有少量列时无意义地铺满编辑区。
     let wrapsContent = this.widthMode === "content";
 
+    const hideCellInput = (input: HTMLTextAreaElement) => {
+      input.hidden = true;
+      input.parentElement?.style.removeProperty("min-height");
+      input.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.remove("is-editing");
+    };
+
     const focusCell = (row: number, column: number, selectAll = false) => {
       scheduleFrame(() => {
         const current = view.dom.querySelector<HTMLTextAreaElement>(
@@ -1373,14 +1408,17 @@ export class TableWidget extends WidgetType {
         if (focus) focusCell(focus.row, focus.column, true);
         else if (previous) {
           const input = wrapper.querySelector<HTMLTextAreaElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
-          if (input) input.hidden = true;
-          input?.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.remove("is-editing");
+          if (input) hideCellInput(input);
         }
         return;
       }
       const insert = serializeMarkdownTable(draft);
       dirty = false;
       if (insert !== this.source) view.dispatch({ changes: { from: this.tableFrom, to: this.tableTo, insert } });
+      else if (previous) {
+        const input = wrapper.querySelector<HTMLTextAreaElement>(`.mk-cm-table-input[data-table-row="${previous.row}"][data-table-column="${previous.column}"]`);
+        if (input) hideCellInput(input);
+      }
       if (focus) focusCell(focus.row, focus.column);
     };
 
@@ -1395,8 +1433,7 @@ export class TableWidget extends WidgetType {
         const row = Number(input.dataset.tableRow);
         const column = Number(input.dataset.tableColumn);
         input.value = draft.rows[row]?.[column] ?? "";
-        input.hidden = true;
-        input.parentElement?.querySelector<HTMLElement>(".mk-cm-table-cell-content")?.classList.remove("is-editing");
+        hideCellInput(input);
       });
       active = null;
     };
@@ -1933,10 +1970,39 @@ export class TableWidget extends WidgetType {
       }
       replaceTable(clearTableSelection(draft, selected()), selected());
     };
+    const insertImages = async (files: File[], target = selectionOrigin()) => {
+      const context = view.state.facet(editorImageContext);
+      if (!context.importFile) return;
+      const input = wrapper.querySelector<HTMLTextAreaElement>(`.mk-cm-table-input[data-table-row="${target.row}"][data-table-column="${target.column}"]`);
+      const editing = input && !input.hidden;
+      const original = editing ? input.value : draft.rows[target.row]?.[target.column] ?? "";
+      const from = editing ? input.selectionStart : 0;
+      const to = editing ? input.selectionEnd : original.length;
+      const references: string[] = [];
+      for (const file of files) {
+        const reference = await context.importFile(file);
+        if (reference) references.push(reference);
+      }
+      // A slow import must not overwrite a changed cell or a different document.
+      if (!references.length || !wrapper.isConnected || view.state.facet(editorImageContext) !== context
+        || view.state.doc.sliceString(this.tableFrom, this.tableTo) !== this.source
+        || (editing ? input.value : draft.rows[target.row]?.[target.column]) !== original) return;
+      const rows = draft.rows.map(row => [...row]);
+      rows[target.row][target.column] = original.slice(0, from) + references.join(" ") + original.slice(to);
+      replaceTable({ ...draft, rows }, { kind: "cell", anchor: target, focus: target });
+    };
     const pasteSelection = async () => {
+      const target = selectionOrigin();
+      const image = await readClipboardImage();
+      if (!wrapper.isConnected) return;
+      if (image) {
+        await insertImages([image], target);
+        return;
+      }
       const text = await readClipboardText();
       if (!text) return;
-      const result = pasteTableTsv(draft, selectionOrigin(), text);
+      if (!wrapper.isConnected) return;
+      const result = pasteTableTsv(draft, target, text);
       replaceTable(result.table, result.selection);
     };
 
@@ -2023,7 +2089,7 @@ export class TableWidget extends WidgetType {
     };
 
     const hasNativeInputSelection = (event: ClipboardEvent) => {
-      const input = event.target instanceof HTMLInputElement ? event.target : null;
+      const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
       return Boolean(input && input.selectionStart !== input.selectionEnd);
     };
     wrapper.addEventListener("copy", (event) => {
@@ -2042,12 +2108,27 @@ export class TableWidget extends WidgetType {
       replaceTable(clearTableSelection(draft, selected()), selected());
     });
     wrapper.addEventListener("paste", (event) => {
-      if (event.target instanceof HTMLInputElement) return;
+      const files = transferredImageFiles(event.clipboardData);
+      if (files.length && view.state.facet(editorImageContext).importFile) {
+        event.preventDefault();
+        event.stopPropagation();
+        void insertImages(files);
+        return;
+      }
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       const text = event.clipboardData?.getData("text/plain") ?? "";
       if (!text) return;
       event.preventDefault();
       const result = pasteTableTsv(draft, selectionOrigin(), text);
       replaceTable(result.table, result.selection);
+    });
+    wrapper.addEventListener("drop", (event) => {
+      const files = transferredImageFiles(event.dataTransfer);
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-table-row][data-table-column]") : null;
+      if (!files.length || !target || !view.state.facet(editorImageContext).importFile) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void insertImages(files, { row: Number(target.dataset.tableRow), column: Number(target.dataset.tableColumn) });
     });
     wrapper.addEventListener("keydown", (event) => {
       if (event.target instanceof HTMLInputElement) return;
@@ -2122,7 +2203,7 @@ export class TableWidget extends WidgetType {
       const cell = document.createElement("div");
       cell.className = "mk-cm-table-cell";
       const alignment = draft.alignments[column] ?? "none";
-      const rendered = renderTableInlineMarkdown(draft.rows[row]?.[column] ?? "");
+      const rendered = this.renderCell(draft.rows[row]?.[column] ?? "", view);
       rendered.dataset.tableRow = String(row);
       rendered.dataset.tableColumn = String(column);
       rendered.tabIndex = 0;
@@ -2141,7 +2222,15 @@ export class TableWidget extends WidgetType {
       if (alignment !== "none") {
         input.style.textAlign = alignment;
       }
+      const resizeInput = () => {
+        // The absolute textarea must contribute its wrapped source height to the row.
+        input.style.height = "0px";
+        cell.style.minHeight = `${input.scrollHeight}px`;
+        input.style.removeProperty("height");
+        input.scrollTop = 0;
+      };
       input.addEventListener("focus", () => {
+        resizeInput();
         active = { row, column };
         updateSelection({ kind: "cell", anchor: { row, column }, focus: { row, column } });
       });
@@ -2155,19 +2244,23 @@ export class TableWidget extends WidgetType {
       input.addEventListener("input", () => {
         if (!composition.acceptsInput) {
           input.value = draft.rows[row]?.[column] ?? "";
+          resizeInput();
           return;
         }
         draft.rows[row][column] = input.value;
         dirty = true;
+        resizeInput();
       });
       input.addEventListener("compositionstart", () => composition.start());
       input.addEventListener("compositionend", () => {
         if (composition.end() === "cancelled") {
           input.value = draft.rows[row]?.[column] ?? "";
+          resizeInput();
           return;
         }
         draft.rows[row][column] = input.value;
         dirty = true;
+        resizeInput();
         if (document.activeElement !== input) commit();
       });
       input.addEventListener("keydown", (event) => {

@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>YAML highlight regression</title></head><body><button id="outside">结束编辑</button><div style="display:flex;gap:20px"><div id="editor" style="display:flex;width:860px;height:900px"></div><div id="preview" style="width:750px"></div></div>
+<script type="module">
+import '/src/index.css';
+import {createElement as h,createRef} from 'react';
+import {createRoot} from 'react-dom/client';
+import {LiveMarkdownEditor} from '/src/components/editor/live-markdown-editor.tsx';
+import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+const code=`resilience4j:
+  circuitbreaker:
+    instances:
+      paymentService:
+        slidingWindowType: COUNT_BASED # 按请求次数滑动窗口统计
+        slidingWindowSize: 100 # 统计最近 100 次调用
+        minimumNumberOfCalls: 20
+        failureRateThreshold: 50.0
+        slowCallDurationThreshold: 2000ms
+        waitDurationInOpenState: 10000ms
+        enabled: true
+        url: https://example.com/#anchor
+        "quoted-key": "# 字符串"
+        note: |
+          # 多行文本
+          enabled: false`;
+let source='',generation=0;const settings={isDark:true,readOnly:false};
+const ref=createRef(),root=createRoot(document.querySelector('#editor')),preview=createRoot(document.querySelector('#preview'));
+function render(){document.documentElement.classList.toggle('dark',settings.isDark);root.render(h(LiveMarkdownEditor,{ref,documentKey:'yaml-'+generation,initialContent:source,...settings,onDocChanged(){}}));preview.render(h(TooltipProvider,null,h(WordPreviewPage,{markdown:source})));}
+function reset(alias='yaml'){source=`普通正文\n\n\`\`\`${alias}\n${code}\n\`\`\`\n\n普通数字 123 不应被 YAML 染色。`;generation++;render();}
+window.fixture={get view(){return ref.current?.getView();},get source(){return source;},configure(next){Object.assign(settings,next);render();},reset};reset();
+</script></body></html>

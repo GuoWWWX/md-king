@@ -1,5 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
 import { EditorView, type DOMEventHandlers } from "@codemirror/view";
+import { Facet } from "@codemirror/state";
 import { findObsidianWikilinks } from "@/lib/document-links";
 
 const ADJACENT_LINK_SOURCE_HITBOX_PX = 8;
@@ -198,6 +199,8 @@ export type MarkdownLinkInteractionOptions = {
   onOpenLink: (target: string) => void;
 };
 
+export const markdownLinkContext = Facet.define<MarkdownLinkInteractionOptions, MarkdownLinkInteractionOptions | undefined>({ combine: values => values[0] });
+
 export function markdownLinkInteractionExtension(options: MarkdownLinkInteractionOptions) {
   let pendingLinkTarget: string | undefined;
   let pendingWikilinkPointer: PendingWikilinkPointer | undefined;
@@ -299,5 +302,5 @@ export function markdownLinkInteractionExtension(options: MarkdownLinkInteractio
       return true;
     },
   };
-  return EditorView.domEventHandlers(handlers);
+  return [markdownLinkContext.of(options), EditorView.domEventHandlers(handlers)];
 }

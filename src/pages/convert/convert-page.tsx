@@ -42,7 +42,9 @@ import { DocumentTabBar, type DocumentPageTab } from "@/components/editor/docume
 import { SaveConflictDialog, type SaveConflictChoice } from "@/components/vault/vault-dialogs";
 import { deriveScratchTitle, useDocumentTabsStore, type DocumentTab } from "@/stores/document-tabs-store";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { documentLinkFragment, findMarkdownHeadingLine, isExternalDocumentLink, resolveVaultDocumentLink } from "@/lib/document-links";
+import { documentLinkFragment, isExternalDocumentLink } from "@/lib/document-links";
+import { loadDocumentReference } from "@/lib/reference-document-loader";
+import { ReferenceHoverPreview } from "@/components/editor/reference-hover-preview";
 import { externalDocumentSyncDecision } from "@/lib/external-document-sync";
 import { createDocumentSession, documentSessionStorageKey, loadDocumentSession, saveDocumentSession, type PersistedDocumentTab } from "@/lib/document-session";
 import { markdownOutlineRevealEvent } from "@/lib/document-outline";
@@ -875,41 +877,49 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     setPreviewVisible(!previewVisible);
   }
 
+  async function loadReferencePreview(target: string) {
+    const state = useDocumentTabsStore.getState();
+    const current = state.tabs.find(tab => tab.id === state.activeTabId);
+    return loadDocumentReference(target, {
+      current: { path: current?.path ?? "", absolutePath: current?.absolutePath, content: conversionInputRef.current?.getValue() ?? current?.content ?? markdown },
+      openDocuments: state.tabs.filter(tab => tab.kind === "vault").map(tab => ({ path: tab.path!, absolutePath: tab.absolutePath, content: tab.content })),
+      availablePaths: useVaultStore.getState().entries.filter(entry => !entry.isDir).map(entry => entry.path),
+      readFile: async path => {
+        if (!vaultRoot) throw new Error("跨文件引用请先打开文档仓库");
+        const file = await readVaultFile(vaultRoot, path);
+        return { ...file, absolutePath: vaultAbsolutePath(vaultRoot, file.path) };
+      },
+    });
+  }
+
   async function handleOpenLink(target: string) {
     const value = target.trim();
     if (!value) return;
-    if (value.startsWith("#")) {
-      const line = findMarkdownHeadingLine(markdown, value);
-      if (line && activeTabId) window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, { detail: { tabId: activeTabId, line } }));
-      return;
-    }
     if (isExternalDocumentLink(value)) {
       if (isTauriEnvironment()) await openUrl(value);
       else window.open(value, "_blank", "noopener,noreferrer");
       return;
     }
-    const currentPath = activeTab?.path ?? "";
-    const available = useVaultStore.getState().entries.filter((entry) => !entry.isDir).map((entry) => entry.path);
-    const path = resolveVaultDocumentLink(value, currentPath, available);
-    if (!path) { toast.error("未找到链接文档"); return; }
-    if (!vaultRoot) { toast.error("尚未打开文档目录"); return; }
     try {
-      const file = await readVaultFile(vaultRoot, path);
-      const absolutePath = `${vaultRoot.replace(/[\\/]$/, "")}/${file.path}`;
-      const tabId = openVaultTab({
-        path: file.path,
-        absolutePath,
-        title: file.path.split("/").pop() ?? file.path,
-        content: file.content,
-        eol: file.eol,
-        hasBom: file.hasBom,
-        modifiedMs: file.modifiedMs,
-      });
-      const fragment = documentLinkFragment(value);
-      const line = fragment ? findMarkdownHeadingLine(file.content, fragment) : undefined;
-      if (line) requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, { detail: { tabId, line } })));
-    } catch {
-      toast.error("打开链接文档失败");
+      const sourceTab = useDocumentTabsStore.getState().activeTabId;
+      const resolved = await loadReferencePreview(value);
+      const state = useDocumentTabsStore.getState();
+      if (state.activeTabId !== sourceTab) return;
+      let tabId = sourceTab;
+      if (!value.startsWith("#")) {
+        const existing = state.tabs.find(tab => tab.kind === "vault" && tab.path === resolved.path);
+        if (existing) { tabId = existing.id; state.setActiveTab(tabId); }
+        else {
+          // Keep the save metadata and content from the same disk read.
+          tabId = openVaultTab({ ...resolved, absolutePath: resolved.absolutePath!, title: resolved.path.split("/").pop()! });
+        }
+      }
+      setPreviewExpanded(false);
+      if (tabId && documentLinkFragment(value)) requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(markdownOutlineRevealEvent, {
+        detail: { tabId, line: resolved.range.startLine, selectionFrom: resolved.range.from, selectionTo: resolved.range.to, y: "center" },
+      })));
+    } catch (error) {
+      toast.error(userFacingErrorMessage(error, "打开引用失败"));
     }
   }
 
@@ -1947,7 +1957,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       />
     </>
   );
-  const documentTabsPortal = titlebarTabHost ? createPortal(documentTabs, titlebarTabHost) : null;
+  const documentTabsPortal = <>{titlebarTabHost ? createPortal(documentTabs, titlebarTabHost) : null}<ReferenceHoverPreview load={loadReferencePreview} onOpen={target => void handleOpenLink(target)} revision={`${activeTabId}:${markdown}`} isDark={isDark} /></>;
 
   if (activePage === "convert" && expandedStyleEditorOpen) {
     return (
@@ -2141,6 +2151,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 documentViewState={activeTab?.viewState}
                 onDocumentViewStateChange={setTabViewState}
                 markdownSourcePath={markdownSourcePath}
+                referencePath={activeTab?.kind === "vault" && activeTab.path && !isAbsoluteFilePath(activeTab.path) ? activeTab.path : undefined}
                 isDark={isDark}
                 onChange={setMarkdown}
                 onFileTextLoad={handleFileTextLoad}
