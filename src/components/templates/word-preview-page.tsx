@@ -212,10 +212,11 @@ const PAPER_SIZE_PX = {
   K32: { width: 492, height: 697 },
 } as const;
 
-function formatPreviewPageNumber(format: TemplateStyleConfig["pageSettings"]["footerPageNumberFormat"], pageNumber: number) {
+function formatPreviewPageNumber(format: TemplateStyleConfig["pageSettings"]["footerPageNumberFormat"], pageNumber: number, totalPages: number) {
   if (format === "none") return "";
-  if (format === "plain" || format === "plain-total") return `${pageNumber}`;
-  if (format === "page-total") return `第 ${pageNumber} 页`;
+  if (format === "plain") return `${pageNumber}`;
+  if (format === "plain-total") return `${pageNumber} / ${totalPages}`;
+  if (format === "page-total") return `第 ${pageNumber} 页 共 ${totalPages} 页`;
   if (format === "dash") return `- ${pageNumber} -`;
   return `第 ${pageNumber} 页`;
 }
@@ -2743,7 +2744,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     const pageNumber = pageNumberStartAt === "document"
       ? footerStartPage + pageIndex
       : footerStartPage + pageIndex - tocPages.length;
-    const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber);
+    const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber, previewPages.length);
     const footerContent = [footerText, pageNumberText].filter(Boolean).join(" · ");
 
     return (

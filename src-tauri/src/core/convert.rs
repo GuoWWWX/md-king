@@ -5457,6 +5457,7 @@ fn normalize_docx(
         let mut xml = String::new();
         file.read_to_string(&mut xml).ok().map(|_| xml)
     });
+    let style_aliases = word_style_aliases(image_table_styles.as_deref().unwrap_or(""));
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -5526,12 +5527,14 @@ fn normalize_docx(
                 page_settings,
                 heading_numbering,
                 toc_page_numbers,
+                &style_aliases,
             );
-            data = if xml.contains("<w:drawing") {
-                normalize_document_images(&xml, page_settings, image_style, image_table_styles.as_deref()).into_bytes()
+            let xml = if xml.contains("<w:drawing") {
+                normalize_document_images(&xml, page_settings, image_style, image_table_styles.as_deref())
             } else {
-                xml.into_bytes()
+                xml
             };
+            data = normalize_standalone_page_breaks(&xml).into_bytes();
         } else if name == "word/styles.xml" {
             let xml = String::from_utf8(data)
                 .map_err(|error| format!("解析 styles.xml 失败：{error}"))?;
@@ -5670,6 +5673,67 @@ fn normalize_docx(
         .map_err(|error| format!("完成 DOCX 写入失败：{error}"))?;
     fs::write(path, output.into_inner()).map_err(|error| format!("保存 DOCX 失败：{error}"))?;
     Ok(())
+}
+
+fn normalize_standalone_page_breaks(xml: &str) -> String {
+    let paragraph =
+        Regex::new(r#"(?s)<w:p\b[^>]*>.*?</w:p>"#).expect("valid page break paragraph regex");
+    let properties = Regex::new(r#"(?s)<w:pPr\b[^>]*/>|<w:pPr\b[^>]*>.*?</w:pPr>|<w:rPr\b[^>]*/>|<w:rPr\b[^>]*>.*?</w:rPr>"#).expect("valid page break properties regex");
+    let pure_break = Regex::new(
+        r#"(?s)^<w:p\b[^>]*>\s*<w:r\b[^>]*>\s*<w:br\b[^>]*w:type="page"[^>]*/>\s*</w:r>\s*</w:p>$"#,
+    )
+    .expect("valid standalone page break regex");
+    let between = Regex::new(r#"(?s)^\s*(?:<w:bookmark(?:Start|End)\b[^>]*/>\s*)*$"#)
+        .expect("valid page break bookmark gap regex");
+    let table_tag = Regex::new(r#"</?w:tbl\b[^>]*>"#).expect("valid table boundary regex");
+    let ppr = Regex::new(r#"<w:pPr\b[^>]*>"#).expect("valid page break target properties regex");
+    let mut tables = table_tag.find_iter(xml).peekable();
+    let mut table_depth = 0usize;
+    let paragraphs = paragraph.find_iter(xml).collect::<Vec<_>>();
+    let mut edits = Vec::new();
+    for pair in paragraphs.windows(2) {
+        let (current, next) = (&pair[0], &pair[1]);
+        while tables
+            .peek()
+            .is_some_and(|tag| tag.start() < current.start())
+        {
+            let tag = tables.next().unwrap().as_str();
+            if tag.starts_with("</") {
+                table_depth = table_depth.saturating_sub(1);
+            } else if !tag.ends_with("/>") {
+                table_depth += 1;
+            }
+        }
+        if table_depth > 0
+            || !pure_break.is_match(&properties.replace_all(current.as_str(), ""))
+            || !between.is_match(&xml[current.end()..next.start()])
+            || next.as_str().contains("<w:sectPr")
+            || next.as_str().contains("<w:pageBreakBefore")
+            || pure_break.is_match(&properties.replace_all(next.as_str(), ""))
+        {
+            continue;
+        }
+        // Keep the requested new page without an empty paragraph that can itself
+        // spill after a full-height image, then force yet another blank page.
+        let next_xml = next.as_str();
+        let replacement = if let Some(tag) = ppr.find(next_xml) {
+            let opening = if tag.as_str().ends_with("/>") {
+                tag.as_str().trim_end_matches("/>").to_string() + "><w:pageBreakBefore/></w:pPr>"
+            } else {
+                tag.as_str().to_string() + "<w:pageBreakBefore/>"
+            };
+            next_xml.replacen(tag.as_str(), &opening, 1)
+        } else {
+            next_xml.replacen('>', "><w:pPr><w:pageBreakBefore/></w:pPr>", 1)
+        };
+        edits.push((current.start(), current.end(), String::new()));
+        edits.push((next.start(), next.end(), replacement));
+    }
+    let mut output = xml.to_string();
+    for (from, to, replacement) in edits.into_iter().rev() {
+        output.replace_range(from..to, &replacement);
+    }
+    output
 }
 
 fn normalize_document_xml(
@@ -6818,7 +6882,7 @@ fn apply_page_settings_to_document_xml(
     xml: &str,
     page_settings: Option<&PageSettingsConfig>,
 ) -> String {
-    apply_page_settings_to_document_xml_with_heading_numbering(xml, page_settings, None, None)
+    apply_page_settings_to_document_xml_with_heading_numbering(xml, page_settings, None, None, &HashMap::new())
 }
 
 fn apply_page_settings_to_document_xml_with_heading_numbering(
@@ -6826,6 +6890,7 @@ fn apply_page_settings_to_document_xml_with_heading_numbering(
     page_settings: Option<&PageSettingsConfig>,
     heading_numbering: Option<&HeadingNumberingConfig>,
     toc_page_numbers: Option<&[TocPageNumber]>,
+    style_aliases: &HashMap<String, String>,
 ) -> String {
     let Some(page_settings) = page_settings else {
         return xml.to_string();
@@ -6835,13 +6900,14 @@ fn apply_page_settings_to_document_xml_with_heading_numbering(
     } else {
         xml.to_string()
     };
-    let xml = normalize_toc_fields(
+    let xml = normalize_toc_fields_with_style_aliases(
         &xml,
         page_settings,
         heading_numbering,
         toc_page_numbers,
+        style_aliases,
     );
-    let xml = normalize_cover_metadata_alignment(&xml);
+    let xml = normalize_cover_metadata_alignment(&xml, style_aliases);
 
     let section = Regex::new(
         r#"(?s)<w:sectPr\b[^>]*/>|<w:sectPr\b[^>]*>.*?</w:sectPr>"#,
@@ -6889,11 +6955,68 @@ fn ensure_word_relationship_namespace(xml: &str) -> String {
     )
 }
 
+fn word_style_aliases(xml: &str) -> HashMap<String, String> {
+    let style =
+        Regex::new(r#"(?s)<w:style\b[^>]*>.*?</w:style>"#).expect("valid style aliases regex");
+    let name = Regex::new(r#"<w:name\b[^>]*w:val="([^"]*)""#).expect("valid style name regex");
+    style
+        .find_iter(xml)
+        .filter_map(|style| {
+            let id = capture_style_id(style.as_str())?;
+            let name = name.captures(style.as_str())?[1]
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect::<String>();
+            let canonical = match name.as_str() {
+                "title" | "标题" => "Title".to_string(),
+                "tocheading" | "目录标题" => "TOCHeading".to_string(),
+                _ => (1..=6)
+                    .find(|level| {
+                        name == format!("heading{level}") || name == format!("标题{level}")
+                    })
+                    .map(|level| format!("Heading{level}"))?,
+            };
+            Some((id, canonical))
+        })
+        .collect()
+}
+
+fn canonical_paragraph_style(paragraph: &str, aliases: &HashMap<String, String>) -> Option<String> {
+    let id = capture_paragraph_style_id(paragraph)?;
+    Some(aliases.get(&id).cloned().unwrap_or(id))
+}
+
+fn paragraph_heading_level(paragraph: &str, aliases: &HashMap<String, String>) -> Option<usize> {
+    canonical_paragraph_style(paragraph, aliases)?
+        .strip_prefix("Heading")?
+        .parse::<usize>()
+        .ok()
+        .filter(|level| (1..=6).contains(level))
+}
+
+#[cfg(test)]
 fn normalize_toc_fields(
     xml: &str,
     page_settings: &PageSettingsConfig,
     heading_numbering: Option<&HeadingNumberingConfig>,
     toc_page_numbers: Option<&[TocPageNumber]>,
+) -> String {
+    normalize_toc_fields_with_style_aliases(
+        xml,
+        page_settings,
+        heading_numbering,
+        toc_page_numbers,
+        &HashMap::new(),
+    )
+}
+
+fn normalize_toc_fields_with_style_aliases(
+    xml: &str,
+    page_settings: &PageSettingsConfig,
+    heading_numbering: Option<&HeadingNumberingConfig>,
+    toc_page_numbers: Option<&[TocPageNumber]>,
+    style_aliases: &HashMap<String, String>,
 ) -> String {
     if !page_settings.toc_enabled {
         return xml.to_string();
@@ -6925,31 +7048,31 @@ fn normalize_toc_fields(
         })
         .to_string();
 
-    let xml = normalize_toc_heading(&xml, page_settings);
-    let xml = arrange_cover_toc_and_body_sections(&xml, page_settings);
+    let xml = normalize_toc_heading(&xml, page_settings, style_aliases);
+    let xml = arrange_cover_toc_and_body_sections(&xml, page_settings, style_aliases);
     let xml = populate_empty_toc_result(
         &xml,
         page_settings,
         heading_numbering,
         toc_page_numbers,
+        style_aliases,
     );
     let xml = normalize_toc_cached_hyperlinks(&xml);
 
     xml
 }
 
-fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> String {
+fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig, style_aliases: &HashMap<String, String>) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
         .expect("valid TOC heading paragraph regex");
-    let toc_heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="TOCHeading"[^>]*/>"#)
-        .expect("valid TOC heading style regex");
     let Some(paragraph) = paragraph
         .find_iter(xml)
-        .find(|paragraph| toc_heading_style.is_match(paragraph.as_str()))
+        .find(|paragraph| canonical_paragraph_style(paragraph.as_str(), style_aliases).as_deref() == Some("TOCHeading"))
     else {
         return xml.to_string();
     };
     let title = escape_xml_text(&page_settings.toc_title);
+    let style_id = escape_xml_text(&capture_paragraph_style_id(paragraph.as_str()).unwrap_or_else(|| "TOCHeading".to_string()));
     let size = font_size_half_points(page_settings.toc_title_font_size);
     let bold = page_settings
         .toc_title_font_weight
@@ -6971,7 +7094,7 @@ fn normalize_toc_heading(xml: &str, page_settings: &PageSettingsConfig) -> Strin
         bool_val(bold),
     );
     let replacement = format!(
-        r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading" /><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="0" w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0" /><w:jc w:val="{align}" /></w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{title}</w:t></w:r></w:p>"#,
+        r#"<w:p><w:pPr><w:pStyle w:val="{style_id}" /><w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto" /><w:ind w:left="0" w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0" /><w:jc w:val="{align}" /></w:pPr><w:r><w:rPr>{run_properties}</w:rPr><w:t>{title}</w:t></w:r></w:p>"#,
     );
     format!(
         "{}{}{}",
@@ -6986,6 +7109,7 @@ fn populate_empty_toc_result(
     page_settings: &PageSettingsConfig,
     heading_numbering: Option<&HeadingNumberingConfig>,
     toc_page_numbers: Option<&[TocPageNumber]>,
+    style_aliases: &HashMap<String, String>,
 ) -> String {
     let depth = parse_toc_depth(&page_settings.toc_depth).unwrap_or(3);
     let entries = toc_cached_entries_xml(
@@ -6994,6 +7118,7 @@ fn populate_empty_toc_result(
         page_settings,
         heading_numbering,
         toc_page_numbers,
+        style_aliases,
     );
     if entries.is_empty() {
         return xml.to_string();
@@ -7040,10 +7165,9 @@ fn toc_cached_entries_xml(
     page_settings: &PageSettingsConfig,
     heading_numbering: Option<&HeadingNumberingConfig>,
     toc_page_numbers: Option<&[TocPageNumber]>,
+    style_aliases: &HashMap<String, String>,
 ) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#).expect("valid paragraph regex");
-    let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading([1-6])"[^>]*/>"#)
-        .expect("valid heading style regex");
     let tab_position = page_content_width_twips(page_settings);
     let tab_leader = toc_tab_leader(page_settings.toc_leader.trim());
 
@@ -7052,12 +7176,7 @@ fn toc_cached_entries_xml(
         .find_iter(xml)
         .filter_map(|paragraph_match| {
             let paragraph_xml = paragraph_match.as_str();
-            let level = heading_style
-                .captures(paragraph_xml)?
-                .get(1)?
-                .as_str()
-                .parse::<usize>()
-                .ok()?;
+            let level = paragraph_heading_level(paragraph_xml, style_aliases)?;
             if level > depth {
                 return None;
             }
@@ -7311,6 +7430,7 @@ fn ensure_toc_fields_update_on_open(
 fn arrange_cover_toc_and_body_sections(
     xml: &str,
     page_settings: &PageSettingsConfig,
+    style_aliases: &HashMap<String, String>,
 ) -> String {
     let toc = Regex::new(
         r#"(?s)<w:sdt\b[^>]*>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>.*?</w:sdt>"#,
@@ -7336,18 +7456,14 @@ fn arrange_cover_toc_and_body_sections(
 
     let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
         .expect("valid paragraph regex");
-    let title_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Title"[^>]*/>"#)
-        .expect("valid title style regex");
-    let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading[1-6]"[^>]*/>"#)
-        .expect("valid heading style regex");
     let title_match = paragraph
         .find_iter(&without_toc)
-        .find(|paragraph| title_style.is_match(paragraph.as_str()));
+        .find(|paragraph| canonical_paragraph_style(paragraph.as_str(), style_aliases).as_deref() == Some("Title"));
     let body_start = title_match
         .and_then(|title_match| {
             paragraph
                 .find_iter(&without_toc[title_match.end()..])
-                .find(|paragraph| heading_style.is_match(paragraph.as_str()))
+                .find(|paragraph| paragraph_heading_level(paragraph.as_str(), style_aliases).is_some())
                 .map(|heading_match| title_match.end() + heading_match.start())
         })
         .map(|heading_start| heading_with_leading_bookmark_start(&without_toc, heading_start))
@@ -7478,13 +7594,9 @@ fn normalize_front_section_page_settings(
     )
 }
 
-fn normalize_cover_metadata_alignment(xml: &str) -> String {
+fn normalize_cover_metadata_alignment(xml: &str, style_aliases: &HashMap<String, String>) -> String {
     let paragraph = Regex::new(r#"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>"#)
         .expect("valid cover paragraph regex");
-    let title_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Title"[^>]*/>"#)
-        .expect("valid cover title style regex");
-    let heading_style = Regex::new(r#"<w:pStyle\b[^>]*w:val="Heading[1-6]"[^>]*/>"#)
-        .expect("valid cover heading style regex");
     let toc = Regex::new(
         r#"(?s)<w:sdt\b[^>]*>.*?<w:docPartGallery\b[^>]*w:val="Table of Contents"[^>]*/>"#,
     )
@@ -7493,7 +7605,7 @@ fn normalize_cover_metadata_alignment(xml: &str) -> String {
     let toc_match = toc.find(xml);
     let title = paragraph
         .find_iter(xml)
-        .find(|paragraph| title_style.is_match(paragraph.as_str()))
+        .find(|paragraph| canonical_paragraph_style(paragraph.as_str(), style_aliases).as_deref() == Some("Title"))
         .or_else(|| {
             let toc_start = toc_match.as_ref()?.start();
             paragraph.find_iter(&xml[..toc_start]).find(|paragraph| {
@@ -7511,7 +7623,7 @@ fn normalize_cover_metadata_alignment(xml: &str) -> String {
         toc.find(suffix).map(|value| value.start()),
         paragraph
             .find_iter(suffix)
-            .find(|paragraph| heading_style.is_match(paragraph.as_str()))
+            .find(|paragraph| paragraph_heading_level(paragraph.as_str(), style_aliases).is_some())
             .map(|value| value.start()),
     ]
     .into_iter()
@@ -7744,16 +7856,21 @@ fn create_footer_xml(page_settings: &PageSettingsConfig) -> String {
 fn footer_page_number_xml(format: &str) -> String {
     match format.trim() {
         "none" => String::new(),
-        "plain" | "plain-total" => page_field_xml(),
+        "plain" => page_field_xml(),
+        "plain-total" => format!(
+            r#"{page}<w:r><w:rPr>{style}</w:rPr><w:t> / </w:t></w:r>{total}"#,
+            page = page_field_xml(), style = footer_run_style_xml(), total = field_xml("NUMPAGES")
+        ),
         "dash" => format!(
             r#"<w:r><w:rPr>{style}</w:rPr><w:t>- </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> -</w:t></w:r>"#,
             style = footer_run_style_xml(),
             page = page_field_xml()
         ),
         "page-total" => format!(
-            r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
+            r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> 页 共 </w:t></w:r>{total}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
             style = footer_run_style_xml(),
-            page = page_field_xml()
+            page = page_field_xml(),
+            total = field_xml("NUMPAGES")
         ),
         _ => format!(
             r#"<w:r><w:rPr>{style}</w:rPr><w:t>第 </w:t></w:r>{page}<w:r><w:rPr>{style}</w:rPr><w:t> 页</w:t></w:r>"#,
@@ -13471,6 +13588,52 @@ mod tests {
     }
 
     #[test]
+    fn imported_style_names_drive_cover_toc_and_cached_heading_entries() {
+        let path = std::env::temp_dir().join(format!("mdking-localized-toc-{}.docx", std::process::id()));
+        let styles = r#"<w:styles><w:style w:type="paragraph" w:styleId="aa"><w:name w:val="Title"/></w:style><w:style w:type="paragraph" w:styleId="1"><w:name w:val="heading 1"/></w:style><w:style w:type="paragraph" w:styleId="TOC"><w:name w:val="TOC Heading"/></w:style></w:styles>"#;
+        let document = r#"<w:document><w:body><w:p><w:pPr><w:pStyle w:val="aa"/></w:pPr><w:r><w:t>封面</w:t></w:r></w:p><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="TOC"/></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>TOC</w:instrText><w:fldChar w:fldCharType="separate"/><w:fldChar w:fldCharType="end"/></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第一章</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#;
+        let mut writer = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        for (name, xml) in [("word/document.xml", document), ("word/styles.xml", styles)] {
+            writer.start_file(name, SimpleFileOptions::default()).unwrap();
+            writer.write_all(xml.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+        let settings = page_settings_config_from_value(&json!({"pageSettings":{"tocEnabled":true,"tocTitle":"目录","tocPosition":"after-cover"}})).unwrap();
+        normalize_docx(&path, false, None, &default_markdown_feature_config(), Some(&settings), None, None, None, None, None, true).unwrap();
+        let mut archive = ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+        let mut output = String::new();
+        archive.by_name("word/document.xml").unwrap().read_to_string(&mut output).unwrap();
+        assert!(output.contains("<w:t>目录</w:t>"), "localized TOC title should be recognized");
+        assert_eq!(output.matches("<w:sectPr>").count(), 3, "cover, TOC and body must be separate sections");
+        assert_eq!(output.matches("第一章").count(), 2, "cached TOC must include localized heading styles");
+        assert!(output.contains("w:val=\"aa\""));
+        assert!(output.contains("w:val=\"1\""));
+        drop(archive);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn standalone_page_breaks_do_not_add_a_spacer_after_images() {
+        let page_break = r#"<w:p><w:pPr><w:rPr><w:rFonts w:hint="eastAsia"/></w:rPr></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>"#;
+        let next = r#"<w:p><w:pPr/><w:r><w:t>附件标题</w:t></w:r></w:p>"#;
+        let xml = format!(r#"<w:body><w:p><w:r><w:drawing/></w:r></w:p>{page_break}<w:bookmarkStart w:id="1" w:name="附件"/>{next}</w:body>"#);
+        let result = super::normalize_standalone_page_breaks(&xml);
+        assert!(!result.contains(r#"w:type="page""#));
+        assert!(result.contains("<w:pPr><w:pageBreakBefore/></w:pPr>"));
+        assert!(result.contains(r#"<w:bookmarkStart w:id="1" w:name="附件"/>"#));
+        assert_eq!(result, super::normalize_standalone_page_breaks(&result));
+        let consecutive = super::normalize_standalone_page_breaks(&format!("{page_break}{page_break}{next}"));
+        assert_eq!(consecutive.matches(r#"w:type="page""#).count(), 1);
+        assert_eq!(consecutive.matches("<w:pageBreakBefore/>").count(), 1);
+        for unchanged in [
+            format!("{next}{page_break}"),
+            format!(r#"<w:tbl><w:tr><w:tc>{page_break}{next}</w:tc></w:tr></w:tbl>"#),
+            format!(r#"{page_break}<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>下一页</w:t></w:r></w:p>"#),
+            format!(r#"<w:p><w:r><w:t>保留正文</w:t><w:br w:type="page"/></w:r></w:p>{next}"#),
+        ] { assert_eq!(super::normalize_standalone_page_breaks(&unchanged), unchanged); }
+    }
+
+    #[test]
     fn keeps_existing_toc_result_content() {
         let settings = page_settings_config_from_value(&json!({
             "pageSettings": { "tocEnabled": true, "tocDepth": "1-3" }
@@ -13710,16 +13873,19 @@ mod tests {
     }
 
     #[test]
-    fn renders_plain_page_number_without_total_pages() {
+    fn renders_requested_dynamic_total_page_numbers() {
         let output = footer_page_number_xml("plain-total");
 
         assert!(output.contains("PAGE"));
         assert!(output.contains(r#"<w:color w:val="000000" />"#));
-        assert!(!output.contains("NUMPAGES"));
-        assert!(!output.contains("<w:t> 共 </w:t>"));
-        assert!(!output.contains("<w:t> / </w:t>"));
+        assert!(output.contains("NUMPAGES"));
+        assert!(output.contains("<w:t> / </w:t>"));
         assert!(!output.contains("<w:t>- </w:t>"));
         assert!(!output.contains("<w:t> -</w:t>"));
+        let chinese = footer_page_number_xml("page-total");
+        assert!(chinese.contains("NUMPAGES"));
+        assert!(chinese.contains("<w:t> 页 共 </w:t>"));
+        assert!(!footer_page_number_xml("plain").contains("NUMPAGES"));
     }
 
     #[test]
@@ -13822,7 +13988,7 @@ mod tests {
         assert!(header.contains("项目 &amp; 周报"));
         assert!(footer.contains("内部资料"));
         assert!(footer.contains("PAGE"));
-        assert!(!footer.contains("NUMPAGES"));
+        assert!(footer.contains("NUMPAGES"));
 
         let _ = fs::remove_file(path);
     }

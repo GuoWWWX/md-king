@@ -250,12 +250,11 @@ const paperSizeOptions: Array<{ value: PageSettingsDraft["paperSize"]; label: st
   { value: "Tabloid", label: "Tabloid", description: "11 x 17 in" },
 ];
 
-// 类型里还有 page-total / plain-total，但两端实现都不输出 NUMPAGES
-// （见 convert.rs 的 renders_plain_page_number_without_total_pages 测试），
-// 与 page / plain 完全等价，暴露出来只会让用户以为能显示总页数。
 const footerPageNumberFormats: Array<{ value: PageSettingsDraft["footerPageNumberFormat"]; label: string }> = [
   { value: "page", label: "第 1 页" },
+  { value: "page-total", label: "第 1 页 共 10 页" },
   { value: "plain", label: "1" },
+  { value: "plain-total", label: "1 / 10" },
   { value: "dash", label: "- 1 -" },
   { value: "none", label: "不显示页码" },
 ];
