@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   test:
@@ -18,6 +19,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Find checks for this exact commit
+        id: reuse
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node scripts/ci-artifacts.mjs find checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Download validated frontend and checks
+        if: steps.reuse.outputs.artifact_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.reuse.outputs.artifact_id }}
+          run-id: ${{ steps.reuse.outputs.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+      - name: Verify reused checks and frontend
+        if: steps.reuse.outputs.artifact_id != ''
+        run: node scripts/ci-artifacts.mjs verify checks
       - uses: pnpm/action-setup@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
@@ -28,14 +46,43 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod --audit-level=high
       - run: pnpm build
+        if: steps.reuse.outputs.artifact_id == ''
       - run: pnpm test:unit
+        if: steps.reuse.outputs.artifact_id == ''
+      - run: pnpm test:release
+        if: steps.reuse.outputs.artifact_id == ''
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      # Tag-scoped caches cannot be reused by the next release tag. Populate
-      # both build profiles on main, which release runs can restore.
-      - name: Warm release dependencies
+        if: steps.reuse.outputs.artifact_id == ''
+      - name: Record successful checks and frontend
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        run: node scripts/ci-artifacts.mjs create checks
+      - name: Store successful checks and frontend
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-checks-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            dist/
+            ci-checks.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Build validated Windows installers once
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: pwsh
-        run: |
-          $mdCacheConfig = Join-Path $env:RUNNER_TEMP 'md-king-cache-config.json'
-          '{"build":{"beforeBuildCommand":""}}' | Set-Content -LiteralPath $mdCacheConfig -Encoding utf8
-          pnpm tauri build --no-bundle --config $mdCacheConfig
+        run: pnpm tauri:build -SkipFrontendBuild
+      - name: Record validated installer hashes
+        id: bundles
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node scripts/ci-artifacts.mjs create bundles
+      - name: Store validated installers for release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-bundles-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            src-tauri/target/release/bundle/nsis/md-king_${{ steps.bundles.outputs.version }}_x64-setup.exe
+            src-tauri/target/release/bundle/msi/md-king_${{ steps.bundles.outputs.version }}_x64_en-US.msi
+            src-tauri/target/release/bundle/ci-bundles.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

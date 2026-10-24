@@ -22,7 +22,12 @@ Set-Content -LiteralPath $pandocVersionFile -Value $pandocVersion -NoNewline -En
 
 $content = Get-Content -LiteralPath $installerScript -Raw
 
-# Solid compression forces NSIS to walk one shared stream even when the installed Pandoc is reused.
+# Replace Tauri's temporary uncompressed block before the only final compression pass.
+# Removing the whole block also removes SetCompress off; keep non-solid LZMA for Pandoc reuse.
+$generatedCompressorPattern = '(?m)^!if "(?<algorithm>none|lzma)" == "none"\r?\n[ \t]+SetCompress off\r?\n!else\r?\n(?:[ \t]*;[^\r\n]*\r?\n)*[ \t]+SetCompressor(?: /SOLID)? "\k<algorithm>"\r?\n!endif\r?$'
+if ($content -match $generatedCompressorPattern) {
+  $content = [regex]::Replace($content, $generatedCompressorPattern, 'SetCompressor "lzma"')
+}
 $solidCompressorPattern = '(?m)^(?<indent>[ \t]*)SetCompressor /SOLID "lzma"\r?$'
 if ($content -match $solidCompressorPattern) {
   $content = [regex]::Replace($content, $solidCompressorPattern, '${indent}SetCompressor "lzma"')

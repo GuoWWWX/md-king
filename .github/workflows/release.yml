@@ -7,12 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing version tag, e.g. v1.1.9'
+        description: 'Version tag, e.g. v1.1.9 (must exist when publishing; verify_only checks main)'
         required: true
         type: string
+      verify_only:
+        description: 'Verify current main installers and signatures without creating or modifying a Release'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
@@ -25,8 +31,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
-          lfs: true
+          ref: ${{ inputs.verify_only && 'main' || inputs.tag || github.ref }}
+          lfs: false
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -34,26 +40,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-          shared-key: windows-msvc-build
-          # Reuse main's cache instead of saving one isolated to this tag.
-          save-if: 'false'
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Validate release versions and signing configuration
+        id: version
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -65,12 +53,72 @@ jobs:
           if ($env:RELEASE_TAG -cne "v$version" -or $tauriVersion -cne $version) { throw "Release versions do not match" }
           if (!(Select-String -Path src-tauri/Cargo.toml -SimpleMatch -Pattern "version = `"$version`"" -Quiet)) { throw "Cargo version does not match" }
           if (!$env:UPDATE_SIGNING_PRIVATE_KEY) { throw "Missing UPDATE_SIGNING_PRIVATE_KEY repository secret" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Find validated installers for this exact commit
+        id: reuse
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath scripts/ci-artifacts.mjs) {
+            node scripts/ci-artifacts.mjs find bundles
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            "run_id=" >> $env:GITHUB_OUTPUT
+            "artifact_id=" >> $env:GITHUB_OUTPUT
+            Write-Host 'Historical tag without reuse metadata; run the original validation/build.'
+          }
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download validated installers
+        if: steps.reuse.outputs.artifact_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.reuse.outputs.artifact_id }}
+          run-id: ${{ steps.reuse.outputs.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: src-tauri/target/release/bundle
+
+      - name: Verify reused installer commit, version and hashes
+        if: steps.reuse.outputs.artifact_id != ''
+        run: node scripts/ci-artifacts.mjs verify bundles
+
+      - name: Fetch build resources when no validated artifact exists
+        if: steps.reuse.outputs.artifact_id == ''
+        run: git lfs pull
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Rust toolchain
+        if: steps.reuse.outputs.artifact_id == ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        if: steps.reuse.outputs.artifact_id == ''
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: windows-msvc-build
+          save-if: 'false'
+
+      - name: Install frontend dependencies
+        if: steps.reuse.outputs.artifact_id == ''
+        run: pnpm install --frozen-lockfile
 
       - run: pnpm audit --prod --audit-level=high
       - run: pnpm test:unit
+        if: steps.reuse.outputs.artifact_id == ''
+      - run: pnpm test:release
+        if: steps.reuse.outputs.artifact_id == '' && hashFiles('tests/build/*.test.mjs') != ''
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+        if: steps.reuse.outputs.artifact_id == ''
 
       - name: Build Tauri app
+        if: steps.reuse.outputs.artifact_id == ''
         # beforeBuildCommand performs the frontend build once.
         run: pnpm tauri:build
         env:
@@ -110,12 +158,13 @@ jobs:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
 
       - name: Create GitHub Release
+        if: inputs.verify_only != true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
-            src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/md-king_${{ steps.version.outputs.version }}_x64-setup.exe
+            src-tauri/target/release/bundle/msi/md-king_${{ steps.version.outputs.version }}_x64_en-US.msi
             src-tauri/target/release/bundle/nsis/update-manifest.json
             src-tauri/target/release/bundle/nsis/update-manifest.sig
             src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
@@ -126,3 +175,16 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Store verification metadata without publishing
+        if: inputs.verify_only == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            src-tauri/target/release/bundle/nsis/update-manifest.json
+            src-tauri/target/release/bundle/nsis/update-manifest.sig
+            src-tauri/target/release/bundle/nsis/update-delta.json
+            src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
