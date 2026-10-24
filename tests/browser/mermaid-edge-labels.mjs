@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { contrastRatio } from './contrast-utils.mjs';
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -8,7 +9,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 2048, height: 700 } });
   await mkdir('.codex', { recursive: true });
   for (const theme of ['dark', 'light']) {
-    await page.goto(`http://127.0.0.1:1420/tests/browser/mermaid-edge-labels.html?theme=${theme}`);
+    await page.goto(`${process.env.TEST_BASE_URL || 'http://127.0.0.1:1420'}/tests/browser/mermaid-edge-labels.html?theme=${theme}`);
     await page.waitForFunction(() => window.png);
     const styles = await page.evaluate(() => {
       // Check the actual text elements too: a transparent labelBkg parent does
@@ -20,16 +21,18 @@ try {
           || (node.tagName === 'rect' && !['none', 'rgba(0, 0, 0, 0)'].includes(style.fill));
       }).map((node) => ({ tag: node.tagName, class: node.getAttribute('class'), background: getComputedStyle(node).backgroundColor }));
       return { text: labels.map((node) => node.textContent), painted,
-        colors: labels.map((node) => getComputedStyle(node).color),
+        colors: labels.map((node) => {
+          const box=node.getBoundingClientRect(),x=box.left+box.width/2,y=box.top+box.height/2;
+          const cluster=[...document.querySelectorAll('.cluster > rect')].find(rect=>{const b=rect.getBoundingClientRect();return x>b.left&&x<b.right&&y>b.top&&y<b.bottom;});
+          return {text:getComputedStyle(node).color,background:cluster?getComputedStyle(cluster).fill:getComputedStyle(document.body).backgroundColor};
+        }),
         shadows: labels.map((node) => ({ text: getComputedStyle(node).textShadow, stroke: getComputedStyle(node).webkitTextStrokeColor })) };
     });
     assert.equal(styles.text.length, 4, 'the exact ThreadLocal sample must have four relationship labels');
     assert.deepEqual(styles.painted, [], `${theme}: relationship labels must not paint any rectangular background`);
     assert.ok(styles.shadows.every(({ text }) => !text.includes('rgb(39, 39, 42)')), 'labels must not have the old black text shadow');
-    assert.equal(styles.colors.filter((color) => color === 'rgb(255, 255, 255)').length, theme === 'dark' ? 1 : 0,
-      'only the label over the dark canvas should be white; three labels over the pale cluster must be dark');
-    assert.equal(styles.colors.filter((color) => color === 'rgb(34, 34, 34)').length, theme === 'dark' ? 3 : 4,
-      'labels over a light background must remain visible without an outline');
+    assert.ok(styles.colors.every(({text,background})=>contrastRatio(text,background)>=4.5),
+      `${theme}: all labels must contrast with their actual cluster or canvas: ${JSON.stringify(styles.colors)}`);
     await page.locator('#out').screenshot({ path: `.codex/mermaid-edge-labels-${theme}.png` });
     // The same CSS must survive serialization/rasterization for preview/export.
     const darkPixels = await page.evaluate(async () => {

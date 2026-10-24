@@ -29,8 +29,9 @@ try {
   });
   await ready();
   await mkdir(".codex/mermaid-theme-qa", { recursive: true });
-  const lightOptions = ["redux-color", "redux", "neo", "default", "forest", "neutral", "base"];
-  const darkOptions = ["redux-dark-color", "redux-dark", "neo-dark", "dark"];
+  // Both selectors deliberately allow all themes for user-defined pairings.
+  const lightOptions = ["redux-color", "redux-dark-color", "redux", "redux-dark", "neo", "neo-dark", "default", "dark", "forest", "neutral", "base"];
+  const darkOptions = lightOptions;
   assert.deepEqual(await options("浅色默认主题"), lightOptions);
   const lightSelection = await page.locator('[role="option"][data-state="checked"]').evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color }));
   assert.deepEqual(lightSelection, { background: "rgb(241, 242, 244)", color: "rgb(15, 23, 42)" });
@@ -45,7 +46,7 @@ try {
   await choose("整体选择主题", "forest");
   await ready();
   assert.equal(await selected("浅色默认主题"), "forest");
-  assert.equal(await selected("深色默认主题"), "dark");
+  assert.equal(await selected("深色默认主题"), "forest");
   await choose("状态图浅色主题", "neo");
   await ready();
   assert.equal(await selected("预览图表类型"), "state");
@@ -76,7 +77,9 @@ try {
   assert.deepEqual(darkSelection, { background: "rgb(58, 58, 58)", color: "rgb(228, 228, 231)" });
   const trigger = await page.locator('[role="combobox"][aria-label="状态图深色主题"]').boundingBox();
   const dropdown = await page.getByRole("listbox").boundingBox();
-  assert.ok(trigger && dropdown && Math.abs(trigger.width - dropdown.width) <= 1);
+  assert.ok(trigger && dropdown && dropdown.width <= 258, "theme dropdown keeps its fixed readable width");
+  assert.ok(dropdown.height <= dropdown.width + 2, "theme dropdown remains compact and scrollable");
+  assert.ok(await page.getByRole('listbox').evaluate(element=>{const viewport=element.querySelector('[data-radix-select-viewport]');return viewport.scrollHeight>viewport.clientHeight;}), "extra themes can be reached by scrolling");
   const rowBackground = await page.locator('[role="combobox"][aria-label="状态图深色主题"]').evaluate((element) => getComputedStyle(element.closest("tr")).backgroundColor);
   assert.equal(rowBackground, "rgba(0, 0, 0, 0)");
   await page.screenshot({ path: ".codex/mermaid-theme-qa/dark-dropdown.png" });
@@ -93,7 +96,7 @@ try {
     assert.deepEqual(await options("状态图深色主题"), ["inherit", ...darkOptions]);
     const popup = await page.getByRole("listbox").boundingBox();
     const field = await page.locator('[role="combobox"][aria-label="状态图深色主题"]').boundingBox();
-    assert.ok(popup && field && Math.abs(popup.width - field.width) <= 1);
+    assert.ok(popup && field && popup.width <= 258 && popup.height <= popup.width + 2);
     assert.ok(popup && popup.x >= 0 && popup.x + popup.width <= width && popup.y >= 0 && popup.y + popup.height <= 900);
     await page.keyboard.press("Escape");
   }

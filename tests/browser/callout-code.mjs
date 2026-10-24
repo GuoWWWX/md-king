@@ -28,8 +28,9 @@ async function inspect(sourceMode) {
       const prefix = line.querySelector('.mk-cm-callout-code-prefix');
       const bg = getComputedStyle(line, '::after');
       if (bg.display === 'none' || bg.left !== '32px' || bg.right !== '32px') failures.push('code card inset');
-      if (Boolean(prefix) !== sourceMode) failures.push('source prefix visibility');
-      if (prefix) {
+      const visiblePrefix = prefix && getComputedStyle(prefix).visibility !== 'hidden';
+      if (Boolean(visiblePrefix) !== sourceMode) failures.push('source prefix visibility');
+      if (visiblePrefix) {
         const p = prefix.getBoundingClientRect();
         if (Math.abs(p.left - box.left - 14) > 1) failures.push('prefix gutter position');
         const glyph = document.createRange();
@@ -53,7 +54,7 @@ async function inspect(sourceMode) {
         }
       }
     }
-    if (view.dom.querySelectorAll('.mk-cm-callout-code-prefix').length !== (sourceMode ? 8 : 0)) failures.push('prefix count');
+    if ([...view.dom.querySelectorAll('.mk-cm-callout-code-prefix')].filter(prefix => getComputedStyle(prefix).visibility !== 'hidden').length !== (sourceMode ? 8 : 0)) failures.push('prefix count');
     return { failures, positions, codeTextLeft, count: lines.length, source: view.state.doc.toString() };
   }, sourceMode);
 }
