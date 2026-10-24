@@ -1,0 +1,14 @@
+flowchart TD
+    subgraph Pattern1["1. 旁路缓存模式 (Cache-Aside) — 互联网最常用"]
+        App1["业务应用"] -->|"读：1. 先查缓存"| Cache1[("Redis 缓存")]
+        App1 -->|"读：2. 未命中则查库并回填"| DB1[("MySQL 数据库")]
+        App1 -->|"写：更新数据库后直接删除缓存"| DB1
+    end
+    subgraph Pattern2["2. 读写穿透模式 (Read/Write-Through)"]
+        App2["业务应用"] -->|"所有读写只调缓存代理层"| Cache2[("缓存代理组件")]
+        Cache2 -->|"内部自动回源加载或同步写库"| DB2[("MySQL 数据库")]
+    end
+    subgraph Pattern3["3. 异步回写模式 (Write-Behind / Write-Back)"]
+        App3["业务应用"] -->|"写：只写内存缓存即返回成功"| Cache3[("内存缓存层")]
+        Cache3 -.->|"后台异步批量合并刷入数据库"| DB3[("MySQL 数据库")]
+    end

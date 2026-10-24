@@ -26,6 +26,7 @@ import {
 } from "./source-indent";
 import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
+import { formattingBlocks } from "../../../lib/markdown-formatting.ts";
 import { editorImageContext } from "./editor-images";
 import { referenceMetadata } from "../../../lib/document-references.ts";
 import { markdownInlineHtmlTagRanges } from "../../../lib/markdown-inline-html.ts";
@@ -1393,10 +1394,13 @@ function buildTableBlocks(
   tree = syntaxTree(state),
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const signatureBlocks = formattingBlocks(state.doc.toString()).filter(block => block.attrs.signature);
 
   tree.iterate({
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
+
+      if (signatureBlocks.some(block => state.doc.lineAt(ref.from).number > block.firstLine && state.doc.lineAt(ref.from).number < block.lastLine)) return false;
 
       const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
 

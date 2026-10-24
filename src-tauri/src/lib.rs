@@ -5,6 +5,7 @@ mod system;
 
 pub use core::convert::{convert_markdown_cli, ConvertRequest, ConvertResult};
 pub use core::template::{
+    import_template as import_template_for_cli, replace_template_for_cli, ImportTemplateRequest,
     inspect_template_for_cli, list_templates as list_templates_for_cli,
     resolve_template_selector_for_cli, Template, TemplateInspection, TemplateSelectorError,
 };

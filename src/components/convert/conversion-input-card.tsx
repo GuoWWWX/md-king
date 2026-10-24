@@ -1,5 +1,6 @@
 import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
+import { FormattingToolbar } from "@/components/editor/formatting-toolbar";
 import { ClipboardPaste, Files, FileText, FileUp, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease, Link2 } from "lucide-react";
 import { forwardRef, type ChangeEvent, type DragEvent, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextMenu } from "radix-ui";
@@ -326,6 +327,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
       <ContextMenu.Trigger asChild>
         <section data-mk-context-menu data-mk-editor-drop-target className="mk-card relative flex h-full min-h-[360px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-[5px] max-[760px]:min-h-[300px]">
       {documentInfo}
+      {hasDocument && !disabled && !readingMode ? <FormattingToolbar getView={getEditorView} /> : null}
       {/* 拖放提示要盖在编辑器上：已有文档时引导区不渲染，
           没有这层的话桌面端拖文件进来毫无视觉反馈。 */}
       {externalDragging && hasDocument ? (
@@ -355,7 +357,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           openLinksOnClick
           tableDefaultWidthMode={tableDefaultWidthMode}
           onTableContextChange={onTableContextChange}
-          className={cn("h-full", contentWidthMode !== "wide" && `mk-editor-${contentWidthMode}`)}
+          className={cn("min-h-0 flex-1", contentWidthMode !== "wide" && `mk-editor-${contentWidthMode}`)}
         />
       ) : (
         <div

@@ -1097,6 +1097,24 @@ function StyleProperties({
       <div className="space-y-3">
         <MarkdownFeatureStyleSwitch selectedStyleId={selectedStyle.id} markdownFeatures={markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} />
 
+        {selectedStyle.id === "signature" ? <PropertyCard title="签署块布局">
+          <SettingSwitch label="跟随正文字体、字号和行距" checked={draft.signatureInheritText} onCheckedChange={value => updateDraft("signatureInheritText", value)} />
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="字段名称颜色"><WordColorPicker value={draft.color} onChange={value => updateDraft("color", value)} autoColor="#000000" /></Field>
+            <Field label="整体位置"><SimpleAlignSelect value={draft.align === "justify" ? "left" : draft.align} onChange={value => updateDraft("align", value)} /></Field>
+            <Field label="填写区域宽度（厘米）"><Input type="number" min={1} max={12} step={0.5} value={draft.signatureLineWidth} onChange={e => updateDraft("signatureLineWidth", Math.max(1, Math.min(12, Number(e.target.value) || 4)))} /></Field>
+            <Field label="字段名称对齐"><SimpleAlignSelect value={draft.signatureLabelAlign} onChange={value => updateDraft("signatureLabelAlign", value)} /></Field>
+            <Field label="填写内容对齐"><SimpleAlignSelect value={draft.signatureValueAlign} onChange={value => updateDraft("signatureValueAlign", value)} /></Field>
+            <Field label="下划线颜色"><WordColorPicker value={draft.signatureLineColor} onChange={value => updateDraft("signatureLineColor", value)} autoColor="#000000" /></Field>
+            <Field label="下划线粗细"><Select value={draft.signatureLineThickness >= 1 ? "thick" : "single"} onValueChange={value => updateDraft("signatureLineThickness", value === "thick" ? 1 : 0.5)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single">细线</SelectItem><SelectItem value="thick">粗线</SelectItem></SelectContent></Select></Field>
+            <Field label="填写文字颜色"><WordColorPicker value={draft.signatureValueColor || draft.color} onChange={value => updateDraft("signatureValueColor", value)} autoColor={draft.color} /><Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => updateDraft("signatureValueColor", "")}>跟随字段颜色</Button></Field>
+            <Field label="备注文字颜色"><WordColorPicker value={draft.signatureRemarkColor || draft.color} onChange={value => updateDraft("signatureRemarkColor", value)} autoColor={draft.color} /><Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => updateDraft("signatureRemarkColor", "")}>跟随字段颜色</Button></Field>
+            <Field label="行间距（磅）"><Input type="number" min={0} max={48} value={draft.signatureRowSpacing} onChange={e => updateDraft("signatureRowSpacing", Math.max(0, Math.min(48, Number(e.target.value) || 0)))} /></Field>
+          </div>
+          <SettingSwitch label="块内尽量保持同页" checked={draft.signatureKeepTogether} onCheckedChange={value => updateDraft("signatureKeepTogether", value)} />
+          <SettingSwitch label="与前文保持同页" checked={draft.signatureWithPrevious} onCheckedChange={value => updateDraft("signatureWithPrevious", value)} />
+        </PropertyCard> : null}
+
         {isQuote ? (
           <PropertyCard title="引用块专属样式">
             <div className="grid gap-4 md:grid-cols-2">
@@ -1211,7 +1229,7 @@ function StyleProperties({
           </PropertyCard>
         ) : null}
 
-        {!isTableRoot && !isImage && !isHorizontalRule ? <PropertyCard title={isHeadingStyle ? `文本属性（当前 ${activeHeadingLevelLabel}）` : isList ? `文本属性（当前 ${activeListLevel} 级）` : isInlineCode ? "行内代码样式" : isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
+        {!isTableRoot && !isImage && !isHorizontalRule && !(selectedStyle.id === "signature" && draft.signatureInheritText) ? <PropertyCard title={isHeadingStyle ? `文本属性（当前 ${activeHeadingLevelLabel}）` : isList ? `文本属性（当前 ${activeListLevel} 级）` : isInlineCode ? "行内代码样式" : isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="中文字体"><WordFontPicker value={draft[chineseFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(chineseFontKey, value)} /></Field>
             <Field label="英文字体"><WordFontPicker value={draft[latinFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(latinFontKey, value)} /></Field>
@@ -1953,6 +1971,7 @@ function HeaderFooterSettingsPanel({ pageSettings, patchPageSettings }: { pageSe
           </Field>
           <Field label="起始显示页码"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={999} step={1} value={pageSettings.footerStartPage} onChange={(event) => patchPageSettings({ footerStartPage: Number(event.target.value) })} /></Field>
         </div>
+        <p className="text-xs text-slate-500">总页数按所选编号范围统计：从正文开始时不计封面、目录；从文档首页开始时统计全文。</p>
       </PropertyCard>
     </div>
   );

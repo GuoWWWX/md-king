@@ -198,7 +198,15 @@ fn run_resolved_pandoc_to_docx(
         command.arg(arg);
     }
 
-    let output = command.output()?;
+    let filter_path = std::env::temp_dir().join(format!(
+        "mdking-docx-layout-{}-{}.lua", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
+    ));
+    std::fs::write(&filter_path, include_str!("docx-layout.lua"))?;
+    command.arg("--lua-filter").arg(&filter_path);
+    let output = command.output();
+    let _ = std::fs::remove_file(&filter_path);
+    let output = output?;
 
     Ok(PandocExecution {
         success: output.status.success(),

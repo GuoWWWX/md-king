@@ -7,11 +7,11 @@ import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
 import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
 import {createDefaultTemplateStyleConfig} from '/src/lib/style-manager-data.ts';
 const root=createRoot(document.querySelector('#preview'));
-window.fixture={configure(format='page-total',start=3){
+window.fixture={configure(format='page-total',start=3,origin='document',toc=false){
  const config=createDefaultTemplateStyleConfig('default-report');
- config.pageSettings={...config.pageSettings,tocEnabled:false,footerEnabled:true,footerText:'内部资料',footerPageNumberFormat:format,footerStartPage:start,pageNumberStartAt:'document'};
- const markdown=Array.from({length:90},(_,i)=>`这是第 ${i+1} 段测试正文，用于确认多页预览中的页码与总页数。`).join('\n\n');
- root.render(h(TooltipProvider,null,h(WordPreviewPage,{markdown,styleConfig:config,paginate:true,showTocPage:false})));
+ config.pageSettings={...config.pageSettings,tocEnabled:toc,footerEnabled:true,footerText:'内部资料',footerPageNumberFormat:format,footerStartPage:start,pageNumberStartAt:origin};
+ const markdown='# 正文测试\n\n## 第一节\n\n'+Array.from({length:90},(_,i)=>`这是第 ${i+1} 段测试正文，用于确认多页预览中的页码与总页数。`).join('\n\n');
+ root.render(h(TooltipProvider,null,h(WordPreviewPage,{markdown,styleConfig:config,paginate:true,showTocPage:toc})));
 }};
 window.fixture.configure();
 </script></body></html>

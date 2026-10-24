@@ -1121,7 +1121,7 @@ export class TableWidget extends WidgetType {
         const element = document.createElement(isHeader ? "th" : "td");
         element.dataset.tableRow = String(rowIndex);
         element.dataset.tableColumn = String(columnIndex);
-        const alignment = this.model.alignments[columnIndex] ?? "none";
+        const alignment = isHeader ? "center" : this.model.alignments[columnIndex] ?? "none";
         if (alignment !== "none") {
           element.style.textAlign = alignment;
         }
@@ -2202,7 +2202,7 @@ export class TableWidget extends WidgetType {
     const buildInput = (row: number, column: number) => {
       const cell = document.createElement("div");
       cell.className = "mk-cm-table-cell";
-      const alignment = draft.alignments[column] ?? "none";
+      const alignment = row === 0 ? "center" : draft.alignments[column] ?? "none";
       const rendered = this.renderCell(draft.rows[row]?.[column] ?? "", view);
       rendered.dataset.tableRow = String(row);
       rendered.dataset.tableColumn = String(column);
@@ -2357,7 +2357,7 @@ export class TableWidget extends WidgetType {
         const el = document.createElement(isHeader ? "th" : "td");
         el.dataset.tableRow = String(rowIndex);
         el.dataset.tableColumn = String(colIndex);
-        const alignment = draft.alignments[colIndex] ?? "none";
+        const alignment = isHeader ? "center" : draft.alignments[colIndex] ?? "none";
         if (alignment !== "none") {
           el.style.textAlign = alignment;
         }

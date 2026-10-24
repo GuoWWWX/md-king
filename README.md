@@ -113,6 +113,8 @@ Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。
 
 ## 其他功能
 
+命令行支持转换、检查以及 DOCX 模板导入/覆盖。用 `md-king-cli --help` 查看命令，或阅读[命令行使用说明](docs/cli.md)。模板在 Word/WPS 中修改后，可用 `templates replace` 保持原 ID 并刷新样式配置。
+
 - LaTeX 行内与块级公式、Mermaid 流程图和时序图、代码高亮、表格、任务清单与 Callout 提示框。
 - Windows 右键菜单、全局快捷键 `Ctrl+Alt+V` 与悬浮球转换入口。
 - 应用内更新提示、下载进度、取消与失败重试。
@@ -191,7 +193,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.18_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.19_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 

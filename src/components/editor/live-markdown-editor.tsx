@@ -34,6 +34,7 @@ import { tableBlockPasteExtension } from "./cm/table-block-paste";
 import { markdownEditorTheme } from "./cm/theme";
 import { refreshLiveMermaidTheme } from "./cm/widgets";
 import { useAppStore } from "@/stores/app-store";
+import { formatPreviewExtension } from "./cm/format-preview";
 
 export type { TableDisplayContext } from "./cm/live-preview";
 export type { TableWidthMode } from "./cm/table-display-settings";
@@ -726,6 +727,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       mermaidCompartment.of(mermaidBlockExtension(!readOnly)),
       imageBlockCompartment.of(imageExtensions()),
       tableBlockExtension,
+      formatPreviewExtension,
       tableSyntaxRefreshPlugin,
       tableBlockPasteExtension,
       EditorView.domEventHandlers({

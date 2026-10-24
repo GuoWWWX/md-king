@@ -1,5 +1,7 @@
 pub mod config;
 pub mod convert;
+pub mod docx_layout;
+pub mod docx_formatting;
 pub mod history;
 pub mod mermaid;
 pub mod pandoc;

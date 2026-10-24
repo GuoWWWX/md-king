@@ -15,6 +15,7 @@ import { relaxedStrongPlugin } from "../../../lib/relaxed-strong.ts";
 import { relaxedEmphasisPlugin } from "../../../lib/relaxed-emphasis.ts";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "../../../lib/markdown-inline-html.ts";
 import { stripReferenceMetadata } from "../../../lib/document-references.ts";
+import { markdownFormattingPlugin, paragraphFormatting } from "../../../lib/markdown-formatting.ts";
 
 type TableInlineElementTag =
   | "strong" | "em" | "s" | "u" | "mark" | "sub" | "sup" | "small" | "kbd" | "code"
@@ -37,6 +38,7 @@ export type TableInlineNode =
     wikilinkTarget?: string;
     open?: boolean;
     dateTime?: string;
+    style?: string;
     children: TableInlineNode[];
   };
 
@@ -61,6 +63,7 @@ function tableInlineMathPlugin(md: MarkdownIt) {
 }
 
 const parser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(markdownFormattingPlugin)
   .use(markdownInlineHtmlPlugin)
   .use(tableInlineMathPlugin)
   .use(obsidianWikilinkPlugin)
@@ -75,6 +78,7 @@ type PendingInlineElement = {
   wikilinkTarget?: string;
   open?: boolean;
   dateTime?: string;
+  style?: string;
   children: TableInlineNode[];
   autoLink?: boolean;
   trailingText?: string;
@@ -240,7 +244,9 @@ function openingElement(token: Token): {
   title?: string;
   wikilinkTarget?: string;
   autoLink?: boolean;
+  style?: string;
 } | null {
+  if (token.type === "mk_format_open") return { tag: "span", style: token.attrGet("style") ?? "" };
   if (token.type === "strong_open") return { tag: "strong" };
   if (token.type === "em_open") return { tag: "em" };
   if (token.type === "s_open") return { tag: "s" };
@@ -264,6 +270,7 @@ function openingElement(token: Token): {
 }
 
 function closingTag(token: Token): TableInlineElementTag | null {
+  if (token.type === "mk_format_close") return "span";
   if (token.type === "strong_close") return "strong";
   if (token.type === "em_close") return "em";
   if (token.type === "s_close") return "s";
@@ -341,6 +348,8 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[], ima
       parent.append(link);
     } else {
       const element = document.createElement(node.tag);
+      if (node.style) element.setAttribute("style", node.style);
+      if (node.style?.includes("--mk-explicit-color:")) element.classList.add("mk-explicit-color");
       if (node.title) element.setAttribute("title", node.title);
       if (node.tag === "a" && node.href) {
         element.setAttribute("href", node.href);
@@ -358,6 +367,8 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[], ima
 
 export function renderTableInlineMarkdown(source: string, images?: TableImageOptions): HTMLElement {
   const content = document.createElement("div");
+  const align = paragraphFormatting(source)?.align;
+  if (align) content.style.textAlign = align;
   content.className = "mk-cm-table-cell-content";
   appendNodes(content, parseTableInlineMarkdown(source), images);
   if (!content.hasChildNodes()) content.append(document.createElement("br"));

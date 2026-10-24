@@ -36,6 +36,7 @@ import { normalizeMathSource } from "@/lib/markdown-math";
 import { containsWordChineseText, splitWordPreviewQuotes } from "@/lib/word-preview-quotes";
 import { cn } from "@/lib/utils";
 import { stripReferenceMetadata } from "@/lib/document-references";
+import { markdownFormattingPlugin, signatureRows, signatureHtml, paragraphFormatting, type TextAttributes } from "@/lib/markdown-formatting";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
 type WordPreviewPageProps = {
@@ -72,9 +73,10 @@ export type PreviewOutlineItem = {
 };
 
 type PreviewBlock =
+  | { type: "signature"; source: string; attrs: TextAttributes }
   | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean; unnumbered?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
-  | { type: "paragraph"; segments: PreviewTextSegment[]; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
+  | { type: "paragraph"; segments: PreviewTextSegment[]; align?: "left" | "center" | "right"; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number; caption?: string; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "math"; text: string }
@@ -85,6 +87,7 @@ type PreviewBlock =
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type PreviewTextSegment = {
+  color?: string;
   text: string;
   image?: { src: string; alt: string };
   code?: boolean;
@@ -109,7 +112,7 @@ type MarkdownInlineToken = {
   info?: string;
   markup?: string;
   attrs?: Array<[string, string]> | null;
-  meta?: { mkWikilinkTarget?: string } | null;
+  meta?: { mkWikilinkTarget?: string; color?: string; underline?: boolean } | null;
   children?: MarkdownInlineToken[] | null;
 };
 
@@ -184,6 +187,7 @@ function backslashMathPlugin(md: MarkdownIt) {
 }
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(markdownFormattingPlugin)
   .use(markdownInlineHtmlPlugin)
   .use(obsidianWikilinkPlugin)
   .use(relaxedStrongPlugin)
@@ -490,7 +494,7 @@ function canMergeSegments(a: PreviewTextSegment, b: PreviewTextSegment) {
     && Boolean(a.superscript) === Boolean(b.superscript)
     && Boolean(a.small) === Boolean(b.small)
     && Boolean(a.keyboard) === Boolean(b.keyboard)
-    && a.link === b.link;
+    && a.link === b.link && a.color === b.color;
 }
 
 function mergeTextSegments(segments: PreviewTextSegment[]) {
@@ -652,12 +656,14 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined, preserv
     keyboard: 0,
   };
   const linkStack: Array<{ target: string; auto: boolean; wikilinkTarget?: string; html?: boolean }> = [];
+  const formatStack: Array<{ color?: string; underline?: boolean }> = [];
 
   const currentMarks = (): Omit<PreviewTextSegment, "text"> => ({
+    color: [...formatStack].reverse().find(item => item.color)?.color,
     bold: marks.bold > 0 || undefined,
     italic: marks.italic > 0 || undefined,
     strike: marks.strike > 0 || undefined,
-    underline: marks.underline > 0 || undefined,
+    underline: marks.underline > 0 || formatStack.some(item => item.underline) || undefined,
     highlight: marks.highlight > 0 || undefined,
     subscript: marks.subscript > 0 || undefined,
     superscript: marks.superscript > 0 || undefined,
@@ -759,6 +765,8 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined, preserv
 
   for (const child of children) {
     switch (child.type) {
+      case "mk_format_open": formatStack.push(child.meta ?? {}); break;
+      case "mk_format_close": formatStack.pop(); break;
       case "strong_open": marks.bold += 1; break;
       case "strong_close": marks.bold = Math.max(0, marks.bold - 1); break;
       case "em_open": marks.italic += 1; break;
@@ -880,6 +888,7 @@ function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined
     style.color = "#0563C1";
     decorations.push("underline");
   }
+  if (segment.color) style.color = segment.color;
   if (decorations.length) style.textDecorationLine = [...new Set(decorations)].join(" ");
   return Object.keys(style).length > 0 ? style : undefined;
 }
@@ -966,6 +975,7 @@ function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: S
       content = renderWordCompatibleText(segment.text, `${keyPrefix}-${index}`, markStyle, previousCharacter, includeBoundaryGap, chineseContext);
     }
 
+    if (segment.color) content = <span className="mk-explicit-color" style={{ "--mk-explicit-color": segment.color } as CSSProperties}>{content}</span>;
     if (segment.link === undefined) return <span key={`${keyPrefix}-${index}`}>{content}</span>;
     return (
       <a
@@ -1277,6 +1287,8 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
     const token = tokens[index];
     const next = tokens[index + 1];
 
+    if (token.type === "mk_signature") { blocks.push({ type: "signature", source: token.content, attrs: token.meta }); continue; }
+
     if (token.type === "heading_open" && next?.type === "inline") {
       const level = Number(token.tag.slice(1));
       const normalizedLevel = Math.min(6, Math.max(1, level)) as HeadingLevel;
@@ -1317,7 +1329,7 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         index += 2;
         continue;
       }
-      blocks.push({ type: "paragraph", segments: inlineSegmentsFromToken(next) });
+      blocks.push({ type: "paragraph", segments: inlineSegmentsFromToken(next), align: token.meta?.align });
       index += 2;
       continue;
     }
@@ -1405,7 +1417,7 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         const [header, ...rows] = sourceTable.rows.map((row) =>
           row.map((cell, colIndex) => ({
             segments: inlineSegmentsFromMarkdown(cell),
-            alignment: sourceTable.alignments[colIndex] ?? "none",
+            alignment: paragraphFormatting(cell)?.align ?? sourceTable.alignments[colIndex] ?? "none",
           }))
         );
         while (index < tokens.length && tokens[index].type !== "table_close") index += 1;
@@ -1657,6 +1669,10 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
 }
 
 function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+  if (block.type === "signature") {
+    const draft = drafts.signature ?? createDefaultStyleDraft("signature");
+    return ptToPx(draft.beforeSpacing + draft.afterSpacing + signatureRows(block.source).length * (draft.fontSize * 2 + draft.signatureRowSpacing));
+  }
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     const lineHeight = resolveLineHeightPx(draft);
@@ -2123,6 +2139,12 @@ function renderMarkdownBlocks({
   let continuedOrderedListIndex = 0;
 
   blocks.forEach((block, index) => {
+    if (block.type === "signature") {
+      const base = drafts.signature ?? createDefaultStyleDraft("signature");
+      const draft = base.signatureInheritText ? { ...base, chineseFont: drafts.normal.chineseFont, latinFont: drafts.normal.latinFont, fontSize: drafts.normal.fontSize, lineHeight: drafts.normal.lineHeight } : base;
+      rendered.push(<div key={index} className={selectedRing(selectedStyle, "signature")} style={{ ...textStyle(draft), textIndent: 0 }} dangerouslySetInnerHTML={{ __html: signatureHtml(markdownParser, block.source, { align: draft.align === "justify" ? "left" : draft.align, ...block.attrs }, draft) }} />);
+      return;
+    }
     if (block.type === "heading") {
       const styleId = block.isDocumentTitle ? "title" : `heading-${block.level}`;
       rendered.push(
@@ -2194,9 +2216,10 @@ function renderMarkdownBlocks({
             // Markdown 普通换行在解析后是 softbreak；预览应与编辑区一样保留它，
             // 否则内容会被 HTML 的默认空白折叠合并成一行。
             whiteSpace: "pre-wrap",
+            ...(block.align ? { textAlign: block.align, textIndent: 0 } : {}),
             marginTop: block.continuedFromPrevious ? 0 : `${draft.beforeSpacing}pt`,
             marginBottom: block.continuesNext ? 0 : `${draft.afterSpacing}pt`,
-            textIndent: indentEachLine || block.continuedFromPrevious ? 0 : `${draft.firstLineIndent}em`,
+            textIndent: block.align || indentEachLine || block.continuedFromPrevious ? 0 : `${draft.firstLineIndent}em`,
           }}
         >
           {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle, onOpenLink, indentEachLine, `${draft.firstLineIndent}em`)}
@@ -2664,6 +2687,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const markdownBlocks = markdownPreview?.blocks ?? [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
   const fallbackBlocks = createFallbackBlocks("图片样式预览", "表格样式预览");
+  if (selectedStyle?.id === "signature") fallbackBlocks.unshift({ type: "signature", attrs: {}, source: '| 字段 | 内容 | 备注 |\n| --- | --- | --- |\n| 投标人 | 示例公司 | （盖章） |\n| 授权代表 | ____ | （签字） |\n| 日期 | [待补充]{color="#D32F2F"} | |' });
   let figureNumber = 0;
   let tableNumber = 0;
   const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures)
@@ -2744,7 +2768,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     const pageNumber = pageNumberStartAt === "document"
       ? footerStartPage + pageIndex
       : footerStartPage + pageIndex - tocPages.length;
-    const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber, previewPages.length);
+    const numberedPageCount = pageNumberStartAt === "document" ? previewPages.length : previewPages.length - tocPages.length;
+    const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber, numberedPageCount);
     const footerContent = [footerText, pageNumberText].filter(Boolean).join(" · ");
 
     return (

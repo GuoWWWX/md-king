@@ -12,9 +12,10 @@ use zip::ZipArchive;
 
 use crate::core::config::{load_config, save_config};
 use crate::core::template_style::{
-    reset_template_style_config, reset_template_style_configs, save_template_style_config,
+    get_template_style_config, reset_template_style_config, reset_template_style_configs,
+    save_template_style_config,
 };
-use crate::storage::atomic::write_atomic;
+use crate::storage::atomic::{write_atomic, write_atomic_durable};
 use crate::storage::paths::{templates_dir, templates_path};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -287,6 +288,67 @@ pub fn import_template(request: ImportTemplateRequest) -> Result<Template, Strin
     }
 
     Ok(template)
+}
+
+/// Replace the managed DOCX and re-import its styles without changing template identity.
+pub fn replace_template_for_cli(template_id: &str, source: &str) -> Result<Template, String> {
+    if built_in_templates().iter().any(|item| item.id == template_id) {
+        return Err("不能覆盖内置模板，请使用 templates import 创建自定义模板。".to_string());
+    }
+    let mut templates = load_user_templates_checked()?;
+    let template = templates.iter_mut().find(|item| item.id == template_id)
+        .ok_or_else(|| format!("未找到自定义模板：{template_id}"))?;
+    let mut components = Path::new(template_id).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err("模板 ID 不是有效的目录名称。".to_string());
+    }
+    let source_path = Path::new(source);
+    if !is_docx_file(source_path) {
+        return Err("仅支持导入 .docx 文件作为 reference.docx。".to_string());
+    }
+    validate_reference_docx(source_path)?;
+    let style = extract_template_style_config_from_docx(source_path, template_id)
+        .ok_or_else(|| "无法从 DOCX 读取 Word 样式或页面设置。".to_string())?;
+    let bytes = fs::read(source_path).map_err(|error| format!("读取参考 DOCX 失败：{error}"))?;
+    let directory = templates_dir().map_err(|error| format!("获取模板目录失败：{error}"))?
+        .join(template_id);
+    fs::create_dir_all(&directory).map_err(|error| format!("创建模板目录失败：{error}"))?;
+    let reference = directory.join("reference.docx");
+    let old_bytes = match fs::read(&reference) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("读取旧模板失败：{error}")),
+    };
+    let old_style = get_template_style_config(template_id.to_string())?;
+    template.reference_docx_path = reference.to_string_lossy().to_string();
+    template.updated_at = now_millis().to_string();
+    let updated = template.clone();
+    let result = (|| {
+        save_template_style_config(style)?;
+        write_atomic_durable(&reference, &bytes).map_err(|error| format!("替换模板文件失败：{error}"))?;
+        save_user_templates(templates)?;
+        Ok(updated)
+    })();
+    if let Err(error) = result {
+        let mut errors = vec![error];
+        let restore_file = match old_bytes {
+            Some(bytes) => write_atomic_durable(&reference, &bytes),
+            None if reference.exists() => fs::remove_file(&reference),
+            None => Ok(()),
+        };
+        if let Err(error) = restore_file {
+            errors.push(format!("恢复旧模板文件失败：{error}"));
+        }
+        let restore_style = match old_style {
+            Some(style) => save_template_style_config(style).map(|_| ()),
+            None => reset_template_style_config(template_id.to_string()),
+        };
+        if let Err(error) = restore_style {
+            errors.push(format!("恢复旧模板样式失败：{error}"));
+        }
+        return Err(errors.join("\n"));
+    }
+    result
 }
 
 pub fn save_user_templates(templates: Vec<Template>) -> Result<Vec<Template>, String> {
@@ -582,11 +644,15 @@ fn extract_header_footer_content(xml: &str) -> (Option<String>, Option<&'static 
         instruction: String,
         result: bool,
     }
-    let is_page = |instruction: &str| {
-        instruction.split_whitespace().next().is_some_and(|name| {
-            name.eq_ignore_ascii_case("PAGE") || name.eq_ignore_ascii_case("NUMPAGES")
-        })
+    let page_name = |instruction: &str| {
+        let name = instruction.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+        if name == "PAGE" { Some("PAGE") }
+        else if name == "NUMPAGES" || name == "SECTIONPAGES"
+            || (name == "PAGEREF" && instruction.contains("_MDKingBodyEnd"))
+            || instruction.contains("MDKING_BODY_TOTAL") { Some("NUMPAGES") }
+        else { None }
     };
+    let is_page = |instruction: &str| page_name(instruction).is_some();
     let mut reader = Reader::from_str(xml);
     let mut fields: Vec<Field> = Vec::new();
     let (mut in_text, mut in_instruction) = (false, false);
@@ -604,12 +670,7 @@ fn extract_header_footer_content(xml: &str) -> (Option<String>, Option<&'static 
                     b"instrText" => in_instruction = !empty,
                     b"fldSimple" => {
                         let instruction = xml_attribute(&tag, b"instr").unwrap_or_default();
-                        if is_page(&instruction) {
-                            let name = instruction
-                                .split_whitespace()
-                                .next()
-                                .unwrap()
-                                .to_ascii_uppercase();
+                        if let Some(name) = page_name(&instruction) {
                             has_page |= name == "PAGE";
                             has_total |= name == "NUMPAGES";
                             text.push_str(&format!("{{{name}}}"));
@@ -629,13 +690,7 @@ fn extract_header_footer_content(xml: &str) -> (Option<String>, Option<&'static 
                         Some("separate") => {
                             if let Some(field) = fields.last_mut() {
                                 field.result = true;
-                                if is_page(&field.instruction) {
-                                    let name = field
-                                        .instruction
-                                        .split_whitespace()
-                                        .next()
-                                        .unwrap()
-                                        .to_ascii_uppercase();
+                                if let Some(name) = page_name(&field.instruction) {
                                     has_page |= name == "PAGE";
                                     has_total |= name == "NUMPAGES";
                                     text.push_str(&format!("{{{name}}}"));
@@ -643,7 +698,13 @@ fn extract_header_footer_content(xml: &str) -> (Option<String>, Option<&'static 
                             }
                         }
                         Some("end") => {
-                            fields.pop();
+                            if let Some(field) = fields.pop() {
+                                if page_name(&field.instruction) == Some("NUMPAGES") {
+                                    if let Some(parent) = fields.last_mut().filter(|parent| parent.instruction.trim_start().starts_with('=')) {
+                                        parent.instruction.push_str(" MDKING_BODY_TOTAL ");
+                                    }
+                                }
+                            }
                         }
                         _ => {}
                     },
@@ -1238,6 +1299,13 @@ mod tests {
         assert_eq!(config["pageSettings"]["footerText"], "公司资料");
         assert_eq!(config["pageSettings"]["footerEnabled"], true);
         assert_eq!(config["pageSettings"]["footerPageNumberFormat"], "page-total");
+    }
+
+    #[test]
+    fn imports_generated_body_total_formula_without_its_cached_digits() {
+        let (text, format) = super::extract_header_footer_content(r#"<w:ftr><w:p><w:r><w:t>内部资料 · 第 </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r><w:t>5</w:t></w:r></w:fldSimple><w:r><w:t> 页 共 </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> = </w:instrText></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGEREF _MDKingBodyEnd \* Arabic</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>6</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:instrText> - 4 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> 页</w:t></w:r></w:p></w:ftr>"#);
+        assert_eq!(text.as_deref(), Some("内部资料"));
+        assert_eq!(format, Some("page-total"));
     }
 
     #[test]

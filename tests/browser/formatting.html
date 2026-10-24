@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">
+import React from 'react'; import {createRoot} from 'react-dom/client';
+import '/src/index.css';
+import {LiveMarkdownEditor} from '/src/components/editor/live-markdown-editor.tsx';
+import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
+import {FormattingToolbar} from '/src/components/editor/formatting-toolbar.tsx';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+import {createDefaultTemplateStyleConfig} from '/src/lib/style-manager-data.ts';
+const source=`[普通居中]{align="center"}
+
+[***红色粗斜体***]{color="#D32F2F" .underline}
+
+[[红色网页](https://example.com)]{color="#D32F2F"}
+
+> [引用蓝字]{color="#2563EB"}
+
+| 项目 | 内容 |
+| --- | --- |
+| 测试 | [**表格红字**]{color="#D32F2F"} |
+
+::: {align="right"}
+多段靠右一
+
+多段靠右二
+:::
+
+::: {.signature align="right"}
+| 字段 | 内容 | 备注 |
+| --- | --- | --- |
+| 投标人 | 示例公司 | （盖章） |
+| 法定代表人或授权代表 | ____ | （签字） |
+| 日期 | [待补充]{color="#D32F2F"} | |
+:::
+
+末尾光标位置`;
+const ref=React.createRef(); const root=createRoot(document.getElementById('root'));
+const config=createDefaultTemplateStyleConfig('default-report');
+window.fixture={ref,source,config,setTheme(dark){document.documentElement.classList.toggle('dark',dark)},render(readOnly=true){root.render(React.createElement(TooltipProvider,null,React.createElement('div',{style:{display:'flex',gap:20}},
+React.createElement('div',{id:'editor',style:{width:620,height:1000}},React.createElement(FormattingToolbar,{getView:()=>ref.current?.getView()}),React.createElement(LiveMarkdownEditor,{ref,documentKey:String(readOnly),initialContent:source,isDark:false,readOnly,onDocChanged(){}})),
+React.createElement('div',{id:'preview',style:{width:800}},React.createElement(WordPreviewPage,{markdown:source,styleConfig:config,zoom:90,paginate:true,showHeader:false,showPageFooter:false})))));}};
+window.fixture.render();
+</script></body></html>

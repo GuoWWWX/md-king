@@ -4,6 +4,7 @@ const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'
 const browser=await chromium.launch({channel:'msedge',headless:true});
 try{
  const page=await browser.newPage({viewport:{width:1200,height:900}}),errors=[];
+ page.setDefaultTimeout(20000);
  page.on('pageerror',error=>errors.push(error.message));
  await page.goto(`${process.env.TEST_BASE_URL||'http://127.0.0.1:1420'}/tests/browser/footer-fields.html`);
  const pages=page.locator('[data-preview-page-index]');
@@ -17,6 +18,13 @@ try{
   await page.evaluate(format=>window.fixture.configure(format),format);
   await page.waitForFunction(expected=>document.querySelector('[data-preview-page-index] .mk-word-preview-page > div[style*="bottom: 48px"]')?.textContent===expected,expected);
  }
+ await page.evaluate(()=>window.fixture.configure('page-total',1,'body',true));
+ await page.waitForFunction(()=>document.querySelector('[data-preview-page-kind="toc"]'));
+ await page.waitForTimeout(250);
+ const numbered=await page.locator('[data-preview-page-kind="document"]').count();
+ assert.ok(await page.locator('[data-preview-page-kind="toc"]').count()>0);
+ assert.equal(await footers().first().innerText(),`内部资料 · 第 1 页 共 ${numbered} 页`);
+ assert.equal(await footers().last().innerText(),`内部资料 · 第 ${numbered} 页 共 ${numbered} 页`);
  assert.deepEqual(errors,[]);
  console.log('PASS: live preview uses actual page count for Chinese/plain total formats, start offsets, legacy page-only formats and disabled page numbers.');
 }finally{await browser.close();}
