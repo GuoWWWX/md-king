@@ -11,6 +11,17 @@ function Meta(meta)
   return meta
 end
 
+local function align_header(header, fallback)
+  local first = header.content[1]
+  if first and first.t == 'RawInline' and first.text:find('MDKingHeadingAlign', 1, true) then return header end
+  local align = #header.content == 1 and first.t == 'Span' and first.attributes.align or fallback
+  if not ({left=true,center=true,right=true})[align] then return nil end
+  header.content:insert(1, pandoc.RawInline('openxml', '<w:r><w:rPr><w:rStyle w:val="MDKingHeadingAlign' .. align .. '"/></w:rPr></w:r>'))
+  return header
+end
+
+function Header(header) return align_header(header) end
+
 -- The native DOCX pass removes these markers and binds the enclosed paragraphs.
 function Div(div)
   if div.classes:includes('signature') then
@@ -77,7 +88,7 @@ function Div(div)
   end
   if ({left=true,center=true,right=true})[div.attributes.align] then
     div.attributes['custom-style'] = 'MDKingAlign' .. div.attributes.align
-    return div
+    return div:walk { Header = function(header) return align_header(header, div.attributes.align) end }
   end
 end
 

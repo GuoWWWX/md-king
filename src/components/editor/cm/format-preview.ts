@@ -56,7 +56,7 @@ function build(state: EditorState) {
     const range = formattingSpanAt(source, i);
     if (!range) continue;
     const line = state.doc.lineAt(i);
-    const prefix = source.slice(line.from, i).replace(/^\s*(?:>\s*)*/, "");
+    const prefix = source.slice(line.from, i).replace(/^\s*(?:>\s*)*/, "").replace(/^#{1,6}\s+/, "");
     const lastLine = state.doc.lineAt(range.to);
     if (range.attrs.align && !prefix.trim() && !source.slice(range.to, lastLine.to).trim()) {
       for (let n = line.number; n <= lastLine.number; n++) decos.push(Decoration.line({ attributes: { style: `text-align:${range.attrs.align}` } }).range(state.doc.line(n).from));

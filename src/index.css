@@ -2134,6 +2134,11 @@ select {
     font-weight: 700;
   }
 
+  .cm-line.mk-cm-callout-first .mk-cm-syntax-bracket,
+  .cm-line.mk-cm-callout-first .mk-cm-syntax-bracket * {
+    color: var(--mk-editor-syntax-color) !important;
+  }
+
   .mk-word-callout {
     --mk-callout-accent: #64748b;
     margin: 0;

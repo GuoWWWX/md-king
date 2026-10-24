@@ -27,6 +27,12 @@ test("table and quote formatting use the same spans", () => {
   assert.match(html, /<td><span[^>]*color:#D32F2F[^>]*><strong>红字/);
   assert.match(html, /<blockquote>/); assert.match(html, /color:#2563EB/);
 });
+
+test("heading alignment preserves the heading tag and inline emphasis", () => {
+  const html = md.render('## [居中**标题**]{align="center"}\n\n::: {align="right"}\n## 分组标题\n:::');
+  assert.match(html, /<h2 style="text-align:center"><span[^>]*>居中<strong>标题<\/strong><\/span><\/h2>/);
+  assert.match(html, /<h2 style="text-align:right">分组标题<\/h2>/);
+});
 test("signature lines are explicit and fixed width; blank cells stay empty", () => {
   const html = md.render('::: {.signature align="right"}\n| 字段 | 内容 | 备注 |\n| --- | --- | --- |\n| 签字 | ____ | （签字） |\n| 日期 | [待补充]{color="#D32F2F"} | |\n| 空白 | | |\n:::');
   assert.match(html, /justify-content:flex-end/); assert.match(html, /4cm/);

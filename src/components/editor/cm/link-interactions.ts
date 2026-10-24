@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { EditorView, type DOMEventHandlers } from "@codemirror/view";
 import { Facet } from "@codemirror/state";
 import { findObsidianWikilinks } from "@/lib/document-links";
+import { markdownLinkTarget } from "./markdown-link-target.ts";
 
 const ADJACENT_LINK_SOURCE_HITBOX_PX = 8;
 const LINK_EDGE_SOURCE_HITBOX_PX = 2;
@@ -54,8 +55,7 @@ function linkAtPosition(view: EditorView, position: number): MarkdownLinkRange |
     let node = syntaxTree(view.state).resolveInner(position, bias);
     while (node.parent && node.name !== "Link" && node.name !== "Autolink") node = node.parent;
     if (node.name !== "Link" && node.name !== "Autolink") continue;
-    const url = node.getChild("URL");
-    const target = url ? view.state.doc.sliceString(url.from, url.to).trim() : "";
+    const target = markdownLinkTarget(view.state, node);
     if (target) return { from: node.from, to: node.to, target };
   }
   const line = view.state.doc.lineAt(position);
@@ -76,8 +76,7 @@ function linksOnLineWithTarget(view: EditorView, position: number, target: strin
     to: line.to,
     enter: (node) => {
       if (node.name !== "Link" && node.name !== "Autolink") return undefined;
-      const url = node.node.getChild("URL");
-      const nodeTarget = url ? view.state.doc.sliceString(url.from, url.to).trim() : "";
+      const nodeTarget = markdownLinkTarget(view.state, node.node);
       if (nodeTarget !== target) return false;
       matches.push({ from: node.from, to: node.to, target });
       return false;

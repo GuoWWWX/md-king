@@ -136,7 +136,7 @@ export function markdownFormattingPlugin(md: MarkdownIt) {
       const token = state.tokens[i];
       if (token.type === "mk_div_open") stack.push(token.meta);
       if (token.type === "mk_div_close") stack.pop();
-      if (token.type !== "paragraph_open") continue;
+      if (token.type !== "paragraph_open" && token.type !== "heading_open") continue;
       const attrs = paragraphFormatting(state.tokens[i + 1]?.content ?? "");
       const align = attrs?.align ?? stack[stack.length - 1]?.align;
       if (align) { token.attrSet("style", `text-align:${align}`); token.meta = { ...token.meta, align }; }
