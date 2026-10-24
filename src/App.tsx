@@ -16,7 +16,7 @@ import { HistoryPage } from "@/pages/history/history-page";
 import { SettingsPage } from "@/pages/settings/settings-page";
 import { TemplatesPage } from "@/pages/templates/templates-page";
 import { UpdateDialog } from "@/components/update/update-dialog";
-import { getAppConfig, getAppStatus, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
+import { getAppConfig, getAppStatus, isTauriEnvironment, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
 import { useAppStore } from "@/stores/app-store";
 import { useUpdaterStore } from "@/stores/updater-store";
 
@@ -202,6 +202,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // Shell-open requests belong to the main workspace, never the floating/project windows.
+    if (!bootReady || !isTauriEnvironment() || getCurrentWindow().label !== "main") return;
+    let disposed = false;
     let unlisten: (() => void) | undefined;
 
     const importPendingFiles = async () => {
@@ -219,13 +222,14 @@ function App() {
       void importPendingFiles();
     })
       .then((dispose) => {
+        if (disposed) { dispose(); return; }
         unlisten = dispose;
         void importPendingFiles();
       })
       .catch(() => undefined);
 
-    return () => unlisten?.();
-  }, [queueImportPaths, setActivePage]);
+    return () => { disposed = true; unlisten?.(); };
+  }, [bootReady, queueImportPaths, setActivePage]);
 
   useEffect(() => {
     if (!appConfig) return undefined;

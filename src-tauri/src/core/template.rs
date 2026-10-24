@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use quick_xml::{events::Event, Reader};
+use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -10,9 +12,10 @@ use zip::ZipArchive;
 
 use crate::core::config::{load_config, save_config};
 use crate::core::template_style::{
-    reset_template_style_config, reset_template_style_configs, save_template_style_config,
+    get_template_style_config, reset_template_style_config, reset_template_style_configs,
+    save_template_style_config,
 };
-use crate::storage::atomic::write_atomic;
+use crate::storage::atomic::{write_atomic, write_atomic_durable};
 use crate::storage::paths::{templates_dir, templates_path};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -287,6 +290,67 @@ pub fn import_template(request: ImportTemplateRequest) -> Result<Template, Strin
     Ok(template)
 }
 
+/// Replace the managed DOCX and re-import its styles without changing template identity.
+pub fn replace_template_for_cli(template_id: &str, source: &str) -> Result<Template, String> {
+    if built_in_templates().iter().any(|item| item.id == template_id) {
+        return Err("不能覆盖内置模板，请使用 templates import 创建自定义模板。".to_string());
+    }
+    let mut templates = load_user_templates_checked()?;
+    let template = templates.iter_mut().find(|item| item.id == template_id)
+        .ok_or_else(|| format!("未找到自定义模板：{template_id}"))?;
+    let mut components = Path::new(template_id).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err("模板 ID 不是有效的目录名称。".to_string());
+    }
+    let source_path = Path::new(source);
+    if !is_docx_file(source_path) {
+        return Err("仅支持导入 .docx 文件作为 reference.docx。".to_string());
+    }
+    validate_reference_docx(source_path)?;
+    let style = extract_template_style_config_from_docx(source_path, template_id)
+        .ok_or_else(|| "无法从 DOCX 读取 Word 样式或页面设置。".to_string())?;
+    let bytes = fs::read(source_path).map_err(|error| format!("读取参考 DOCX 失败：{error}"))?;
+    let directory = templates_dir().map_err(|error| format!("获取模板目录失败：{error}"))?
+        .join(template_id);
+    fs::create_dir_all(&directory).map_err(|error| format!("创建模板目录失败：{error}"))?;
+    let reference = directory.join("reference.docx");
+    let old_bytes = match fs::read(&reference) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("读取旧模板失败：{error}")),
+    };
+    let old_style = get_template_style_config(template_id.to_string())?;
+    template.reference_docx_path = reference.to_string_lossy().to_string();
+    template.updated_at = now_millis().to_string();
+    let updated = template.clone();
+    let result = (|| {
+        save_template_style_config(style)?;
+        write_atomic_durable(&reference, &bytes).map_err(|error| format!("替换模板文件失败：{error}"))?;
+        save_user_templates(templates)?;
+        Ok(updated)
+    })();
+    if let Err(error) = result {
+        let mut errors = vec![error];
+        let restore_file = match old_bytes {
+            Some(bytes) => write_atomic_durable(&reference, &bytes),
+            None if reference.exists() => fs::remove_file(&reference),
+            None => Ok(()),
+        };
+        if let Err(error) = restore_file {
+            errors.push(format!("恢复旧模板文件失败：{error}"));
+        }
+        let restore_style = match old_style {
+            Some(style) => save_template_style_config(style).map(|_| ()),
+            None => reset_template_style_config(template_id.to_string()),
+        };
+        if let Err(error) = restore_style {
+            errors.push(format!("恢复旧模板样式失败：{error}"));
+        }
+        return Err(errors.join("\n"));
+    }
+    result
+}
+
 pub fn save_user_templates(templates: Vec<Template>) -> Result<Vec<Template>, String> {
     let previous_templates = load_user_templates_checked()?;
     let path = templates_path().map_err(|error| format!("获取模板路径失败：{error}"))?;
@@ -418,10 +482,10 @@ fn extract_template_style_config_from_docx(path: &Path, template_id: &str) -> Op
     let document_xml = read_zip_text(&mut archive, "word/document.xml").unwrap_or_default();
     let theme_xml = read_zip_text(&mut archive, "word/theme/theme1.xml").unwrap_or_default();
     let theme_fonts = extract_theme_fonts(&theme_xml);
-    let header_text = read_zip_text_by_prefix(&mut archive, "word/header")
-        .and_then(|xml| extract_document_text(&xml));
-    let footer_text = read_zip_text_by_prefix(&mut archive, "word/footer")
-        .and_then(|xml| extract_document_text(&xml));
+    let header_text = read_section_header_footer(&mut archive, &document_xml, "header")
+        .and_then(|xml| extract_header_footer_content(&xml).0);
+    let (footer_text, footer_page_format) = read_section_header_footer(&mut archive, &document_xml, "footer")
+        .map(|xml| extract_header_footer_content(&xml)).unwrap_or_default();
 
     let mut styles = Map::new();
     if let Some(style) = extract_word_style(&styles_xml, &["normal"], &theme_fonts) {
@@ -487,7 +551,11 @@ fn extract_template_style_config_from_docx(path: &Path, template_id: &str) -> Op
     if !styles.is_empty() {
         config.insert("styles".to_string(), Value::Object(styles));
     }
-    if let Some(page_settings) = extract_page_settings(&document_xml, header_text, footer_text) {
+    if let Some(mut page_settings) = extract_page_settings(&document_xml, header_text, footer_text) {
+        if let Some(format) = footer_page_format {
+            page_settings["footerEnabled"] = json!(true);
+            page_settings["footerPageNumberFormat"] = json!(format);
+        }
         config.insert("pageSettings".to_string(), page_settings);
     }
     config.insert("updatedAt".to_string(), json!(now_millis().to_string()));
@@ -505,21 +573,205 @@ fn read_zip_text<R: Read + std::io::Seek>(
     Some(content)
 }
 
-fn read_zip_text_by_prefix<R: Read + std::io::Seek>(
+fn xml_attribute(tag: &quick_xml::events::BytesStart<'_>, name: &[u8]) -> Option<String> {
+    tag.attributes()
+        .flatten()
+        .find(|attr| attr.key.local_name().as_ref() == name)
+        .and_then(|attr| attr.unescape_value().ok().map(|value| value.into_owned()))
+}
+
+fn read_section_header_footer<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
-    prefix: &str,
+    document: &str,
+    kind: &str,
 ) -> Option<String> {
-    for index in 0..archive.len() {
-        let mut file = archive.by_index(index).ok()?;
-        let name = file.name().to_string();
-        if !name.starts_with(prefix) || !name.ends_with(".xml") {
-            continue;
+    // A section inherits a missing default reference from the preceding section.
+    // First/even-page parts and orphaned ZIP entries must not replace the body part.
+    let mut reader = Reader::from_str(document);
+    let mut id = None;
+    let reference = format!("{kind}Reference");
+    loop {
+        match reader.read_event().ok()? {
+            Event::Start(tag) | Event::Empty(tag)
+                if tag.local_name().as_ref() == reference.as_bytes() =>
+            {
+                if xml_attribute(&tag, b"type").as_deref() == Some("default") {
+                    id = xml_attribute(&tag, b"id");
+                }
+            }
+            Event::Eof => break,
+            _ => {}
         }
-        let mut content = String::new();
-        file.read_to_string(&mut content).ok()?;
-        return Some(content);
     }
-    None
+    let id = id?;
+    let relationships = read_zip_text(archive, "word/_rels/document.xml.rels")?;
+    let mut reader = Reader::from_str(&relationships);
+    loop {
+        match reader.read_event().ok()? {
+            Event::Start(tag) | Event::Empty(tag)
+                if tag.local_name().as_ref() == b"Relationship" =>
+            {
+                if xml_attribute(&tag, b"Id").as_deref() != Some(&id)
+                    || xml_attribute(&tag, b"TargetMode").as_deref() == Some("External")
+                {
+                    continue;
+                }
+                let target = xml_attribute(&tag, b"Target")?;
+                let mut parts = if target.starts_with('/') {
+                    Vec::new()
+                } else {
+                    vec!["word"]
+                };
+                for part in target.split('/') {
+                    match part {
+                        "" | "." => {}
+                        ".." => {
+                            parts.pop()?;
+                        }
+                        _ => parts.push(part),
+                    }
+                }
+                return read_zip_text(archive, &parts.join("/"));
+            }
+            Event::Eof => return None,
+            _ => {}
+        }
+    }
+}
+
+fn extract_header_footer_content(xml: &str) -> (Option<String>, Option<&'static str>) {
+    struct Field {
+        instruction: String,
+        result: bool,
+    }
+    let page_name = |instruction: &str| {
+        let name = instruction.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+        if name == "PAGE" { Some("PAGE") }
+        else if name == "NUMPAGES" || name == "SECTIONPAGES"
+            || (name == "PAGEREF" && instruction.contains("_MDKingBodyEnd"))
+            || instruction.contains("MDKING_BODY_TOTAL") { Some("NUMPAGES") }
+        else { None }
+    };
+    let is_page = |instruction: &str| page_name(instruction).is_some();
+    let mut reader = Reader::from_str(xml);
+    let mut fields: Vec<Field> = Vec::new();
+    let (mut in_text, mut in_instruction) = (false, false);
+    let mut text = String::new();
+    let (mut has_page, mut has_total) = (false, false);
+    loop {
+        let Ok(event) = reader.read_event() else {
+            return (None, None);
+        };
+        let empty = matches!(event, Event::Empty(_));
+        let value = match event {
+            Event::Start(tag) | Event::Empty(tag) => {
+                match tag.local_name().as_ref() {
+                    b"t" => in_text = !empty,
+                    b"instrText" => in_instruction = !empty,
+                    b"fldSimple" => {
+                        let instruction = xml_attribute(&tag, b"instr").unwrap_or_default();
+                        if let Some(name) = page_name(&instruction) {
+                            has_page |= name == "PAGE";
+                            has_total |= name == "NUMPAGES";
+                            text.push_str(&format!("{{{name}}}"));
+                        }
+                        if !empty {
+                            fields.push(Field {
+                                instruction,
+                                result: true,
+                            });
+                        }
+                    }
+                    b"fldChar" => match xml_attribute(&tag, b"fldCharType").as_deref() {
+                        Some("begin") => fields.push(Field {
+                            instruction: String::new(),
+                            result: false,
+                        }),
+                        Some("separate") => {
+                            if let Some(field) = fields.last_mut() {
+                                field.result = true;
+                                if let Some(name) = page_name(&field.instruction) {
+                                    has_page |= name == "PAGE";
+                                    has_total |= name == "NUMPAGES";
+                                    text.push_str(&format!("{{{name}}}"));
+                                }
+                            }
+                        }
+                        Some("end") => {
+                            if let Some(field) = fields.pop() {
+                                if page_name(&field.instruction) == Some("NUMPAGES") {
+                                    if let Some(parent) = fields.last_mut().filter(|parent| parent.instruction.trim_start().starts_with('=')) {
+                                        parent.instruction.push_str(" MDKING_BODY_TOTAL ");
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                    b"tab" if fields.is_empty() => text.push(' '),
+                    _ => {}
+                }
+                None
+            }
+            Event::End(tag) => {
+                match tag.local_name().as_ref() {
+                    b"t" => in_text = false,
+                    b"instrText" => in_instruction = false,
+                    b"fldSimple" => {
+                        fields.pop();
+                    }
+                    b"p" => text.push('\n'),
+                    _ => {}
+                }
+                None
+            }
+            Event::Text(value) => value.decode().ok().map(|value| xml_unescape(&value)),
+            Event::GeneralRef(value) => value.decode().ok().and_then(|value| {
+                quick_xml::escape::unescape(&format!("&{value};"))
+                    .ok()
+                    .map(|value| value.into_owned())
+            }),
+            Event::Eof => break,
+            _ => None,
+        };
+        if let Some(value) = value {
+            if in_instruction {
+                if let Some(field) = fields.last_mut() {
+                    field.instruction.push_str(&value);
+                }
+            } else if in_text
+                && fields
+                    .iter()
+                    .all(|field| field.result && !is_page(&field.instruction))
+            {
+                text.push_str(&value);
+            }
+        }
+    }
+    if !has_page && !has_total {
+        return (normalize_optional(&text), None);
+    }
+    let chinese = Regex::new(r"第\s*\{PAGE\}")
+        .expect("valid Chinese page expression")
+        .is_match(&text);
+    let format = has_page.then_some(match (chinese, has_total) {
+        (true, true) => "page-total",
+        (false, true) => "plain-total",
+        (true, false) => "page",
+        (false, false) => "plain",
+    });
+    let page = Regex::new(r"(?i)(?:第\s*)?\{PAGE\}\s*页?(?:\s*(?:共|/|of)\s*\{NUMPAGES\}\s*页?)?")
+        .expect("valid page footer expression");
+    let total =
+        Regex::new(r"(?:共\s*)?\{NUMPAGES\}\s*页?").expect("valid total page footer expression");
+    let text = total
+        .replace_all(&page.replace_all(&text, ""), "")
+        .lines()
+        .map(|line| line.trim_matches(|c: char| c.is_whitespace() || "·•-—|/".contains(c)))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (normalize_optional(&text), format)
 }
 
 fn with_style_id(value: Value, style_id: &str) -> Value {
@@ -885,20 +1137,6 @@ fn xml_unescape(value: &str) -> String {
         .replace("&amp;", "&")
 }
 
-fn extract_document_text(xml: &str) -> Option<String> {
-    let mut text = String::new();
-    let mut rest = xml;
-    while let Some(start) = rest.find("<w:t") {
-        rest = &rest[start..];
-        let content_start = rest.find('>')? + 1;
-        let content = &rest[content_start..];
-        let end = content.find("</w:t>")?;
-        text.push_str(&xml_unescape(&content[..end]));
-        rest = &content[end + "</w:t>".len()..];
-    }
-    normalize_optional(&text)
-}
-
 fn extract_page_settings(
     document_xml: &str,
     header_text: Option<String>,
@@ -1024,6 +1262,61 @@ mod tests {
         resolve_built_in_reference_docx_path_from_roots, template_sha256, validate_reference_docx,
     };
     use std::fs;
+
+    fn import_header_footer_fixture(footer: &str) -> serde_json::Value {
+        use std::io::Write;
+        let path = std::env::temp_dir().join(format!("mdking-import-fields-{}-{}.docx", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let document = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="body"/><w:footerReference w:type="default" r:id="footer"/></w:sectPr></w:pPr></w:p><w:sectPr><w:headerReference w:type="first" r:id="first"/><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>"#;
+        for (name, xml) in [
+            ("word/document.xml", document),
+            ("word/styles.xml", "<w:styles/>"),
+            ("word/header3.xml", "<w:hdr><w:p/></w:hdr>"),
+            ("word/header1.xml", "<w:hdr><w:p><w:r><w:t>首页页眉</w:t></w:r></w:p></w:hdr>"),
+            ("word/header2.xml", "<w:hdr><w:p><w:r><w:t>正文页眉</w:t></w:r></w:p></w:hdr>"),
+            ("word/footer2.xml", footer),
+            ("word/_rels/document.xml.rels", r#"<Relationships><Relationship Id="first" Target="header1.xml"/><Relationship Id="body" Target="header2.xml"/><Relationship Id="footer" Target="footer2.xml"/></Relationships>"#),
+        ] {
+            zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(xml.as_bytes()).unwrap();
+        }
+        fs::write(&path, zip.finish().unwrap().into_inner()).unwrap();
+        let result = super::extract_template_style_config_from_docx(&path, "test").unwrap();
+        fs::remove_file(path).unwrap();
+        result
+    }
+
+    #[test]
+    fn imports_body_header_by_relationship_and_section_inheritance() {
+        let config = import_header_footer_fixture("<w:ftr><w:p><w:r><w:t>内部资料</w:t></w:r></w:p></w:ftr>");
+        assert_eq!(config["pageSettings"]["headerText"], "正文页眉");
+        assert_eq!(config["pageSettings"]["footerText"], "内部资料");
+    }
+
+    #[test]
+    fn imports_footer_without_complex_or_simple_page_field_cache() {
+        let config = import_header_footer_fixture(r#"<w:ftr><w:p><w:r><w:t>公司资料 · 第 </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PA</w:instrText></w:r><w:r><w:instrText>GE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>77</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> 页 共 </w:t></w:r><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>88</w:t></w:r></w:fldSimple><w:r><w:t> 页</w:t></w:r></w:p></w:ftr>"#);
+        assert_eq!(config["pageSettings"]["footerText"], "公司资料");
+        assert_eq!(config["pageSettings"]["footerEnabled"], true);
+        assert_eq!(config["pageSettings"]["footerPageNumberFormat"], "page-total");
+    }
+
+    #[test]
+    fn imports_generated_body_total_formula_without_its_cached_digits() {
+        let (text, format) = super::extract_header_footer_content(r#"<w:ftr><w:p><w:r><w:t>内部资料 · 第 </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r><w:t>5</w:t></w:r></w:fldSimple><w:r><w:t> 页 共 </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> = </w:instrText></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGEREF _MDKingBodyEnd \* Arabic</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>6</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:instrText> - 4 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> 页</w:t></w:r></w:p></w:ftr>"#);
+        assert_eq!(text.as_deref(), Some("内部资料"));
+        assert_eq!(format, Some("page-total"));
+    }
+
+    #[test]
+    fn imports_page_only_footer_and_preserves_static_text_literals() {
+        let (text, format) = super::extract_header_footer_content(r#"<w:ftr><w:p><w:fldSimple w:instr="PAGE"><w:r><w:t>47</w:t></w:r></w:fldSimple></w:p></w:ftr>"#);
+        assert_eq!(text, None);
+        assert_eq!(format, Some("plain"));
+        let (text, format) = super::extract_header_footer_content(r#"<w:ftr><w:p><w:r><w:t>R&amp;D &#x4E2D; {PAGE} -</w:t></w:r></w:p></w:ftr>"#);
+        assert_eq!(text.as_deref(), Some("R&D 中 {PAGE} -"));
+        assert_eq!(format, None);
+    }
 
     #[test]
     fn resolves_based_on_styles_and_theme_fonts() {

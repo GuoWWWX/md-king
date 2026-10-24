@@ -9,7 +9,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Search, X } from "lucide
 import "katex/dist/katex.min.css";
 import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { isSupportedImagePath } from "@/lib/image-files";
+import { editorImageContext, transferredImageFiles } from "./cm/editor-images";
 import { parseYamlFrontmatter } from "@/lib/markdown-frontmatter";
 import { cn } from "@/lib/utils";
 import {
@@ -27,12 +27,14 @@ import { markdownFormattingKeymap, markdownIndentUnit } from "./cm/formatting-ke
 import { markdownLinkInteractionExtension } from "./cm/link-interactions";
 import { livePreviewMarkdownLanguage } from "./cm/markdown-language";
 import { mermaidLanguageDescription } from "./cm/mermaid-language";
+import { yamlHighlighting } from "./cm/yaml-highlighting";
 import { revealHighlightExtension } from "./cm/reveal-highlight";
 import { resetTableDisplaySettingsEffect, setTableWidthModeEffect, tableContextChangeEvent, type TableWidthMode } from "./cm/table-display-settings";
 import { tableBlockPasteExtension } from "./cm/table-block-paste";
 import { markdownEditorTheme } from "./cm/theme";
 import { refreshLiveMermaidTheme } from "./cm/widgets";
 import { useAppStore } from "@/stores/app-store";
+import { formatPreviewExtension } from "./cm/format-preview";
 
 export type { TableDisplayContext } from "./cm/live-preview";
 export type { TableWidthMode } from "./cm/table-display-settings";
@@ -572,6 +574,17 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     return inserted;
   }
 
+  function imageExtensions(): Extension {
+    return [markdownImageBlockExtension(markdownSourcePath, !readOnly), editorImageContext.of({
+      sourcePath: markdownSourcePath,
+      importFile: async (file) => {
+        const documentId = activeDocumentIdRef.current;
+        const result = await onImportImageRef.current?.(file);
+        return activeDocumentIdRef.current === documentId ? result : undefined;
+      },
+    })];
+  }
+
   const createLinkInteractionExtension = useCallback(() => markdownLinkInteractionExtension({
     openLinksOnClick: () => openLinksOnClickRef.current,
     onOpenLink: (target) => onOpenLinkRef.current?.(target),
@@ -701,6 +714,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       // 认成一整块 monospace，语言级 token 无从区分，编辑器和 Word 预览的
       // 配色就永远对不上。languages 是按需懒加载的，不会全进主 chunk。
       markdown({ base: livePreviewMarkdownLanguage, extensions: GFM, codeLanguages: [mermaidLanguageDescription, ...languages], addKeymap: false }),
+      yamlHighlighting,
       livePreviewCompartment.of(livePreviewPlugin),
       documentTitleCompartment.of(documentTitleExtension(
         documentTitle,
@@ -711,25 +725,21 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       frontmatterCompartment.of(frontmatterBlockExtension(!readOnly)),
       markdownMathBlockExtension,
       mermaidCompartment.of(mermaidBlockExtension(!readOnly)),
-      imageBlockCompartment.of(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
+      imageBlockCompartment.of(imageExtensions()),
       tableBlockExtension,
+      formatPreviewExtension,
       tableSyntaxRefreshPlugin,
       tableBlockPasteExtension,
       EditorView.domEventHandlers({
         drop: (event, view) => {
-          const files = Array.from(event.dataTransfer?.files ?? []).filter((file) => file.type.startsWith("image/") || isSupportedImagePath(file.name));
+          const files = transferredImageFiles(event.dataTransfer);
           if (files.length === 0 || !onImportImageRef.current) return false;
           event.preventDefault();
           void importImageFiles(view, files);
           return true;
         },
         paste: (event, view) => {
-          const files = Array.from(event.clipboardData?.items ?? [])
-            .filter((item) => item.kind === "file" && (item.type.startsWith("image/") || isSupportedImagePath(item.getAsFile()?.name ?? "")))
-            .flatMap((item) => {
-              const file = item.getAsFile();
-              return file ? [file] : [];
-            });
+          const files = transferredImageFiles(event.clipboardData);
           if (files.length === 0 || !onImportImageRef.current) return false;
           event.preventDefault();
           void importImageFiles(view, files);
@@ -899,7 +909,7 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
 
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: imageBlockCompartment.reconfigure(markdownImageBlockExtension(markdownSourcePath, !readOnly)),
+      effects: imageBlockCompartment.reconfigure(imageExtensions()),
     });
   }, [imageBlockCompartment, markdownSourcePath, readOnly]);
 

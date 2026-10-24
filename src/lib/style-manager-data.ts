@@ -1,5 +1,7 @@
 import type { BorderStyleMode, CaptionPosition, CodeBlockPresetKey, ImageWidthMode, ListLevelType, ListMarkerStyle, ListNumberingMode, ListWrapMode, MarkdownFeatureSettings, MarkdownRulesSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
 
+import { defaultSignatureSettings } from "./markdown-formatting.ts";
+
 export const styleGroupLabels: Record<StyleGroupKey, string> = {
   basic: "基础样式",
   images: "图片类",
@@ -17,6 +19,7 @@ export const styleNodes: StyleNode[] = [
   { id: "heading-6", name: "Heading 6", displayName: "六级标题", group: "basic", kind: "heading", markdown: "######", description: "最深层级标题" },
   { id: "normal", name: "Normal", displayName: "正文", group: "basic", kind: "paragraph", markdown: "paragraph", description: "普通正文段落" },
   { id: "quote", name: "Quote", displayName: "引用块", group: "blocks", kind: "block", markdown: ">", description: "Markdown 引用内容" },
+  { id: "signature", name: "Signature", displayName: "签署块", group: "blocks", kind: "block", markdown: "::: {.signature}", description: "控制签字线、字段对齐、文字颜色与同页排版" },
   { id: "source-code", name: "Source Code", displayName: "代码块", group: "blocks", kind: "code", markdown: "```", description: "围栏代码块", warning: "建议设置等宽字体和底纹" },
   { id: "inline-code", name: "Inline Code", displayName: "行内代码", group: "blocks", kind: "code", markdown: "`code`", description: "行内代码样式" },
   { id: "horizontal-rule", name: "Horizontal Rule", displayName: "分割线", group: "blocks", kind: "rule", markdown: "---", description: "Markdown 分割线" },
@@ -82,6 +85,7 @@ export const imageWidthModeOptions: { value: ImageWidthMode; label: string; desc
 ];
 
 export const defaultStyleDraft: StyleDraft = {
+  ...defaultSignatureSettings,
   styleId: "heading-2",
   chineseFont: "微软雅黑",
   latinFont: "Times New Roman",
@@ -544,6 +548,7 @@ export function buildHeadingPreviewTitle(_styleId: string, draft: Pick<StyleDraf
 export function createDefaultStyleDraft(styleId = "heading-2"): StyleDraft {
   const node = styleNodes.find((item) => item.id === styleId);
   const draft: StyleDraft = { ...defaultStyleDraft, styleId };
+  if (styleId === "signature") return { ...draft, firstLineIndent: 0, align: "left", color: "#000000", beforeSpacing: 6, afterSpacing: 6, ...defaultSignatureSettings };
 
   if (styleId === "title") {
     return {

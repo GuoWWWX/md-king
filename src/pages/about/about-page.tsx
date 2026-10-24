@@ -24,12 +24,13 @@ const markdownGuideItems: MarkdownGuideItem[] = [
   { icon: Code2, title: "代码与流程图", syntax: "`行内代码` / ```mermaid", description: "支持行内代码、围栏代码块和 Mermaid 图表的预览与导出。" },
   { icon: Quote, title: "引用", syntax: "> 引用内容", description: "标准引用块和常用提示型引用可保留为清晰的文档层次。" },
   { icon: Link2, title: "链接与文档引用", syntax: "[说明](链接) / [[笔记.md]]", description: "网页链接、相对 Markdown 路径和 Obsidian 文档引用都可识别。" },
+  { icon: Link2, title: "章节、段落和行引用", syntax: "[[#章节]] / [[笔记.md#^id]] / [[笔记.md#L127-L130]]", description: "点击跳转并选中内容，悬停查看摘要；可用于表格、引用块和加粗斜体。右键可复制引用，行范围显示 line 127-130。" },
   { icon: Image, title: "图片", syntax: "![说明](图片.png)", description: "使用相对路径引用仓库内图片，预览与导出会按文档位置解析。" },
 ];
 
 export function AboutPage() {
   const { appConfig, appStatus, pandocStatus } = useAppStore();
-  const appVersion = appStatus?.version ?? "0.1.8";
+  const appVersion = appStatus?.version ?? "1.1.19";
   const hasUpdate = useUpdaterStore((state) => state.hasUpdate);
   const updateStatus = useUpdaterStore((state) => state.status);
   const checkForUpdates = useUpdaterStore((state) => state.checkForUpdates);

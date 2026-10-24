@@ -26,6 +26,9 @@ import {
 } from "./source-indent";
 import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
+import { formattingBlocks } from "../../../lib/markdown-formatting.ts";
+import { editorImageContext } from "./editor-images";
+import { referenceMetadata } from "../../../lib/document-references.ts";
 import { markdownInlineHtmlTagRanges } from "../../../lib/markdown-inline-html.ts";
 import {
   applyTableWidthMode,
@@ -893,6 +896,9 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
   };
   const tree = syntaxTree(state);
 
+  for (const range of referenceMetadata(state.doc.toString())) {
+    if (!cursorInside(collector, range.from, range.to)) hide(collector, range.from, range.to);
+  }
   for (const { from, to } of view.visibleRanges) {
     const firstLine = state.doc.lineAt(from);
     const lastLine = state.doc.lineAt(to);
@@ -1388,10 +1394,13 @@ function buildTableBlocks(
   tree = syntaxTree(state),
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const signatureBlocks = formattingBlocks(state.doc.toString()).filter(block => block.attrs.signature);
 
   tree.iterate({
     enter: (ref) => {
       if (ref.name !== "Table") return undefined;
+
+      if (signatureBlocks.some(block => state.doc.lineAt(ref.from).number > block.firstLine && state.doc.lineAt(ref.from).number < block.lastLine)) return false;
 
       const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
 
@@ -1415,6 +1424,7 @@ function buildTableBlocks(
             documentSelectedTableRows.get(first.from) ?? [],
             editable && selectedFromToolbarTableFrom === first.from,
             editable,
+            state.facet(editorImageContext).sourcePath,
           ),
           block: true,
         }),
@@ -1541,6 +1551,7 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
       && !parserChanged
       && !selectionChanged
       && selectedFromToolbarTableFrom === value.selectedFromToolbarTableFrom
+      && tr.state.facet(editorImageContext) === tr.startState.facet(editorImageContext)
       && readOnly === value.readOnly) return value;
     return {
       decorations: buildTableBlocks(tr.state, sourceTableFrom, displaySettings, selectedTableRows, selectedFromToolbarTableFrom, !readOnly, parserTree),

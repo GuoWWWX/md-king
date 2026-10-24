@@ -259,7 +259,106 @@ function styleMermaidEdgeLabels(root, dark) {
       }
     }
   }
+  layoutMermaidLabels(root);
+}
 
+/** Use the rendered text bounds: reciprocal edges and spanning notes can be undersized by Mermaid. */
+function layoutMermaidClusterTitles(root) {
+  const clusters = [...root.querySelectorAll('g.cluster')].map(group => ({
+    group, rect: group.querySelector(':scope > rect'), label: group.querySelector(':scope > .cluster-label'),
+  })).filter(item => item.rect && item.label);
+  const content = [...root.querySelectorAll('.node, g.edgeLabel')].map(item => item.getBoundingClientRect());
+  const inside = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+  // Mermaid can enlarge disconnected cluster backgrounds for long titles after
+  // placing their nodes. Trim only empty margins where sibling cards overlap.
+  for (let i = 0; i < clusters.length; i++) for (let j = i + 1; j < clusters.length; j++) {
+    let first = clusters[i], second = clusters[j];
+    let a = first.rect.getBoundingClientRect(), b = second.rect.getBoundingClientRect();
+    if (inside(a, b) || inside(b, a) || Math.min(a.bottom, b.bottom) <= Math.max(a.top, b.top)
+      || Math.min(a.right, b.right) <= Math.max(a.left, b.left)) continue;
+    if (Math.abs((a.left + a.right) - (b.left + b.right)) < Math.abs((a.top + a.bottom) - (b.top + b.bottom))) continue;
+    if (a.left > b.left) { [first, second] = [second, first]; [a, b] = [b, a]; }
+    const middle = (a.right + b.left) / 2, right = middle - 8, left = middle + 8;
+    if (content.some(box => inside(box, a) && box.right > right - 4)
+      || content.some(box => inside(box, b) && box.left < left + 4)) continue;
+    const aScale = a.width / Number(first.rect.getAttribute('width'));
+    const bScale = b.width / Number(second.rect.getAttribute('width'));
+    first.rect.setAttribute('width', String((right - a.left) / aScale));
+    second.rect.setAttribute('x', String(Number(second.rect.getAttribute('x')) + (left - b.left) / bScale));
+    second.rect.setAttribute('width', String((b.right - left) / bScale));
+  }
+  for (const {rect, label} of clusters) {
+    const foreign = label.querySelector('foreignObject');
+    if (!foreign) continue;
+    const available = Math.max(24, Number(rect.getAttribute('width')) - 24);
+    if (Number(foreign.getAttribute('width')) <= available + 0.5) continue;
+    foreign.setAttribute('width', String(available));
+    for (const element of foreign.querySelectorAll('div, .nodeLabel')) {
+      element.style.setProperty('display', 'block');
+      element.style.setProperty('width', '100%');
+      element.style.setProperty('max-width', '100%');
+      element.style.setProperty('white-space', 'normal', 'important');
+      element.style.setProperty('overflow-wrap', 'anywhere');
+    }
+    const height = Math.ceil(foreign.firstElementChild?.scrollHeight || Number(foreign.getAttribute('height')));
+    foreign.setAttribute('height', String(height));
+    const bounds = rect.getBoundingClientRect(), scale = bounds.width / Number(rect.getAttribute('width'));
+    const nodes = content.filter(box => inside(box, bounds));
+    const firstNode = Math.min(bounds.bottom, ...nodes.map(box => box.top));
+    const extra = Math.max(0, height + 16 - (firstNode - bounds.top) / scale);
+    const y = Number(rect.getAttribute('y')) - extra;
+    if (extra) { rect.setAttribute('y', String(y)); rect.setAttribute('height', String(Number(rect.getAttribute('height')) + extra)); }
+    label.setAttribute('transform', `translate(${Number(rect.getAttribute('x')) + 12}, ${y + 8})`);
+  }
+}
+
+function layoutMermaidLabels(root) {
+  layoutMermaidClusterTitles(root);
+  const gap = 8;
+  const overlaps = (a, b) => a.left < b.right + gap && a.right > b.left - gap
+    && a.top < b.bottom + gap && a.bottom > b.top - gap;
+  const nodes = [...root.querySelectorAll('.node, .cluster-label')].map(node => node.getBoundingClientRect());
+  const placed = [];
+  for (const label of root.querySelectorAll('g.edgeLabel')) {
+    const box = label.getBoundingClientRect();
+    if (!box.width || !box.height) continue;
+    const obstacles = [...nodes, ...placed];
+    const collisions = obstacles.filter(obstacle => overlaps(box, obstacle));
+    if (collisions.length) {
+      const xs = [0, ...collisions.flatMap(obstacle => [obstacle.left - gap - 1 - box.right, obstacle.right + gap + 1 - box.left])];
+      const ys = [0, ...collisions.flatMap(obstacle => [obstacle.top - gap - 1 - box.bottom, obstacle.bottom + gap + 1 - box.top])];
+      const candidates = xs.flatMap(dx => ys.map(dy => [dx, dy])).sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+      const container = [...root.querySelectorAll('.cluster > rect')].map(rect => rect.getBoundingClientRect())
+        .filter(rect => box.left >= rect.left && box.right <= rect.right && box.top >= rect.top && box.bottom <= rect.bottom)
+        .sort((a, b) => a.width * a.height - b.width * b.height)[0] ?? root.getBoundingClientRect();
+      for (const [dx, dy] of candidates) {
+        const moved = { left: box.left + dx, right: box.right + dx, top: box.top + dy, bottom: box.bottom + dy };
+        if (moved.left < container.left || moved.right > container.right || moved.top < container.top || moved.bottom > container.bottom) continue;
+        if (obstacles.some(obstacle => overlaps(moved, obstacle))) continue;
+        const inverse = label.parentElement.getScreenCTM().inverse();
+        const delta = new DOMPoint(dx, dy).matrixTransform(inverse);
+        const origin = new DOMPoint(0, 0).matrixTransform(inverse);
+        const matrix = label.transform.baseVal.consolidate()?.matrix ?? new DOMMatrix();
+        matrix.e += delta.x - origin.x;
+        matrix.f += delta.y - origin.y;
+        label.setAttribute('transform', `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`);
+        break;
+      }
+    }
+    placed.push(label.getBoundingClientRect());
+  }
+  for (const rect of root.querySelectorAll('g[data-et="note"] > rect.note')) {
+    const texts = [...rect.parentElement.querySelectorAll('.noteText')];
+    if (!texts.length) continue;
+    const bounds = texts.map(text => text.getBBox());
+    const x = Number(rect.getAttribute('x')), y = Number(rect.getAttribute('y'));
+    const left = Math.min(x, ...bounds.map(box => box.x - gap));
+    const top = Math.min(y, ...bounds.map(box => box.y - gap));
+    const right = Math.max(x + Number(rect.getAttribute('width')), ...bounds.map(box => box.x + box.width + gap));
+    const bottom = Math.max(y + Number(rect.getAttribute('height')), ...bounds.map(box => box.y + box.height + gap));
+    rect.setAttribute('x', String(left)); rect.setAttribute('y', String(top));
+    rect.setAttribute('width', String(right - left)); rect.setAttribute('height', String(bottom - top));
+  }
 }
 
 function contrastRatio(first, second) {
@@ -313,7 +412,9 @@ function ensureMermaidContrast(root, dark) {
     if (color === "none") continue;
     const background = backgroundAt(text);
     if (contrastRatio(rgb(color), background) >= 4.5) continue;
-    text.style.setProperty(property, readableColor(background), "important");
+    const readable = readableColor(background);
+    text.style.setProperty(property, readable, "important");
+    if (property === "fill") text.setAttribute("fill", readable);
   }
   for (const line of root.querySelectorAll(".flowchart-link,.edgePath path,.relation,.messageLine0,.messageLine1,.actor-line,.transition,.relationshipLine")) {
     const color = getComputedStyle(line).stroke;
@@ -337,5 +438,5 @@ function ensureMermaidContrast(root, dark) {
   }
 }
 
-export { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
+export { mermaidConfig, layoutMermaidKanban, layoutMermaidLabels, styleMermaidEdgeLabels, ensureMermaidContrast, contrastRatio,
   MERMAID_THEMES, MERMAID_DIAGRAM_TYPES, normalizeMermaidThemes, mermaidDiagramType, resolveMermaidTheme };

@@ -29,7 +29,7 @@ export type StyleNode = {
   warning?: string;
 };
 
-export type StyleDraft = {
+export type StyleDraft = import("../lib/markdown-formatting").SignatureSettings & {
   styleId: string;
   chineseFont: string;
   latinFont: string;

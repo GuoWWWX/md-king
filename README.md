@@ -56,6 +56,8 @@ MD King 是一个 Windows 本地桌面应用，主要提供两种功能：
 
 例如，同一份报告可以分别使用团队报告模板和课程论文模板导出，无需为每份文档重新设置样式。导入的 DOCX 用于参考样式，模板中的正文不会复制进新文档。
 
+文档内或同一仓库内跨文件的章节、段落、行范围引用，支持点击跳转后选中内容，以及悬停预览。例如 `[[设计.md#部署方案]]`、`[[设计.md#^rule]]`、`[[设计.md#L127-L130]]`；正文、表格、引用块和加粗斜体内均可使用。右键菜单可以复制引用，详细说明见 [Markdown 语法与文档引用](docs/markdown-syntax.md)，应用「关于」页也有语法速览。
+
 <a id="features"></a>
 
 ## 功能展示
@@ -110,6 +112,8 @@ Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。
 截图说明：七张应用界面图来自 v1.1.9 前端生产构建在浏览器中实际运行的 1920 × 1080 截图，使用上述技术报告示例；首图文件树来自浏览器示例仓库。DOCX 导出图保留原始纸张比例。浏览器用于前端展示，文件系统操作、Pandoc 转换、系统集成和自动安装更新在 Windows 桌面版运行。
 
 ## 其他功能
+
+命令行支持转换、检查以及 DOCX 模板导入/覆盖。用 `md-king-cli --help` 查看命令，或阅读[命令行使用说明](docs/cli.md)。模板在 Word/WPS 中修改后，可用 `templates replace` 保持原 ID 并刷新样式配置。
 
 - LaTeX 行内与块级公式、Mermaid 流程图和时序图、代码高亮、表格、任务清单与 Callout 提示框。
 - Windows 右键菜单、全局快捷键 `Ctrl+Alt+V` 与悬浮球转换入口。
@@ -189,7 +193,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.18_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.19_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 

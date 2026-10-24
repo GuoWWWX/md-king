@@ -13,6 +13,9 @@ export type MarkdownOutlineNode = MarkdownOutlineItem & {
 export type MarkdownOutlineRevealTarget = {
   tabId: string;
   line: number;
+  /** A document reference selects the entire resolved UTF-16 source range. */
+  selectionFrom?: number;
+  selectionTo?: number;
   /** 全局正文搜索命中的 UTF-16 列范围；目录跳转不传。 */
   matchStart?: number;
   matchEnd?: number;
@@ -128,7 +131,8 @@ export function parseMarkdownOutline(markdown: string): MarkdownOutlineItem[] {
     }
     if (fenceMarker) continue;
 
-    const heading = line.match(/^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*\s*$/);
+    const content = line.replace(/<!--md-king:range [a-zA-Z0-9-]+:(?:start|end)-->/g, "").replace(/[ \t]\^[a-zA-Z0-9-]+[ \t]*$/, "");
+    const heading = content.match(/^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*\s*$/);
     if (!heading) continue;
     const text = parseUnnumberedHeadingText(heading[2]).text;
     if (text) outline.push({ level: heading[1].length, text, line: index + 1 });

@@ -593,7 +593,7 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const source=JSON.parse(document.getElementById('source').textContent);
-    const {{mermaidConfig,layoutMermaidKanban,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
+    const {{mermaidConfig,layoutMermaidKanban,layoutMermaidLabels,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
     const themes={themes_json};
     const config=mermaidConfig('default',resolveMermaidTheme(source,false,themes));
     config.htmlLabels={html_labels};
@@ -662,8 +662,11 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
       }});
     }};
     for(const text of svg.querySelectorAll('text')) normalizeOfficeTextRows(text);
+    layoutMermaidLabels(svg);
     // Word text-row normalization changes the bounds of multiline headings.
     layoutMermaidKanban(svg);
+    // Inlining theme rules can override the earlier contrast repair with SVG attributes.
+    ensureMermaidContrast(svg,false);
     for(const element of svg.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse,text,tspan')){{
       const computed=getComputedStyle(element);
       for(const property of officeSvgProperties){{

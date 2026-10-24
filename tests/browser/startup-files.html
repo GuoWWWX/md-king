@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Startup file routing regression</title></head><body><div id="root"></div>
+<script type="module">
+import '/src/index.css';
+import {createElement as h} from 'react';
+import {createRoot} from 'react-dom/client';
+import {mockIPC,mockWindows} from '@tauri-apps/api/mocks';
+import {emit} from '@tauri-apps/api/event';
+import App from '/src/App.tsx';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+import {getAppConfig,listTemplates} from '/src/lib/tauri.ts';
+import {useAppStore} from '/src/stores/app-store.ts';
+import {useDocumentTabsStore} from '/src/stores/document-tabs-store.ts';
+import {documentSessionStorageKey} from '/src/lib/document-session.ts';
+const config={...await getAppConfig(),vaultRoot:undefined,recentVaults:[],enableFloatingBall:false,autoSave:false};
+const templates=await listTemplates();
+const query=new URLSearchParams(location.search);
+const label=query.get('label')??'main';
+const calls=[];
+const files={
+ '打开方式 中文.md':'# 从打开方式载入\n\n这是选中的外部文档。',
+ '第二份 文档.md':'# 第二份文档\n\n应用已运行时也应载入。',
+};
+mockWindows(label);
+mockIPC(async(command,args)=>{
+ calls.push({command,args});
+ if(command==='take_open_files')return window.takePending(label);
+ if(command==='get_app_config')return config;
+ if(command==='save_app_config')return args.config??config;
+ if(command==='get_app_status')return {name:'md-king',version:'1.1.18',platform:'windows'};
+ if(command==='list_templates')return templates;
+ if(command==='list_history')return [];
+ if(command==='get_template_style_config')return null;
+ if(command==='get_template_style_configs')return {};
+ if(command==='plugin:window|get_all_windows')return [];
+ if(command==='plugin:window|is_maximized')return false;
+ if(command==='plugin:window|scale_factor')return 1;
+ if(command==='plugin:path|dirname')return args.path.replace(/[/\\][^/\\]+$/,'');
+ if(command==='plugin:path|basename')return args.path.split(/[/\\]/).pop();
+ if(command==='read_vault_file'){
+  if(!(args.path in files))throw new Error('NOT_FOUND|测试文件不存在');
+  return {path:args.path,content:files[args.path],eol:'crlf',hasBom:true,modifiedMs:123,size:100};
+ }
+ if(command==='fetch_latest_release')throw new Error('离线测试');
+ return null;
+},{shouldMockEvents:true});
+if(query.has('session'))localStorage.setItem(documentSessionStorageKey(undefined),JSON.stringify({version:1,tabs:[{kind:'scratch',title:'旧会话',content:'旧会话内容',dirty:true}],activeIndex:0,activePage:'about',pageTabs:['about']}));
+window.fixture={label,calls,app:useAppStore,tabs:useDocumentTabsStore,notify:()=>emit('open-files://available'),files};
+createRoot(document.querySelector('#root')).render(h(TooltipProvider,null,h(App)));
+</script></body></html>

@@ -19,7 +19,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.1.17",
+  version: "1.1.19",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -135,6 +135,25 @@ export async function readClipboardText(): Promise<string> {
     throw new Error("当前环境不支持读取剪贴板，请手动粘贴内容");
   }
   return navigator.clipboard.readText();
+}
+
+export async function readClipboardImage(): Promise<File | undefined> {
+  if (isTauriEnvironment()) {
+    const data = await invoke<string | null>("read_clipboard_image");
+    if (!data) return undefined;
+    const bytes = Uint8Array.from(atob(data), character => character.charCodeAt(0));
+    return new File([bytes], "clipboard.png", { type: "image/png" });
+  }
+  if (!navigator.clipboard?.read) return undefined;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(type => type.startsWith("image/"));
+      if (type) return new File([await item.getType(type)], "clipboard", { type });
+    }
+  } catch {
+    // Text-only clipboard permission may still be available in browser preview.
+  }
+  return undefined;
 }
 
 function normalizeDialogSelection(selected: string | string[] | null) {

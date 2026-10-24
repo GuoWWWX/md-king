@@ -16,6 +16,7 @@ import { resolvePreviewImageSource } from "@/lib/tauri";
 import { isExternalDocumentLink, nextMarkdownHeadingAnchor, normalizeBareExternalLink } from "@/lib/document-links";
 import { obsidianWikilinkPlugin } from "@/lib/obsidian-wikilinks";
 import { syntaxPaletteFor } from "@/lib/syntax-palette";
+import { yamlHighlightTokens } from "@/lib/yaml-syntax";
 import { getCachedMermaidSvg, isMermaidLanguage, renderMermaid } from "@/lib/mermaid";
 import { useAppStore } from "@/stores/app-store";
 import { calculatePreviewContentHeight, estimateImageBlockHeight, estimateMermaidBlockHeight, estimateTableColumnContentWidths, paginateByEstimatedHeight, resolveWordAutoLineHeightPx, splitTableRows, type PreviewBlockSplit, type PreviewImageSize, type PreviewMermaidSize } from "@/lib/word-preview-pagination";
@@ -34,6 +35,8 @@ import { relaxedEmphasisPlugin } from "@/lib/relaxed-emphasis";
 import { normalizeMathSource } from "@/lib/markdown-math";
 import { containsWordChineseText, splitWordPreviewQuotes } from "@/lib/word-preview-quotes";
 import { cn } from "@/lib/utils";
+import { stripReferenceMetadata } from "@/lib/document-references";
+import { markdownFormattingPlugin, signatureRows, signatureHtml, paragraphFormatting, type TextAttributes } from "@/lib/markdown-formatting";
 import type { MarkdownFeatureSettings, MarkdownHeadingStyleId, MarkdownRulesSettings, StyleDraft, StyleNode, TemplateStyleConfig, TocLeaderStyle } from "@/types/style-manager";
 
 type WordPreviewPageProps = {
@@ -70,9 +73,10 @@ export type PreviewOutlineItem = {
 };
 
 type PreviewBlock =
+  | { type: "signature"; source: string; attrs: TextAttributes }
   | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean; unnumbered?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
-  | { type: "paragraph"; segments: PreviewTextSegment[]; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
+  | { type: "paragraph"; segments: PreviewTextSegment[]; align?: "left" | "center" | "right"; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number; caption?: string; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "math"; text: string }
@@ -83,7 +87,9 @@ type PreviewBlock =
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type PreviewTextSegment = {
+  color?: string;
   text: string;
+  image?: { src: string; alt: string };
   code?: boolean;
   math?: boolean;
   bold?: boolean;
@@ -96,6 +102,7 @@ type PreviewTextSegment = {
   small?: boolean;
   keyboard?: boolean;
   link?: string;
+  autoLine?: boolean;
 };
 type PreviewListItem = { segments: PreviewTextSegment[]; level: number; ordered: boolean; index: number; task?: "checked" | "unchecked" };
 type PreviewTableCell = { segments: PreviewTextSegment[]; alignment?: TableAlignment };
@@ -105,7 +112,7 @@ type MarkdownInlineToken = {
   info?: string;
   markup?: string;
   attrs?: Array<[string, string]> | null;
-  meta?: { mkWikilinkTarget?: string } | null;
+  meta?: { mkWikilinkTarget?: string; color?: string; underline?: boolean } | null;
   children?: MarkdownInlineToken[] | null;
 };
 
@@ -180,6 +187,7 @@ function backslashMathPlugin(md: MarkdownIt) {
 }
 
 const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(markdownFormattingPlugin)
   .use(markdownInlineHtmlPlugin)
   .use(obsidianWikilinkPlugin)
   .use(relaxedStrongPlugin)
@@ -208,10 +216,11 @@ const PAPER_SIZE_PX = {
   K32: { width: 492, height: 697 },
 } as const;
 
-function formatPreviewPageNumber(format: TemplateStyleConfig["pageSettings"]["footerPageNumberFormat"], pageNumber: number) {
+function formatPreviewPageNumber(format: TemplateStyleConfig["pageSettings"]["footerPageNumberFormat"], pageNumber: number, totalPages: number) {
   if (format === "none") return "";
-  if (format === "plain" || format === "plain-total") return `${pageNumber}`;
-  if (format === "page-total") return `第 ${pageNumber} 页`;
+  if (format === "plain") return `${pageNumber}`;
+  if (format === "plain-total") return `${pageNumber} / ${totalPages}`;
+  if (format === "page-total") return `第 ${pageNumber} 页 共 ${totalPages} 页`;
   if (format === "dash") return `- ${pageNumber} -`;
   return `第 ${pageNumber} 页`;
 }
@@ -431,6 +440,7 @@ function syntaxPalette(backgroundColor: string | undefined) {
 
 function renderHighlightedCode(text: string, language: string | undefined, draft: StyleDraft) {
   const palette = syntaxPalette(draft.backgroundColor);
+  if (language === "yaml") return <YamlHighlightedCode text={text} palette={palette} />;
   const keywordSet = new Set(syntaxKeywords[language ?? ""] ?? syntaxKeywords.javascript);
   const pattern = /(\/\/.*|#.*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*(?=\s*\()|\b[A-Za-z_$][\w$]*\b|[{}()[\].,;:+\-*/%=<>!&|?]+)/g;
   const nodes: ReactNode[] = [];
@@ -453,8 +463,27 @@ function renderHighlightedCode(text: string, language: string | undefined, draft
   return nodes;
 }
 
+function YamlHighlightedCode({ text, palette }: { text: string; palette: ReturnType<typeof syntaxPaletteFor> }) {
+  const [highlighted, setHighlighted] = useState<{ text: string; tokens: Awaited<ReturnType<typeof yamlHighlightTokens>> }>();
+  useEffect(() => {
+    let cancelled = false;
+    void yamlHighlightTokens(text).then(tokens => { if (!cancelled) setHighlighted({ text, tokens }); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [text]);
+  if (highlighted?.text !== text) return text;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const token of highlighted.tokens) {
+    if (token.from > cursor) nodes.push(text.slice(cursor, token.from));
+    nodes.push(<span key={token.from} data-yaml-kind={token.kind} style={{ color: palette[token.kind] }}>{text.slice(token.from, token.to)}</span>);
+    cursor = token.to;
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
 function canMergeSegments(a: PreviewTextSegment, b: PreviewTextSegment) {
-  if (a.math || b.math) return false;
+  if (a.math || b.math || a.image || b.image) return false;
   return Boolean(a.code) === Boolean(b.code)
     && Boolean(a.bold) === Boolean(b.bold)
     && Boolean(a.italic) === Boolean(b.italic)
@@ -465,12 +494,12 @@ function canMergeSegments(a: PreviewTextSegment, b: PreviewTextSegment) {
     && Boolean(a.superscript) === Boolean(b.superscript)
     && Boolean(a.small) === Boolean(b.small)
     && Boolean(a.keyboard) === Boolean(b.keyboard)
-    && a.link === b.link;
+    && a.link === b.link && a.color === b.color;
 }
 
 function mergeTextSegments(segments: PreviewTextSegment[]) {
   return segments.reduce<PreviewTextSegment[]>((merged, segment) => {
-    if (!segment.text) return merged;
+    if (!segment.text && !segment.image) return merged;
     const last = merged[merged.length - 1];
     if (last && canMergeSegments(last, segment)) {
       last.text += segment.text;
@@ -608,7 +637,7 @@ function plainText(segments: PreviewTextSegment[]) {
 
 // markdown-it 的 inline children 是扁平的 open/close 流，不是嵌套树，
 // 所以这里用一个标记栈来跟踪加粗、斜体、删除线、链接的作用范围。
-function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): PreviewTextSegment[] {
+function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined, preserveImages = false): PreviewTextSegment[] {
   if (!token) return [];
   const children = token.children ?? [];
   if (children.length === 0) return textSegments(token.content ?? "");
@@ -627,12 +656,14 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
     keyboard: 0,
   };
   const linkStack: Array<{ target: string; auto: boolean; wikilinkTarget?: string; html?: boolean }> = [];
+  const formatStack: Array<{ color?: string; underline?: boolean }> = [];
 
   const currentMarks = (): Omit<PreviewTextSegment, "text"> => ({
+    color: [...formatStack].reverse().find(item => item.color)?.color,
     bold: marks.bold > 0 || undefined,
     italic: marks.italic > 0 || undefined,
     strike: marks.strike > 0 || undefined,
-    underline: marks.underline > 0 || undefined,
+    underline: marks.underline > 0 || formatStack.some(item => item.underline) || undefined,
     highlight: marks.highlight > 0 || undefined,
     subscript: marks.subscript > 0 || undefined,
     superscript: marks.superscript > 0 || undefined,
@@ -665,7 +696,12 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
       return;
     }
     if (tag.name === "img") {
-      if (!tag.closing && tag.attributes.alt) segments.push({ ...currentMarks(), text: tag.attributes.alt });
+      if (!tag.closing) {
+        const src = tag.attributes.src ?? "";
+        const alt = tag.attributes.alt ?? "";
+        if (preserveImages && src && markdownParser.validateLink(src)) segments.push({ text: alt, image: { src, alt } });
+        else if (alt) segments.push({ ...currentMarks(), text: alt });
+      }
       return;
     }
     if (tag.name === "a") {
@@ -704,6 +740,10 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
 
       const activeLink = linkStack[linkStack.length - 1];
       if (activeLink?.wikilinkTarget) {
+        if (part.value === "@line") {
+          segments.push({ ...currentMarks(), text: "line …", link: activeLink.target, autoLine: true });
+          continue;
+        }
         // 双链的显示名只服务编辑体验。为了和 DOCX 导出保持一致，Word 预览
         // 直接展示目标 URL 或文档路径，并保留原目标用于点击跳转。
         segments.push({ ...currentMarks(), text: activeLink.wikilinkTarget, link: activeLink.target });
@@ -725,6 +765,8 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
 
   for (const child of children) {
     switch (child.type) {
+      case "mk_format_open": formatStack.push(child.meta ?? {}); break;
+      case "mk_format_close": formatStack.pop(); break;
       case "strong_open": marks.bold += 1; break;
       case "strong_close": marks.bold = Math.max(0, marks.bold - 1); break;
       case "em_open": marks.italic += 1; break;
@@ -744,11 +786,16 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
       case "math_inline_double": segments.push({ text: child.content ?? "", math: true }); break;
       case "softbreak":
       case "hardbreak": segments.push({ text: "\n" }); break;
-      case "image": segments.push({ ...currentMarks(), text: plainText(inlineSegmentsFromToken(child)) }); break;
+      case "image": {
+        const alt = plainText(inlineSegmentsFromToken(child));
+        const src = markdownTokenAttribute(child, "src");
+        segments.push(preserveImages && src ? { text: alt, image: { src, alt } } : { ...currentMarks(), text: alt });
+        break;
+      }
       default:
         // 未识别但带子节点的 token（例如插件产生的容器）仍然递归展开，避免整段文字丢失。
         if (child.children?.length) {
-          segments.push(...inlineSegmentsFromToken(child).map((segment) => (segment.math ? segment : { ...currentMarks(), ...segment })));
+          segments.push(...inlineSegmentsFromToken(child, preserveImages).map((segment) => (segment.math ? segment : { ...currentMarks(), ...segment })));
         } else if (child.content) {
           segments.push({ ...currentMarks(), text: child.content });
         }
@@ -760,7 +807,7 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined): Previe
 }
 
 function inlineSegmentsFromMarkdown(source: string): PreviewTextSegment[] {
-  return inlineSegmentsFromToken(markdownParser.parseInline(source, {})[0]);
+  return inlineSegmentsFromToken(markdownParser.parseInline(source, {})[0], true);
 }
 
 function markdownTokenAttribute(token: MarkdownInlineToken, name: string) {
@@ -841,6 +888,7 @@ function inlineMarkStyle(segment: PreviewTextSegment): CSSProperties | undefined
     style.color = "#0563C1";
     decorations.push("underline");
   }
+  if (segment.color) style.color = segment.color;
   if (decorations.length) style.textDecorationLine = [...new Set(decorations)].join(" ");
   return Object.keys(style).length > 0 ? style : undefined;
 }
@@ -927,11 +975,13 @@ function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: S
       content = renderWordCompatibleText(segment.text, `${keyPrefix}-${index}`, markStyle, previousCharacter, includeBoundaryGap, chineseContext);
     }
 
+    if (segment.color) content = <span className="mk-explicit-color" style={{ "--mk-explicit-color": segment.color } as CSSProperties}>{content}</span>;
     if (segment.link === undefined) return <span key={`${keyPrefix}-${index}`}>{content}</span>;
     return (
       <a
         key={`${keyPrefix}-link-${index}`}
         href={segment.link}
+        data-mk-auto-line={segment.autoLine || undefined}
         className="cursor-pointer"
         onClick={(event) => {
           event.preventDefault();
@@ -939,7 +989,7 @@ function renderInlineTextLine(segments: PreviewTextSegment[], inlineCodeDraft: S
           onOpenLink(segment.link ?? "");
         }}
       >
-        {content}
+        {segment.autoLine ? <span data-mk-reference-label>{content}</span> : content}
       </a>
     );
   });
@@ -1223,7 +1273,7 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
 }
 
 function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metadata?: MarkdownFrontmatter } {
-  const frontmatter = splitYamlFrontmatter(markdown);
+  const frontmatter = splitYamlFrontmatter(stripReferenceMetadata(markdown));
   const extractedCaptions = extractExplicitImageCaptions(frontmatter.markdown);
   const previewMarkdown = separateMarkdownCallouts(normalizeAdjacentBoldTableCaptions(extractedCaptions.markdown));
   const tokens = markdownParser.parse(previewMarkdown, {});
@@ -1236,6 +1286,8 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     const next = tokens[index + 1];
+
+    if (token.type === "mk_signature") { blocks.push({ type: "signature", source: token.content, attrs: token.meta }); continue; }
 
     if (token.type === "heading_open" && next?.type === "inline") {
       const level = Number(token.tag.slice(1));
@@ -1277,7 +1329,7 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         index += 2;
         continue;
       }
-      blocks.push({ type: "paragraph", segments: inlineSegmentsFromToken(next) });
+      blocks.push({ type: "paragraph", segments: inlineSegmentsFromToken(next), align: token.meta?.align });
       index += 2;
       continue;
     }
@@ -1365,7 +1417,7 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
         const [header, ...rows] = sourceTable.rows.map((row) =>
           row.map((cell, colIndex) => ({
             segments: inlineSegmentsFromMarkdown(cell),
-            alignment: sourceTable.alignments[colIndex] ?? "none",
+            alignment: paragraphFormatting(cell)?.align ?? sourceTable.alignments[colIndex] ?? "none",
           }))
         );
         while (index < tokens.length && tokens[index].type !== "table_close") index += 1;
@@ -1399,7 +1451,7 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
           const alignMatch = styleAttr?.match(/text-align:\s*(left|center|right)/);
           const alignment = (alignMatch ? alignMatch[1] : "none") as TableAlignment;
           currentRow?.push({
-            segments: inlineSegmentsFromToken(tokens[index + 1]),
+            segments: inlineSegmentsFromToken(tokens[index + 1], true),
             alignment,
           });
         }
@@ -1553,7 +1605,7 @@ function resolveTableBlockColumnWidths(block: PreviewBlock, tableDraft: StyleDra
   };
 }
 
-function estimateTableRowHeight(row: PreviewTableCell[], isHeader: boolean, tableDraft: StyleDraft, drafts: Record<string, StyleDraft>, columnContentWidths: number[]) {
+function estimateTableRowHeight(row: PreviewTableCell[], isHeader: boolean, tableDraft: StyleDraft, drafts: Record<string, StyleDraft>, columnContentWidths: number[], imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
   const rowDraft = drafts[isHeader ? "table-header" : "table-body"] ?? tableDraft;
   const fontSize = isHeader ? rowDraft.headerFontSize : rowDraft.bodyFontSize;
   const lineHeight = resolveLineHeightValue(isHeader ? rowDraft.headerLineHeight : rowDraft.bodyLineHeight);
@@ -1562,7 +1614,12 @@ function estimateTableRowHeight(row: PreviewTableCell[], isHeader: boolean, tabl
     const charsPerLine = Math.max(4, Math.floor((columnContentWidths[columnIndex] ?? 24) / Math.max(1, ptToPx(fontSize))));
     return estimateTextLines(plainText(cell.segments), charsPerLine);
   }));
-  return Math.max(tableDraft.minRowHeight, contentLines * ptToPx(fontSize) * lineHeight + tableDraft.cellPaddingY * 2);
+  const imageHeight = Math.max(0, ...row.map((cell, column) => cell.segments.reduce((height, segment) => {
+    if (!segment.image) return height;
+    const size = imageSizes?.[segment.image.src];
+    return height + (size ? Math.min(160, size.height, (columnContentWidths[column] ?? 160) * size.height / size.width) : 160) + 8;
+  }, 0)));
+  return Math.max(tableDraft.minRowHeight, imageHeight + contentLines * ptToPx(fontSize) * lineHeight + tableDraft.cellPaddingY * 2);
 }
 
 function estimateTableCaptionHeight(block: Extract<PreviewBlock, { type: "table" }>, drafts: Record<string, StyleDraft>) {
@@ -1612,6 +1669,10 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
 }
 
 function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+  if (block.type === "signature") {
+    const draft = drafts.signature ?? createDefaultStyleDraft("signature");
+    return ptToPx(draft.beforeSpacing + draft.afterSpacing + signatureRows(block.source).length * (draft.fontSize * 2 + draft.signatureRowSpacing));
+  }
   if (block.type === "heading") {
     const draft = drafts[block.isDocumentTitle ? "title" : `heading-${block.level}`];
     const lineHeight = resolveLineHeightPx(draft);
@@ -1703,8 +1764,8 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
 
   const columnContentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
   const estimatedHeight = estimateTableCaptionHeight(block, drafts)
-    + (block.header ? estimateTableRowHeight(block.header, true, tableDraft, drafts, columnContentWidths) : 0)
-    + block.rows.reduce((height, row) => height + estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths), 0);
+    + (block.header ? estimateTableRowHeight(block.header, true, tableDraft, drafts, columnContentWidths, imageSizes) : 0)
+    + block.rows.reduce((height, row) => height + estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths, imageSizes), 0);
   return estimatedHeight;
 }
 
@@ -1788,8 +1849,8 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
     }
     if (following.type === "table") {
       const columnContentWidths = estimateTableColumnWidths(following, tableDraft, contentWidth);
-      const headerHeight = following.header ? estimateTableRowHeight(following.header, true, tableDraft, drafts, columnContentWidths) : 0;
-      const firstRowHeight = following.rows[0] ? estimateTableRowHeight(following.rows[0], false, tableDraft, drafts, columnContentWidths) : 0;
+      const headerHeight = following.header ? estimateTableRowHeight(following.header, true, tableDraft, drafts, columnContentWidths, imageSizes) : 0;
+      const firstRowHeight = following.rows[0] ? estimateTableRowHeight(following.rows[0], false, tableDraft, drafts, columnContentWidths, imageSizes) : 0;
       return estimateTableCaptionHeight(following, drafts) + headerHeight + firstRowHeight;
     }
     return Math.min(estimateHeight(following), resolveLineHeightPx(drafts.normal) * 2);
@@ -1865,8 +1926,8 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
         availableHeight,
         fixedHeight: estimateTableCaptionHeight(block, drafts),
         repeatHeader: tableDraft.repeatHeaderOnEachPage,
-        estimateHeaderHeight: (header) => estimateTableRowHeight(header, true, tableDraft, drafts, columnContentWidths),
-        estimateRowHeight: (row) => estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths),
+        estimateHeaderHeight: (header) => estimateTableRowHeight(header, true, tableDraft, drafts, columnContentWidths, imageSizes),
+        estimateRowHeight: (row) => estimateTableRowHeight(row, false, tableDraft, drafts, columnContentWidths, imageSizes),
       });
       if (split) {
         const bodyRowOffset = block.bodyRowOffset ?? 0;
@@ -1935,12 +1996,14 @@ function PreviewImage({
   markdownSourcePath,
   className,
   onSize,
+  inline = false,
 }: {
   src?: string;
   alt?: string;
   markdownSourcePath?: string;
   className?: string;
   onSize?: (src: string, size: PreviewImageSize) => void;
+  inline?: boolean;
 }) {
   const [resolvedSrc, setResolvedSrc] = useState<string>();
   const [failed, setFailed] = useState(false);
@@ -1954,10 +2017,16 @@ function PreviewImage({
 
     void resolvePreviewImageSource(src, markdownSourcePath)
       .then((value) => {
-        if (!cancelled) setResolvedSrc(value);
+        if (!cancelled) {
+          setResolvedSrc(value);
+          if (!value) setFailed(true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setResolvedSrc(undefined);
+        if (!cancelled) {
+          setResolvedSrc(undefined);
+          setFailed(true);
+        }
       });
 
     return () => {
@@ -1981,10 +2050,11 @@ function PreviewImage({
   }
 
   if (resolvedSrc && !failed) {
+    const Container = inline ? "span" : "div";
     return (
       <>
-        <div className={cn("group relative", className)}>
-          <img src={resolvedSrc} alt={alt ?? ""} className="block h-auto w-full max-h-[520px] object-contain" onLoad={(event) => onSize?.(src, { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setFailed(true)} />
+        <Container className={cn("group relative", inline && "inline-block max-w-full align-middle my-1", className)}>
+          <img src={resolvedSrc} alt={alt ?? ""} className={inline ? "inline-block h-auto w-auto max-w-full max-h-[160px] object-contain" : "block h-auto w-full max-h-[520px] object-contain"} onLoad={(event) => onSize?.(src, { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setFailed(true)} />
           <TooltipButton
             variant="ghost"
             size="icon-xs"
@@ -1995,12 +2065,13 @@ function PreviewImage({
           >
             <Maximize2 className="size-3.5" />
           </TooltipButton>
-        </div>
+        </Container>
         <MediaPreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} src={resolvedSrc} alt={alt} title={alt || "图片预览"} />
       </>
     );
   }
 
+  if (inline) return <span className="text-[10px] text-slate-400">{failed ? "图片无法预览" : (alt || "图片加载中")}</span>;
   return (
     <div className={cn("relative flex h-28 items-center justify-center overflow-hidden border border-dashed border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500", className)}>
       <span>图片无法预览</span>
@@ -2068,6 +2139,12 @@ function renderMarkdownBlocks({
   let continuedOrderedListIndex = 0;
 
   blocks.forEach((block, index) => {
+    if (block.type === "signature") {
+      const base = drafts.signature ?? createDefaultStyleDraft("signature");
+      const draft = base.signatureInheritText ? { ...base, chineseFont: drafts.normal.chineseFont, latinFont: drafts.normal.latinFont, fontSize: drafts.normal.fontSize, lineHeight: drafts.normal.lineHeight } : base;
+      rendered.push(<div key={index} className={selectedRing(selectedStyle, "signature")} style={{ ...textStyle(draft), textIndent: 0 }} dangerouslySetInnerHTML={{ __html: signatureHtml(markdownParser, block.source, { align: draft.align === "justify" ? "left" : draft.align, ...block.attrs }, draft) }} />);
+      return;
+    }
     if (block.type === "heading") {
       const styleId = block.isDocumentTitle ? "title" : `heading-${block.level}`;
       rendered.push(
@@ -2139,9 +2216,10 @@ function renderMarkdownBlocks({
             // Markdown 普通换行在解析后是 softbreak；预览应与编辑区一样保留它，
             // 否则内容会被 HTML 的默认空白折叠合并成一行。
             whiteSpace: "pre-wrap",
+            ...(block.align ? { textAlign: block.align, textIndent: 0 } : {}),
             marginTop: block.continuedFromPrevious ? 0 : `${draft.beforeSpacing}pt`,
             marginBottom: block.continuesNext ? 0 : `${draft.afterSpacing}pt`,
-            textIndent: indentEachLine || block.continuedFromPrevious ? 0 : `${draft.firstLineIndent}em`,
+            textIndent: block.align || indentEachLine || block.continuedFromPrevious ? 0 : `${draft.firstLineIndent}em`,
           }}
         >
           {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `p-${index}`, selectedStyle, onOpenLink, indentEachLine, `${draft.firstLineIndent}em`)}
@@ -2387,6 +2465,23 @@ function renderMarkdownBlocks({
 
     if (block.type === "table") {
       const { header, rows } = block;
+      const renderCell = (cell: PreviewTableCell, key: string) => {
+        const content: ReactNode[] = [];
+        let text: PreviewTextSegment[] = [];
+        const flushText = () => {
+          if (!text.length) return;
+          const groupKey = `${key}-${content.length}`;
+          content.push(<span key={groupKey}>{renderInlineText(text, inlineCodeDraft, inlineCodeEnabled, groupKey, selectedStyle, onOpenLink, false, "0em", false)}</span>);
+          text = [];
+        };
+        for (const segment of cell.segments) {
+          if (!segment.image) { text.push(segment); continue; }
+          flushText();
+          content.push(<PreviewImage key={`${key}-${content.length}`} src={segment.image.src} alt={segment.image.alt} markdownSourcePath={markdownSourcePath} onSize={onImageSize} inline />);
+        }
+        flushText();
+        return content;
+      };
       const columnWidths = block.columnWidthPercentages
         ? percentageColumnWidths(block.columnWidthPercentages)
         : tableStyle.columnWidthMode === "custom"
@@ -2410,7 +2505,7 @@ function renderMarkdownBlocks({
                       ...(cell.alignment && cell.alignment !== "none" ? { textAlign: cell.alignment } : {}),
                     }}
                   >
-                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `th-${index}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}
+                    {renderCell(cell, `th-${index}-${cellIndex}`)}
                   </th>
                 ))}
               </tr>
@@ -2429,7 +2524,7 @@ function renderMarkdownBlocks({
                       ...(cell.alignment && cell.alignment !== "none" ? { textAlign: cell.alignment } : {}),
                     }}
                   >
-                    {renderInlineText(cell.segments, inlineCodeDraft, inlineCodeEnabled, `td-${index}-${rowIndex}-${cellIndex}`, selectedStyle, onOpenLink, false, "0em", false)}
+                    {renderCell(cell, `td-${index}-${rowIndex}-${cellIndex}`)}
                   </td>
                 ))}
               </tr>
@@ -2592,6 +2687,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const markdownBlocks = markdownPreview?.blocks ?? [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
   const fallbackBlocks = createFallbackBlocks("图片样式预览", "表格样式预览");
+  if (selectedStyle?.id === "signature") fallbackBlocks.unshift({ type: "signature", attrs: {}, source: '| 字段 | 内容 | 备注 |\n| --- | --- | --- |\n| 投标人 | 示例公司 | （盖章） |\n| 授权代表 | ____ | （签字） |\n| 日期 | [待补充]{color="#D32F2F"} | |' });
   let figureNumber = 0;
   let tableNumber = 0;
   const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures)
@@ -2672,7 +2768,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
     const pageNumber = pageNumberStartAt === "document"
       ? footerStartPage + pageIndex
       : footerStartPage + pageIndex - tocPages.length;
-    const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber);
+    const numberedPageCount = pageNumberStartAt === "document" ? previewPages.length : previewPages.length - tocPages.length;
+    const pageNumberText = formatPreviewPageNumber(pageSettings?.footerPageNumberFormat ?? "page", pageNumber, numberedPageCount);
     const footerContent = [footerText, pageNumberText].filter(Boolean).join(" · ");
 
     return (

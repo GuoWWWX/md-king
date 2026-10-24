@@ -236,6 +236,16 @@ pub fn import_vault_image_data(
 #[tauri::command]
 pub fn paste_clipboard_image(root: String, target_dir: String) -> Result<Option<VaultEntry>, String> {
     let root = resolve_root(&root)?;
+    read_clipboard_image_data()?.map(|data| crate::core::vault::paste_image_data(&root, &target_dir, &data)).transpose()
+}
+
+#[tauri::command]
+pub async fn read_clipboard_image() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(read_clipboard_image_data)
+        .await.map_err(|error| format!("读取剪贴板图片失败：{error}"))?
+}
+
+fn read_clipboard_image_data() -> Result<Option<String>, String> {
     #[cfg(windows)]
     {
         let script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $image=[System.Windows.Forms.Clipboard]::GetImage(); if ($null -ne $image) { $stream=New-Object System.IO.MemoryStream; try { $image.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png); if ($stream.Length -gt 20971520) { throw '图片超过 20 MB，无法导入。' }; [Console]::Write([Convert]::ToBase64String($stream.ToArray())) } finally { $stream.Dispose(); $image.Dispose() } }";
@@ -247,11 +257,10 @@ pub fn paste_clipboard_image(root: String, target_dir: String) -> Result<Option<
         }
         let data = String::from_utf8_lossy(&output.stdout);
         if data.trim().is_empty() { return Ok(None); }
-        return crate::core::vault::paste_image_data(&root, &target_dir, &data).map(Some);
+        Ok(Some(data.trim().to_string()))
     }
     #[cfg(not(windows))]
     {
-        let _ = (root, target_dir);
         Err("图片剪贴板当前仅支持 Windows。".to_string())
     }
 }

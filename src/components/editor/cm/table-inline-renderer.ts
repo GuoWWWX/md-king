@@ -14,6 +14,8 @@ import { findInlineMarkdownMath, normalizeMathSource } from "../../../lib/markdo
 import { relaxedStrongPlugin } from "../../../lib/relaxed-strong.ts";
 import { relaxedEmphasisPlugin } from "../../../lib/relaxed-emphasis.ts";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "../../../lib/markdown-inline-html.ts";
+import { stripReferenceMetadata } from "../../../lib/document-references.ts";
+import { markdownFormattingPlugin, paragraphFormatting } from "../../../lib/markdown-formatting.ts";
 
 type TableInlineElementTag =
   | "strong" | "em" | "s" | "u" | "mark" | "sub" | "sup" | "small" | "kbd" | "code"
@@ -36,6 +38,7 @@ export type TableInlineNode =
     wikilinkTarget?: string;
     open?: boolean;
     dateTime?: string;
+    style?: string;
     children: TableInlineNode[];
   };
 
@@ -60,6 +63,7 @@ function tableInlineMathPlugin(md: MarkdownIt) {
 }
 
 const parser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(markdownFormattingPlugin)
   .use(markdownInlineHtmlPlugin)
   .use(tableInlineMathPlugin)
   .use(obsidianWikilinkPlugin)
@@ -74,6 +78,7 @@ type PendingInlineElement = {
   wikilinkTarget?: string;
   open?: boolean;
   dateTime?: string;
+  style?: string;
   children: TableInlineNode[];
   autoLink?: boolean;
   trailingText?: string;
@@ -87,7 +92,7 @@ function appendText(target: TableInlineNode[], value: string) {
 }
 
 export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
-  const children = parser.parseInline(source, {})[0]?.children ?? [];
+  const children = parser.parseInline(stripReferenceMetadata(source), {})[0]?.children ?? [];
   const root: TableInlineNode[] = [];
   const stack: PendingInlineElement[] = [];
   const target = () => stack[stack.length - 1]?.children ?? root;
@@ -239,7 +244,9 @@ function openingElement(token: Token): {
   title?: string;
   wikilinkTarget?: string;
   autoLink?: boolean;
+  style?: string;
 } | null {
+  if (token.type === "mk_format_open") return { tag: "span", style: token.attrGet("style") ?? "" };
   if (token.type === "strong_open") return { tag: "strong" };
   if (token.type === "em_open") return { tag: "em" };
   if (token.type === "s_open") return { tag: "s" };
@@ -263,6 +270,7 @@ function openingElement(token: Token): {
 }
 
 function closingTag(token: Token): TableInlineElementTag | null {
+  if (token.type === "mk_format_close") return "span";
   if (token.type === "strong_close") return "strong";
   if (token.type === "em_close") return "em";
   if (token.type === "s_close") return "s";
@@ -270,7 +278,12 @@ function closingTag(token: Token): TableInlineElementTag | null {
   return null;
 }
 
-function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
+type TableImageOptions = {
+  resolveSource: (source: string) => Promise<string | undefined>;
+  onLoad: () => void;
+};
+
+function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[], images?: TableImageOptions) {
   for (const node of nodes) {
     if (node.type === "text") {
       parent.append(document.createTextNode(node.value));
@@ -298,10 +311,16 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       parent.append(document.createElement("br"));
     } else if (node.type === "image") {
       const image = document.createElement("img");
-      image.src = node.src;
       image.alt = node.alt;
       image.loading = "lazy";
       if (node.title) image.title = node.title;
+      if (images) {
+        image.addEventListener("load", images.onLoad);
+        void images.resolveSource(node.src).then(source => {
+          if (source) image.src = source;
+          else image.title = "图片无法预览";
+        }).catch(() => { image.title = "图片无法预览"; });
+      } else image.src = node.src;
       parent.append(image);
     } else if (node.type === "void") {
       parent.append(document.createElement(node.tag));
@@ -316,16 +335,21 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       link.setAttribute("role", "link");
       link.setAttribute("aria-label", invalid ? `非 Markdown 文件：${target}` : `打开文档：${target}`);
       link.title = invalid ? "仅支持 Markdown 文档" : target;
+      if (node.children.length === 1 && node.children[0].type === "text" && node.children[0].value === "@line") link.dataset.mkAutoLine = "true";
 
       const icon = document.createElement("span");
       icon.className = `mk-cm-link-icon mk-cm-link-icon--${kind}${invalid ? " mk-cm-link-icon--invalid" : ""}`;
       icon.setAttribute("aria-hidden", "true");
       icon.innerHTML = renderToStaticMarkup(createElement(kind === "external" ? Globe2 : FileText, { size: 14, strokeWidth: 2 }));
       link.append(icon);
-      appendNodes(link, node.children);
+      if (link.dataset.mkAutoLine) {
+        const label = document.createElement("span"); label.dataset.mkReferenceLabel = "true"; label.textContent = "line …"; link.append(label);
+      } else appendNodes(link, node.children, images);
       parent.append(link);
     } else {
       const element = document.createElement(node.tag);
+      if (node.style) element.setAttribute("style", node.style);
+      if (node.style?.includes("--mk-explicit-color:")) element.classList.add("mk-explicit-color");
       if (node.title) element.setAttribute("title", node.title);
       if (node.tag === "a" && node.href) {
         element.setAttribute("href", node.href);
@@ -335,16 +359,18 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[]) {
       }
       if (node.tag === "details" && node.open) element.setAttribute("open", "");
       if (node.tag === "time" && node.dateTime) element.setAttribute("datetime", node.dateTime);
-      appendNodes(element, node.children);
+      appendNodes(element, node.children, images);
       parent.append(element);
     }
   }
 }
 
-export function renderTableInlineMarkdown(source: string): HTMLElement {
+export function renderTableInlineMarkdown(source: string, images?: TableImageOptions): HTMLElement {
   const content = document.createElement("div");
+  const align = paragraphFormatting(source)?.align;
+  if (align) content.style.textAlign = align;
   content.className = "mk-cm-table-cell-content";
-  appendNodes(content, parseTableInlineMarkdown(source));
+  appendNodes(content, parseTableInlineMarkdown(source), images);
   if (!content.hasChildNodes()) content.append(document.createElement("br"));
   return content;
 }

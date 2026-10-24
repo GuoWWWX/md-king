@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Table image regression</title></head>
+<body><button id="outside">结束编辑</button><div style="display:flex;gap:24px"><main id="editor" style="width:760px;height:800px"></main><main id="preview" style="width:800px"></main></div>
+<script type="module">
+import '/src/index.css';
+import {createElement, createRef} from 'react';
+import {createRoot} from 'react-dom/client';
+import {LiveMarkdownEditor} from '/src/components/editor/live-markdown-editor.tsx';
+import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+import {registerBrowserPreviewImage, resolveBrowserPreviewImage} from '/src/lib/browser-preview-images.ts';
+const canvas=document.createElement('canvas');canvas.width=240;canvas.height=120;
+const context=canvas.getContext('2d');context.fillStyle='#1468d4';context.fillRect(0,0,240,120);context.fillStyle='#fff';context.font='24px sans-serif';context.fillText('Table image',32,70);
+const data=canvas.toDataURL('image/png');
+registerBrowserPreviewImage('notes/assets/existing.png',data);
+registerBrowserPreviewImage('other/assets/existing.png',data);
+const initial='# 表格图片\n\n| ![表头](assets/existing.png) | 备注 |\n| --- | --- |\n| 前后 | 保留 |\n| ![](assets/existing.png) | 引用 |\n| 图片插入位置 | 不变 |\n\n表格外正文不能被替换。';
+const editor=createRoot(document.querySelector('#editor')), preview=createRoot(document.querySelector('#preview')), ref=createRef();
+let source=initial, generation=0, imported=0, delay=0, clipboardImage=data.split(',')[1];
+const loadRequests=[];
+const settings={readOnly:false,isDark:false,markdownSourcePath:'notes/document.md'};
+function renderPreview(){preview.render(createElement(TooltipProvider,null,createElement(WordPreviewPage,{markdown:source,markdownSourcePath:settings.markdownSourcePath,paginate:true,showTocPage:false})));}
+function render(){
+ document.documentElement.classList.toggle('dark',settings.isDark);
+ editor.render(createElement(LiveMarkdownEditor,{ref,documentKey:'fixture-'+generation,documentId:'fixture-'+generation,initialContent:source,...settings,
+  onDocChanged(text){source=text;renderPreview();},
+  async onImportImage(file){
+   const index=++imported;
+   const path=`assets/pasted-${index}.png`;
+   registerBrowserPreviewImage(`notes/${path}`,data);
+   if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+   return `![粘贴图片 ${index}](${path})`;
+  },
+ }));renderPreview();
+}
+window.fixture={get view(){return ref.current?.getView();},get source(){return ref.current?.getValue();},get imported(){return imported;},data,loadRequests,
+ configure(next){Object.assign(settings,next);render();},setDelay(ms){delay=ms;},reset(){source=initial;generation++;render();},
+ nativeClipboard(image=true){clipboardImage=image?data.split(',')[1]:null;window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+  if(command==='read_clipboard_image')return clipboardImage;
+  if(command==='read_clipboard_text')return '菜单文字';
+  if(command==='load_preview_image'){loadRequests.push(args);return resolveBrowserPreviewImage(args.path,args.sourcePath);}
+  throw new Error(command);
+ }};},
+ paste(row,column,multiple=1){
+  const input=ref.current.getView().dom.querySelector(`textarea[data-table-row="${row}"][data-table-column="${column}"]`)
+   ?? ref.current.getView().dom.querySelector(`td[data-table-row="${row}"][data-table-column="${column}"]`);
+  const transfer=new DataTransfer();
+  for(let index=0;index<multiple;index++)transfer.items.add(new File([Uint8Array.from(atob(data.split(',')[1]),c=>c.charCodeAt(0))],'clipboard.png',{type:'image/png'}));
+  transfer.setData('text/plain','必须忽略的剪贴板文字');
+  input.dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}));
+ },
+};render();
+</script></body></html>

@@ -12,6 +12,7 @@ export function resolveMermaidTheme(source: string, dark: boolean, settings?: Me
 export function mermaidConfig(theme: "default" | "dark", selectedTheme?: MermaidThemeId): MermaidConfig;
 
 export function layoutMermaidKanban(root: SVGSVGElement): boolean;
+export function layoutMermaidLabels(root: SVGSVGElement): void;
 
 export function styleMermaidEdgeLabels(root: SVGSVGElement, dark: boolean): void;
 
