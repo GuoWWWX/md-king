@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {spawnSync} from 'node:child_process';
+import {createHash,generateKeyPairSync,verify} from 'node:crypto';
+import {copyFileSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {join,resolve,sep} from 'node:path';
+
+test('release signing covers installer and delta, rejecting damaged patches and mismatched keys',t=>{
+  const parent=resolve('.codex/release-speed-qa');mkdirSync(parent,{recursive:true});
+  const root=mkdtempSync(join(parent,'signing-'));
+  t.after(()=>{assert.ok(root.startsWith(parent+sep));rmSync(root,{recursive:true,force:true});});
+  const bundle=join(root,'src-tauri/target/release/bundle/nsis');
+  mkdirSync(bundle,{recursive:true});mkdirSync(join(root,'scripts'));
+  copyFileSync(resolve('scripts/sign-update.mjs'),join(root,'scripts/sign-update.mjs'));
+  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+  writeFileSync(join(root,'src-tauri/update-public-key.txt'),publicKey.export({type:'spki',format:'der'}).subarray(-32).toString('base64'));
+  writeFileSync(join(root,'package.json'),JSON.stringify({version:'1.2.3'}));
+  const installer=Buffer.from('installer contents'.repeat(5000)),patch=Buffer.from('delta contents');
+  const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+  writeFileSync(join(bundle,'md-king_1.2.3_x64-setup.exe'),installer);
+  writeFileSync(join(bundle,'md-king_1.2.2_to_1.2.3_x64.patch'),patch);
+  const delta={base_version:'v1.2.2',base_size:1000,base_sha256:'a'.repeat(64),asset:'md-king_1.2.2_to_1.2.3_x64.patch',size:patch.length,sha256:hash(patch)};
+  writeFileSync(join(bundle,'update-delta.json'),JSON.stringify(delta));
+  const run=(key=privateKey)=>spawnSync(process.execPath,['scripts/sign-update.mjs'],{cwd:root,encoding:'utf8',env:{...process.env,GITHUB_REF_NAME:'v1.2.3',UPDATE_SIGNING_PRIVATE_KEY:key.export({type:'pkcs8',format:'der'}).toString('base64')}});
+  const signed=run();assert.equal(signed.status,0,signed.stderr);
+  const bytes=readFileSync(join(bundle,'update-manifest.json'));
+  assert.ok(verify(null,bytes,publicKey,Buffer.from(readFileSync(join(bundle,'update-manifest.sig'),'utf8').trim(),'base64')));
+  const manifest=JSON.parse(bytes);assert.equal(manifest.sha256,hash(installer));assert.deepEqual(manifest.delta,delta);
+  assert.notEqual(run(generateKeyPairSync('ed25519').privateKey).status,0);
+  writeFileSync(join(bundle,delta.asset),'damaged delta');assert.notEqual(run().status,0);
+  assert.deepEqual(readFileSync(join(bundle,'update-manifest.json')),bytes,'failed verification must not replace a valid manifest');
+});

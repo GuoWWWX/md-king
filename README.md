@@ -188,6 +188,7 @@ pnpm tauri:build
 ```powershell
 pnpm build
 pnpm test:unit
+pnpm test:release
 # Windows 本机可使用 MSVC 环境包装器
 pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
@@ -197,7 +198,7 @@ scripts\cargo-msvc.bat tauri-build
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 
-CI 对 `main`、`develop` 和 Pull Request 执行前端构建、单元测试与 Rust 测试。发版时同步修改 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 中的版本，推送对应 `vX.Y.Z` 标签。Release 工作流会先测试，再构建 EXE/MSI，并上传签名清单与校验文件。
+CI 在 Pull Request 和 `develop` 验证前端构建、单元测试与 Rust 测试。`main` 优先复用同一提交在 `develop` 的成功检查及前端产物，生成一次 EXE/MSI；Release 优先复用同一提交在 `main` 的成功安装包，继续生成差分包、签名和校验文件。产物缺失或过期时执行完整检查与构建；产物版本、提交或哈希不符则停止。发版时同步修改版本，再推送对应 `vX.Y.Z` 标签，详见[发布维护说明](docs/RELEASING.md)。
 
 客户端公钥位于 `src-tauri/update-public-key.txt`。GitHub 仓库 Secret `UPDATE_SIGNING_PRIVATE_KEY` 保存匹配的 Ed25519 PKCS#8 私钥（Base64）；私钥不能提交到仓库。签名脚本会检查私钥、公钥与版本是否匹配，不匹配则终止发布。密钥维护与验收步骤见[发布维护说明](docs/RELEASING.md)。
 
