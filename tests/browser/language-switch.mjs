@@ -81,6 +81,7 @@ try {
   await page.getByRole("button", { name: "Configure themes", exact: true }).click();
   await page.getByRole("heading", { name: "Mermaid themes", exact: true }).waitFor();
   assert.equal(await page.getByRole("dialog").getByText("Per-diagram themes", { exact: true }).count(), 1);
+  assert.equal(/[\u4e00-\u9fff]/.test(await page.getByRole("dialog").innerText()), false, "built-in Mermaid scheme names and labels must be English too");
   await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
 
   await navigate("Templates");

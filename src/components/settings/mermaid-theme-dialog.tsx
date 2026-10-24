@@ -116,7 +116,7 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
                   const selected = draft.light === preset.light && draft.dark === preset.dark;
                   return <button key={preset.name} type="button" aria-pressed={selected} disabled={saving} onClick={() => setDraft({ ...draft, light: preset.light, dark: preset.dark })} className={`relative rounded-lg border p-3 text-center transition ${selected ? "border-[var(--app-primary)] bg-[var(--app-primary-soft)] ring-1 ring-[var(--app-primary)]" : "border-slate-200 hover:bg-slate-50 dark:border-zinc-700 dark:hover:bg-zinc-800"}`}>
                     <span className="mb-2 flex justify-center gap-1">{preset.colors.map((color) => <span key={color} className="h-5 w-4 rounded-sm" style={{ background: color }} />)}</span>
-                    <span className="text-xs font-medium">{preset.name}</span>{selected && <Check className="absolute right-1 top-1 size-3.5 text-[var(--app-primary)]" />}
+                    <span className="text-xs font-medium">{t(preset.name)}</span>{selected && <Check className="absolute right-1 top-1 size-3.5 text-[var(--app-primary)]" />}
                   </button>;
                 })}
               </div>
@@ -126,12 +126,12 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
                   const pair = themePairs.find((item) => item.light === theme);
                   if (pair) setDraft({ ...draft, light: pair.light, dark: pair.dark });
                 }}>
-                  <SelectTrigger className={selectClass} aria-label={t("整体选择主题")}><SelectValue>{selectedPair?.name ?? t("自定义深浅搭配")}</SelectValue></SelectTrigger>
+                  <SelectTrigger className={selectClass} aria-label={t("整体选择主题")}><SelectValue>{selectedPair ? t(selectedPair.name) : t("自定义深浅搭配")}</SelectValue></SelectTrigger>
                   <SelectContent className={contentClass}>
                     <SelectItem className={itemClass} value="custom" disabled>{t("自定义深浅搭配")}</SelectItem>
                     <SelectSeparator className="mx-0 my-1 bg-slate-100 dark:bg-zinc-800" />
                     <SelectGroup><SelectLabel className="px-2 py-2 text-[11px] text-slate-500 dark:text-zinc-400">{t("自动搭配浅色 / 深色主题")}</SelectLabel>
-                      {themePairs.map((pair) => <SelectItem key={pair.light} className={`${itemClass} py-2`} value={pair.light} data-value={pair.light}><span className="flex flex-col items-start gap-0.5"><span>{pair.name}</span><span className="text-[11px] opacity-65">{t(MERMAID_THEMES.find((theme) => theme.id === pair.light)?.label)} / {t(MERMAID_THEMES.find((theme) => theme.id === pair.dark)?.label)}</span></span></SelectItem>)}
+                      {themePairs.map((pair) => <SelectItem key={pair.light} className={`${itemClass} py-2`} value={pair.light} data-value={pair.light}><span className="flex flex-col items-start gap-0.5"><span>{t(pair.name)}</span><span className="text-[11px] opacity-65">{t(MERMAID_THEMES.find((theme) => theme.id === pair.light)?.label)} / {t(MERMAID_THEMES.find((theme) => theme.id === pair.dark)?.label)}</span></span></SelectItem>)}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -156,7 +156,7 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
               <h3 className="text-sm font-semibold">{t("默认主题")}</h3>
               <div className="grid grid-cols-2 gap-3">{(["light", "dark"] as const).map((mode) => <label key={mode} className="min-w-0 space-y-2">
                 <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400">{mode === "light" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-blue-400" />}{mode === "light" ? t("浅色模式") : t("深色模式")}</span>
-                <ThemeSelect label={t("{0}默认主题", [mode === "light" ? "浅色" : "深色"])} mode={mode} value={draft[mode]} disabled={saving} onChange={(theme) => setDraft({ ...draft, [mode]: theme as MermaidThemeId })} />
+                <ThemeSelect label={t("{0}默认主题", [mode === "light" ? t("浅色") : t("深色")])} mode={mode} value={draft[mode]} disabled={saving} onChange={(theme) => setDraft({ ...draft, [mode]: theme as MermaidThemeId })} />
               </label>)}</div>
             </section>
             <section className="space-y-2">
@@ -165,7 +165,7 @@ export function MermaidThemeDialog({ open, onOpenChange, value, onSave }: { open
                 <table className="w-full table-fixed text-xs"><thead className="sticky top-0 z-10 bg-slate-100 text-left text-slate-500 dark:bg-zinc-800 dark:text-zinc-400"><tr><th className="w-[26%] p-2 font-medium">{t("图表类型")}</th><th className="w-[37%] p-2 font-medium">{t("浅色主题")}</th><th className="p-2 font-medium">{t("深色主题")}</th></tr></thead>
                   <tbody>{MERMAID_DIAGRAM_TYPES.map((type) => <tr key={type.id} className="border-t border-slate-200 dark:border-zinc-700">
                     <th className="p-2 text-left font-normal"><button type="button" className="text-left hover:underline" onClick={() => setPreviewType(type.id)}>{t(type.label)}{draft.diagrams[type.id] && <span className="ml-1 text-blue-500" aria-label={t("已单独设置")}>●</span>}</button></th>
-                    {(["light", "dark"] as const).map((mode) => <td key={mode} className="p-1.5"><ThemeSelect label={t("{0}{1}主题", [t(type.label), mode === "light" ? "浅色" : "深色"])} mode={mode} value={draft.diagrams[type.id]?.[mode] ?? "inherit"} inherit={t("跟随全局")} disabled={saving} onChange={(theme) => setOverride(type.id, mode, theme)} /></td>)}
+                    {(["light", "dark"] as const).map((mode) => <td key={mode} className="p-1.5"><ThemeSelect label={t("{0}{1}主题", [t(type.label), mode === "light" ? t("浅色") : t("深色")])} mode={mode} value={draft.diagrams[type.id]?.[mode] ?? "inherit"} inherit={t("跟随全局")} disabled={saving} onChange={(theme) => setOverride(type.id, mode, theme)} /></td>)}
                   </tr>)}</tbody>
                 </table>
               </div>
