@@ -21,7 +21,10 @@ test('release signing covers installer and delta, rejecting damaged patches and 
   writeFileSync(join(bundle,'md-king_1.2.2_to_1.2.3_x64.patch'),patch);
   const delta={base_version:'v1.2.2',base_size:1000,base_sha256:'a'.repeat(64),asset:'md-king_1.2.2_to_1.2.3_x64.patch',size:patch.length,sha256:hash(patch)};
   writeFileSync(join(bundle,'update-delta.json'),JSON.stringify(delta));
-  const run=(key=privateKey)=>spawnSync(process.execPath,['scripts/sign-update.mjs'],{cwd:root,encoding:'utf8',env:{...process.env,GITHUB_REF_NAME:'v1.2.3',UPDATE_SIGNING_PRIVATE_KEY:key.export({type:'pkcs8',format:'der'}).toString('base64')}});
+  const run=(key=privateKey,context={})=>spawnSync(process.execPath,['scripts/sign-update.mjs'],{cwd:root,encoding:'utf8',env:{...process.env,GITHUB_REF_NAME:'v1.2.3',UPDATE_SIGNING_PRIVATE_KEY:key.export({type:'pkcs8',format:'der'}).toString('base64'),...context}});
+  const dispatched=run(privateKey,{GITHUB_REF_NAME:'main',RELEASE_TAG:'v1.2.3'});
+  assert.equal(dispatched.status,0,dispatched.stderr);
+  assert.notEqual(run(privateKey,{RELEASE_TAG:'v1.2.4'}).status,0,'explicit release tag must still match the package version');
   const signed=run();assert.equal(signed.status,0,signed.stderr);
   const bytes=readFileSync(join(bundle,'update-manifest.json'));
   assert.ok(verify(null,bytes,publicKey,Buffer.from(readFileSync(join(bundle,'update-manifest.sig'),'utf8').trim(),'base64')));

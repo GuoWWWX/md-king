@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const version = JSON.parse(readFileSync("package.json", "utf8")).version;
 if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Only stable X.Y.Z versions are supported");
-const tag = process.env.GITHUB_REF_NAME;
+const tag = process.env.RELEASE_TAG || process.env.GITHUB_REF_NAME;
 if (tag && tag !== `v${version}`) throw new Error(`Tag ${tag} does not match package version v${version}`);
 const bundle = resolve("src-tauri/target/release/bundle/nsis");
 const asset = `md-king_${version}_x64-setup.exe`;

@@ -154,7 +154,7 @@ jobs:
       - name: Sign update manifest
         run: node scripts/sign-update.mjs
         env:
-          GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
 
       - name: Create GitHub Release
