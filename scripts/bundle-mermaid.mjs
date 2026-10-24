@@ -5,7 +5,8 @@ import { readFile } from "node:fs/promises";
 const { build } = createRequire(import.meta.resolve("vite"))("esbuild");
 const { version } = JSON.parse(await readFile(new URL("../node_modules/mermaid/package.json", import.meta.url), "utf8"));
 await build({
-  entryPoints: ["node_modules/mermaid/dist/mermaid.esm.min.mjs"],
+  // The prebundled entry embeds its own DOMPurify; core uses our patched dependency.
+  entryPoints: ["node_modules/mermaid/dist/mermaid.core.mjs"],
   outfile: "src-tauri/resources/mermaid/mermaid.min.js",
   bundle: true,
   minify: true,
