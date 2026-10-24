@@ -48,6 +48,10 @@ const sharedTheme = EditorView.theme({
   ".cm-line": {
     padding: "0",
   },
+  // 仅实际识别的语法括号使用灰色；未定义的引用和普通方括号继承正文颜色。
+  ".mk-cm-syntax-bracket, .mk-cm-syntax-bracket *": {
+    color: "var(--mk-editor-syntax-color)",
+  },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--foreground)",
     borderLeftWidth: "2px",
@@ -291,7 +295,7 @@ const sharedTheme = EditorView.theme({
 
 const lightTheme = EditorView.theme(
   {
-    "&": { color: "#0f172a", "--mk-editor-caret-color": "#4f6fae" },
+    "&": { color: "#0f172a", "--mk-editor-caret-color": "#4f6fae", "--mk-editor-syntax-color": "#94a3b8" },
     ".cm-content": { caretColor: "#1d4ed8" },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#1d4ed8" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
@@ -304,7 +308,7 @@ const lightTheme = EditorView.theme(
 const darkTheme = EditorView.theme(
   {
     // 正文不使用纯白，长文阅读改为柔和的白灰以降低暗底上的眩光。
-    "&": { color: "#e4e4e7", "--mk-editor-caret-color": "#e4e4e7" },
+    "&": { color: "#e4e4e7", "--mk-editor-caret-color": "#e4e4e7", "--mk-editor-syntax-color": "#71717a" },
     ".cm-content": { caretColor: "#e4e4e7" },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#e4e4e7" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
@@ -330,7 +334,7 @@ const lightHighlight = HighlightStyle.define(
     { tag: tags.strong, color: "#0f172a" },
     { tag: tags.emphasis, color: "#1e293b" },
     { tag: tags.strikethrough, color: "#64748b" },
-    { tag: tags.link, color: "#1d4ed8" },
+    // Link color comes from validated live-preview decorations, not syntax alone.
     { tag: tags.url, color: "#2563eb" },
     { tag: tags.monospace, color: lightSyntaxPalette.plain },
     { tag: tags.quote, color: "#475569" },
@@ -361,7 +365,6 @@ const darkHighlight = HighlightStyle.define(
     { tag: tags.strong, color: "#e4e4e7" },
     { tag: tags.emphasis, color: "#e2e8f0" },
     { tag: tags.strikethrough, color: "#94a3b8" },
-    { tag: tags.link, color: "#93c5fd" },
     { tag: tags.url, color: "#7dd3fc" },
     { tag: tags.monospace, color: darkSyntaxPalette.plain },
     { tag: tags.quote, color: "#cbd5e1" },

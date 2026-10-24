@@ -3,10 +3,23 @@ import React from 'react'; import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import {LiveMarkdownEditor} from '/src/components/editor/live-markdown-editor.tsx';
 import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
-import {FormattingToolbar} from '/src/components/editor/formatting-toolbar.tsx';
 import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
 import {createDefaultTemplateStyleConfig} from '/src/lib/style-manager-data.ts';
-const source=`[普通居中]{align="center"}
+const source=`# 文字格式验证
+
+[普通居中]{align="center"}
+
+[用这份文档检查 md-king 的**文档内容引用、悬停预览和点击选中**。]{align="center"}
+
+## 对照标题
+
+## [居中标题]{align="center"}
+
+::: {align="right"}
+## 分组标题
+:::
+
+- [ ] 普通待办
 
 [***红色粗斜体***]{color="#D32F2F" .underline}
 
@@ -33,10 +46,10 @@ const source=`[普通居中]{align="center"}
 :::
 
 末尾光标位置`;
-const ref=React.createRef(); const root=createRoot(document.getElementById('root'));
+const ref=React.createRef(); const root=createRoot(document.getElementById('root')); let generation=0;
 const config=createDefaultTemplateStyleConfig('default-report');
-window.fixture={ref,source,config,setTheme(dark){document.documentElement.classList.toggle('dark',dark)},render(readOnly=true){root.render(React.createElement(TooltipProvider,null,React.createElement('div',{style:{display:'flex',gap:20}},
-React.createElement('div',{id:'editor',style:{width:620,height:1000}},React.createElement(FormattingToolbar,{getView:()=>ref.current?.getView()}),React.createElement(LiveMarkdownEditor,{ref,documentKey:String(readOnly),initialContent:source,isDark:false,readOnly,onDocChanged(){}})),
-React.createElement('div',{id:'preview',style:{width:800}},React.createElement(WordPreviewPage,{markdown:source,styleConfig:config,zoom:90,paginate:true,showHeader:false,showPageFooter:false})))));}};
+window.fixture={ref,source,config,opened:[],setTheme(dark){document.documentElement.classList.toggle('dark',dark)},render(readOnly=true,content=source,dark=false){document.documentElement.classList.toggle('dark',dark);root.render(React.createElement(TooltipProvider,null,React.createElement('div',{style:{display:'flex',gap:20}},
+React.createElement('div',{id:'editor',style:{width:620,height:1000}},React.createElement(LiveMarkdownEditor,{ref,documentKey:String(++generation),initialContent:content,isDark:dark,readOnly,openLinksOnClick:true,onDocChanged(){},onOpenLink:target=>window.fixture.opened.push(target)})),
+React.createElement('div',{id:'preview',style:{width:800}},React.createElement(WordPreviewPage,{markdown:content,styleConfig:config,zoom:90,paginate:true,showHeader:false,showPageFooter:false})))));}};
 window.fixture.render();
 </script></body></html>

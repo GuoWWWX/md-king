@@ -27,6 +27,7 @@ import {
 import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
 import { parseMarkdownTable } from "./markdown-table";
 import { formattingBlocks } from "../../../lib/markdown-formatting.ts";
+import { markdownLinkTarget } from "./markdown-link-target.ts";
 import { editorImageContext } from "./editor-images";
 import { referenceMetadata } from "../../../lib/document-references.ts";
 import { markdownInlineHtmlTagRanges } from "../../../lib/markdown-inline-html.ts";
@@ -362,6 +363,16 @@ function addRelaxedEmphasis(collector: DecorationCollector, lineFrom: number, tr
   }
 }
 
+function styleLinkBrackets(collector: DecorationCollector, ref: SyntaxNodeRef, recognized: boolean): void {
+  if (!recognized) return;
+  const className = "mk-cm-syntax-bracket";
+  for (const mark of childrenOfType(ref.node, "LinkMark")) addMark(collector, mark.from, mark.to, className);
+  const label = ref.node.getChild("LinkLabel");
+  if (!label) return;
+  addMark(collector, label.from, label.from + 1, className);
+  addMark(collector, label.to - 1, label.to, className);
+}
+
 /**
  * 行内链接：`[文本](地址)` 渲染成只剩「文本」。
  *
@@ -373,10 +384,13 @@ function handleLink(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   // Lezer 会把 `[[目标|显示名]]` 内层的方括号当成普通链接。双链已由行级
   // 渲染接管，不能再叠加一层普通链接标记，否则点击会拿到错误的目标字符串。
   if (isInsideObsidianWikilink(collector.state, ref.from, ref.to)) return;
-  const targetNode = ref.node.getChild("URL");
-  const target = targetNode ? collector.state.doc.sliceString(targetNode.from, targetNode.to).trim() : "";
-  // Lezer 会把 callout 的 `[!abstract]` 识别成无目标引用链接；它由引用块逻辑统一显隐。
-  if (!target && /^\[![a-z][\w-]*\](?:[+-])?$/i.test(collector.state.doc.sliceString(ref.from, ref.to))) return;
+  // Lezer also emits Link for undefined shortcuts such as [文字].
+  const target = markdownLinkTarget(collector.state, ref.node);
+  const line = collector.state.doc.lineAt(ref.from);
+  const callout = /^\s*>[ \t]*$/.test(collector.state.doc.sliceString(line.from, ref.from))
+    && parseMarkdownCalloutHeader(collector.state.doc.sliceString(ref.from, line.to));
+  styleLinkBrackets(collector, ref, target !== undefined || Boolean(callout));
+  if (target === undefined) return;
   const kind = isExternalDocumentLink(target) ? "external" : "document";
   // 光标已经进入源码时，链接必须退回为可编辑文本；保留 data 属性会让点击
   // `[`、`]` 或链接文字继续触发跳转，无法修改 Markdown。
@@ -419,7 +433,11 @@ function addObsidianAndBareLinks(collector: DecorationCollector, lineFrom: numbe
     const invalid = kind === "document" && !isMarkdownWikilinkTarget(link.target);
     // 双链整体作为一个可见对象替换，避免无别名时把完整目录路径撑满编辑区。
     // 选区碰到该对象即回退为源码，供用户编辑目标、分隔符或显示名。
-    if (wikilinkSourceActive(collector, from, to)) continue;
+    if (wikilinkSourceActive(collector, from, to)) {
+      addMark(collector, from, from + 2, "mk-cm-syntax-bracket");
+      addMark(collector, to - 2, to, "mk-cm-syntax-bracket");
+      continue;
+    }
     replaceInline(collector, from, to, new MarkdownWikilinkWidget(kind, link.target, link.displayLabel, from, invalid));
   }
 
@@ -874,6 +892,8 @@ function handleFencedCode(collector: DecorationCollector, ref: SyntaxNodeRef, ra
 function handleTaskMarker(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const marker = collector.state.doc.sliceString(ref.from, ref.to);
   if (!/^\[(?: |x|X)\]$/.test(marker)) return;
+  addMark(collector, ref.from, ref.from + 1, "mk-cm-syntax-bracket");
+  addMark(collector, ref.to - 1, ref.to, "mk-cm-syntax-bracket");
   // 用行级判定：字符级 touches(pad=1) 会向外扩一格，光标停在上一行末尾就会跨行误触发。
   const sourceRange = taskSourceRange(ref.node) ?? ref;
   const line = collector.state.doc.lineAt(ref.from);
@@ -925,7 +945,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
         }
 
         if (isInsideOrCrossingMath(ref.from, ref.to, collector.mathRanges)
-          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link")) return;
+          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link" || name === "Autolink" || name === "URL" || name === "Image" || name === "LinkReference")) return;
 
         switch (name) {
           case "StrongEmphasis":
@@ -944,7 +964,17 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
             handleTaskMarker(collector, ref);
             return;
           case "Link":
+          case "Autolink":
             handleLink(collector, ref);
+            return;
+          case "URL":
+            if (insideProtectedInlineSource(state, ref.from)
+              || ref.node.parent?.name === "Image" || ref.node.parent?.name === "LinkReference") return;
+            handleLink(collector, ref);
+            return;
+          case "Image":
+          case "LinkReference":
+            styleLinkBrackets(collector, ref, markdownLinkTarget(state, ref.node) !== undefined);
             return;
           case "QuoteMark":
             handleQuoteMark(collector, ref);
@@ -1331,11 +1361,6 @@ function imageIsSelected(state: EditorState, from: number, to: number): boolean 
   return !selection.empty && selection.from <= from && selection.to >= to;
 }
 
-function markdownImageAlt(source: string) {
-  const matched = source.match(/^!\[([\s\S]*)\]\([\s\S]*\)$/);
-  return matched?.[1] ?? "";
-}
-
 function buildImageBlocks(state: EditorState, markdownSourcePath: string | undefined, editable: boolean): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -1347,9 +1372,10 @@ function buildImageBlocks(state: EditorState, markdownSourcePath: string | undef
       const source = state.doc.sliceString(ref.from, ref.to);
       if (state.doc.sliceString(line.from, line.to).trim() !== source.trim() || (editable && imageSelectionIsEditing(state, ref.from, ref.to))) return false;
 
-      const url = ref.node.getChild("URL");
-      const src = url ? state.doc.sliceString(url.from, url.to) : "";
+      const src = markdownLinkTarget(state, ref.node);
       if (!src) return false;
+      const marks = childrenOfType(ref.node, "LinkMark");
+      const alt = marks.length >= 2 ? state.doc.sliceString(marks[0].to, marks[1].from) : "";
 
       builder.add(
         line.from,
@@ -1357,7 +1383,7 @@ function buildImageBlocks(state: EditorState, markdownSourcePath: string | undef
         Decoration.replace({
           widget: new MarkdownImageWidget(
             src,
-            markdownImageAlt(source),
+            alt,
             markdownSourcePath,
             line.from,
             line.to,

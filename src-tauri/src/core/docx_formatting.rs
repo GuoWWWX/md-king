@@ -135,7 +135,7 @@ fn replace_properties(xml: &str, tag: &str, remove: &str, properties: &str) -> S
 
 /// Named Pandoc styles keep explicit formatting identifiable across Office saves.
 pub fn normalize(xml: &str, config: &Value, content_width: u32) -> String {
-    if !["MDKingFmt", "MDKingAlign", "MDKingSignature"]
+    if !["MDKingFmt", "MDKingAlign", "MDKingHeadingAlign", "MDKingSignature"]
         .iter()
         .any(|marker| xml.contains(marker))
     {
@@ -145,16 +145,18 @@ pub fn normalize(xml: &str, config: &Value, content_width: u32) -> String {
     let pstyle = Regex::new(r#"<w:pStyle\b[^>]*w:val="MDKing(Align(left|center|right)|Signature(auto|left|center|right)W(\d+)(F?)(L?))""#).unwrap();
     let rstyle = Regex::new(r#"<w:rStyle\b[^>]*w:val="MDKing(Fmt(inherit|[0-9A-F]{6})(U?)|Signature(Label|Value|Remark|Line))""#).unwrap();
     let run = Regex::new(r#"(?s)<w:r(?:\s[^>]*)?>.*?</w:r>"#).unwrap();
+    let heading_align = Regex::new(r#"<w:r><w:rPr><w:rStyle w:val="MDKingHeadingAlign(left|center|right)"/></w:rPr></w:r>"#).unwrap();
     let mut output = paragraph.replace_all(xml, |p: &Captures| {
         if !p[0].contains("MDKing") { return p[0].to_owned(); }
         let mut value = p[0].to_owned();
         let mut wrap = None;
         let signature = pstyle.captures(&value).filter(|c| c.get(3).is_some()).map(|c| (c[3].to_owned(), c[4].parse::<f64>().unwrap_or(100.0), !c[5].is_empty(), !c[6].is_empty()));
-        if let Some(c) = pstyle.captures(&value) {
-            if let Some(align) = c.get(2) {
-                value = replace_properties(&value, "pPr", "jc|ind", &format!(r#"<w:jc w:val="{}"/><w:ind w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0"/>"#, align.as_str()));
-            }
+        let align = pstyle.captures(&value).and_then(|c| c.get(2).map(|a| a.as_str().to_owned()))
+            .or_else(|| heading_align.captures(&value).map(|c| c[1].to_owned()));
+        if let Some(align) = align {
+            value = replace_properties(&value, "pPr", "jc|ind", &format!(r#"<w:jc w:val="{align}"/><w:ind w:firstLine="0" w:firstLineChars="0" w:hanging="0" w:hangingChars="0"/>"#));
         }
+        value = heading_align.replace_all(&value, "").into_owned();
         if let Some((align, label_units, first, last)) = signature.as_ref() {
             let leading_tab = Regex::new(r#"(?s)(</w:pPr>)<w:r\b[^>]*>(?:<w:rPr>.*?</w:rPr>)?<w:tab\s*/></w:r>"#).unwrap();
             value = leading_tab.replace(&value, "$1").into_owned();
@@ -251,6 +253,17 @@ pub fn normalize(xml: &str, config: &Value, content_width: u32) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn heading_alignment_preserves_heading_style_and_fonts() {
+        let xml = r#"<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:rPr><w:rStyle w:val="MDKingHeadingAligncenter"/></w:rPr></w:r><w:r><w:rPr><w:rFonts w:eastAsia="黑体"/><w:sz w:val="32"/><w:b/></w:rPr><w:t>标题</w:t></w:r></w:p>"#;
+        let output = normalize(xml, &Value::Null, 8300);
+        assert!(output.contains(r#"<w:pStyle w:val="Heading2"/>"#));
+        assert!(output.contains(r#"<w:jc w:val="center"/>"#));
+        assert!(output.contains(r#"<w:rFonts w:eastAsia="黑体"/><w:sz w:val="32"/><w:b/>"#));
+        assert!(!output.contains("MDKingHeadingAlign"));
+        assert_eq!(normalize(&output, &Value::Null, 8300), output);
+    }
 
     #[test]
     fn wrapping_underlined_values_does_not_underline_the_indent() {

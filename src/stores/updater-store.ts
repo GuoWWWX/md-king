@@ -85,7 +85,7 @@ let versionCheck: Promise<boolean> | null = null;
 let activeDownload: Promise<void> | null = null;
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
-  currentVersion: "1.1.19",
+  currentVersion: "1.1.20",
   latestRelease: null,
   hasUpdate: false,
   status: "idle",

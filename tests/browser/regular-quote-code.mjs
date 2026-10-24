@@ -33,8 +33,9 @@ async function inspect(sourceMode) {
       if (card.display === "none" || parseFloat(card.left) !== 32 + indent || card.right !== "32px") {
         failures.push("code card inset");
       }
-      if (Boolean(prefix) !== sourceMode) failures.push("source prefix visibility");
-      if (prefix) {
+      const visiblePrefix = prefix && getComputedStyle(prefix).visibility !== "hidden";
+      if (Boolean(visiblePrefix) !== sourceMode) failures.push("source prefix visibility");
+      if (visiblePrefix) {
         if (Math.abs(prefix.getBoundingClientRect().left - box.left - 14) > 1) failures.push("prefix alignment");
         const prefixWidth = prefix.getBoundingClientRect().width;
         if (prefixWidth < 4 || prefixWidth > 16) failures.push("prefix width");

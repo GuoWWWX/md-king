@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GFM, type MarkdownParser } from "@lezer/markdown";
 import { livePreviewMarkdownLanguage } from "./markdown-language.ts";
 
 function parsedNodeNames(source: string): string {
@@ -22,5 +23,11 @@ test("四空格缩进后仍解析行内 Markdown", () => {
 
 test("尖括号中的内容按普通 Markdown 文本保留", () => {
   const tree = parsedNodeNames("> [!question]- 点击查看答案\n> <先给结论和最关键的理由>");
+  assert.doesNotMatch(tree, /HTMLTag|HTMLBlock/);
+});
+
+test("standard URL and email autolinks survive disabling HTML tags", () => {
+  const tree = (livePreviewMarkdownLanguage.parser as MarkdownParser).configure(GFM).parse('<https://example.com> <user@example.com> <UnknownTag>').toString();
+  assert.equal((tree.match(/Autolink\(/g) ?? []).length, 2);
   assert.doesNotMatch(tree, /HTMLTag|HTMLBlock/);
 });

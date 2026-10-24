@@ -32,6 +32,7 @@ class SignatureWidget extends WidgetType {
 function build(state: EditorState) {
   const source = state.doc.toString();
   if (!source.includes("]{") && !source.includes(":::")) return Decoration.none;
+  const tree = syntaxTree(state);
   const decos = [];
   const selected = (from: number, to: number) => !state.readOnly && state.selection.ranges.some(s => s.from <= to && s.to >= from);
   const blocks = formattingBlocks(source);
@@ -49,14 +50,18 @@ function build(state: EditorState) {
   }
   for (let i = 0; i < source.length; i++) {
     if (source[i] !== "[" || inSignature(i)) continue;
-    let node = syntaxTree(state).resolveInner(i, 1);
-    let skip = false;
-    while (node.parent) { if (/(Code|Table)/.test(node.name)) { skip = true; break; } node = node.parent; }
-    if (skip) continue;
+    let node = tree.resolveInner(i, 1);
+    let skip = false, recognized = false;
+    while (node.parent) {
+      if (/(Code|Table)/.test(node.name)) { skip = true; break; }
+      if (node.name === "TextFormat" && node.from === i) recognized = true;
+      node = node.parent;
+    }
+    if (skip || !recognized) continue;
     const range = formattingSpanAt(source, i);
     if (!range) continue;
     const line = state.doc.lineAt(i);
-    const prefix = source.slice(line.from, i).replace(/^\s*(?:>\s*)*/, "");
+    const prefix = source.slice(line.from, i).replace(/^\s*(?:>\s*)*/, "").replace(/^#{1,6}\s+/, "");
     const lastLine = state.doc.lineAt(range.to);
     if (range.attrs.align && !prefix.trim() && !source.slice(range.to, lastLine.to).trim()) {
       for (let n = line.number; n <= lastLine.number; n++) decos.push(Decoration.line({ attributes: { style: `text-align:${range.attrs.align}` } }).range(state.doc.line(n).from));
@@ -71,6 +76,6 @@ function build(state: EditorState) {
 }
 export const formatPreviewExtension = StateField.define({
   create: build,
-  update: (value, tr) => tr.docChanged || tr.selection || tr.startState.readOnly !== tr.state.readOnly ? build(tr.state) : value,
+  update: (value, tr) => tr.docChanged || tr.selection || tr.startState.readOnly !== tr.state.readOnly || syntaxTree(tr.startState) !== syntaxTree(tr.state) ? build(tr.state) : value,
   provide: field => EditorView.decorations.from(field),
 });

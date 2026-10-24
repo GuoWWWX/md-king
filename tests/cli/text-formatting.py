@@ -13,6 +13,14 @@ ROOT = Path(__file__).resolve().parents[2]
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 SOURCE = '''# 格式与签署验证
 
+## 对照标题
+
+## [居中标题]{align="center"}
+
+::: {align="right"}
+## 分组标题
+:::
+
 [普通居中]{align="center"}
 
 [***红色粗斜体***]{color="#D32F2F" .underline}
@@ -84,6 +92,11 @@ def main():
     paragraphs = root.findall('.//' + W + 'p')
     def paragraph(text):
         return next(p for p in paragraphs if ''.join(t.text or '' for t in p.iter(W+'t')) == text)
+    baseline_style = paragraph('对照标题').find(W+'pPr/'+W+'pStyle').get(W+'val')
+    for title, align in [('居中标题', 'center'), ('分组标题', 'right')]:
+        p = paragraph(title)
+        assert p.find(W+'pPr/'+W+'jc').get(W+'val') == align, title
+        assert p.find(W+'pPr/'+W+'pStyle').get(W+'val') == baseline_style, title
     for value, align in [("普通居中", "center"), ("多段靠右一", "right"), ("多段靠右二", "right")]:
         assert paragraph(value).find(W+'pPr/'+W+'jc').get(W+'val') == align
     for p in paragraphs:

@@ -48,6 +48,7 @@ export function formattingSpanAt(source: string, from: number) {
     if (source[i] === "[") depth++;
     if (source[i] !== "]" || --depth !== 0) continue;
     if (source[i + 1] !== "{") return null;
+    if (/\r?\n[ \t]*\r?\n/.test(source.slice(from, i))) return null;
     const end = source.indexOf("}", i + 2);
     if (end < 0) return null;
     const attrs = parseTextAttributes(source.slice(i + 2, end));
@@ -136,7 +137,7 @@ export function markdownFormattingPlugin(md: MarkdownIt) {
       const token = state.tokens[i];
       if (token.type === "mk_div_open") stack.push(token.meta);
       if (token.type === "mk_div_close") stack.pop();
-      if (token.type !== "paragraph_open") continue;
+      if (token.type !== "paragraph_open" && token.type !== "heading_open") continue;
       const attrs = paragraphFormatting(state.tokens[i + 1]?.content ?? "");
       const align = attrs?.align ?? stack[stack.length - 1]?.align;
       if (align) { token.attrSet("style", `text-align:${align}`); token.meta = { ...token.meta, align }; }

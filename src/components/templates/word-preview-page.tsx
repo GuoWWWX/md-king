@@ -74,7 +74,7 @@ export type PreviewOutlineItem = {
 
 type PreviewBlock =
   | { type: "signature"; source: string; attrs: TextAttributes }
-  | { type: "heading"; level: HeadingLevel; text: string; number?: string; anchorId?: string; isDocumentTitle?: boolean; unnumbered?: boolean }
+  | { type: "heading"; level: HeadingLevel; text: string; align?: TextAttributes["align"]; number?: string; anchorId?: string; isDocumentTitle?: boolean; unnumbered?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
   | { type: "paragraph"; segments: PreviewTextSegment[]; align?: "left" | "center" | "right"; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
@@ -1295,7 +1295,7 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
       const parsedHeading = parseUnnumberedHeadingText(plainText(inlineSegmentsFromToken(next)));
       const text = parsedHeading.text;
       const unnumbered = parsedHeading.unnumbered || isConventionalUnnumberedHeading(text);
-      blocks.push({ type: "heading", level: normalizedLevel, text, unnumbered, anchorId: nextMarkdownHeadingAnchor(text, headingAnchorCounts) });
+      blocks.push({ type: "heading", level: normalizedLevel, text, align: token.meta?.align, unnumbered, anchorId: nextMarkdownHeadingAnchor(text, headingAnchorCounts) });
       index += 2;
       continue;
     }
@@ -2150,6 +2150,7 @@ function renderMarkdownBlocks({
       rendered.push(
         <div key={index} data-preview-heading-id={renderAsThumbnail ? undefined : block.anchorId} data-markdown-heading-id={renderAsThumbnail ? undefined : block.anchorId} className={cn(selectedRing(selectedStyle, styleId), "break-words")} style={{
           ...(block.isDocumentTitle ? textStyle(drafts[styleId]) : headingTextStyle(drafts[styleId])),
+          ...(block.align ? { textAlign: block.align, textIndent: 0 } : {}),
         }}>
           {block.number ? <span>{block.number} </span> : null}
           {renderChineseQuoteText(block.text, `heading-${index}`)}
