@@ -1,5 +1,5 @@
 import { t } from "@/lib/i18n";
-import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, Sparkles, Download, RefreshCw, type LucideIcon } from "lucide-react";
+import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, Sparkles, Download, type LucideIcon } from "lucide-react";
 import { LanguageMenu } from "./language-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -51,7 +51,6 @@ export function ActivityBar({
   const latestRelease = useUpdaterStore((state) => state.latestRelease);
   const downloadProgress = useUpdaterStore((state) => state.downloadProgress);
   const setDialogOpen = useUpdaterStore((state) => state.setDialogOpen);
-  const checkForUpdates = useUpdaterStore((state) => state.checkForUpdates);
 
   return (
     <aside
@@ -90,25 +89,27 @@ export function ActivityBar({
       />
 
       <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700">
+        {hasUpdate && (
           <Button
             variant="ghost"
-            className={cn("relative size-10 shrink-0 justify-center rounded-[8px] p-0 transition", hasUpdate ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 hover:text-amber-700 dark:bg-amber-400/20 dark:text-amber-300 dark:hover:bg-amber-400/30" : "mk-nav-idle")}
-            onClick={() => hasUpdate ? setDialogOpen(true) : void checkForUpdates({ silent: false })}
+            className="relative size-10 shrink-0 justify-center rounded-[8px] bg-amber-500/15 p-0 text-amber-600 transition hover:bg-amber-500/25 hover:text-amber-700 dark:bg-amber-400/20 dark:text-amber-300 dark:hover:bg-amber-400/30"
+            onClick={() => setDialogOpen(true)}
             disabled={status === "checking"}
-            title={status === "downloading" ? t("正在下载更新: {0}%", [downloadProgress.percent.toFixed(0)]) : hasUpdate ? t("发现新版本 {0} (点击更新)", [latestRelease?.tag_name]) : t("检查新版本")}
+            title={status === "downloading" ? t("正在下载更新: {0}%", [downloadProgress.percent.toFixed(0)]) : t("发现新版本 {0} (点击更新)", [latestRelease?.tag_name])}
             tooltipSide="right"
             aria-label={t("软件更新")}
           >
             {status === "downloading" ? (
               <Download className="size-4 animate-bounce" />
-            ) : hasUpdate ? (
+            ) : (
               <Sparkles className="size-4" />
-            ) : <RefreshCw className={cn("size-4", status === "checking" && "animate-spin")} />}
-            {hasUpdate && <span className="absolute top-1.5 right-1.5 flex size-2">
+            )}
+            <span className="absolute top-1.5 right-1.5 flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
               <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
-            </span>}
+            </span>
           </Button>
+        )}
 
         <LanguageMenu />
 

@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Window titlebar regression</title></head>
+<body><main id="root"></main>
+<script type="module">
+import '/src/index.css';
+import {createElement as h, useEffect, useState} from 'react';
+import {createPortal} from 'react-dom';
+import {createRoot} from 'react-dom/client';
+import {Window as TauriWindow} from '@tauri-apps/api/window';
+import {AppTitlebar} from '/src/components/layout/app-titlebar.tsx';
+import {DocumentTabBar} from '/src/components/editor/document-tab-bar.tsx';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+import {useDocumentTabsStore} from '/src/stores/document-tabs-store.ts';
+
+// Exercise real components and browser events without moving any desktop window.
+window.__TAURI_INTERNALS__ = {metadata: {currentWindow: {label: 'main'}}};
+const calls = [];
+let maximized = false;
+TauriWindow.prototype.startDragging = async () => { calls.push('drag'); };
+TauriWindow.prototype.toggleMaximize = async () => { maximized = !maximized; calls.push('toggle'); };
+TauriWindow.prototype.isMaximized = async () => maximized;
+TauriWindow.prototype.onResized = async () => () => {};
+const first = useDocumentTabsStore.getState().openScratchTab({title: 'First.md', content: ''});
+const second = useDocumentTabsStore.getState().openScratchTab({title: 'Second.md', content: ''});
+window.fixture = {
+  calls, first, second,
+  get maximized() { return maximized; },
+  get activeTab() { return useDocumentTabsStore.getState().activeTabId; },
+  get tabIds() { return useDocumentTabsStore.getState().tabs.map(tab => tab.id); },
+};
+function App() {
+  const [host, setHost] = useState(null);
+  useEffect(() => { setHost(document.querySelector('#mk-titlebar-document-tabs')); }, []);
+  return h(TooltipProvider, null,
+    h(AppTitlebar, {onPageZoomChange() {}}),
+    host && createPortal(h(DocumentTabBar, {
+      onNewDocument() {}, onPasteClipboard() {}, className: 'w-full',
+    }), host),
+  );
+}
+createRoot(document.querySelector('#root')).render(h(App));
+</script></body></html>
