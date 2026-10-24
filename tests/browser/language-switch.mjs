@@ -42,7 +42,7 @@ try {
   }), { sameView: true, sameContent: true, sameSelection: true });
   assert.equal(await page.locator(".mk-activity-bar").getByRole("button", { name: "Templates", exact: true }).count(), 1);
   const order = await page.locator(".mk-activity-bar-footer button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")));
-  assert.deepEqual(order, ["Software update", "Language / 语言", "Switch theme; current: Light mode", "Settings"]);
+  assert.deepEqual(order, ["Language / 语言", "Switch theme; current: Light mode", "Settings"]);
 
   // Existing CodeMirror controls update without rebuilding widgets or undo history.
   await page.locator(".cm-content").focus();
@@ -100,6 +100,8 @@ try {
     useUpdaterStore.setState({ hasUpdate: true, status: "available", latestRelease: { tag_name: "v9.0.0", name: "QA", body: "These authored release notes stay unchanged.", published_at: "2026-10-24T00:00:00Z", html_url: "https://github.com/GuoWWWX/md-king/releases", assets: [] } });
   });
   await page.waitForFunction(() => Boolean(document.querySelector(".mk-activity-bar-footer .animate-ping")));
+  const updateButton = page.locator(".mk-activity-bar").getByRole("button", { name: "Software update", exact: true });
+  assert.match(await updateButton.getAttribute("class"), /bg-amber-/);
   await page.locator(".mk-activity-bar").getByRole("button", { name: "Software update", exact: true }).click();
   await page.getByRole("heading", { name: "Update available", exact: true }).waitFor();
   assert.equal(await page.getByRole("dialog").getByRole("region", { name: "Release notes", exact: true }).count(), 1);

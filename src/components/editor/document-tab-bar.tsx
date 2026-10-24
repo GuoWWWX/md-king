@@ -220,7 +220,8 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
       moved: false,
       hasTarget: false,
     };
-    listRef.current.setPointerCapture(event.pointerId);
+    // 捕获在标签本身，避免把双击目标改成列表空白区而误触发最大化。
+    tab?.setPointerCapture(event.pointerId);
   }
 
   function handleTabListPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
