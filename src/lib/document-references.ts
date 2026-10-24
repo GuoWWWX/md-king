@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import { documentLinkFragment, nextMarkdownHeadingAnchor } from "./document-links.ts";
 import { parseMarkdownOutline } from "./document-outline.ts";
 
@@ -50,14 +51,14 @@ export function resolveDocumentReference(source: string, target: string): Refere
     return { from, to, startLine: first + 1, endLine: last + 1, kind, title };
   };
   const raw = documentLinkFragment(target);
-  if (!raw) return make(0, lines.length - 1, "file", "全文");
+  if (!raw) return make(0, lines.length - 1, "file", t("全文"));
   let fragment: string;
   try { fragment = decodeURIComponent(raw.slice(1)); } catch { return undefined; }
   const numbered = fragment.match(/^L([1-9]\d*)(?:-L?([1-9]\d*))?$/i);
   if (numbered) {
     const first = Number(numbered[1]) - 1, last = Number(numbered[2] ?? numbered[1]) - 1;
     if (last < first || last >= lines.length) return undefined;
-    return make(first, last, "lines", "行范围");
+    return make(first, last, "lines", t("行范围"));
   }
   if (fragment.startsWith("^")) {
     const id = fragment.slice(1);
@@ -70,7 +71,7 @@ export function resolveDocumentReference(source: string, target: string): Refere
       const from = lines[starts[0].index].from;
       const to = starts[0].index === ends[0].index ? starts[0].position : ends[0].position;
       if (!stripReferenceMetadata(source.slice(from, to)).trim()) return undefined;
-      return make(starts[0].index, ends[0].index, "lines", "行范围", from, to);
+      return make(starts[0].index, ends[0].index, "lines", t("行范围"), from, to);
     }
     const matches = lines.map((line, index) => !line.code && new RegExp(`(?:^|[ \\t])\\^${id}[ \\t]*$`).test(line.text) ? index : -1).filter(index => index >= 0);
     if (matches.length !== 1) return undefined;
@@ -86,7 +87,7 @@ export function resolveDocumentReference(source: string, target: string): Refere
     let first = last;
     const beginsBlock = (text: string) => /^\s*(?:#{1,6}\s|[-+*]\s|\d+[.)]\s)/.test(text);
     while (first > 0 && paragraphText(lines[first - 1].text).trim() && !lines[first - 1].code && !/^\s*#{1,6}\s/.test(paragraphText(lines[first - 1].text)) && !beginsBlock(paragraphText(lines[first].text))) first--;
-    return make(first, last, "paragraph", "段落", lines[first].from, to);
+    return make(first, last, "paragraph", t("段落"), lines[first].from, to);
   }
   const headings = parseMarkdownOutline(stripReferenceMetadata(source));
   // Strip metadata without changing offsets when locating source headings.
@@ -136,7 +137,7 @@ export function createDocumentReference(source: string, from: number, to: number
     const headings = parseMarkdownOutline(source);
     const eligible = headings.filter(heading => heading.line <= first + 1);
     const heading = eligible[eligible.length - 1];
-    if (!heading) throw new Error("当前位置之前没有章节标题");
+    if (!heading) throw new Error(t("当前位置之前没有章节标题"));
     const counts = new Map<string, number>();
     let anchor = "";
     for (const entry of headings) { anchor = nextMarkdownHeadingAnchor(entry.text, counts); if (entry === heading) break; }
@@ -149,7 +150,7 @@ export function createDocumentReference(source: string, from: number, to: number
   if (kind === "paragraph") {
     while (first > 0 && paragraphText(lines[first - 1].text).trim() && !lines[first - 1].code && !/^\s*#{1,6}\s/.test(paragraphText(lines[first - 1].text)) && !/^\s*(?:#{1,6}|[-+*]|\d+[.)])\s/.test(paragraphText(lines[first].text))) first--;
     while (last + 1 < lines.length && paragraphText(lines[last + 1].text).trim() && !lines[last + 1].code && !/^\s*(?:#{1,6}|[-+*]|\d+[.)])\s/.test(paragraphText(lines[last + 1].text))) last++;
-    if (!source.slice(lines[first].from, lines[last].to).trim()) throw new Error("请先选中需要引用的段落");
+    if (!source.slice(lines[first].from, lines[last].to).trim()) throw new Error(t("请先选中需要引用的段落"));
     const existing = lines[last].text.match(/[ \t]\^([a-zA-Z0-9-]+)[ \t]*$/)?.[1];
     const blockId = existing ?? id;
     return { reference: `[[${file}#^${blockId}|段落引用]]`, changes: existing ? [] : [{ from: lines[last].to, to: lines[last].to, insert: ` ^${blockId}` }] };

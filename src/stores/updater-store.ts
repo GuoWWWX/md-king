@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n.ts";
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
@@ -85,7 +86,7 @@ let versionCheck: Promise<boolean> | null = null;
 let activeDownload: Promise<void> | null = null;
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
-  currentVersion: "1.1.20",
+  currentVersion: "1.2.0",
   latestRelease: null,
   hasUpdate: false,
   status: "idle",
@@ -119,7 +120,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
         ignoredVersions: [...ignoredVersions, version],
         dialogOpen: false,
       });
-      toast.info(`已忽略 ${version} 版本更新提醒`);
+      toast.info(t("已忽略 {0} 版本更新提醒", [version]));
     }
   },
 
@@ -141,7 +142,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
         const release: GitHubRelease | null = JSON.parse(jsonStr);
         if (!release) {
           if (get().status === "checking") set({ status: get().hasUpdate ? "available" : "idle" });
-          if (!silent) toast.info("暂未发布可下载版本");
+          if (!silent) toast.info(t("暂未发布可下载版本"));
           return false;
         }
 
@@ -161,7 +162,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
 
           if (!silent) {
             set({ dialogOpen: true });
-            toast.success(`最新可下载版本：${latestVer}`);
+            toast.success(t("最新可下载版本：{0}", [latestVer]));
           }
           return true;
         }
@@ -173,14 +174,14 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
         });
 
         if (!silent) {
-          toast.success(`当前已是最新版本 (v${effectiveCurrentVer})`);
+          toast.success(t("当前已是最新版本 (v{0})", [effectiveCurrentVer]));
         }
         return false;
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         if (get().status === "checking") set({ status: "error", errorMessage: msg });
         if (!silent) {
-          toast.error(`检查更新失败: ${msg}`);
+          toast.error(t("检查更新失败: {0}", [msg]));
         }
         return false;
       } finally {
@@ -211,7 +212,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     const setupAsset = latestRelease.assets.find((a) => a.name === `md-king_${latestRelease.tag_name.replace(/^v/, "")}_x64-setup.exe`);
 
     if (!setupAsset) {
-      const err = "未在该版本的 Release 中找到 Windows 安装包 (.exe)";
+      const err = t("未在该版本的 Release 中找到 Windows 安装包 (.exe)");
       set({ status: "error", errorMessage: err });
       toast.error(err);
       return;
@@ -238,7 +239,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
           const payload = event.payload;
           if (payload.version !== latestRelease.tag_name) return;
           if (get().downloadProgress.isDelta && payload.is_delta === false) {
-            toast.info("增量包不可用，已切换为完整安装包下载");
+            toast.info(t("增量包不可用，已切换为完整安装包下载"));
           }
           set({
             downloadProgress: {
@@ -291,7 +292,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
           return;
         }
         set({ status: "error", errorMessage: msg });
-        toast.error(`下载更新失败: ${msg}`);
+        toast.error(t("下载更新失败: {0}", [msg]));
       } finally {
         unlisten?.();
       }
@@ -309,10 +310,10 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     set({ status: "cancelling" });
     try {
       await cancelUpdateDownload();
-      toast.info("正在取消更新下载");
+      toast.info(t("正在取消更新下载"));
     } catch (error) {
       set({ status: "downloading" });
-      toast.error(`取消下载失败: ${String(error)}`);
+      toast.error(t("取消下载失败: {0}", [String(error)]));
     }
   },
 
@@ -321,7 +322,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     const { installerPath, checking, downloadVersion, latestRelease } = get();
     if (checking || downloadVersion !== latestRelease?.tag_name) return;
     if (!installerPath) {
-      toast.error("未找到已下载的安装程序");
+      toast.error(t("未找到已下载的安装程序"));
       return;
     }
 
@@ -334,12 +335,12 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       const session = createDocumentSession(tabs, activeTabId, vaultRoot, activePage, pageTabs);
       window.localStorage.setItem(documentSessionStorageKey(vaultRoot), JSON.stringify(session));
       set({ status: "installing", errorMessage: null });
-      toast.info("正在启动安装程序升级，软件将自动关闭...");
+      toast.info(t("正在启动安装程序升级，软件将自动关闭..."));
       await launchUpdateInstaller(installerPath, silent);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       set({ status: "ready_to_install", errorMessage: msg });
-      toast.error(`启动安装程序失败: ${msg}`);
+      toast.error(t("启动安装程序失败: {0}", [msg]));
     }
   },
 }));

@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAppStore } from "@/stores/app-store";
@@ -86,7 +87,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
     } catch (error) {
       setAppConfig(previousConfig);
       applyAppearance(previousConfig.themeMode ?? "light", previousConfig.accentColor ?? "blue");
-      toast.error(userFacingErrorMessage(error, "切换外观失败"));
+      toast.error(userFacingErrorMessage(error, t("切换外观失败")));
     }
   }
 
@@ -109,7 +110,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
       setAppConfig(savedConfig);
     } catch (error) {
       setAppConfig(previousConfig);
-      toast.error(userFacingErrorMessage(error, "保存页面缩放失败"));
+      toast.error(userFacingErrorMessage(error, t("保存页面缩放失败")));
     }
   }
 
@@ -211,7 +212,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
                   collapsed={!showFileTree}
                   // onCollapsedChange 传的是「是否已收起」，和 visible 语义相反，必须取反。
                   onCollapsedChange={(collapsed) => setFileTreeVisible(!collapsed)}
-                  ariaLabel="调整文件树宽度"
+                  ariaLabel={t("调整文件树宽度")}
                   // 容器本身零宽，但仍会占掉一份 flex gap。抵消一份 4px 间距，
                   // 让文件树右侧与图标栏、上下外边距保持一致。
                   className="-ml-1"
@@ -239,7 +240,7 @@ export function AppShell({ navigation, pageMeta, children }: AppShellProps) {
                 allowCollapsedDrag={false}
                 // 同上：collapsed=true 表示刚收起，对应 open=false。
                 onCollapsedChange={(collapsed) => setDocumentDrawerOpen(!collapsed)}
-                ariaLabel={documentDrawerOpen ? "调整文档侧栏宽度" : "拖动展开文档侧栏"}
+                ariaLabel={documentDrawerOpen ? t("调整文档侧栏宽度") : t("拖动展开文档侧栏")}
                 className="-mx-0.5"
                 handleClassName="w-1"
               />

@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { History, Info, LayoutTemplate, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -19,6 +20,7 @@ import { UpdateDialog } from "@/components/update/update-dialog";
 import { getAppConfig, getAppStatus, isTauriEnvironment, listHistory, listTemplates, takeOpenFiles } from "@/lib/tauri";
 import { useAppStore } from "@/stores/app-store";
 import { useUpdaterStore } from "@/stores/updater-store";
+import { useLanguage } from "@/hooks/use-language";
 
 const navigation = [
   { id: "templates", label: "模板中心", icon: LayoutTemplate },
@@ -35,6 +37,7 @@ type QuickPasteStatusEvent = {
 const BOOT_SCREEN_MAX_WAIT_MS = 350;
 
 function App() {
+  useLanguage();
   const { activePage, appConfig, setActivePage, setAppStatus, setAppConfig, setTemplates, setHistory, queueImportPaths } = useAppStore();
   const [bootReady, setBootReady] = useState(false);
 
@@ -191,7 +194,7 @@ function App() {
     let unlisten: (() => void) | undefined;
     listen<QuickPasteStatusEvent>("quick-paste://status", (event) => {
       const level = event.payload.level ?? "info";
-      toast[level](event.payload.message);
+      toast[level](t(event.payload.message));
     })
       .then((dispose) => {
         unlisten = dispose;
@@ -300,15 +303,15 @@ function App() {
 
 function AppBootScreen() {
   return (
-    <div className="app-boot-screen" aria-label="MD King 正在启动">
+    <div className="app-boot-screen" aria-label={t("MD King 正在启动")}>
       <div className="app-boot-card">
         <div className="app-boot-logo-wrap">
           <MdKingLogo className="app-boot-logo" />
         </div>
         <div>
           <div className="app-boot-title">MD King</div>
-          <div className="app-boot-subtitle">正在准备转换工作台</div>
-          <div className="app-boot-caption">本地优先的 Markdown 转 Word/WPS 工具</div>
+          <div className="app-boot-subtitle">{t("正在准备转换工作台")}</div>
+          <div className="app-boot-caption">{t("本地优先的 Markdown 转 Word/WPS 工具")}</div>
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useEffect, useState } from "react";
 import { AlertTriangle, FilePlus2, FolderOpen, FolderPlus, Trash2 } from "lucide-react";
 import { PrimaryActionButton } from "@/components/ui/app-surface";
@@ -8,10 +9,10 @@ import { Input } from "@/components/ui/input";
 /// 名称校验放在提交前而非输入中：边打字边报红在中文输入法下会因为组合期的半成品文本狂闪。
 function validateEntryName(name: string) {
   const trimmed = name.trim();
-  if (!trimmed) return "名称不能为空";
-  if (/[\\/:*?"<>|]/.test(trimmed)) return '名称不能包含 \\ / : * ? " < > | 字符';
-  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(trimmed)) return "该名称是 Windows 保留名，请换一个";
-  if (/[ .]$/.test(trimmed)) return "名称不能以空格或点结尾";
+  if (!trimmed) return t("名称不能为空");
+  if (/[\\/:*?"<>|]/.test(trimmed)) return t("名称不能包含 \\ / : * ? \" < > | 字符");
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(trimmed)) return t("该名称是 Windows 保留名，请换一个");
+  if (/[ .]$/.test(trimmed)) return t("名称不能以空格或点结尾");
   return undefined;
 }
 
@@ -30,7 +31,7 @@ export function CreateEntryDialog({ open, isDir, parentLabel, onOpenChange, onCo
 
   useEffect(() => {
     if (!open) return;
-    setName(isDir ? "新建文件夹" : "未命名.md");
+    setName(isDir ? t("新建文件夹") : t("未命名.md"));
     setError(undefined);
     setBusy(false);
   }, [open, isDir]);
@@ -47,7 +48,7 @@ export function CreateEntryDialog({ open, isDir, parentLabel, onOpenChange, onCo
       await onConfirm(name.trim());
       onOpenChange(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "创建失败");
+      setError(submitError instanceof Error ? submitError.message : t("创建失败"));
     } finally {
       setBusy(false);
     }
@@ -59,10 +60,10 @@ export function CreateEntryDialog({ open, isDir, parentLabel, onOpenChange, onCo
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             {isDir ? <FolderPlus className="size-4 text-blue-600 dark:text-blue-400" /> : <FilePlus2 className="size-4 text-blue-600 dark:text-blue-400" />}
-            {isDir ? "新建文件夹" : "新建文件"}
+            {isDir ? t("新建文件夹") : t("新建文件")}
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            将创建在 <span className="font-semibold text-slate-700 dark:text-zinc-200">{parentLabel}</span> 下{isDir ? "" : "，不写扩展名时自动补 .md"}。
+             {t("将创建在")} <span className="font-semibold text-slate-700 dark:text-zinc-200">{parentLabel}</span>  {t("下")}{isDir ? "" : t("，不写扩展名时自动补 .md")}。
           </DialogDescription>
         </DialogHeader>
 
@@ -72,16 +73,16 @@ export function CreateEntryDialog({ open, isDir, parentLabel, onOpenChange, onCo
             value={name}
             onChange={(event) => { setName(event.target.value); setError(undefined); }}
             onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}
-            placeholder={isDir ? "文件夹名称" : "文件名称"}
+            placeholder={isDir ? t("文件夹名称") : t("文件名称")}
             aria-invalid={Boolean(error)}
-            aria-label={isDir ? "文件夹名称" : "文件名称"}
+            aria-label={isDir ? t("文件夹名称") : t("文件名称")}
           />
           {error ? <p className="text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
         </div>
 
         <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
-          <PrimaryActionButton onClick={() => void submit()} disabled={busy}>{busy ? "创建中…" : "创建"}</PrimaryActionButton>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t("取消")}</Button>
+          <PrimaryActionButton onClick={() => void submit()} disabled={busy}>{busy ? t("创建中…") : t("创建")}</PrimaryActionButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -124,7 +125,7 @@ export function RenameEntryDialog({ open, currentName, isDir, onOpenChange, onCo
       await onConfirm(name.trim());
       onOpenChange(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "重命名失败");
+      setError(submitError instanceof Error ? submitError.message : t("重命名失败"));
     } finally {
       setBusy(false);
     }
@@ -134,8 +135,8 @@ export function RenameEntryDialog({ open, currentName, isDir, onOpenChange, onCo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
-          <DialogTitle className="text-base font-bold text-slate-950 dark:text-zinc-50">重命名{isDir ? "文件夹" : "文件"}</DialogTitle>
-          <DialogDescription className="mt-1 text-xs leading-5">当前名称：{currentName}</DialogDescription>
+          <DialogTitle className="text-base font-bold text-slate-950 dark:text-zinc-50">{t("重命名")}{isDir ? t("文件夹") : t("文件")}</DialogTitle>
+          <DialogDescription className="mt-1 text-xs leading-5">{t("当前名称：")}{currentName}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2 px-5 py-4">
@@ -145,14 +146,14 @@ export function RenameEntryDialog({ open, currentName, isDir, onOpenChange, onCo
             onChange={(event) => { setName(event.target.value); setError(undefined); }}
             onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}
             aria-invalid={Boolean(error)}
-            aria-label="新名称"
+            aria-label={t("新名称")}
           />
           {error ? <p className="text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
         </div>
 
         <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
-          <PrimaryActionButton onClick={() => void submit()} disabled={busy}>{busy ? "保存中…" : "保存"}</PrimaryActionButton>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t("取消")}</Button>
+          <PrimaryActionButton onClick={() => void submit()} disabled={busy}>{busy ? t("保存中…") : t("保存")}</PrimaryActionButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -185,7 +186,7 @@ export function DeleteEntryDialog({ open, entries, onOpenChange, onConfirm }: De
       await onConfirm();
       onOpenChange(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "删除失败");
+      setError(submitError instanceof Error ? submitError.message : t("删除失败"));
     } finally {
       setBusy(false);
     }
@@ -197,19 +198,18 @@ export function DeleteEntryDialog({ open, entries, onOpenChange, onConfirm }: De
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             <Trash2 className="size-4 text-red-600 dark:text-red-400" />
-            {multiple ? "删除多个项目" : `删除${entry?.isDir ? "文件夹" : "文件"}`}
+            {multiple ? t("删除多个项目") : t("删除{0}", [entry?.isDir ? "文件夹" : "文件"])}
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            {multiple ? <>确定删除已选的 <span className="font-semibold text-slate-700 dark:text-zinc-200">{entries.length}</span> 个项目吗？</> : <>确定删除 <span className="font-semibold text-slate-700 dark:text-zinc-200">{entry?.name ?? "该项目"}</span> 吗？</>}
-            {deletesChildren ? "包含内容的文件夹会连同内部文件一起删除，" : ""}此操作不可撤销。
-          </DialogDescription>
+            {multiple ? <>{t("确定删除已选的")} <span className="font-semibold text-slate-700 dark:text-zinc-200">{entries.length}</span>  {t("个项目吗？")}</> : <>{t("确定删除")} <span className="font-semibold text-slate-700 dark:text-zinc-200">{entry?.name ?? t("该项目")}</span>  {t("吗？")}</>}
+            {deletesChildren ? t("包含内容的文件夹会连同内部文件一起删除，") : ""}{t("此操作不可撤销。")} </DialogDescription>
         </DialogHeader>
 
         {error ? <p className="px-5 pt-4 text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
 
         <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
-          <Button variant="destructive" onClick={() => void submit()} disabled={busy}>{busy ? "删除中…" : "确认删除"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t("取消")}</Button>
+          <Button variant="destructive" onClick={() => void submit()} disabled={busy}>{busy ? t("删除中…") : t("确认删除")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -239,7 +239,7 @@ export function RemoveRecentVaultDialog({ open, root, onOpenChange, onConfirm }:
       await onConfirm();
       onOpenChange(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "移除失败");
+      setError(submitError instanceof Error ? submitError.message : t("移除失败"));
     } finally {
       setBusy(false);
     }
@@ -251,18 +251,16 @@ export function RemoveRecentVaultDialog({ open, root, onOpenChange, onConfirm }:
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             <FolderOpen className="size-4 text-slate-500 dark:text-zinc-400" />
-            移除最近目录
-          </DialogTitle>
+             {t("移除最近目录")} </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            确定从最近打开的目录中移除 <span className="font-semibold text-slate-700 dark:text-zinc-200">{root ?? "该目录"}</span> 吗？这不会删除磁盘上的任何文件。
-          </DialogDescription>
+             {t("确定从最近打开的目录中移除")} <span className="font-semibold text-slate-700 dark:text-zinc-200">{root ?? t("该目录")}</span>  {t("吗？这不会删除磁盘上的任何文件。")} </DialogDescription>
         </DialogHeader>
 
         {error ? <p className="px-5 pt-4 text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
 
         <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
-          <Button variant="destructive" onClick={() => void submit()} disabled={busy}>{busy ? "移除中…" : "确认移除"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t("取消")}</Button>
+          <Button variant="destructive" onClick={() => void submit()} disabled={busy}>{busy ? t("移除中…") : t("确认移除")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -297,7 +295,7 @@ export function OpenVaultLocationDialog({ open, currentRoot, targetRoot, canOpen
       else await onOpenNewWindow();
       onOpenChange(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "打开目录失败");
+      setError(submitError instanceof Error ? submitError.message : t("打开目录失败"));
     } finally {
       setBusyAction(undefined);
     }
@@ -311,25 +309,22 @@ export function OpenVaultLocationDialog({ open, currentRoot, targetRoot, canOpen
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             <FolderOpen className="size-4 text-blue-600 dark:text-blue-400" />
-            打开目录
-          </DialogTitle>
+             {t("打开目录")} </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            当前窗口正在打开 <span className="font-semibold text-slate-700 dark:text-zinc-200">{currentRoot ?? "另一个目录"}</span>。请选择 <span className="font-semibold text-slate-700 dark:text-zinc-200">{targetRoot ?? "新目录"}</span> 的打开位置。
-            在当前窗口打开会关闭现有的文档和图片标签；在新窗口打开会保留当前工作区。
-          </DialogDescription>
+             {t("当前窗口正在打开")} <span className="font-semibold text-slate-700 dark:text-zinc-200">{currentRoot ?? t("另一个目录")}</span>{t("。请选择")} <span className="font-semibold text-slate-700 dark:text-zinc-200">{targetRoot ?? t("新目录")}</span>  {t("的打开位置。 在当前窗口打开会关闭现有的文档和图片标签；在新窗口打开会保留当前工作区。")} </DialogDescription>
         </DialogHeader>
 
         {error ? <p className="px-5 pt-4 text-xs font-medium text-red-600 dark:text-red-400">{error}</p> : null}
 
         <DialogFooter className="m-0 flex-wrap gap-2 rounded-none border-x-0 border-b-0 px-5 py-3">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
-          <Button variant="outline" onClick={() => void submit("current")} disabled={busy}>在当前窗口打开</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>{t("取消")}</Button>
+          <Button variant="outline" onClick={() => void submit("current")} disabled={busy}>{t("在当前窗口打开")}</Button>
           <PrimaryActionButton
             onClick={() => void submit("window")}
             disabled={busy || !canOpenNewWindow}
-            title={canOpenNewWindow ? undefined : "浏览器预览不支持打开新的项目窗口"}
+            title={canOpenNewWindow ? undefined : t("浏览器预览不支持打开新的项目窗口")}
           >
-            {busyAction === "window" ? "打开中…" : "在新窗口打开"}
+            {busyAction === "window" ? t("打开中…") : t("在新窗口打开")}
           </PrimaryActionButton>
         </DialogFooter>
       </DialogContent>
@@ -377,40 +372,37 @@ export function SaveConflictDialog({ open, filePath, localContent, externalConte
         <DialogHeader className="border-b border-slate-200 px-5 py-4 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-950 dark:text-zinc-50">
             <AlertTriangle className="size-4 text-amber-500" />
-            {deleted ? "文件已被外部删除" : "文件已被其他程序修改"}
+            {deleted ? t("文件已被外部删除") : t("文件已被其他程序修改")}
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs leading-5">
-            {filePath ? <span className="font-semibold text-slate-700 dark:text-zinc-200">{filePath}</span> : "当前文件"}
+            {filePath ? <span className="font-semibold text-slate-700 dark:text-zinc-200">{filePath}</span> : t("当前文件")}
             {deleted
-              ? " 已不在磁盘上。你可以保留当前正文并另存，或关闭该标签。"
-              : " 的磁盘内容已变化。请选择保留本地内容、重载外部内容，或比较后合并。"}
+              ? t(" 已不在磁盘上。你可以保留当前正文并另存，或关闭该标签。")
+              : t(" 的磁盘内容已变化。请选择保留本地内容、重载外部内容，或比较后合并。")}
           </DialogDescription>
         </DialogHeader>
 
         {comparing && externalContent !== undefined ? (
           <div className="grid min-h-0 gap-3 px-5 py-4 lg:grid-cols-2">
             <label className="flex min-h-0 flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200">
-              编辑器中的内容
-              <textarea readOnly value={localContent} className="h-44 resize-y rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-normal leading-5 text-slate-800 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
+               {t("编辑器中的内容")} <textarea readOnly value={localContent} className="h-44 resize-y rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-normal leading-5 text-slate-800 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
             </label>
             <label className="flex min-h-0 flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200">
-              磁盘中的内容
-              <textarea readOnly value={externalContent} className="h-44 resize-y rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-normal leading-5 text-slate-800 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
+               {t("磁盘中的内容")} <textarea readOnly value={externalContent} className="h-44 resize-y rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-normal leading-5 text-slate-800 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
             </label>
             <label className="flex min-h-0 flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200 lg:col-span-2">
-              合并结果（可编辑）
-              <textarea value={mergedContent} onChange={(event) => setMergedContent(event.target.value)} className="h-52 resize-y rounded-md border border-slate-300 bg-white p-3 font-mono text-xs font-normal leading-5 text-slate-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-blue-500" />
+               {t("合并结果（可编辑）")} <textarea value={mergedContent} onChange={(event) => setMergedContent(event.target.value)} className="h-52 resize-y rounded-md border border-slate-300 bg-white p-3 font-mono text-xs font-normal leading-5 text-slate-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-blue-500" />
             </label>
           </div>
         ) : (
           <div className="space-y-2 px-5 py-4 text-xs leading-5 text-slate-600 dark:text-zinc-300">
             {deleted ? (
-              <p>保留后，该标签会变成未保存文档，按 Ctrl+S 可选择新的保存位置。</p>
+              <p>{t("保留后，该标签会变成未保存文档，按 Ctrl+S 可选择新的保存位置。")}</p>
             ) : (
               <>
-                <p><span className="font-bold text-slate-800 dark:text-zinc-100">保留本地内容</span>：继续编辑当前内容；下次保存时会覆盖已确认的磁盘版本。</p>
-                <p><span className="font-bold text-slate-800 dark:text-zinc-100">重载外部内容</span>：放弃当前未保存修改，并载入磁盘中的最新正文。</p>
-                <p><span className="font-bold text-slate-800 dark:text-zinc-100">比较并合并</span>：同时查看两份正文，并编辑最终合并结果。</p>
+                <p><span className="font-bold text-slate-800 dark:text-zinc-100">{t("保留本地内容")}</span>{t("：继续编辑当前内容；下次保存时会覆盖已确认的磁盘版本。")}</p>
+                <p><span className="font-bold text-slate-800 dark:text-zinc-100">{t("重载外部内容")}</span>{t("：放弃当前未保存修改，并载入磁盘中的最新正文。")}</p>
+                <p><span className="font-bold text-slate-800 dark:text-zinc-100">{t("比较并合并")}</span>{t("：同时查看两份正文，并编辑最终合并结果。")}</p>
               </>
             )}
           </div>
@@ -419,20 +411,20 @@ export function SaveConflictDialog({ open, filePath, localContent, externalConte
         <DialogFooter className="m-0 flex-wrap gap-2 rounded-none border-x-0 border-b-0 px-5 py-3">
           {deleted ? (
             <>
-              <Button variant="destructive" onClick={() => void choose("close")} disabled={busy}>关闭标签</Button>
-              <PrimaryActionButton onClick={() => void choose("keep-local")} disabled={busy}>保留并另存</PrimaryActionButton>
+              <Button variant="destructive" onClick={() => void choose("close")} disabled={busy}>{t("关闭标签")}</Button>
+              <PrimaryActionButton onClick={() => void choose("keep-local")} disabled={busy}>{t("保留并另存")}</PrimaryActionButton>
             </>
           ) : comparing ? (
             <>
-              <Button variant="ghost" onClick={() => setComparing(false)} disabled={busy}>返回</Button>
-              <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>重载外部内容</Button>
-              <PrimaryActionButton onClick={() => void choose("merge", mergedContent)} disabled={busy}>应用合并结果</PrimaryActionButton>
+              <Button variant="ghost" onClick={() => setComparing(false)} disabled={busy}>{t("返回")}</Button>
+              <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>{t("重载外部内容")}</Button>
+              <PrimaryActionButton onClick={() => void choose("merge", mergedContent)} disabled={busy}>{t("应用合并结果")}</PrimaryActionButton>
             </>
           ) : (
             <>
-              <Button variant="ghost" onClick={() => setComparing(true)} disabled={busy || externalContent === undefined}>比较并合并</Button>
-              <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>重载外部内容</Button>
-              <PrimaryActionButton onClick={() => void choose("keep-local")} disabled={busy}>保留本地内容</PrimaryActionButton>
+              <Button variant="ghost" onClick={() => setComparing(true)} disabled={busy || externalContent === undefined}>{t("比较并合并")}</Button>
+              <Button variant="outline" onClick={() => void choose("reload")} disabled={busy}>{t("重载外部内容")}</Button>
+              <PrimaryActionButton onClick={() => void choose("keep-local")} disabled={busy}>{t("保留本地内容")}</PrimaryActionButton>
             </>
           )}
         </DialogFooter>

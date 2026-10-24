@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { ImageIcon, Loader2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -289,7 +290,7 @@ export function ImageViewer({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onDoubleClick={handleDoubleClick}
-      aria-label={alt ? `${alt}，图片查看器` : "图片查看器"}
+      aria-label={alt ? t("{0}，图片查看器", [alt]) : t("图片查看器")}
     >
       <div
         className="flex h-full w-full items-center justify-center p-4"
@@ -317,11 +318,11 @@ export function ImageDocumentViewer({ src, alt, path }: { src?: string; alt: str
     <section className="mk-card flex h-full min-h-[360px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-[5px] max-[760px]:min-h-[300px]">
       <header className="flex h-8 shrink-0 min-w-0 items-center gap-1.5 border-b border-slate-200 px-3 text-xs dark:border-zinc-800">
         <ImageIcon className="size-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
-        <span className="truncate font-semibold text-slate-700 dark:text-zinc-200" title={label}>{label}</span>
+        <span className="truncate font-semibold text-slate-700 dark:text-zinc-200" title={t(label)}>{t(label)}</span>
       </header>
       {src ? <ImageViewer src={src} alt={alt} paper className="h-full flex-1" /> : (
         <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-white text-slate-400 dark:bg-[#202020] dark:text-zinc-500">
-          <Loader2 className="size-5 animate-spin" aria-label="正在加载图片" />
+          <Loader2 className="size-5 animate-spin" aria-label={t("正在加载图片")} />
         </div>
       )}
     </section>
@@ -388,9 +389,9 @@ export function MediaPreviewDialog({
       >
         <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b border-slate-200 px-4 py-2.5 pr-14 dark:border-zinc-800">
           <DialogTitle className="truncate text-sm font-semibold text-slate-800 dark:text-zinc-200">
-            {title ?? alt ?? "图片预览"}
+            {title ?? alt ?? t("图片预览")}
           </DialogTitle>
-          <DialogDescription className="sr-only">图片预览与缩放拖拽查看</DialogDescription>
+          <DialogDescription className="sr-only">{t("图片预览与缩放拖拽查看")}</DialogDescription>
 
           {/* 顶部右侧缩放倍数与手控工具栏 */}
           <div className="flex items-center gap-1 text-slate-600 dark:text-zinc-400">
@@ -398,14 +399,14 @@ export function MediaPreviewDialog({
               type="button"
               onClick={handleZoomOut}
               className="flex h-7 w-7 items-center justify-center rounded-[4px] transition hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
-              title="缩小 (Ctrl + 滚轮下滑)"
-              aria-label="缩小"
+              title={t("缩小 (Ctrl + 滚轮下滑)")}
+              aria-label={t("缩小")}
             >
               <ZoomOut className="size-3.5" />
             </button>
             <span
               className="min-w-[42px] text-center font-mono text-xs font-semibold text-slate-700 dark:text-zinc-300"
-              title="当前放大倍数"
+              title={t("当前放大倍数")}
             >
               {Math.round(zoom * 100)}%
             </span>
@@ -413,8 +414,8 @@ export function MediaPreviewDialog({
               type="button"
               onClick={handleZoomIn}
               className="flex h-7 w-7 items-center justify-center rounded-[4px] transition hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
-              title="放大 (Ctrl + 滚轮上滑)"
-              aria-label="放大"
+              title={t("放大 (Ctrl + 滚轮上滑)")}
+              aria-label={t("放大")}
             >
               <ZoomIn className="size-3.5" />
             </button>
@@ -422,8 +423,8 @@ export function MediaPreviewDialog({
               type="button"
               onClick={handleReset}
               className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-[4px] transition hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
-              title="复位至 100% 居中 (双击画布亦可复位)"
-              aria-label="复位尺寸"
+              title={t("复位至 100% 居中 (双击画布亦可复位)")}
+              aria-label={t("复位尺寸")}
             >
               <RotateCcw className="size-3.5" />
             </button>

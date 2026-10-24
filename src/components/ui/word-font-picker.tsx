@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Input } from "@/components/ui/input";
@@ -70,7 +71,7 @@ export function WordFontPicker({ value, options, onValueChange, className, disab
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
-        aria-label="选择或搜索字体"
+        aria-label={t("选择或搜索字体")}
         className="h-9 pr-9 bg-slate-50 dark:bg-zinc-900/72"
         onFocus={(event) => {
           setOpen(true);
@@ -89,8 +90,8 @@ export function WordFontPicker({ value, options, onValueChange, className, disab
       />
       <button
         type="button"
-        title="显示字体列表"
-        aria-label="显示字体列表"
+        title={t("显示字体列表")}
+        aria-label={t("显示字体列表")}
         disabled={disabled}
         className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-400 transition hover:text-slate-700 disabled:pointer-events-none dark:text-zinc-500 dark:hover:text-zinc-200"
         onMouseDown={(event) => event.preventDefault()}
@@ -117,7 +118,7 @@ export function WordFontPicker({ value, options, onValueChange, className, disab
               <span className="truncate" style={{ fontFamily: `"${font}", sans-serif` }}>{font}</span>
               {font === value ? <Check className="ml-2 size-4 shrink-0" /> : null}
             </button>
-          )) : <p className="px-2 py-2 text-sm text-slate-500 dark:text-zinc-400">未找到匹配字体</p>}
+          )) : <p className="px-2 py-2 text-sm text-slate-500 dark:text-zinc-400">{t("未找到匹配字体")}</p>}
         </div>
       ) : null}
     </div>

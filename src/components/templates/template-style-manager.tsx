@@ -1,3 +1,5 @@
+import { templateLabel } from "@/lib/template-labels";
+import { t } from "@/lib/i18n";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowLeft, ChevronDown, Code2, FileText, Heading, ImageIcon, ListTree, Minus, Palette, Pilcrow, Quote, Search, SlidersHorizontal, Table2, Upload, X, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { toast } from "sonner";
@@ -75,7 +77,7 @@ const wordHeadingTargetOptions: Array<{ value: WordHeadingTarget; label: string 
 ];
 
 function wordHeadingTargetLabel(target: WordHeadingTarget) {
-  return wordHeadingTargetOptions.find((option) => option.value === target)?.label ?? "一级标题";
+  return wordHeadingTargetOptions.find((option) => option.value === target)?.label ?? t("一级标题");
 }
 
 const styleGroupIcons: Record<StyleGroupKey, LucideIcon> = {
@@ -403,7 +405,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
         const fallback = createDefaultTemplateStyleConfig(templateId);
         setStyleConfig(fallback);
         setSavedConfig(fallback);
-        toast.error(userFacingErrorMessage(error, "加载模板样式失败，已使用默认样式"));
+        toast.error(userFacingErrorMessage(error, t("加载模板样式失败，已使用默认样式")));
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -470,7 +472,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       styles: { ...current.styles, [activeStyleId]: createDefaultStyleDraft(activeStyleId) },
       updatedAt: new Date().toISOString(),
     }));
-    toast.info("已重置当前样式为默认值");
+    toast.info(t("已重置当前样式为默认值"));
   }
 
   async function handleSelectReferenceDocx() {
@@ -479,7 +481,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       if (!selected) return;
       setReferenceDocxPath(selected);
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "选择参考 DOCX 失败"));
+      toast.error(userFacingErrorMessage(error, t("选择参考 DOCX 失败")));
     }
   }
 
@@ -487,12 +489,12 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
     if (!template || !canEditTemplateInfo || !onSaveTemplate) return true;
     const nextName = templateName.trim();
     if (!nextName) {
-      toast.error("请填写模板名称");
+      toast.error(t("请填写模板名称"));
       return false;
     }
     const nextReferenceDocxPath = referenceDocxPath.trim();
     if (nextReferenceDocxPath && !nextReferenceDocxPath.toLowerCase().endsWith(".docx")) {
-      toast.error("参考 DOCX 路径必须指向 .docx 文件");
+      toast.error(t("参考 DOCX 路径必须指向 .docx 文件"));
       return false;
     }
 
@@ -508,10 +510,10 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
     setIsSaving(true);
     try {
       await onSaveTemplate(nextTemplate);
-      if (showToast) toast.success("模板基础信息已保存");
+      if (showToast) toast.success(t("模板基础信息已保存"));
       return true;
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "保存模板基础信息失败"));
+      toast.error(userFacingErrorMessage(error, t("保存模板基础信息失败")));
       return false;
     } finally {
       setIsSaving(false);
@@ -525,10 +527,10 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       const nextConfig = mergeTemplateStyleConfig(styleConfig.templateId, saved);
       setStyleConfig(nextConfig);
       setSavedConfig(nextConfig);
-      if (showToast) toast.success("模板样式已保存，下次打开和导出时会使用当前配置。");
+      if (showToast) toast.success(t("模板样式已保存，下次打开和导出时会使用当前配置。"));
       return true;
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "保存模板样式失败"));
+      toast.error(userFacingErrorMessage(error, t("保存模板样式失败")));
       return false;
     } finally {
       setIsSaving(false);
@@ -546,7 +548,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       const saved = await handleSaveStyleConfig(!saveBoth);
       if (!saved) return false;
     }
-    if (saveBoth) toast.success("模板基础信息和样式已保存");
+    if (saveBoth) toast.success(t("模板基础信息和样式已保存"));
     return true;
   }
 
@@ -558,9 +560,9 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       const nextConfig = createDefaultTemplateStyleConfig(templateId);
       setStyleConfig(nextConfig);
       setSavedConfig(nextConfig);
-      toast.success(template?.isBuiltIn ? "系统模板已恢复为内置默认样式" : "模板样式已恢复为默认样式");
+      toast.success(template?.isBuiltIn ? t("系统模板已恢复为内置默认样式") : t("模板样式已恢复为默认样式"));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "重置模板样式失败"));
+      toast.error(userFacingErrorMessage(error, t("重置模板样式失败")));
     } finally {
       setIsSaving(false);
     }
@@ -610,21 +612,20 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">
                 {embedded ? <ArrowLeft className="size-3.5" /> : null}
-                模板样式管理
-              </div>
+                 {t("模板样式管理")} </div>
               {embedded ? (
                 <>
-                  <h2 className="mt-1 truncate text-xl font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-[22px]">样式编辑：{template?.name ?? "技术文档模板"}</h2>
+                  <h2 className="mt-1 truncate text-xl font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-[22px]">{t("样式编辑：")}{template ? templateLabel(template) : t("技术文档模板")}</h2>
                 </>
               ) : (
                 <>
-                  <DialogTitle className="mt-1 truncate text-xl font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-[22px]">样式编辑：{template?.name ?? "技术文档模板"}</DialogTitle>
+                  <DialogTitle className="mt-1 truncate text-xl font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50 xl:text-[22px]">{t("样式编辑：")}{template ? templateLabel(template) : t("技术文档模板")}</DialogTitle>
                 </>
               )}
             </div>
             <SoftActionButton className="h-8 shrink-0 border-slate-200 bg-white px-2.5 text-xs text-slate-500 hover:text-slate-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50" onClick={requestCloseEditor}>
               {embedded ? <ArrowLeft className="size-4" /> : <X className="size-4" />}
-              {closeLabel ?? (embedded ? "返回模板中心" : "关闭")}
+              {closeLabel ?? (embedded ? t("返回模板中心") : t("关闭"))}
             </SoftActionButton>
           </div>
         </header>
@@ -642,7 +643,7 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
               )}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.label}
+              {t(tab.label)}
             </button>
           ))}
           <span
@@ -706,10 +707,10 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
         </div>
 
         <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/96 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/96 xl:px-5">
-          <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", hasChanges ? "bg-amber-50 text-amber-700 dark:bg-amber-500/16 dark:text-amber-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/16 dark:text-emerald-200")}>{hasChanges ? "有未保存更改" : "已保存"}</span>
-          {activeTab === "styles" && !isDocumentStructureSelection ? <Button variant="ghost" className="h-8 px-2.5 text-xs text-slate-500 dark:text-zinc-400 dark:hover:text-zinc-100" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>重置当前样式</Button> : null}
-          <SoftActionButton className="h-8 px-2.5 text-xs" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>恢复默认样式</SoftActionButton>
-          <PrimaryActionButton className="h-8 px-3.5 text-xs font-semibold" onClick={() => void handleSaveEditor()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? "保存中..." : "保存更改"}</PrimaryActionButton>
+          <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", hasChanges ? "bg-amber-50 text-amber-700 dark:bg-amber-500/16 dark:text-amber-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/16 dark:text-emerald-200")}>{hasChanges ? t("有未保存更改") : t("已保存")}</span>
+          {activeTab === "styles" && !isDocumentStructureSelection ? <Button variant="ghost" className="h-8 px-2.5 text-xs text-slate-500 dark:text-zinc-400 dark:hover:text-zinc-100" onClick={resetCurrentStyle} disabled={isSaving || isLoading}>{t("重置当前样式")}</Button> : null}
+          <SoftActionButton className="h-8 px-2.5 text-xs" onClick={handleResetTemplateStyleConfig} disabled={isSaving || isLoading}>{t("恢复默认样式")}</SoftActionButton>
+          <PrimaryActionButton className="h-8 px-3.5 text-xs font-semibold" onClick={() => void handleSaveEditor()} disabled={isSaving || isLoading || !hasChanges}>{isSaving ? t("保存中...") : t("保存更改")}</PrimaryActionButton>
         </footer>
       </div>
     );
@@ -720,13 +721,13 @@ export function TemplateStyleManager({ open = true, template, embedded = false, 
       <Dialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>样式修改还没保存</DialogTitle>
-            <DialogDescription>返回或关闭前，你可以先保存当前模板样式，也可以放弃这次修改。</DialogDescription>
+            <DialogTitle>{t("样式修改还没保存")}</DialogTitle>
+            <DialogDescription>{t("返回或关闭前，你可以先保存当前模板样式，也可以放弃这次修改。")}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-end">
-            <Button variant="ghost" onClick={() => setConfirmCloseOpen(false)}>继续编辑</Button>
-            <SoftActionButton onClick={discardAndCloseEditor}>不保存</SoftActionButton>
-            <PrimaryActionButton onClick={() => void saveAndCloseEditor()} disabled={isSaving}>{isSaving ? "保存中..." : "保存并返回"}</PrimaryActionButton>
+            <Button variant="ghost" onClick={() => setConfirmCloseOpen(false)}>{t("继续编辑")}</Button>
+            <SoftActionButton onClick={discardAndCloseEditor}>{t("不保存")}</SoftActionButton>
+            <PrimaryActionButton onClick={() => void saveAndCloseEditor()} disabled={isSaving}>{isSaving ? t("保存中...") : t("保存并返回")}</PrimaryActionButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -784,7 +785,7 @@ function StyleNavigation({
       <div className="border-b border-slate-200 p-3 dark:border-zinc-800">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-          <Input className="rounded-lg border-slate-200 bg-slate-50 pl-8.5 dark:border-zinc-700 dark:bg-zinc-900/72" placeholder="搜索样式..." value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Input className="rounded-lg border-slate-200 bg-slate-50 pl-8.5 dark:border-zinc-700 dark:bg-zinc-900/72" placeholder={t("搜索样式...")} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
       </div>
       <div className="h-[calc(100%-56px)] overflow-auto px-3 py-2.5">
@@ -817,7 +818,7 @@ function StyleNavigation({
                   <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border bg-white dark:bg-zinc-950", groupActive ? "border-indigo-100 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-zinc-700 dark:text-zinc-400")}>
                     <GroupIcon className="size-3.5" />
                   </span>
-                  <span className="truncate text-[13px] font-bold">{styleGroupLabels[group]}</span>
+                  <span className="truncate text-[13px] font-bold">{t(styleGroupLabels[group])}</span>
                 </span>
                 <span className={cn("ml-2 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", groupActive ? "bg-white text-slate-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400")}>{groupCount}</span>
               </button>
@@ -873,7 +874,7 @@ function StyleNavigation({
                 <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border bg-white dark:bg-zinc-950", isDocumentStructureStyleId(activeStyleId) ? "border-indigo-100 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300" : "border-slate-200 text-slate-500 dark:border-zinc-700 dark:text-zinc-400")}>
                   <FileText className="size-3.5" />
                 </span>
-                <span className="truncate text-[13px] font-bold">文档结构</span>
+                <span className="truncate text-[13px] font-bold">{t("文档结构")}</span>
               </span>
               <span className={cn("ml-2 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", isDocumentStructureStyleId(activeStyleId) ? "bg-white text-slate-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400")}>{matchingDocumentStructureItems.length}</span>
             </button>
@@ -901,10 +902,10 @@ function DocumentStructureNavigationItem({ item, active, onSelect }: { item: (ty
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
-      tooltip={item.description}
+      tooltip={t(item.description)}
       tooltipSide="right"
     >
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      <span className="min-w-0 flex-1 truncate">{t(item.label)}</span>
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
         <ItemIcon className="size-3" />
       </span>
@@ -924,11 +925,11 @@ function StyleNavigationItem({ node, active, onSelect }: { node: StyleNode; acti
         active ? "bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_rgb(79_70_229)] dark:bg-indigo-500/16 dark:text-indigo-200 dark:shadow-[inset_2px_0_0_rgb(129_140_248)]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
       )}
       onClick={onSelect}
-      tooltip={`${node.displayName} · ${node.name} · ${node.markdown}`}
+      tooltip={`${t(node.displayName)} · ${node.name} · ${node.markdown}`}
       tooltipSide="right"
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{node.displayName}</span>
+        <span className="block truncate">{t(node.displayName)}</span>
       </span>
       <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md border", active ? "border-indigo-100 bg-white text-indigo-600 dark:border-indigo-500/40 dark:bg-zinc-900 dark:text-indigo-300" : "border-slate-200 bg-white/70 text-slate-400 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-500")}>
         <NodeIcon className="size-3" />
@@ -1027,7 +1028,7 @@ function StyleProperties({
   const isTableCaption = selectedStyle.id === "table-caption";
   const isCaption = selectedStyle.id === "caption" || isTableCaption;
   const activeHeadingStyleId = isTitle ? "title" : selectedStyle.id;
-  const activeHeadingLevelLabel = isTitle ? "大标题" : `${headingLevelFromStyleId(selectedStyle.id)}级`;
+  const activeHeadingLevelLabel = isTitle ? t("大标题") : t("{0}级", [headingLevelFromStyleId(selectedStyle.id)]);
   const activeListLevelTypeKey = listLevelTypeKeys[activeListLevel];
   const activeListLevelMarkerKey = listLevelMarkerKeys[activeListLevel];
   const activeListLevelNumberKey = listLevelNumberKeys[activeListLevel];
@@ -1049,7 +1050,7 @@ function StyleProperties({
     ? markdownHeadingStyleIds
       .filter((sourceStyleId) => markdownRules.headingMappings[sourceStyleId] === selectedStyle.id)
       .map((sourceStyleId) => "#".repeat(Number(sourceStyleId.replace("heading-", ""))))
-      .join(" / ") || "未映射"
+      .join(" / ") || t("未映射")
     : undefined;
   const chineseFontKey = isList ? activeListLevelChineseFontKey : "chineseFont";
   const latinFontKey = isList ? activeListLevelLatinFontKey : "latinFont";
@@ -1080,7 +1081,7 @@ function StyleProperties({
 
   function syncListLevelsFromBody() {
     patchDraft(createListInheritancePatch(bodyDraft));
-    toast.success("已同步正文文字样式到列表全部级别");
+    toast.success(t("已同步正文文字样式到列表全部级别"));
   }
 
   return (
@@ -1088,46 +1089,46 @@ function StyleProperties({
       <div className="mb-4">
         <h3 className="text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{isHeadingStyle ? headingNavigationNode.displayName : isList ? listNavigationNode.displayName : selectedStyle.displayName}</h3>
         <div className="mt-2.5 flex flex-wrap gap-1.5 text-[11px]">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">Word 样式：{isHeadingStyle ? selectedStyle.name : isList ? listNavigationNode.name : selectedStyle.name}</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">Markdown 标记：{mappedHeadingMarkdown ?? (isList ? listNavigationNode.markdown : selectedStyle.markdown)}</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">{isLoading ? "加载中" : "可编辑"}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">{t("Word 样式：")}{isHeadingStyle ? selectedStyle.name : isList ? listNavigationNode.name : selectedStyle.name}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">{t("Markdown 标记：")}{mappedHeadingMarkdown ?? (isList ? listNavigationNode.markdown : selectedStyle.markdown)}</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-300">{isLoading ? t("加载中") : t("可编辑")}</span>
         </div>
       </div>
 
       <div className="space-y-3">
         <MarkdownFeatureStyleSwitch selectedStyleId={selectedStyle.id} markdownFeatures={markdownFeatures} patchMarkdownFeatures={patchMarkdownFeatures} />
 
-        {selectedStyle.id === "signature" ? <PropertyCard title="签署块布局">
-          <SettingSwitch label="跟随正文字体、字号和行距" checked={draft.signatureInheritText} onCheckedChange={value => updateDraft("signatureInheritText", value)} />
+        {selectedStyle.id === "signature" ? <PropertyCard title={t("签署块布局")}>
+          <SettingSwitch label={t("跟随正文字体、字号和行距")} checked={draft.signatureInheritText} onCheckedChange={value => updateDraft("signatureInheritText", value)} />
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="字段名称颜色"><WordColorPicker value={draft.color} onChange={value => updateDraft("color", value)} autoColor="#000000" /></Field>
-            <Field label="整体位置"><SimpleAlignSelect value={draft.align === "justify" ? "left" : draft.align} onChange={value => updateDraft("align", value)} /></Field>
-            <Field label="填写区域宽度（厘米）"><Input type="number" min={1} max={12} step={0.5} value={draft.signatureLineWidth} onChange={e => updateDraft("signatureLineWidth", Math.max(1, Math.min(12, Number(e.target.value) || 4)))} /></Field>
-            <Field label="字段名称对齐"><SimpleAlignSelect value={draft.signatureLabelAlign} onChange={value => updateDraft("signatureLabelAlign", value)} /></Field>
-            <Field label="填写内容对齐"><SimpleAlignSelect value={draft.signatureValueAlign} onChange={value => updateDraft("signatureValueAlign", value)} /></Field>
-            <Field label="下划线颜色"><WordColorPicker value={draft.signatureLineColor} onChange={value => updateDraft("signatureLineColor", value)} autoColor="#000000" /></Field>
-            <Field label="下划线粗细"><Select value={draft.signatureLineThickness >= 1 ? "thick" : "single"} onValueChange={value => updateDraft("signatureLineThickness", value === "thick" ? 1 : 0.5)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single">细线</SelectItem><SelectItem value="thick">粗线</SelectItem></SelectContent></Select></Field>
-            <Field label="填写文字颜色"><WordColorPicker value={draft.signatureValueColor || draft.color} onChange={value => updateDraft("signatureValueColor", value)} autoColor={draft.color} /><Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => updateDraft("signatureValueColor", "")}>跟随字段颜色</Button></Field>
-            <Field label="备注文字颜色"><WordColorPicker value={draft.signatureRemarkColor || draft.color} onChange={value => updateDraft("signatureRemarkColor", value)} autoColor={draft.color} /><Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => updateDraft("signatureRemarkColor", "")}>跟随字段颜色</Button></Field>
-            <Field label="行间距（磅）"><Input type="number" min={0} max={48} value={draft.signatureRowSpacing} onChange={e => updateDraft("signatureRowSpacing", Math.max(0, Math.min(48, Number(e.target.value) || 0)))} /></Field>
+            <Field label={t("字段名称颜色")}><WordColorPicker value={draft.color} onChange={value => updateDraft("color", value)} autoColor="#000000" /></Field>
+            <Field label={t("整体位置")}><SimpleAlignSelect value={draft.align === "justify" ? "left" : draft.align} onChange={value => updateDraft("align", value)} /></Field>
+            <Field label={t("填写区域宽度（厘米）")}><Input type="number" min={1} max={12} step={0.5} value={draft.signatureLineWidth} onChange={e => updateDraft("signatureLineWidth", Math.max(1, Math.min(12, Number(e.target.value) || 4)))} /></Field>
+            <Field label={t("字段名称对齐")}><SimpleAlignSelect value={draft.signatureLabelAlign} onChange={value => updateDraft("signatureLabelAlign", value)} /></Field>
+            <Field label={t("填写内容对齐")}><SimpleAlignSelect value={draft.signatureValueAlign} onChange={value => updateDraft("signatureValueAlign", value)} /></Field>
+            <Field label={t("下划线颜色")}><WordColorPicker value={draft.signatureLineColor} onChange={value => updateDraft("signatureLineColor", value)} autoColor="#000000" /></Field>
+            <Field label={t("下划线粗细")}><Select value={draft.signatureLineThickness >= 1 ? "thick" : "single"} onValueChange={value => updateDraft("signatureLineThickness", value === "thick" ? 1 : 0.5)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single">{t("细线")}</SelectItem><SelectItem value="thick">{t("粗线")}</SelectItem></SelectContent></Select></Field>
+            <Field label={t("填写文字颜色")}><WordColorPicker value={draft.signatureValueColor || draft.color} onChange={value => updateDraft("signatureValueColor", value)} autoColor={draft.color} /><Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => updateDraft("signatureValueColor", "")}>{t("跟随字段颜色")}</Button></Field>
+            <Field label={t("备注文字颜色")}><WordColorPicker value={draft.signatureRemarkColor || draft.color} onChange={value => updateDraft("signatureRemarkColor", value)} autoColor={draft.color} /><Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => updateDraft("signatureRemarkColor", "")}>{t("跟随字段颜色")}</Button></Field>
+            <Field label={t("行间距（磅）")}><Input type="number" min={0} max={48} value={draft.signatureRowSpacing} onChange={e => updateDraft("signatureRowSpacing", Math.max(0, Math.min(48, Number(e.target.value) || 0)))} /></Field>
           </div>
-          <SettingSwitch label="块内尽量保持同页" checked={draft.signatureKeepTogether} onCheckedChange={value => updateDraft("signatureKeepTogether", value)} />
-          <SettingSwitch label="与前文保持同页" checked={draft.signatureWithPrevious} onCheckedChange={value => updateDraft("signatureWithPrevious", value)} />
+          <SettingSwitch label={t("块内尽量保持同页")} checked={draft.signatureKeepTogether} onCheckedChange={value => updateDraft("signatureKeepTogether", value)} />
+          <SettingSwitch label={t("与前文保持同页")} checked={draft.signatureWithPrevious} onCheckedChange={value => updateDraft("signatureWithPrevious", value)} />
         </PropertyCard> : null}
 
         {isQuote ? (
-          <PropertyCard title="引用块专属样式">
+          <PropertyCard title={t("引用块专属样式")}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="竖条颜色"><WordColorPicker value={draft.quoteBorderColor} onChange={(value) => updateDraft("quoteBorderColor", value)} autoColor="#94A3B8" /></Field>
-              <Field label="竖条粗细 (px)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={12} step={1} value={draft.quoteBorderWidth} onChange={(event) => updateDraft("quoteBorderWidth", Number(event.target.value))} /></Field>
-              <Field label="引用底色"><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F8FAFC" /></Field>
+              <Field label={t("竖条颜色")}><WordColorPicker value={draft.quoteBorderColor} onChange={(value) => updateDraft("quoteBorderColor", value)} autoColor="#94A3B8" /></Field>
+              <Field label={t("竖条粗细 (px)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={12} step={1} value={draft.quoteBorderWidth} onChange={(event) => updateDraft("quoteBorderWidth", Number(event.target.value))} /></Field>
+              <Field label={t("引用底色")}><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F8FAFC" /></Field>
             </div>
           </PropertyCard>
         ) : null}
 
         {isCodeBlock ? (
           <>
-            <PropertyCard title="推荐代码块样式">
+            <PropertyCard title={t("推荐代码块样式")}>
               <div className="grid gap-3 md:grid-cols-2">
                 {codeBlockPresets.map((preset) => (
                   <button
@@ -1139,49 +1140,49 @@ function StyleProperties({
                     )}
                     onClick={() => patchDraft(preset.patch)}
                   >
-                    <div className="text-sm font-semibold text-slate-950 dark:text-zinc-50">{preset.label}</div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{preset.description}</p>
+                    <div className="text-sm font-semibold text-slate-950 dark:text-zinc-50">{t(preset.label)}</div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{t(preset.description)}</p>
                   </button>
                 ))}
               </div>
             </PropertyCard>
 
-            <PropertyCard title="代码块外观">
+            <PropertyCard title={t("代码块外观")}>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="代码底色"><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F8FAFC" allowTransparent /></Field>
-                <Field label="边框颜色"><WordColorPicker value={draft.codeBorderColor} onChange={(value) => updateDraft("codeBorderColor", value)} autoColor="#E2E8F0" /></Field>
-                <Field label="左右内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingX} onChange={(event) => updateDraft("codePaddingX", Number(event.target.value))} /></Field>
-                <Field label="上下内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingY} onChange={(event) => updateDraft("codePaddingY", Number(event.target.value))} /></Field>
+                <Field label={t("代码底色")}><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F8FAFC" allowTransparent /></Field>
+                <Field label={t("边框颜色")}><WordColorPicker value={draft.codeBorderColor} onChange={(value) => updateDraft("codeBorderColor", value)} autoColor="#E2E8F0" /></Field>
+                <Field label={t("左右内边距")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingX} onChange={(event) => updateDraft("codePaddingX", Number(event.target.value))} /></Field>
+                <Field label={t("上下内边距")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={48} value={draft.codePaddingY} onChange={(event) => updateDraft("codePaddingY", Number(event.target.value))} /></Field>
               </div>
             </PropertyCard>
           </>
         ) : null}
 
         {isInlineCode ? (
-          <PropertyCard title="行内代码外观">
-            <Field label="行内底色"><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F1F5F9" /></Field>
+          <PropertyCard title={t("行内代码外观")}>
+            <Field label={t("行内底色")}><WordColorPicker value={draft.backgroundColor} onChange={(value) => updateDraft("backgroundColor", value)} autoColor="#F1F5F9" /></Field>
           </PropertyCard>
         ) : null}
 
         {isHorizontalRule ? (
-          <PropertyCard title="分割线样式">
+          <PropertyCard title={t("分割线样式")}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="线型">
+              <Field label={t("线型")}>
                 <Select value={draft.borderStyle} onValueChange={(value) => updateDraft("borderStyle", value as typeof draft.borderStyle)}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-                  <SelectContent>{borderStyleOptions.filter((option) => option.value !== "none").map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{borderStyleOptions.filter((option) => option.value !== "none").map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="线条颜色"><WordColorPicker value={draft.borderColor} onChange={(value) => updateDraft("borderColor", value)} autoColor="#CBD5E1" /></Field>
-              <Field label="线条粗细 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.25} max={12} step={0.25} value={draft.borderWidth} onChange={(event) => updateDraft("borderWidth", Number(event.target.value))} /></Field>
-              <Field label="段前间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={draft.beforeSpacing} onChange={(event) => updateDraft("beforeSpacing", Number(event.target.value))} /></Field>
-              <Field label="段后间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={draft.afterSpacing} onChange={(event) => updateDraft("afterSpacing", Number(event.target.value))} /></Field>
+              <Field label={t("线条颜色")}><WordColorPicker value={draft.borderColor} onChange={(value) => updateDraft("borderColor", value)} autoColor="#CBD5E1" /></Field>
+              <Field label={t("线条粗细 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.25} max={12} step={0.25} value={draft.borderWidth} onChange={(event) => updateDraft("borderWidth", Number(event.target.value))} /></Field>
+              <Field label={t("段前间距 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={draft.beforeSpacing} onChange={(event) => updateDraft("beforeSpacing", Number(event.target.value))} /></Field>
+              <Field label={t("段后间距 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={draft.afterSpacing} onChange={(event) => updateDraft("afterSpacing", Number(event.target.value))} /></Field>
             </div>
           </PropertyCard>
         ) : null}
 
         {isHeadingStyle ? (
-          <PropertyCard title="标题级别">
+          <PropertyCard title={t("标题级别")}>
             <div className="style-level-control grid h-8 grid-cols-7 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
               {headingLevelOptions.map((option) => (
                 <button
@@ -1196,7 +1197,7 @@ function StyleProperties({
                   onClick={() => setActiveStyleId(option.id)}
                   aria-pressed={activeHeadingStyleId === option.id}
                 >
-                  {option.label}
+                  {t(option.label)}
                 </button>
               ))}
             </div>
@@ -1204,7 +1205,7 @@ function StyleProperties({
         ) : null}
 
         {isList ? (
-          <PropertyCard title="列表级别">
+          <PropertyCard title={t("列表级别")}>
             <div className="style-level-control grid h-8 grid-cols-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
               {listLevelOptions.map((level) => (
                 <button
@@ -1219,24 +1220,23 @@ function StyleProperties({
                   onClick={() => setActiveListLevel(level)}
                   aria-pressed={activeListLevel === level}
                 >
-                  {level} 级
-                </button>
+                  {level}  {t("级")} </button>
               ))}
             </div>
             <div className="mt-3 flex justify-end">
-              <SoftActionButton className="h-8 px-2.5 text-xs" onClick={syncListLevelsFromBody}>同步正文文字样式</SoftActionButton>
+              <SoftActionButton className="h-8 px-2.5 text-xs" onClick={syncListLevelsFromBody}>{t("同步正文文字样式")}</SoftActionButton>
             </div>
           </PropertyCard>
         ) : null}
 
-        {!isTableRoot && !isImage && !isHorizontalRule && !(selectedStyle.id === "signature" && draft.signatureInheritText) ? <PropertyCard title={isHeadingStyle ? `文本属性（当前 ${activeHeadingLevelLabel}）` : isList ? `文本属性（当前 ${activeListLevel} 级）` : isInlineCode ? "行内代码样式" : isCode ? "代码块样式" : isTableNode ? "基础文本样式" : "文本属性"}>
+        {!isTableRoot && !isImage && !isHorizontalRule && !(selectedStyle.id === "signature" && draft.signatureInheritText) ? <PropertyCard title={isHeadingStyle ? t("文本属性（当前 {0}）", [activeHeadingLevelLabel]) : isList ? t("文本属性（当前 {0} 级）", [activeListLevel]) : isInlineCode ? t("行内代码样式") : isCode ? t("代码块样式") : isTableNode ? t("基础文本样式") : t("文本属性")}>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="中文字体"><WordFontPicker value={draft[chineseFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(chineseFontKey, value)} /></Field>
-            <Field label="英文字体"><WordFontPicker value={draft[latinFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(latinFontKey, value)} /></Field>
-            {!isList && (!isTableNode || isTableCaption) ? <Field label="字号"><WordFontSizeSelect value={draft[fontSizeKey] as number} onChange={(value) => updateDraft(fontSizeKey, value)} /></Field> : null}
-            <Field label="文字颜色"><WordColorPicker value={draft[colorKey] as string} onChange={(value) => updateDraft(colorKey, value)} autoColor="#111827" /></Field>
+            <Field label={t("中文字体")}><WordFontPicker value={draft[chineseFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(chineseFontKey, value)} /></Field>
+            <Field label={t("英文字体")}><WordFontPicker value={draft[latinFontKey] as string} options={wordFontOptions} onValueChange={(value) => updateDraft(latinFontKey, value)} /></Field>
+            {!isList && (!isTableNode || isTableCaption) ? <Field label={t("字号")}><WordFontSizeSelect value={draft[fontSizeKey] as number} onChange={(value) => updateDraft(fontSizeKey, value)} /></Field> : null}
+            <Field label={t("文字颜色")}><WordColorPicker value={draft[colorKey] as string} onChange={(value) => updateDraft(colorKey, value)} autoColor="#111827" /></Field>
             {(!isTableNode || isTableCaption) ? (
-              <Field label="字重">
+              <Field label={t("字重")}>
                 <div className="style-weight-control grid h-8 grid-cols-[36px_minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
                   <TooltipButton
                     type="button"
@@ -1244,9 +1244,9 @@ function StyleProperties({
                       "h-full w-full min-h-0 rounded-none border-r border-slate-200 text-[15px] font-black transition dark:border-zinc-700",
                       Number(draft[fontWeightKey]) >= 600 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
                     )}
-                    aria-label="加粗"
+                    aria-label={t("加粗")}
                     aria-pressed={Number(draft[fontWeightKey]) >= 600}
-                    tooltip="加粗"
+                    tooltip={t("加粗")}
                     onClick={() => updateDraft(fontWeightKey, Number(draft[fontWeightKey]) >= 600 ? "400" : "700")}
                   >
                     B
@@ -1255,7 +1255,7 @@ function StyleProperties({
                     <SelectTrigger className="h-full w-full self-stretch data-[size=default]:h-full rounded-none border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {fontWeightOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1266,31 +1266,30 @@ function StyleProperties({
         </PropertyCard> : null}
 
         {isImage ? (
-          <PropertyCard title="图片样式">
+          <PropertyCard title={t("图片样式")}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="图片对齐"><SimpleAlignSelect value={draft.imageAlign} onChange={(value) => updateDraft("imageAlign", value)} /></Field>
-              <Field label="宽度模式">
+              <Field label={t("图片对齐")}><SimpleAlignSelect value={draft.imageAlign} onChange={(value) => updateDraft("imageAlign", value)} /></Field>
+              <Field label={t("宽度模式")}>
                 <Select value={draft.imageWidthMode} onValueChange={(value) => updateDraft("imageWidthMode", value as typeof draft.imageWidthMode)}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-                  <SelectContent>{imageWidthModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{imageWidthModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               {draft.imageWidthMode === "custom" ? (
-                <Field label="宽度比例 (%)">
+                <Field label={t("宽度比例 (%)")}>
                   <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={20} max={100} value={draft.imageWidthPercent} onChange={(event) => updateDraft("imageWidthPercent", Number(event.target.value))} />
                 </Field>
               ) : null}
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-zinc-400">
-              默认“铺满正文宽度”会按纸张去掉页边距后的内容宽度导出；题注文字在“图片题注”里单独配置。图题请直接写在图片的 Markdown 替代文本中：<code>![图 2-1 网络结构图](图片路径)</code>；空替代文本则不生成题注。
-            </p>
+               {t("默认“铺满正文宽度”会按纸张去掉页边距后的内容宽度导出；题注文字在“图片题注”里单独配置。图题请直接写在图片的 Markdown 替代文本中：")}<code>{t("![图 2-1 网络结构图](图片路径)")}</code>{t("；空替代文本则不生成题注。")} </p>
           </PropertyCard>
         ) : null}
 
         {isList ? (
-          <PropertyCard title={`${activeListLevel} 级列表格式`}>
+          <PropertyCard title={t("{0} 级列表格式", [activeListLevel])}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label={`${activeListLevel} 级类型`}>
+              <Field label={t("{0} 级类型", [activeListLevel])}>
                 <div className="style-list-type-control grid h-8 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
                   {listLevelTypeOptions.map((option) => (
                     <button
@@ -1303,67 +1302,67 @@ function StyleProperties({
                       onClick={() => updateDraft(activeListLevelTypeKey, option.value)}
                       aria-pressed={activeListLevelType === option.value}
                     >
-                      {option.label}
+                      {t(option.label)}
                     </button>
                   ))}
                 </div>
               </Field>
               {activeListLevelType === "bullet" ? (
-                <Field label={`${activeListLevel} 级项目符号`}>
+                <Field label={t("{0} 级项目符号", [activeListLevel])}>
                   <Select value={draft[activeListLevelMarkerKey]} onValueChange={(value) => updateDraft(activeListLevelMarkerKey, value as StyleDraft[typeof activeListLevelMarkerKey])}>
                     <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {listMarkerOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.marker} {option.label}</SelectItem>
+                        <SelectItem key={option.value} value={option.value}>{option.marker} {t(option.label)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </Field>
               ) : (
-                <Field label={`${activeListLevel} 级编号格式`}>
+                <Field label={t("{0} 级编号格式", [activeListLevel])}>
                   <Select value={listNumberFormatOptions.includes(draft[activeListLevelNumberKey] as (typeof listNumberFormatOptions)[number]) ? draft[activeListLevelNumberKey] : "1."} onValueChange={(value) => updateDraft(activeListLevelNumberKey, value)}>
                     <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {listNumberFormatOptions.map((format) => <SelectItem key={format} value={format}>{format}</SelectItem>)}
+                      {listNumberFormatOptions.map((format) => <SelectItem key={format} value={format}>{t(format)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
               )}
               {activeListLevelType === "number" ? (
-                <Field label="编号连续性">
+                <Field label={t("编号连续性")}>
                   <Select value={draft[activeListLevelNumberingModeKey]} onValueChange={(value) => updateDraft(activeListLevelNumberingModeKey, value as StyleDraft[typeof activeListLevelNumberingModeKey])}>
                     <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {listNumberingModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                      {listNumberingModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
               ) : null}
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label={`${activeListLevel} 级缩进 (中文字符)`}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={12} step={0.5} value={draft[activeListLevelIndentKey]} onChange={(event) => updateDraft(activeListLevelIndentKey, Number(event.target.value))} /></Field>
-              <Field label="符号到文字 (英文空格)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={4} step={0.5} value={draft[activeListLevelTextIndentKey]} onChange={(event) => updateDraft(activeListLevelTextIndentKey, Number(event.target.value))} /></Field>
-              <Field label="换行对齐">
+              <Field label={t("{0} 级缩进 (中文字符)", [activeListLevel])}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={12} step={0.5} value={draft[activeListLevelIndentKey]} onChange={(event) => updateDraft(activeListLevelIndentKey, Number(event.target.value))} /></Field>
+              <Field label={t("符号到文字 (英文空格)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={4} step={0.5} value={draft[activeListLevelTextIndentKey]} onChange={(event) => updateDraft(activeListLevelTextIndentKey, Number(event.target.value))} /></Field>
+              <Field label={t("换行对齐")}>
                 <Select value={draft[activeListLevelWrapModeKey]} onValueChange={(value) => updateDraft(activeListLevelWrapModeKey, value as StyleDraft[typeof activeListLevelWrapModeKey])}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {listWrapModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                    {listWrapModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={`${activeListLevel} 级字号`}><WordFontSizeSelect value={draft[activeListLevelFontSizeKey] as number} onChange={(value) => updateDraft(activeListLevelFontSizeKey, value)} /></Field>
+              <Field label={t("{0} 级字号", [activeListLevel])}><WordFontSizeSelect value={draft[activeListLevelFontSizeKey] as number} onChange={(value) => updateDraft(activeListLevelFontSizeKey, value)} /></Field>
             </div>
           </PropertyCard>
         ) : null}
 
         {(!isTableNode || isTableCaption) && !isInlineCode && !isHorizontalRule ? (
-          <PropertyCard title={isHeadingStyle ? `段落与间距（当前 ${activeHeadingLevelLabel}）` : isList ? `段落与间距（当前 ${activeListLevel} 级）` : usesBlockSpacing ? "块级间距" : "段落与间距"}>
+          <PropertyCard title={isHeadingStyle ? t("段落与间距（当前 {0}）", [activeHeadingLevelLabel]) : isList ? t("段落与间距（当前 {0} 级）", [activeListLevel]) : usesBlockSpacing ? t("块级间距") : t("段落与间距")}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="行高"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft[lineHeightKey] as string} onChange={(event) => updateDraft(lineHeightKey, event.target.value)} /></Field>
-              {!usesBlockSpacing && !isList ? <Field label="首行缩进 (字符)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={4} step={0.5} value={draft.firstLineIndent} onChange={(event) => updateDraft("firstLineIndent", Number(event.target.value))} /></Field> : null}
-              {!usesBlockSpacing && !isCaption ? <Field label="对齐方式"><AlignButtonGroup value={draft[alignKey] as HorizontalAlign} onChange={(value) => updateDraft(alignKey, value)} /></Field> : null}
-              <Field label="段前间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft[beforeSpacingKey] as number} onChange={(event) => updateDraft(beforeSpacingKey, Number(event.target.value))} /></Field>
-              <Field label="段后间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft[afterSpacingKey] as number} onChange={(event) => updateDraft(afterSpacingKey, Number(event.target.value))} /></Field>
+              <Field label={t("行高")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft[lineHeightKey] as string} onChange={(event) => updateDraft(lineHeightKey, event.target.value)} /></Field>
+              {!usesBlockSpacing && !isList ? <Field label={t("首行缩进 (字符)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={4} step={0.5} value={draft.firstLineIndent} onChange={(event) => updateDraft("firstLineIndent", Number(event.target.value))} /></Field> : null}
+              {!usesBlockSpacing && !isCaption ? <Field label={t("对齐方式")}><AlignButtonGroup value={draft[alignKey] as HorizontalAlign} onChange={(value) => updateDraft(alignKey, value)} /></Field> : null}
+              <Field label={t("段前间距 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft[beforeSpacingKey] as number} onChange={(event) => updateDraft(beforeSpacingKey, Number(event.target.value))} /></Field>
+              <Field label={t("段后间距 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft[afterSpacingKey] as number} onChange={(event) => updateDraft(afterSpacingKey, Number(event.target.value))} /></Field>
             </div>
           </PropertyCard>
         ) : null}
@@ -1372,7 +1371,7 @@ function StyleProperties({
           <>
             {isTableRoot ? (
             <>
-            <PropertyCard title="表格预设">
+            <PropertyCard title={t("表格预设")}>
               <div className="grid gap-3 md:grid-cols-2">
                 {tablePresets.map((preset) => (
                   <button
@@ -1384,74 +1383,74 @@ function StyleProperties({
                     )}
                     onClick={() => patchDraft(preset.patch)}
                   >
-                    <div className="text-sm font-semibold text-slate-950 dark:text-zinc-50">{preset.label}</div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{preset.description}</p>
+                    <div className="text-sm font-semibold text-slate-950 dark:text-zinc-50">{t(preset.label)}</div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{t(preset.description)}</p>
                   </button>
                 ))}
               </div>
             </PropertyCard>
 
-            <PropertyCard title="表格布局">
+            <PropertyCard title={t("表格布局")}>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="表格布局模式"><Select value={draft.tableLayout} onValueChange={(value) => updateDraft("tableLayout", value as StyleDraft["tableLayout"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动适配内容</SelectItem><SelectItem value="fixed">固定列宽</SelectItem></SelectContent></Select></Field>
-                <Field label="整体水平对齐"><SimpleAlignSelect value={draft.tableHorizontalAlign} onChange={(value) => updateDraft("tableHorizontalAlign", value)} /></Field>
-                <SettingSwitch label="铺满正文宽度" checked={draft.fitToPageWidth} onCheckedChange={(checked) => updateDraft("fitToPageWidth", checked)} />
-                <SettingSwitch label="隔行底色" checked={draft.rowStripe} onCheckedChange={(checked) => updateDraft("rowStripe", checked)} />
-                <Field label="表格宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={40} max={100} value={draft.tableWidthPercent} onChange={(event) => updateDraft("tableWidthPercent", Number(event.target.value))} /></Field>
-                <Field label="列宽模式"><Select value={draft.columnWidthMode} onValueChange={(value) => updateDraft("columnWidthMode", value as StyleDraft["columnWidthMode"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动分配</SelectItem><SelectItem value="custom">自定义百分比</SelectItem></SelectContent></Select></Field>
-                <Field label="第一列宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.firstColumnWidth} onChange={(event) => updateDraft("firstColumnWidth", Number(event.target.value))} /></Field>
-                <Field label="第二列宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.secondColumnWidth} onChange={(event) => updateDraft("secondColumnWidth", Number(event.target.value))} /></Field>
-                <Field label="其余列总宽度 (%)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.thirdColumnWidth} onChange={(event) => updateDraft("thirdColumnWidth", Number(event.target.value))} /></Field>
-                <Field label="最小行高 (px，0 为自动)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={80} value={draft.minRowHeight} onChange={(event) => updateDraft("minRowHeight", Number(event.target.value))} /></Field>
-                <SettingSwitch label="单元格自动换行" checked={draft.cellWrap} onCheckedChange={(checked) => updateDraft("cellWrap", checked)} />
-                <SettingSwitch label="跨页重复表头" checked={draft.repeatHeaderOnEachPage} onCheckedChange={(checked) => updateDraft("repeatHeaderOnEachPage", checked)} />
-                <Field label="单元格左右内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft.cellPaddingX} onChange={(event) => updateDraft("cellPaddingX", Number(event.target.value))} /></Field>
-                <Field label="单元格上下内边距"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft.cellPaddingY} onChange={(event) => updateDraft("cellPaddingY", Number(event.target.value))} /></Field>
+                <Field label={t("表格布局模式")}><Select value={draft.tableLayout} onValueChange={(value) => updateDraft("tableLayout", value as StyleDraft["tableLayout"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">{t("自动适配内容")}</SelectItem><SelectItem value="fixed">{t("固定列宽")}</SelectItem></SelectContent></Select></Field>
+                <Field label={t("整体水平对齐")}><SimpleAlignSelect value={draft.tableHorizontalAlign} onChange={(value) => updateDraft("tableHorizontalAlign", value)} /></Field>
+                <SettingSwitch label={t("铺满正文宽度")} checked={draft.fitToPageWidth} onCheckedChange={(checked) => updateDraft("fitToPageWidth", checked)} />
+                <SettingSwitch label={t("隔行底色")} checked={draft.rowStripe} onCheckedChange={(checked) => updateDraft("rowStripe", checked)} />
+                <Field label={t("表格宽度 (%)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={40} max={100} value={draft.tableWidthPercent} onChange={(event) => updateDraft("tableWidthPercent", Number(event.target.value))} /></Field>
+                <Field label={t("列宽模式")}><Select value={draft.columnWidthMode} onValueChange={(value) => updateDraft("columnWidthMode", value as StyleDraft["columnWidthMode"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">{t("自动分配")}</SelectItem><SelectItem value="custom">{t("自定义百分比")}</SelectItem></SelectContent></Select></Field>
+                <Field label={t("第一列宽度 (%)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.firstColumnWidth} onChange={(event) => updateDraft("firstColumnWidth", Number(event.target.value))} /></Field>
+                <Field label={t("第二列宽度 (%)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.secondColumnWidth} onChange={(event) => updateDraft("secondColumnWidth", Number(event.target.value))} /></Field>
+                <Field label={t("其余列总宽度 (%)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={10} max={80} disabled={draft.columnWidthMode === "auto"} value={draft.thirdColumnWidth} onChange={(event) => updateDraft("thirdColumnWidth", Number(event.target.value))} /></Field>
+                <Field label={t("最小行高 (px，0 为自动)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={80} value={draft.minRowHeight} onChange={(event) => updateDraft("minRowHeight", Number(event.target.value))} /></Field>
+                <SettingSwitch label={t("单元格自动换行")} checked={draft.cellWrap} onCheckedChange={(checked) => updateDraft("cellWrap", checked)} />
+                <SettingSwitch label={t("跨页重复表头")} checked={draft.repeatHeaderOnEachPage} onCheckedChange={(checked) => updateDraft("repeatHeaderOnEachPage", checked)} />
+                <Field label={t("单元格左右内边距")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft.cellPaddingX} onChange={(event) => updateDraft("cellPaddingX", Number(event.target.value))} /></Field>
+                <Field label={t("单元格上下内边距")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" value={draft.cellPaddingY} onChange={(event) => updateDraft("cellPaddingY", Number(event.target.value))} /></Field>
               </div>
             </PropertyCard>
 
-            <PropertyCard title="边框与网格线">
+            <PropertyCard title={t("边框与网格线")}>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="边框线样式"><Select value={draft.borderStyle} onValueChange={(value) => updateDraft("borderStyle", value as StyleDraft["borderStyle"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent>{borderStyleOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></Field>
-                <Field label="边框粗细 (px)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={6} step={0.5} value={draft.borderWidth} onChange={(event) => updateDraft("borderWidth", Number(event.target.value))} /></Field>
-                <Field label="边框颜色"><WordColorPicker value={draft.borderColor} onChange={(value) => updateDraft("borderColor", value)} autoColor="#CBD5E1" /></Field>
-                <Field label="上边框粗细"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderTopWidth} onChange={(event) => updateDraft("borderTopWidth", Number(event.target.value))} /></Field>
-                <Field label="右边框粗细"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderRightWidth} onChange={(event) => updateDraft("borderRightWidth", Number(event.target.value))} /></Field>
-                <Field label="下边框粗细"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderBottomWidth} onChange={(event) => updateDraft("borderBottomWidth", Number(event.target.value))} /></Field>
-                <Field label="左边框粗细"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderLeftWidth} onChange={(event) => updateDraft("borderLeftWidth", Number(event.target.value))} /></Field>
-                <Field label="表头边框颜色"><WordColorPicker value={draft.headerBorderColor} onChange={(value) => updateDraft("headerBorderColor", value)} autoColor="#CBD5E1" /></Field>
-                <Field label="表头边框粗细"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.headerBorderWidth} onChange={(event) => updateDraft("headerBorderWidth", Number(event.target.value))} /></Field>
-                <Field label="表体边框颜色"><WordColorPicker value={draft.bodyBorderColor} onChange={(value) => updateDraft("bodyBorderColor", value)} autoColor="#CBD5E1" /></Field>
-                <Field label="表体边框粗细"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.bodyBorderWidth} onChange={(event) => updateDraft("bodyBorderWidth", Number(event.target.value))} /></Field>
-                <SettingSwitch label="外边框加粗" checked={draft.outerBorderStrong} onCheckedChange={(checked) => updateDraft("outerBorderStrong", checked)} />
-                <SettingSwitch label="显示内竖线" checked={draft.showInnerVerticalBorder} onCheckedChange={(checked) => updateDraft("showInnerVerticalBorder", checked)} />
-                <SettingSwitch label="显示内横线" checked={draft.showInnerHorizontalBorder} onCheckedChange={(checked) => updateDraft("showInnerHorizontalBorder", checked)} />
+                <Field label={t("边框线样式")}><Select value={draft.borderStyle} onValueChange={(value) => updateDraft("borderStyle", value as StyleDraft["borderStyle"])}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent>{borderStyleOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent></Select></Field>
+                <Field label={t("边框粗细 (px)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={6} step={0.5} value={draft.borderWidth} onChange={(event) => updateDraft("borderWidth", Number(event.target.value))} /></Field>
+                <Field label={t("边框颜色")}><WordColorPicker value={draft.borderColor} onChange={(value) => updateDraft("borderColor", value)} autoColor="#CBD5E1" /></Field>
+                <Field label={t("上边框粗细")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderTopWidth} onChange={(event) => updateDraft("borderTopWidth", Number(event.target.value))} /></Field>
+                <Field label={t("右边框粗细")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderRightWidth} onChange={(event) => updateDraft("borderRightWidth", Number(event.target.value))} /></Field>
+                <Field label={t("下边框粗细")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderBottomWidth} onChange={(event) => updateDraft("borderBottomWidth", Number(event.target.value))} /></Field>
+                <Field label={t("左边框粗细")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.borderLeftWidth} onChange={(event) => updateDraft("borderLeftWidth", Number(event.target.value))} /></Field>
+                <Field label={t("表头边框颜色")}><WordColorPicker value={draft.headerBorderColor} onChange={(value) => updateDraft("headerBorderColor", value)} autoColor="#CBD5E1" /></Field>
+                <Field label={t("表头边框粗细")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.headerBorderWidth} onChange={(event) => updateDraft("headerBorderWidth", Number(event.target.value))} /></Field>
+                <Field label={t("表体边框颜色")}><WordColorPicker value={draft.bodyBorderColor} onChange={(value) => updateDraft("bodyBorderColor", value)} autoColor="#CBD5E1" /></Field>
+                <Field label={t("表体边框粗细")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={8} step={0.5} value={draft.bodyBorderWidth} onChange={(event) => updateDraft("bodyBorderWidth", Number(event.target.value))} /></Field>
+                <SettingSwitch label={t("外边框加粗")} checked={draft.outerBorderStrong} onCheckedChange={(checked) => updateDraft("outerBorderStrong", checked)} />
+                <SettingSwitch label={t("显示内竖线")} checked={draft.showInnerVerticalBorder} onCheckedChange={(checked) => updateDraft("showInnerVerticalBorder", checked)} />
+                <SettingSwitch label={t("显示内横线")} checked={draft.showInnerHorizontalBorder} onCheckedChange={(checked) => updateDraft("showInnerHorizontalBorder", checked)} />
               </div>
             </PropertyCard>
             </>
             ) : null}
 
             {isTableHeader ? (
-              <PropertyCard title="表头样式">
+              <PropertyCard title={t("表头样式")}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <SettingSwitch label="表头加粗" checked={draft.headerBold} onCheckedChange={(checked) => updateDraft("headerBold", checked)} />
-                  <Field label="表头水平对齐"><SimpleAlignSelect value={draft.headerAlign} onChange={(value) => updateDraft("headerAlign", value)} /></Field>
-                  <Field label="表头垂直对齐"><VerticalAlignSelect value={draft.headerVerticalAlign} onChange={(value) => updateDraft("headerVerticalAlign", value)} /></Field>
-                  <Field label="表头字号"><WordFontSizeSelect value={draft.headerFontSize} onChange={(value) => updateDraft("headerFontSize", value)} /></Field>
-                  <Field label="表头行高"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft.headerLineHeight} onChange={(event) => updateDraft("headerLineHeight", event.target.value)} /></Field>
-                  <Field label="表头背景色"><WordColorPicker value={draft.headerBackgroundColor} onChange={(value) => updateDraft("headerBackgroundColor", value)} autoColor="#EEF2FF" allowTransparent /></Field>
+                  <SettingSwitch label={t("表头加粗")} checked={draft.headerBold} onCheckedChange={(checked) => updateDraft("headerBold", checked)} />
+                  <Field label={t("表头水平对齐")}><SimpleAlignSelect value={draft.headerAlign} onChange={(value) => updateDraft("headerAlign", value)} /></Field>
+                  <Field label={t("表头垂直对齐")}><VerticalAlignSelect value={draft.headerVerticalAlign} onChange={(value) => updateDraft("headerVerticalAlign", value)} /></Field>
+                  <Field label={t("表头字号")}><WordFontSizeSelect value={draft.headerFontSize} onChange={(value) => updateDraft("headerFontSize", value)} /></Field>
+                  <Field label={t("表头行高")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft.headerLineHeight} onChange={(event) => updateDraft("headerLineHeight", event.target.value)} /></Field>
+                  <Field label={t("表头背景色")}><WordColorPicker value={draft.headerBackgroundColor} onChange={(value) => updateDraft("headerBackgroundColor", value)} autoColor="#EEF2FF" allowTransparent /></Field>
                 </div>
               </PropertyCard>
             ) : null}
 
             {isTableBody ? (
-              <PropertyCard title="表格体样式">
+              <PropertyCard title={t("表格体样式")}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="表格体水平对齐"><SimpleAlignSelect value={draft.bodyAlign} onChange={(value) => updateDraft("bodyAlign", value)} /></Field>
-                  <Field label="表格体垂直对齐"><VerticalAlignSelect value={draft.bodyVerticalAlign} onChange={(value) => updateDraft("bodyVerticalAlign", value)} /></Field>
-                  <Field label="表格体字号"><WordFontSizeSelect value={draft.bodyFontSize} onChange={(value) => updateDraft("bodyFontSize", value)} /></Field>
-                  <Field label="表格体行高"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft.bodyLineHeight} onChange={(event) => updateDraft("bodyLineHeight", event.target.value)} /></Field>
-                  <Field label="表格体底色"><WordColorPicker value={draft.bodyBackgroundColor} onChange={(value) => updateDraft("bodyBackgroundColor", value)} autoColor="#FFFFFF" /></Field>
+                  <Field label={t("表格体水平对齐")}><SimpleAlignSelect value={draft.bodyAlign} onChange={(value) => updateDraft("bodyAlign", value)} /></Field>
+                  <Field label={t("表格体垂直对齐")}><VerticalAlignSelect value={draft.bodyVerticalAlign} onChange={(value) => updateDraft("bodyVerticalAlign", value)} /></Field>
+                  <Field label={t("表格体字号")}><WordFontSizeSelect value={draft.bodyFontSize} onChange={(value) => updateDraft("bodyFontSize", value)} /></Field>
+                  <Field label={t("表格体行高")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={draft.bodyLineHeight} onChange={(event) => updateDraft("bodyLineHeight", event.target.value)} /></Field>
+                  <Field label={t("表格体底色")}><WordColorPicker value={draft.bodyBackgroundColor} onChange={(value) => updateDraft("bodyBackgroundColor", value)} autoColor="#FFFFFF" /></Field>
                 </div>
               </PropertyCard>
             ) : null}
@@ -1460,35 +1459,35 @@ function StyleProperties({
         ) : null}
 
         {isCaption ? (
-          <PropertyCard title={isTableCaption ? "表格题注规则" : "图片题注规则"}>
+          <PropertyCard title={isTableCaption ? t("表格题注规则") : t("图片题注规则")}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="题注位置">
+              <Field label={t("题注位置")}>
                 <Select value={draft.captionPosition} onValueChange={(value) => updateDraft("captionPosition", value as typeof draft.captionPosition)}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-                  <SelectContent>{captionPositionOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{captionPositionOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="题注对齐"><SimpleAlignSelect value={draft.captionAlign} onChange={(value) => updateDraft("captionAlign", value)} /></Field>
-              <SettingSwitch label="题注自动编号" checked={draft.captionNumbering} onCheckedChange={(checked) => updateDraft("captionNumbering", checked)} />
-              <Field label="编号格式">
+              <Field label={t("题注对齐")}><SimpleAlignSelect value={draft.captionAlign} onChange={(value) => updateDraft("captionAlign", value)} /></Field>
+              <SettingSwitch label={t("题注自动编号")} checked={draft.captionNumbering} onCheckedChange={(checked) => updateDraft("captionNumbering", checked)} />
+              <Field label={t("编号格式")}>
                 <Select disabled={!draft.captionNumbering} value={draft.captionNumberFormat} onValueChange={(value) => updateDraft("captionNumberFormat", value)}>
                   <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-                  <SelectContent>{captionNumberFormatOptions.map((format) => <SelectItem key={format} value={format}>{format}</SelectItem>)}</SelectContent>
+                  <SelectContent>{captionNumberFormatOptions.map((format) => <SelectItem key={format} value={format}>{t(format)}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <p className="text-xs text-slate-500 sm:col-span-2 dark:text-zinc-400">关闭时保留题注原文；开启后按所选格式重新编号。</p>
+              <p className="text-xs text-slate-500 sm:col-span-2 dark:text-zinc-400">{t("关闭时保留题注原文；开启后按所选格式重新编号。")}</p>
             </div>
           </PropertyCard>
         ) : null}
 
         {isHeading ? (
-          <PropertyCard title={`编号与层级（当前 ${activeHeadingLevelLabel}）`}>
-            <SettingSwitch label="自动编号" checked={draft.autoNumbering} onCheckedChange={handleAutoNumberingChange} />
-            <Field label="编号格式"><Select value={draft.numberFormat} onValueChange={handleNumberFormatChange}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent>{numberFormatOptions.map((format) => <SelectItem key={format} value={format}>{format}</SelectItem>)}</SelectContent></Select></Field>
+          <PropertyCard title={t("编号与层级（当前 {0}）", [activeHeadingLevelLabel])}>
+            <SettingSwitch label={t("自动编号")} checked={draft.autoNumbering} onCheckedChange={handleAutoNumberingChange} />
+            <Field label={t("编号格式")}><Select value={draft.numberFormat} onValueChange={handleNumberFormatChange}><SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger><SelectContent>{numberFormatOptions.map((format) => <SelectItem key={format} value={format}>{t(format)}</SelectItem>)}</SelectContent></Select></Field>
             {isHeading ? (
               <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-900 dark:border-indigo-500/30 dark:bg-indigo-500/12 dark:text-indigo-200">
-                当前标题建议编号：<span className="font-semibold">{getDefaultNumberFormat(draft.styleId)}</span>
-                {draft.numberFormat !== getDefaultNumberFormat(draft.styleId) ? <Button type="button" variant="link" className="ml-1 h-auto p-0 text-xs font-semibold text-indigo-700 dark:text-indigo-200" onClick={applyHeadingLevelNumbering}>恢复层级编号</Button> : null}
+                 {t("当前标题建议编号：")}<span className="font-semibold">{getDefaultNumberFormat(draft.styleId)}</span>
+                {draft.numberFormat !== getDefaultNumberFormat(draft.styleId) ? <Button type="button" variant="link" className="ml-1 h-auto p-0 text-xs font-semibold text-indigo-700 dark:text-indigo-200" onClick={applyHeadingLevelNumbering}>{t("恢复层级编号")}</Button> : null}
               </div>
             ) : null}
           </PropertyCard>
@@ -1509,32 +1508,32 @@ function MarkdownFeatureStyleSwitch({
 }) {
   if (selectedStyleId === "source-code") {
     return (
-      <PropertyCard title="代码块映射">
-        <SettingSwitch label="启用代码块样式" checked={markdownFeatures.codeBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ codeBlock: checked })} />
+      <PropertyCard title={t("代码块映射")}>
+        <SettingSwitch label={t("启用代码块样式")} checked={markdownFeatures.codeBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ codeBlock: checked })} />
       </PropertyCard>
     );
   }
 
   if (selectedStyleId === "quote") {
     return (
-      <PropertyCard title="引用块映射">
-        <SettingSwitch label="启用引用块样式" checked={markdownFeatures.quoteBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ quoteBlock: checked })} />
+      <PropertyCard title={t("引用块映射")}>
+        <SettingSwitch label={t("启用引用块样式")} checked={markdownFeatures.quoteBlock} onCheckedChange={(checked) => patchMarkdownFeatures({ quoteBlock: checked })} />
       </PropertyCard>
     );
   }
 
   if (selectedStyleId === "inline-code") {
     return (
-      <PropertyCard title="行内代码映射">
-        <SettingSwitch label="启用行内代码样式" checked={markdownFeatures.inlineCode} onCheckedChange={(checked) => patchMarkdownFeatures({ inlineCode: checked })} />
+      <PropertyCard title={t("行内代码映射")}>
+        <SettingSwitch label={t("启用行内代码样式")} checked={markdownFeatures.inlineCode} onCheckedChange={(checked) => patchMarkdownFeatures({ inlineCode: checked })} />
       </PropertyCard>
     );
   }
 
   if (selectedStyleId === "horizontal-rule") {
     return (
-      <PropertyCard title="分割线映射">
-        <SettingSwitch label="保留 Markdown 分割线" checked={markdownFeatures.horizontalRule} onCheckedChange={(checked) => patchMarkdownFeatures({ horizontalRule: checked })} />
+      <PropertyCard title={t("分割线映射")}>
+        <SettingSwitch label={t("保留 Markdown 分割线")} checked={markdownFeatures.horizontalRule} onCheckedChange={(checked) => patchMarkdownFeatures({ horizontalRule: checked })} />
       </PropertyCard>
     );
   }
@@ -1553,8 +1552,8 @@ function clampPreviewZoom(value: number) {
 
 function formatPaperPreviewLabel(pageSettings: PageSettingsDraft) {
   const paper = paperSizeOptions.find((option) => option.value === pageSettings.paperSize);
-  const orientation = pageSettings.orientation === "landscape" ? "横向" : "纵向";
-  return `${paper?.label ?? pageSettings.paperSize} · ${orientation}`;
+  const orientation = pageSettings.orientation === "landscape" ? t("横向") : t("纵向");
+  return t("{0} · {1}", [paper?.label ?? pageSettings.paperSize, orientation]);
 }
 
 function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWidth, setWidth, markdown, markdownSourcePath }: { selectedStyle?: StyleNode; styleConfig: TemplateStyleConfig; zoom: number; setZoom: (value: number | ((current: number) => number)) => void; width: number; maxWidth: number; setWidth: (value: number | ((current: number) => number)) => void; markdown?: string; markdownSourcePath?: string }) {
@@ -1618,7 +1617,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWi
     <aside className="relative flex min-h-[430px] shrink-0 flex-col overflow-visible border-t border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900/70 @min-[720px]/style-editor:col-span-2 @min-[720px]/style-editor:min-h-[520px] @min-[1280px]/style-editor:col-span-1 @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-t-0">
       <div
         role="separator"
-        aria-label="调整 Word 预览宽度"
+        aria-label={t("调整 Word 预览宽度")}
         aria-orientation="vertical"
         aria-valuemin={320}
         aria-valuemax={Math.round(maxWidth)}
@@ -1634,7 +1633,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWi
         <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-200 transition-colors group-hover:bg-blue-400 group-focus-visible:bg-blue-500 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
       </div>
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
-        <p className="text-sm font-semibold text-slate-400 dark:text-zinc-500">实时预览（{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
+        <p className="text-sm font-semibold text-slate-400 dark:text-zinc-500">{t("实时预览（")}{formatPaperPreviewLabel(styleConfig.pageSettings)}）</p>
         <WordPreviewToolbar
           zoom={zoom}
           canZoomOut={zoom > previewZoomMin}
@@ -1646,7 +1645,7 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWi
         />
       </div>
       <div className="min-h-0 flex-1" onWheel={handlePreviewWheel}>
-        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} markdown={markdown} markdownSourcePath={markdownSourcePath} paginate={Boolean(markdown?.trim())} showTocPage badgeText={selectedStyle ? `当前：${selectedStyle.displayName}` : "文档结构预览"} interactiveViewport paperTheme={paperTheme} viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
+        <WordPreviewPage selectedStyle={selectedStyle} styleConfig={styleConfig} zoom={zoom} markdown={markdown} markdownSourcePath={markdownSourcePath} paginate={Boolean(markdown?.trim())} showTocPage badgeText={selectedStyle ? t("当前：{0}", [t(selectedStyle.displayName)]) : t("文档结构预览")} interactiveViewport paperTheme={paperTheme} viewportClassName="dark:bg-zinc-950/95 dark:ring-1 dark:ring-zinc-800/80" />
       </div>
     </aside>
   );
@@ -1654,10 +1653,10 @@ function PreviewColumn({ selectedStyle, styleConfig, zoom, setZoom, width, maxWi
 
 function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChange: (value: HorizontalAlign) => void }) {
   const options: Array<{ value: HorizontalAlign; label: string; icon: LucideIcon }> = [
-    { value: "left", label: "左对齐", icon: AlignLeft },
-    { value: "center", label: "居中对齐", icon: AlignCenter },
-    { value: "right", label: "右对齐", icon: AlignRight },
-    { value: "justify", label: "两端对齐", icon: AlignJustify },
+    { value: "left", label: t("左对齐"), icon: AlignLeft },
+    { value: "center", label: t("居中对齐"), icon: AlignCenter },
+    { value: "right", label: t("右对齐"), icon: AlignRight },
+    { value: "justify", label: t("两端对齐"), icon: AlignJustify },
   ];
 
   return (
@@ -1668,8 +1667,8 @@ function AlignButtonGroup({ value, onChange }: { value: HorizontalAlign; onChang
           type="button"
           className={cn("h-full w-full min-h-0 rounded-none border-r border-slate-200 last:border-r-0 dark:border-zinc-700", value === optionValue ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200" : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200")}
           onClick={() => onChange(optionValue)}
-          tooltip={label}
-          aria-label={label}
+          tooltip={t(label)}
+          aria-label={t(label)}
           aria-pressed={value === optionValue}
         >
           <Icon className="size-3.5" />
@@ -1684,9 +1683,9 @@ function SimpleAlignSelect({ value, onChange }: { value: Exclude<HorizontalAlign
     <Select value={value} onValueChange={(next) => onChange(next as Exclude<HorizontalAlign, "justify">)}>
       <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
       <SelectContent>
-        <SelectItem value="left">左对齐</SelectItem>
-        <SelectItem value="center">居中</SelectItem>
-        <SelectItem value="right">右对齐</SelectItem>
+        <SelectItem value="left">{t("左对齐")}</SelectItem>
+        <SelectItem value="center">{t("居中")}</SelectItem>
+        <SelectItem value="right">{t("右对齐")}</SelectItem>
       </SelectContent>
     </Select>
   );
@@ -1697,9 +1696,9 @@ function VerticalAlignSelect({ value, onChange }: { value: VerticalAlign; onChan
     <Select value={value} onValueChange={(next) => onChange(next as VerticalAlign)}>
       <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
       <SelectContent>
-        <SelectItem value="top">顶端对齐</SelectItem>
-        <SelectItem value="middle">垂直居中</SelectItem>
-        <SelectItem value="bottom">底端对齐</SelectItem>
+        <SelectItem value="top">{t("顶端对齐")}</SelectItem>
+        <SelectItem value="middle">{t("垂直居中")}</SelectItem>
+        <SelectItem value="bottom">{t("底端对齐")}</SelectItem>
       </SelectContent>
     </Select>
   );
@@ -1715,11 +1714,11 @@ function PropertyCard({ title, children }: { title: string; children: ReactNode 
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="min-w-0 space-y-1"><Label className="block text-[13px] leading-4 text-slate-700 dark:text-zinc-300">{label}</Label>{children}</div>;
+  return <div className="min-w-0 space-y-1"><Label className="block text-[13px] leading-4 text-slate-700 dark:text-zinc-300">{t(label)}</Label>{children}</div>;
 }
 
 function SettingSwitch({ label, checked, onCheckedChange, disabled = false }: { label: string; checked: boolean; onCheckedChange?: (checked: boolean) => void; disabled?: boolean }) {
-  return <div className="flex items-center justify-between gap-4 text-[13px] text-slate-700 dark:text-zinc-300"><span>{label}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
+  return <div className="flex items-center justify-between gap-4 text-[13px] text-slate-700 dark:text-zinc-300"><span>{t(label)}</span><Switch aria-label={t(label)} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
 }
 
 function TabScrollArea({ children }: { children: ReactNode }) {
@@ -1769,53 +1768,50 @@ function TemplateInfoPanel({
   return (
     <div className="grid gap-[5px] xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-[5px]">
-        <PanelCard title="模板信息">
+        <PanelCard title={t("模板信息")}>
           {template?.isBuiltIn ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/12 dark:text-amber-200">
-              系统模板的名称和 Word 底稿已锁定，可在其他页面继续调整样式。
-            </div>
+               {t("系统模板的名称和 Word 底稿已锁定，可在其他页面继续调整样式。")} </div>
           ) : null}
           <div className="grid gap-4 lg:grid-cols-2">
-            <Field label="模板名称">
-              <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={name} onChange={(event) => setName(event.target.value)} disabled={locked} placeholder="例如：课程论文模板" />
+            <Field label={t("模板名称")}>
+              <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={name} onChange={(event) => setName(event.target.value)} disabled={locked} placeholder={t("例如：课程论文模板")} />
             </Field>
-            <Field label="分组">
-              <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={category} list="template-style-groups" onChange={(event) => setCategory(event.target.value)} disabled={locked} placeholder="未分组" />
+            <Field label={t("分组")}>
+              <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={category} list="template-style-groups" onChange={(event) => setCategory(event.target.value)} disabled={locked} placeholder={"未分组"} />
               <datalist id="template-style-groups">
                 {categoryOptions.map((group) => <option key={group} value={group} />)}
               </datalist>
             </Field>
           </div>
-          <Field label="标签">
-            <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={tagsText} onChange={(event) => setTagsText(event.target.value)} disabled={locked} placeholder="多个标签用 / 或逗号分隔" />
+          <Field label={t("标签")}>
+            <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={tagsText} onChange={(event) => setTagsText(event.target.value)} disabled={locked} placeholder={t("多个标签用 / 或逗号分隔")} />
           </Field>
-          <Field label="简介">
-            <Textarea className="min-h-24 resize-none rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={description} onChange={(event) => setDescription(event.target.value)} disabled={locked} placeholder="说明这个模板适合什么文档、来源和使用场景" />
+          <Field label={t("简介")}>
+            <Textarea className="min-h-24 resize-none rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={t(description)} onChange={(event) => setDescription(event.target.value)} disabled={locked} placeholder={t("说明这个模板适合什么文档、来源和使用场景")} />
           </Field>
         </PanelCard>
 
-        <PanelCard title="Word/WPS 底稿">
+        <PanelCard title={t("Word/WPS 底稿")}>
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-sm leading-5 text-slate-700 dark:text-zinc-300">
               <FileText className="size-4 text-indigo-600 dark:text-indigo-300" />
               reference.docx
             </Label>
             <div className="flex gap-2 max-sm:flex-col">
-              <Input className="h-10 min-w-0 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} disabled={locked} placeholder="选择或填写 .docx 文件路径" />
+              <Input className="h-10 min-w-0 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} disabled={locked} placeholder={t("选择或填写 .docx 文件路径")} />
               <SoftActionButton className="h-8 shrink-0 px-2.5 text-xs" disabled={locked} onClick={onSelectReferenceDocx}>
                 <Upload className="size-4" />
-                选择文件
-              </SoftActionButton>
+                 {t("选择文件")} </SoftActionButton>
             </div>
           </div>
           <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">
-            这里的 DOCX 会作为导出时的 Word 参考底稿。用户导入老师或单位给的 Word 模板后，可以继续在后面的样式页微调标题、正文、列表、代码块和页面设置。
-          </p>
+             {t("这里的 DOCX 会作为导出时的 Word 参考底稿。用户导入老师或单位给的 Word 模板后，可以继续在后面的样式页微调标题、正文、列表、代码块和页面设置。")} </p>
         </PanelCard>
       </div>
 
       <div className="space-y-[5px]">
-        <PanelCard title="样式来源">
+        <PanelCard title={t("样式来源")}>
           <div className="space-y-[5px]">
             <button
               type="button"
@@ -1826,8 +1822,8 @@ function TemplateInfoPanel({
                 <Palette className="size-4" />
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-semibold text-slate-950 dark:text-zinc-50">继续手动编辑样式</span>
-                <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">进入标题、正文、列表、表格和代码块的详细设置。</span>
+                <span className="block text-sm font-semibold text-slate-950 dark:text-zinc-50">{t("继续手动编辑样式")}</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">{t("进入标题、正文、列表、表格和代码块的详细设置。")}</span>
               </span>
             </button>
             <button
@@ -1840,18 +1836,18 @@ function TemplateInfoPanel({
                 <SlidersHorizontal className="size-4" />
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-semibold text-slate-950 dark:text-zinc-50">使用默认样式</span>
-                <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">恢复为内置默认样式，再按需要继续调整。</span>
+                <span className="block text-sm font-semibold text-slate-950 dark:text-zinc-50">{t("使用默认样式")}</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">{t("恢复为内置默认样式，再按需要继续调整。")}</span>
               </span>
             </button>
           </div>
         </PanelCard>
 
-        <PanelCard title="当前状态">
+        <PanelCard title={t("当前状态")}>
           <div className="space-y-[5px] text-sm">
-            <InfoRow label="类型" value={template?.isBuiltIn ? "系统模板" : "自定义模板"} />
-            <InfoRow label="底稿" value={referenceDocxPath.trim() ? "已设置 Word 底稿" : "未设置 Word 底稿"} />
-            <InfoRow label="默认" value={template?.isDefault ? "当前默认模板" : "非默认模板"} />
+            <InfoRow label={t("类型")} value={template?.isBuiltIn ? t("系统模板") : t("自定义模板")} />
+            <InfoRow label={t("底稿")} value={referenceDocxPath.trim() ? t("已设置 Word 底稿") : t("未设置 Word 底稿")} />
+            <InfoRow label={t("默认")} value={template?.isDefault ? t("当前默认模板") : t("非默认模板")} />
           </div>
         </PanelCard>
       </div>
@@ -1862,7 +1858,7 @@ function TemplateInfoPanel({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-zinc-900/72">
-      <span className="text-slate-500 dark:text-zinc-400">{label}</span>
+      <span className="text-slate-500 dark:text-zinc-400">{t(label)}</span>
       <span className="truncate font-medium text-slate-900 dark:text-zinc-100">{value}</span>
     </div>
   );
@@ -1871,27 +1867,27 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: PageSettingsDraft; patchPageSettings: (patch: Partial<PageSettingsDraft>) => void }) {
   return (
     <div className="grid gap-[5px] lg:grid-cols-2">
-      <PanelCard title="纸张">
-        <Field label="纸张大小">
+      <PanelCard title={t("纸张")}>
+        <Field label={t("纸张大小")}>
           <Select value={pageSettings.paperSize} onValueChange={(value) => patchPageSettings({ paperSize: value as PageSettingsDraft["paperSize"] })}>
           <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
             <SelectContent>
               {paperSizeOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   <span className="flex w-full items-center justify-between gap-4">
-                    <span>{option.label}</span>
-                    <span className="text-xs text-slate-400 dark:text-zinc-500">{option.description}</span>
+                    <span>{t(option.label)}</span>
+                    <span className="text-xs text-slate-400 dark:text-zinc-500">{t(option.description)}</span>
                   </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
-        <Field label="方向">
+        <Field label={t("方向")}>
           <div className="style-orientation-control grid h-8 grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900/72">
             {([
-              ["portrait", "纵向"],
-              ["landscape", "横向"],
+              ["portrait", t("纵向")],
+              ["landscape", t("横向")],
             ] as const).map(([value, label]) => (
               <button
                 key={value}
@@ -1903,19 +1899,19 @@ function PageSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: 
                 onClick={() => patchPageSettings({ orientation: value })}
                 aria-pressed={pageSettings.orientation === value}
               >
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>
         </Field>
       </PanelCard>
 
-      <PanelCard title="页边距">
+      <PanelCard title={t("页边距")}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="上边距 (cm)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginTop} onChange={(event) => patchPageSettings({ marginTop: Number(event.target.value) })} /></Field>
-          <Field label="下边距 (cm)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginBottom} onChange={(event) => patchPageSettings({ marginBottom: Number(event.target.value) })} /></Field>
-          <Field label="左边距 (cm)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginLeft} onChange={(event) => patchPageSettings({ marginLeft: Number(event.target.value) })} /></Field>
-          <Field label="右边距 (cm)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginRight} onChange={(event) => patchPageSettings({ marginRight: Number(event.target.value) })} /></Field>
+          <Field label={t("上边距 (cm)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginTop} onChange={(event) => patchPageSettings({ marginTop: Number(event.target.value) })} /></Field>
+          <Field label={t("下边距 (cm)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginBottom} onChange={(event) => patchPageSettings({ marginBottom: Number(event.target.value) })} /></Field>
+          <Field label={t("左边距 (cm)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginLeft} onChange={(event) => patchPageSettings({ marginLeft: Number(event.target.value) })} /></Field>
+          <Field label={t("右边距 (cm)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0.5} max={8} step={0.1} value={pageSettings.marginRight} onChange={(event) => patchPageSettings({ marginRight: Number(event.target.value) })} /></Field>
         </div>
       </PanelCard>
 
@@ -1929,8 +1925,8 @@ function DocumentStructureProperties({ selection, pageSettings, patchPageSetting
   return (
     <section className="template-style-properties min-h-0 shrink-0 overflow-visible border-b border-slate-200 border-r-0 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 @min-[720px]/style-editor:min-h-[520px] @min-[720px]/style-editor:overflow-auto @min-[1280px]/style-editor:min-h-0 @min-[1280px]/style-editor:border-b-0 @min-[1280px]/style-editor:border-r">
       <div className="mb-4">
-        <h3 className="text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{item.label}</h3>
-        <p className="mt-1.5 text-[13px] text-slate-500 dark:text-zinc-400">{item.description}</p>
+        <h3 className="text-[22px] font-bold tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{t(item.label)}</h3>
+        <p className="mt-1.5 text-[13px] text-slate-500 dark:text-zinc-400">{t(item.description)}</p>
       </div>
       {selection === "document-header-footer" ? <HeaderFooterSettingsPanel pageSettings={pageSettings} patchPageSettings={patchPageSettings} /> : <TableOfContentsSettingsPanel pageSettings={pageSettings} patchPageSettings={patchPageSettings} />}
     </section>
@@ -1940,38 +1936,38 @@ function DocumentStructureProperties({ selection, pageSettings, patchPageSetting
 function HeaderFooterSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: PageSettingsDraft; patchPageSettings: (patch: Partial<PageSettingsDraft>) => void }) {
   return (
     <div className="space-y-4">
-      <PropertyCard title="页眉">
-        <SettingSwitch label="启用页眉" checked={pageSettings.headerEnabled} onCheckedChange={(checked) => patchPageSettings({ headerEnabled: checked })} />
-        <Field label="自定义页眉文本">
-          <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" placeholder="例如：项目报告 / 公司名称" value={pageSettings.headerText} disabled={!pageSettings.headerEnabled} onChange={(event) => patchPageSettings({ headerText: event.target.value })} />
+      <PropertyCard title={t("页眉")}>
+        <SettingSwitch label={t("启用页眉")} checked={pageSettings.headerEnabled} onCheckedChange={(checked) => patchPageSettings({ headerEnabled: checked })} />
+        <Field label={t("自定义页眉文本")}>
+          <Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" placeholder={t("例如：项目报告 / 公司名称")} value={pageSettings.headerText} disabled={!pageSettings.headerEnabled} onChange={(event) => patchPageSettings({ headerText: event.target.value })} />
         </Field>
       </PropertyCard>
-      <PropertyCard title="页脚与页码">
-        <SettingSwitch label="启用页脚" checked={pageSettings.footerEnabled} onCheckedChange={(checked) => patchPageSettings({ footerEnabled: checked })} />
+      <PropertyCard title={t("页脚与页码")}>
+        <SettingSwitch label={t("启用页脚")} checked={pageSettings.footerEnabled} onCheckedChange={(checked) => patchPageSettings({ footerEnabled: checked })} />
         {pageSettings.footerEnabled ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="页脚文本"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" placeholder="可留空，仅显示页码" value={pageSettings.footerText} onChange={(event) => patchPageSettings({ footerText: event.target.value })} /></Field>
-            <Field label="页码格式">
+            <Field label={t("页脚文本")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" placeholder={t("可留空，仅显示页码")} value={pageSettings.footerText} onChange={(event) => patchPageSettings({ footerText: event.target.value })} /></Field>
+            <Field label={t("页码格式")}>
               <Select value={pageSettings.footerPageNumberFormat} onValueChange={(value) => patchPageSettings({ footerPageNumberFormat: value as PageSettingsDraft["footerPageNumberFormat"] })}>
                 <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-                <SelectContent>{footerPageNumberFormats.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                <SelectContent>{footerPageNumberFormats.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
           </div>
         ) : null}
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="页码开始位置">
+          <Field label={t("页码开始位置")}>
             <Select value={pageSettings.pageNumberStartAt} onValueChange={(value) => patchPageSettings({ pageNumberStartAt: value as PageSettingsDraft["pageNumberStartAt"] })}>
               <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="body">正文首页（目录后）</SelectItem>
-                <SelectItem value="document">文档首页</SelectItem>
+                <SelectItem value="body">{t("正文首页（目录后）")}</SelectItem>
+                <SelectItem value="document">{t("文档首页")}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          <Field label="起始显示页码"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={999} step={1} value={pageSettings.footerStartPage} onChange={(event) => patchPageSettings({ footerStartPage: Number(event.target.value) })} /></Field>
+          <Field label={t("起始显示页码")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={1} max={999} step={1} value={pageSettings.footerStartPage} onChange={(event) => patchPageSettings({ footerStartPage: Number(event.target.value) })} /></Field>
         </div>
-        <p className="text-xs text-slate-500">总页数按所选编号范围统计：从正文开始时不计封面、目录；从文档首页开始时统计全文。</p>
+        <p className="text-xs text-slate-500">{t("总页数按所选编号范围统计：从正文开始时不计封面、目录；从文档首页开始时统计全文。")}</p>
       </PropertyCard>
     </div>
   );
@@ -1980,32 +1976,32 @@ function HeaderFooterSettingsPanel({ pageSettings, patchPageSettings }: { pageSe
 function TableOfContentsSettingsPanel({ pageSettings, patchPageSettings }: { pageSettings: PageSettingsDraft; patchPageSettings: (patch: Partial<PageSettingsDraft>) => void }) {
   return (
     <div className="space-y-4">
-      <PropertyCard title="目录">
-        <SettingSwitch label="生成目录" checked={pageSettings.tocEnabled} onCheckedChange={(checked) => patchPageSettings({ tocEnabled: checked })} />
+      <PropertyCard title={t("目录")}>
+        <SettingSwitch label={t("生成目录")} checked={pageSettings.tocEnabled} onCheckedChange={(checked) => patchPageSettings({ tocEnabled: checked })} />
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="目录标题"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={pageSettings.tocTitle} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitle: event.target.value })} /></Field>
-          <Field label="标题对齐"><SimpleAlignSelect value={pageSettings.tocTitleAlign} onChange={(value) => patchPageSettings({ tocTitleAlign: value })} /></Field>
-          <Field label="中文字体"><WordFontPicker value={pageSettings.tocTitleChineseFont} options={wordFontOptions} onValueChange={(value) => patchPageSettings({ tocTitleChineseFont: value })} /></Field>
-          <Field label="英文字体"><WordFontPicker value={pageSettings.tocTitleLatinFont} options={wordFontOptions} onValueChange={(value) => patchPageSettings({ tocTitleLatinFont: value })} /></Field>
-          <Field label="字号"><WordFontSizeSelect value={pageSettings.tocTitleFontSize} onChange={(value) => patchPageSettings({ tocTitleFontSize: value })} /></Field>
-          <Field label="文字颜色"><WordColorPicker value={pageSettings.tocTitleColor} onChange={(value) => patchPageSettings({ tocTitleColor: value })} autoColor="#111827" /></Field>
-          <Field label="字重">
+          <Field label={t("目录标题")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" value={pageSettings.tocTitle} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitle: event.target.value })} /></Field>
+          <Field label={t("标题对齐")}><SimpleAlignSelect value={pageSettings.tocTitleAlign} onChange={(value) => patchPageSettings({ tocTitleAlign: value })} /></Field>
+          <Field label={t("中文字体")}><WordFontPicker value={pageSettings.tocTitleChineseFont} options={wordFontOptions} onValueChange={(value) => patchPageSettings({ tocTitleChineseFont: value })} /></Field>
+          <Field label={t("英文字体")}><WordFontPicker value={pageSettings.tocTitleLatinFont} options={wordFontOptions} onValueChange={(value) => patchPageSettings({ tocTitleLatinFont: value })} /></Field>
+          <Field label={t("字号")}><WordFontSizeSelect value={pageSettings.tocTitleFontSize} onChange={(value) => patchPageSettings({ tocTitleFontSize: value })} /></Field>
+          <Field label={t("文字颜色")}><WordColorPicker value={pageSettings.tocTitleColor} onChange={(value) => patchPageSettings({ tocTitleColor: value })} autoColor="#111827" /></Field>
+          <Field label={t("字重")}>
             <Select value={pageSettings.tocTitleFontWeight} onValueChange={(value) => patchPageSettings({ tocTitleFontWeight: value })}>
               <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-              <SelectContent>{fontWeightOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{fontWeightOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          <Field label="段前间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleBeforeSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleBeforeSpacing: Number(event.target.value) })} /></Field>
-          <Field label="段后间距 (pt)"><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleAfterSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleAfterSpacing: Number(event.target.value) })} /></Field>
+          <Field label={t("段前间距 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleBeforeSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleBeforeSpacing: Number(event.target.value) })} /></Field>
+          <Field label={t("段后间距 (pt)")}><Input className="h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72" type="number" min={0} max={72} step={1} value={pageSettings.tocTitleAfterSpacing} disabled={!pageSettings.tocEnabled} onChange={(event) => patchPageSettings({ tocTitleAfterSpacing: Number(event.target.value) })} /></Field>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="目录深度">
+          <Field label={t("目录深度")}>
             <Select value={pageSettings.tocDepth} onValueChange={(value) => patchPageSettings({ tocDepth: value })} disabled={!pageSettings.tocEnabled}>
               <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="1-2">1-2 级标题</SelectItem><SelectItem value="1-3">1-3 级标题</SelectItem><SelectItem value="1-4">1-4 级标题</SelectItem><SelectItem value="1-6">1-6 级标题</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="1-2">{t("1-2 级标题")}</SelectItem><SelectItem value="1-3">{t("1-3 级标题")}</SelectItem><SelectItem value="1-4">{t("1-4 级标题")}</SelectItem><SelectItem value="1-6">{t("1-6 级标题")}</SelectItem></SelectContent>
             </Select>
           </Field>
-          <Field label="目录引导符">
+          <Field label={t("目录引导符")}>
             <div className="space-y-2">
               <Select value={pageSettings.tocLeader} onValueChange={(value) => patchPageSettings({ tocLeader: value as PageSettingsDraft["tocLeader"] })} disabled={!pageSettings.tocEnabled || !pageSettings.tocShowPageNumbers}>
                 <SelectTrigger className="h-10 w-full data-[size=default]:h-10 rounded-lg bg-slate-50 dark:bg-zinc-900/72"><SelectValue /></SelectTrigger>
@@ -2013,7 +2009,7 @@ function TableOfContentsSettingsPanel({ pageSettings, patchPageSettings }: { pag
                   {tocLeaderOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       <span className="grid w-full grid-cols-[auto_minmax(72px,1fr)_auto] items-center gap-2">
-                        <span>{option.label}</span>
+                        <span>{t(option.label)}</span>
                         <TocLeaderSample leader={option.value} sample={option.sample} />
                         <span className="text-slate-400 dark:text-zinc-500">1</span>
                       </span>
@@ -2024,10 +2020,10 @@ function TableOfContentsSettingsPanel({ pageSettings, patchPageSettings }: { pag
             </div>
           </Field>
         </div>
-        <SettingSwitch label="显示目录页码" checked={pageSettings.tocShowPageNumbers} disabled={!pageSettings.tocEnabled} onCheckedChange={(checked) => patchPageSettings({ tocShowPageNumbers: checked })} />
+        <SettingSwitch label={t("显示目录页码")} checked={pageSettings.tocShowPageNumbers} disabled={!pageSettings.tocEnabled} onCheckedChange={(checked) => patchPageSettings({ tocShowPageNumbers: checked })} />
       </PropertyCard>
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500 dark:border-zinc-700/70 dark:bg-zinc-900/72 dark:text-zinc-400">
-        目录页码与页脚保持同步：当前从{pageSettings.pageNumberStartAt === "document" ? "文档首页" : "正文首页（目录后）"}开始，起始显示页码为 {Math.max(1, Math.trunc(pageSettings.footerStartPage || 1))}。
+         {t("目录页码与页脚保持同步：当前从")}{pageSettings.pageNumberStartAt === "document" ? t("文档首页") : t("正文首页（目录后）")}{t("开始，起始显示页码为")} {Math.max(1, Math.trunc(pageSettings.footerStartPage || 1))}。
       </div>
     </div>
   );
@@ -2055,9 +2051,9 @@ function MappingPanel({
       <AppSurface variant="plain" radius="sm" padding="none" className="template-style-panel-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-xl font-bold">Markdown 识别规则</h3>
+            <h3 className="text-xl font-bold">{t("Markdown 识别规则")}</h3>
           </div>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-400">标题逐级映射</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500 dark:border-zinc-700 dark:bg-zinc-900/72 dark:text-zinc-400">{t("标题逐级映射")}</span>
         </div>
         <div className="mt-5 grid gap-[5px] md:grid-cols-2">
           {headingMappings.map(([from], index) => {
@@ -2073,8 +2069,8 @@ function MappingPanel({
                     value={target}
                     onValueChange={(value) => patchMarkdownRules({ headingMappings: { ...markdownRules.headingMappings, [sourceStyleId]: value as WordHeadingTarget } })}
                   >
-                    <SelectTrigger aria-label={`${from} 对应的 Word 样式`} className="h-9 w-full rounded-lg bg-white dark:bg-zinc-950"><SelectValue>{wordHeadingTargetLabel(target)}</SelectValue></SelectTrigger>
-                    <SelectContent>{wordHeadingTargetOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                    <SelectTrigger aria-label={t("{0} 对应的 Word 样式", [from])} className="h-9 w-full rounded-lg bg-white dark:bg-zinc-950"><SelectValue>{wordHeadingTargetLabel(target)}</SelectValue></SelectTrigger>
+                    <SelectContent>{wordHeadingTargetOptions.map((option) => <SelectItem key={option.value} value={option.value}>{t(option.label)}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 {styleId ? (
@@ -2083,8 +2079,7 @@ function MappingPanel({
                     className="h-8 justify-self-end rounded-md px-2.5 text-xs font-semibold text-slate-500 transition hover:bg-white/60 hover:text-[var(--app-primary)] dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-[var(--app-primary)]"
                     onClick={() => onEditStyle(styleId)}
                   >
-                    编辑样式
-                  </button>
+                     {t("编辑样式")} </button>
                 ) : null}
               </div>
             );
@@ -2104,8 +2099,7 @@ function MappingPanel({
                     className="h-8 justify-self-end rounded-md px-2.5 text-xs font-semibold text-slate-500 transition hover:bg-white hover:text-[var(--app-primary)] dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-[var(--app-primary)]"
                     onClick={() => onEditStyle(styleId)}
                   >
-                    编辑样式
-                  </button>
+                     {t("编辑样式")} </button>
                 ) : null}
               </div>
             );

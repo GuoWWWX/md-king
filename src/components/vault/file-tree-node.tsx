@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { memo, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { ChevronRight, ClipboardPaste, Copy, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, ImageIcon, MoreHorizontal, Pencil, Scissors, Trash2, FolderOpen as ExternalLink } from "lucide-react";
 import { ContextMenu } from "radix-ui";
@@ -172,7 +173,7 @@ export const FileTreeNode = memo(function FileTreeNode({ entry, depth, expanded,
               if (event.key === "Escape") onRenameCancel?.();
             }}
             onBlur={() => onRenameSubmit?.(entry, draftName)}
-            aria-label={`重命名 ${entry.name}`}
+            aria-label={t("重命名 {0}", [entry.name])}
           />
         </span>
       </div>
@@ -287,7 +288,7 @@ export const FileTreeNode = memo(function FileTreeNode({ entry, depth, expanded,
                 variant="ghost"
                 size="icon-xs"
                 className="mk-file-tree-more shrink-0 opacity-0 transition group-hover/node:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
-                aria-label={`${entry.name} 的操作菜单`}
+                aria-label={t("{0} 的操作菜单", [entry.name])}
                 onPointerDown={() => onPrepareContextMenu?.(entry)}
                 onClick={(event) => event.stopPropagation()}
               >
@@ -299,57 +300,46 @@ export const FileTreeNode = memo(function FileTreeNode({ entry, depth, expanded,
                 <>
                   <DropdownMenuItem onSelect={() => onAction("new-file", entry)}>
                     <FilePlus2 className="size-4" />
-                    新建文件
-                  </DropdownMenuItem>
+                     {t("新建文件")} </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => onAction("new-folder", entry)}>
                     <FolderPlus className="size-4" />
-                    新建文件夹
-                  </DropdownMenuItem>
+                     {t("新建文件夹")} </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               ) : null}
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <Copy className="size-4" />
-                  复制路径
-                </DropdownMenuSubTrigger>
+                   {t("复制路径")} </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
                   <DropdownMenuSubContent className="min-w-40">
                     <DropdownMenuItem onSelect={() => onAction("copy-relative-path", entry)}>
-                      复制相对路径
-                    </DropdownMenuItem>
+                       {t("复制相对路径")} </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => onAction("copy-absolute-path", entry)}>
-                      复制绝对路径
-                    </DropdownMenuItem>
+                       {t("复制绝对路径")} </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
               </DropdownMenuSub>
               <DropdownMenuItem onSelect={() => onAction("show-in-explorer", entry)}>
                 <ExternalLink className="size-4" />
-                资源管理器中打开
-              </DropdownMenuItem>
+                 {t("资源管理器中打开")} </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => onAction("copy-entry", entry)}>
                 <Copy className="size-4" />
-                复制
-              </DropdownMenuItem>
+                 {t("复制")} </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => onAction("cut-entry", entry)}>
                 <Scissors className="size-4" />
-                剪切
-              </DropdownMenuItem>
+                 {t("剪切")} </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => onAction("paste-entry", entry)}>
                 <ClipboardPaste className="size-4" />
-                粘贴
-              </DropdownMenuItem>
+                 {t("粘贴")} </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => onAction("rename", entry)}>
                 <Pencil className="size-4" />
-                重命名
-              </DropdownMenuItem>
+                 {t("重命名")} </DropdownMenuItem>
               <DropdownMenuItem variant="destructive" onSelect={() => onAction("delete", entry)}>
                 <Trash2 className="size-4" />
-                删除
-              </DropdownMenuItem>
+                 {t("删除")} </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -362,58 +352,47 @@ export const FileTreeNode = memo(function FileTreeNode({ entry, depth, expanded,
             <>
               <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("new-file", entry)}>
                 <FilePlus2 className="size-4" />
-                新建文件
-              </ContextMenu.Item>
+                 {t("新建文件")} </ContextMenu.Item>
               <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("new-folder", entry)}>
                 <FolderPlus className="size-4" />
-                新建文件夹
-              </ContextMenu.Item>
+                 {t("新建文件夹")} </ContextMenu.Item>
               <ContextMenu.Separator className="-mx-1 my-1 h-px bg-border" />
             </>
           ) : null}
           <ContextMenu.Sub>
             <ContextMenu.SubTrigger className={contextMenuItemClass}>
               <Copy className="size-4" />
-              复制路径
-              <ChevronRight className="ml-auto size-4" />
+               {t("复制路径")} <ChevronRight className="ml-auto size-4" />
             </ContextMenu.SubTrigger>
             <ContextMenu.Portal>
               <ContextMenu.SubContent className="z-50 min-w-40 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
                 <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("copy-relative-path", entry)}>
-                  复制相对路径
-                </ContextMenu.Item>
+                   {t("复制相对路径")} </ContextMenu.Item>
                 <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("copy-absolute-path", entry)}>
-                  复制绝对路径
-                </ContextMenu.Item>
+                   {t("复制绝对路径")} </ContextMenu.Item>
               </ContextMenu.SubContent>
             </ContextMenu.Portal>
           </ContextMenu.Sub>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("show-in-explorer", entry)}>
             <ExternalLink className="size-4" />
-            资源管理器中打开
-          </ContextMenu.Item>
+             {t("资源管理器中打开")} </ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1 my-1 h-px bg-border" />
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("copy-entry", entry)}>
             <Copy className="size-4" />
-            复制
-          </ContextMenu.Item>
+             {t("复制")} </ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("cut-entry", entry)}>
             <Scissors className="size-4" />
-            剪切
-          </ContextMenu.Item>
+             {t("剪切")} </ContextMenu.Item>
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("paste-entry", entry)}>
             <ClipboardPaste className="size-4" />
-            粘贴
-          </ContextMenu.Item>
+             {t("粘贴")} </ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1 my-1 h-px bg-border" />
           <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onAction("rename", entry)}>
             <Pencil className="size-4" />
-            重命名
-          </ContextMenu.Item>
+             {t("重命名")} </ContextMenu.Item>
           <ContextMenu.Item className={cn(contextMenuItemClass, "text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive")} onSelect={() => onAction("delete", entry)}>
             <Trash2 className="size-4" />
-            删除
-          </ContextMenu.Item>
+             {t("删除")} </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

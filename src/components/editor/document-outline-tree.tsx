@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { ChevronRight, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildMarkdownOutlineTree, type MarkdownOutlineItem, type MarkdownOutlineNode } from "@/lib/document-outline";
@@ -44,14 +45,14 @@ export function DocumentOutlineTree({ outline, selectedLine, onSelect, collapsed
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索标题"
-            aria-label="搜索文档标题"
+            placeholder={t("搜索标题")}
+            aria-label={t("搜索文档标题")}
             className="mk-file-tree-search h-7 w-full rounded-[6px] pr-6 pl-7 text-[13px] outline-none"
           />
           {query ? (
             <button
               type="button"
-              aria-label="清除搜索"
+              aria-label={t("清除搜索")}
               onClick={() => setQuery("")}
               className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-[4px] p-0.5 text-slate-400 transition hover:text-slate-700 dark:text-zinc-500 dark:hover:text-zinc-100"
             >
@@ -61,9 +62,9 @@ export function DocumentOutlineTree({ outline, selectedLine, onSelect, collapsed
         </div>
       </div>
 
-      <nav aria-label="Markdown 文档目录" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <nav aria-label={t("Markdown 文档目录")} className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {visibleTree.length === 0 ? (
-          <p className="px-2 py-8 text-center text-[11px] leading-5 text-slate-500 dark:text-zinc-400">没有匹配的标题。</p>
+          <p className="px-2 py-8 text-center text-[11px] leading-5 text-slate-500 dark:text-zinc-400">{t("没有匹配的标题。")}</p>
         ) : (
           <OutlineNodeList
             nodes={visibleTree}
@@ -166,7 +167,7 @@ function OutlineNodeItem({
       {hasChildren ? (
         <button
           type="button"
-          aria-label={collapsed ? `展开 ${node.text}` : `折叠 ${node.text}`}
+          aria-label={collapsed ? t("展开 {0}", [node.text]) : t("折叠 {0}", [node.text])}
           aria-expanded={!collapsed}
           onClick={() => onToggle(node.line)}
           className="flex size-4 shrink-0 items-center justify-center rounded-[3px] text-slate-400 transition hover:text-slate-700 dark:text-zinc-500 dark:hover:text-zinc-200"

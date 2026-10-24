@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { ChevronDown, ChevronRight, ClipboardPaste, Files, FileText, FileType2, FileUp, ImageIcon, Plus, X, Copy, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -363,7 +364,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
         ref={listRef}
         className="scrollbar-none flex min-w-0 flex-1 cursor-default select-none items-center gap-1 overflow-x-auto overflow-y-hidden"
         role="tablist"
-        aria-label="打开的标签"
+        aria-label={t("打开的标签")}
         onPointerDown={handleTabListPointerDown}
         onPointerMove={handleTabListPointerMove}
         onPointerUp={finishTabListPointerDrag}
@@ -373,7 +374,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
         onWheel={handleTabListWheel}
       >
         {tabs.length === 0 && pageTabs.length === 0 ? (
-          <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">从左侧文件树打开文档，或通过 + 导入</span>
+          <span className="truncate px-2 text-xs text-slate-400 dark:text-zinc-500">{t("从左侧文件树打开文档，或通过 + 导入")}</span>
         ) : (
           <>
             {tabs.map((tab) => (
@@ -419,9 +420,9 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
             size="icon"
             disabled={!hasOverflowedTabs}
             className="h-9 w-7 shrink-0 rounded-none border-0 bg-transparent shadow-none text-slate-500 hover:bg-transparent hover:text-slate-950 active:bg-transparent aria-expanded:bg-transparent data-[state=open]:bg-transparent focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
-            title={hasOverflowedTabs ? "查看隐藏的标签" : "没有隐藏的标签"}
+            title={hasOverflowedTabs ? t("查看隐藏的标签") : t("没有隐藏的标签")}
             tooltipSide="bottom"
-            aria-label="查看隐藏的标签"
+            aria-label={t("查看隐藏的标签")}
           >
             <ChevronDown className="size-4" strokeWidth={2.25} />
           </Button>
@@ -437,7 +438,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
               >
                 <Icon className="size-4 shrink-0 text-slate-500 dark:text-zinc-400" />
                 <span className="min-w-0 flex-1 truncate">{tab.title}</span>
-                {tab.dirty ? <span className="size-1.5 shrink-0 rounded-full bg-current" aria-label="未保存" /> : null}
+                {tab.dirty ? <span className="size-1.5 shrink-0 rounded-full bg-current" aria-label={t("未保存")} /> : null}
               </DropdownMenuItem>
             );
           })}
@@ -452,7 +453,7 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
                 }}
               >
                 <Icon className="size-4 shrink-0 text-slate-500 dark:text-zinc-400" />
-                <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                <span className="min-w-0 flex-1 truncate">{t(tab.label)}</span>
               </DropdownMenuItem>
             );
           })}
@@ -466,9 +467,9 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
             variant="ghost"
             size="icon"
             className="h-9 w-8 shrink-0 rounded-none border-0 bg-transparent shadow-none text-slate-500 hover:bg-transparent hover:text-slate-950 active:bg-transparent aria-expanded:bg-transparent data-[state=open]:bg-transparent focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
-            title="导入文档"
+            title={t("导入文档")}
             tooltipSide="bottom"
-            aria-label="导入文档"
+            aria-label={t("导入文档")}
           >
             <Plus className="size-4" strokeWidth={2.5} />
           </Button>
@@ -477,19 +478,16 @@ export function DocumentTabBar({ onImportFile, onBatchImport, onPasteClipboard, 
           {onImportFile ? (
             <DropdownMenuItem onSelect={() => void Promise.resolve(onImportFile())}>
               <FileUp className="size-4 text-[var(--app-primary)]" />
-              选择文件
-            </DropdownMenuItem>
+               {t("选择文件")} </DropdownMenuItem>
           ) : null}
           {onBatchImport ? (
             <DropdownMenuItem onSelect={() => void Promise.resolve(onBatchImport())}>
               <Files className="size-4 text-[var(--app-primary)]" />
-              批量导入
-            </DropdownMenuItem>
+               {t("批量导入")} </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onSelect={() => void Promise.resolve(onPasteClipboard())}>
             <ClipboardPaste className="size-4 text-[var(--app-primary)]" />
-            粘贴剪贴板
-          </DropdownMenuItem>
+             {t("粘贴剪贴板")} </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -530,7 +528,7 @@ function PageTabItem({ tab, active, tabCount, onSelect, onClose, onCloseOthers, 
           role="tab"
           aria-selected={active}
           tabIndex={0}
-          title={tab.label}
+          title={t(tab.label)}
           className={cn(
             "mk-document-tab group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 text-xs font-bold transition",
             active
@@ -551,14 +549,14 @@ function PageTabItem({ tab, active, tabCount, onSelect, onClose, onCloseOthers, 
           }}
         >
           <Icon className="size-3.5 shrink-0 opacity-70" />
-          <span className="max-w-[160px] truncate">{tab.label}</span>
+          <span className="max-w-[160px] truncate">{t(tab.label)}</span>
           <button
             type="button"
             className={cn(
               "flex size-4 shrink-0 items-center justify-center rounded-[4px] opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100",
               active ? "hover:bg-blue-200/70 dark:hover:bg-blue-500/30" : "hover:bg-slate-200 dark:hover:bg-zinc-700",
             )}
-            aria-label={`关闭 ${tab.label}`}
+            aria-label={t("关闭 {0}", [t(tab.label)])}
             onClick={(event) => {
               event.stopPropagation();
               onClose();
@@ -571,9 +569,9 @@ function PageTabItem({ tab, active, tabCount, onSelect, onClose, onCloseOthers, 
 
       <ContextMenu.Portal>
         <ContextMenu.Content data-mk-tab-context-menu-content className="z-50 w-fit rounded-[10px] border border-slate-200 bg-white p-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(async () => onClose())} onClick={() => runContextAction(async () => onClose())}><X className="size-4" />关闭</ContextMenu.Item>
-          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseOthers)} onClick={() => runContextAction(onCloseOthers)} disabled={tabCount <= 1}><X className="size-4" />关闭其他</ContextMenu.Item>
-          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseAll)} onClick={() => runContextAction(onCloseAll)}><X className="size-4" />关闭全部</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(async () => onClose())} onClick={() => runContextAction(async () => onClose())}><X className="size-4" />{t("关闭")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseOthers)} onClick={() => runContextAction(onCloseOthers)} disabled={tabCount <= 1}><X className="size-4" />{t("关闭其他")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseAll)} onClick={() => runContextAction(onCloseAll)}><X className="size-4" />{t("关闭全部")}</ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
@@ -664,7 +662,7 @@ function DocumentTabItem({ tab, active, tabCount, showDirtyIndicator, onSelect, 
               active ? "hover:bg-blue-200/70 dark:hover:bg-blue-500/30" : "hover:bg-slate-200 dark:hover:bg-zinc-700",
               !hasManualUnsavedChanges && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
             )}
-            aria-label={`关闭 ${tab.title}`}
+            aria-label={t("关闭 {0}", [tab.title])}
             onMouseEnter={() => setHoveringClose(true)}
             onMouseLeave={() => setHoveringClose(false)}
             onFocus={() => setHoveringClose(true)}
@@ -681,20 +679,20 @@ function DocumentTabItem({ tab, active, tabCount, showDirtyIndicator, onSelect, 
 
       <ContextMenu.Portal>
         <ContextMenu.Content data-mk-tab-context-menu-content className="z-50 w-fit rounded-[10px] border border-slate-200 bg-white p-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onRequestClose)} onClick={() => runContextAction(onRequestClose)}><X className="size-4" />关闭</ContextMenu.Item>
-          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseOthers)} onClick={() => runContextAction(onCloseOthers)} disabled={tabCount <= 1}><X className="size-4" />关闭其他</ContextMenu.Item>
-          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseAll)} onClick={() => runContextAction(onCloseAll)}><X className="size-4" />关闭全部</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onRequestClose)} onClick={() => runContextAction(onRequestClose)}><X className="size-4" />{t("关闭")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseOthers)} onClick={() => runContextAction(onCloseOthers)} disabled={tabCount <= 1}><X className="size-4" />{t("关闭其他")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextItemClass} onSelect={() => runContextAction(onCloseAll)} onClick={() => runContextAction(onCloseAll)}><X className="size-4" />{t("关闭全部")}</ContextMenu.Item>
           {relativePath || absolutePath ? (
             <>
               <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={contextItemClass}>
-                  <Copy className="size-4" />复制路径<ChevronRight className="ml-auto size-4" />
+                  <Copy className="size-4" />{t("复制路径")}<ChevronRight className="ml-auto size-4" />
                 </ContextMenu.SubTrigger>
                 <ContextMenu.Portal>
                   <ContextMenu.SubContent data-mk-tab-context-menu-content className="z-50 min-w-40 rounded-[10px] border border-slate-200 bg-white p-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                    <ContextMenu.Item className={contextItemClass} onSelect={() => void navigator.clipboard.writeText(relativePath ?? "")} disabled={!relativePath}>复制相对路径</ContextMenu.Item>
-                    <ContextMenu.Item className={contextItemClass} onSelect={() => void navigator.clipboard.writeText(absolutePath ?? "")} disabled={!absolutePath}>复制绝对路径</ContextMenu.Item>
+                    <ContextMenu.Item className={contextItemClass} onSelect={() => void navigator.clipboard.writeText(relativePath ?? "")} disabled={!relativePath}>{t("复制相对路径")}</ContextMenu.Item>
+                    <ContextMenu.Item className={contextItemClass} onSelect={() => void navigator.clipboard.writeText(absolutePath ?? "")} disabled={!absolutePath}>{t("复制绝对路径")}</ContextMenu.Item>
                   </ContextMenu.SubContent>
                 </ContextMenu.Portal>
               </ContextMenu.Sub>

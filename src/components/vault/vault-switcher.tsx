@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { ChevronDown, FolderOpen, Library, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,7 +23,7 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
         onClick={onOpenVault}
       >
         <FolderOpen className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />
-        <span className="min-w-0 truncate">打开目录</span>
+        <span className="min-w-0 truncate">{t("打开目录")}</span>
       </Button>
     );
   }
@@ -34,19 +35,19 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
           variant="ghost"
           className={cn("mk-file-tree-switcher h-9 w-full justify-start gap-2 rounded-[8px] px-2 text-sm font-bold", className)}
           title={vaultRoot}
-          aria-label={vaultRoot ? `当前目录 ${vaultRoot}，点击切换` : "打开或选择最近目录"}
+          aria-label={vaultRoot ? t("当前目录 {0}，点击切换", [vaultRoot]) : t("打开或选择最近目录")}
         >
           {vaultRoot ? <Library className="size-4 shrink-0 text-blue-600 dark:text-blue-400" /> : <FolderOpen className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />}
-          <span className="min-w-0 flex-1 truncate text-left">{vaultRoot ? vaultDisplayName(vaultRoot) : "打开目录"}</span>
+          <span className="min-w-0 flex-1 truncate text-left">{vaultRoot ? vaultDisplayName(vaultRoot) : t("打开目录")}</span>
           <ChevronDown className="size-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
         </Button>
       </DropdownMenuTrigger>
 
       {/* 宽度跟随触发器：写死 360px 会比文件树面板本身还宽，弹出来明显溢出。 */}
       <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[200px]">
-        <DropdownMenuLabel>最近打开的目录</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("最近打开的目录")}</DropdownMenuLabel>
         {recentVaults.length === 0 ? (
-          <p className="px-1.5 py-2 text-xs text-slate-500 dark:text-zinc-400">暂无记录</p>
+          <p className="px-1.5 py-2 text-xs text-slate-500 dark:text-zinc-400">{t("暂无记录")}</p>
         ) : (
           recentVaults.map((root) => {
             const isActive = root === vaultRoot;
@@ -67,7 +68,7 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
                   <span
                     role="button"
                     tabIndex={-1}
-                    aria-label={`从最近列表移除 ${root}`}
+                    aria-label={t("从最近列表移除 {0}", [root])}
                     className="mk-vault-recent-remove shrink-0 rounded-[6px] p-0.5 text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
                     // 阻止冒泡，否则点删除会连带触发 DropdownMenuItem 的切换。
                     onPointerDown={(event) => event.stopPropagation()}
@@ -84,7 +85,7 @@ export function VaultSwitcher({ vaultRoot, recentVaults, onOpenVault, onSelectVa
         <DropdownMenuSeparator />
         <DropdownMenuItem className="gap-2" onSelect={onOpenVault}>
           <FolderOpen className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />
-          <span className="text-sm font-semibold">打开其他目录…</span>
+          <span className="text-sm font-semibold">{t("打开其他目录…")}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

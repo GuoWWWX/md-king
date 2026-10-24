@@ -1,21 +1,22 @@
+import { t } from "./i18n.ts";
 export function clipboardReadErrorMessage(error: unknown) {
   if (isPermissionError(error)) {
-    return "无法读取剪贴板，请检查浏览器或系统剪贴板权限，或手动粘贴内容";
+    return t("无法读取剪贴板，请检查浏览器或系统剪贴板权限，或手动粘贴内容");
   }
 
   if (isAbortError(error)) {
-    return "已取消读取剪贴板";
+    return t("已取消读取剪贴板");
   }
 
-  return "读取剪贴板失败，请手动粘贴内容";
+  return t("读取剪贴板失败，请手动粘贴内容");
 }
 
 export function clipboardWriteErrorMessage(error: unknown) {
   if (isPermissionError(error)) {
-    return "无法写入剪贴板，请检查浏览器或系统剪贴板权限";
+    return t("无法写入剪贴板，请检查浏览器或系统剪贴板权限");
   }
 
-  return "复制失败，请手动复制内容";
+  return t("复制失败，请手动复制内容");
 }
 
 function isPermissionError(error: unknown) {

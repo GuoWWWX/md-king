@@ -1,3 +1,5 @@
+<p align="center"><strong>简体中文</strong> | <a href="README.en.md">English</a></p>
+
 <div align="center">
 
 <img src="docs/images/logo.png" alt="MD King Logo" width="108" height="108" />
@@ -118,6 +120,7 @@ Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。
 - LaTeX 行内与块级公式、Mermaid 流程图和时序图、代码高亮、表格、任务清单与 Callout 提示框。
 - Windows 右键菜单、全局快捷键 `Ctrl+Alt+V` 与悬浮球转换入口。
 - 应用内更新提示、下载进度、取消与失败重试。
+- 简体中文与 English 界面；从左侧状态栏的语言按钮即时切换，选择会保留到下次启动。其上方是更新入口，下方是主题按钮。
 
 ## 应用内自动更新
 
@@ -194,7 +197,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.1.20_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.2.0_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 

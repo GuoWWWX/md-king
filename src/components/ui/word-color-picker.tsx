@@ -1,5 +1,6 @@
+import { t } from "@/lib/i18n";
 import { Ban, Check, ChevronDown } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -60,11 +61,11 @@ const standardColors: ColorOption[] = [
   { name: "紫色", value: "#7030A0" },
 ];
 
-export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLabel = "自动", allowTransparent = false, transparentLabel = "无填充", className }: WordColorPickerProps) {
+export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLabel = t("自动"), allowTransparent = false, transparentLabel = t("无填充"), className }: WordColorPickerProps) {
   const [open, setOpen] = useState(false);
   const normalizedValue = normalizeColor(value);
   const normalizedAuto = normalizeColor(autoColor);
-  const selectedLabel = useMemo(() => findColorLabel(normalizedValue) ?? normalizedValue, [normalizedValue]);
+  const selectedLabel = findColorLabel(normalizedValue) ?? normalizedValue;
 
   function chooseColor(nextValue: string) {
     onChange(nextValue);
@@ -113,7 +114,7 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
           </button>
         ) : null}
 
-        <ColorSection title="主题颜色">
+        <ColorSection title={t("主题颜色")}>
           <div className="grid grid-cols-10 gap-1.5">
             {themeColors.map((color) => (
               <SwatchButton key={`${color.name}-${color.value}-${color.tone}`} color={color.value} label={`${color.name} ${color.tone}`} selected={normalizeColor(color.value) === normalizedValue} onClick={chooseColor} />
@@ -121,7 +122,7 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
           </div>
         </ColorSection>
 
-        <ColorSection title="标准色">
+        <ColorSection title={t("标准色")}>
           <div className="grid grid-cols-10 gap-1.5">
             {standardColors.map((color) => (
               <SwatchButton key={color.value} color={color.value} label={color.name} selected={normalizeColor(color.value) === normalizedValue} onClick={chooseColor} />
@@ -130,7 +131,7 @@ export function WordColorPicker({ value, onChange, autoColor = "#111827", autoLa
         </ColorSection>
 
         <div className="mt-3 border-t border-slate-200 pt-3 dark:border-zinc-700">
-          <label className="text-xs font-semibold text-slate-500 dark:text-zinc-400">HEX 颜色值</label>
+          <label className="text-xs font-semibold text-slate-500 dark:text-zinc-400">{t("HEX 颜色值")}</label>
           <Input className="mt-1.5 h-9 rounded-lg bg-slate-50 font-mono text-sm uppercase dark:bg-zinc-950" value={value} onChange={(event) => handleHexChange(event.target.value)} />
         </div>
       </DropdownMenuContent>
@@ -153,7 +154,7 @@ function SwatchButton({ color, label, selected, onClick }: { color: string; labe
   return (
     <TooltipButton
       type="button"
-      tooltip={label}
+      tooltip={t(label)}
       aria-label={`${label} ${normalizedColor}`}
       className={cn(
         "group relative size-6 rounded-[4px] border border-slate-300 outline-none transition hover:scale-105 hover:ring-2 hover:ring-slate-300 focus-visible:ring-2 focus-visible:ring-slate-400 dark:border-zinc-600 dark:hover:ring-zinc-500 dark:focus-visible:ring-zinc-400",
@@ -191,13 +192,14 @@ function normalizeColor(color: string) {
 }
 
 function findColorLabel(color: string) {
-  if (color === "transparent") return "无填充";
-  if (color === "#111827") return "自动";
+  if (color === "transparent") return t("无填充");
+  if (color === "#111827") return t("自动");
   for (const column of themeColorColumns) {
     if (column.colors.some((item) => normalizeColor(item) === color)) return color;
   }
 
-  return standardColors.find((item) => normalizeColor(item.value) === color)?.name;
+  const label = standardColors.find((item) => normalizeColor(item.value) === color)?.name;
+  return label ? t(label) : undefined;
 }
 
 function isDarkColor(color: string) {
