@@ -8,6 +8,12 @@ const parser = new MarkdownIt({ html: false });
 const references = new WeakMap<Text, ReferenceEnvironment>();
 
 export function markdownLinkTarget(state: EditorState, node: SyntaxNode): string | undefined {
+  if (node.name === "URL") {
+    const source = state.doc.sliceString(node.from, node.to);
+    const match = parser.linkify.match(source)?.[0];
+    return match?.schema === "mailto:" && match.index === 0 && match.lastIndex === source.length
+      ? match.url : undefined;
+  }
   const url = node.getChild("URL");
   let env: ReferenceEnvironment = {};
   if (!url || node.name === "LinkReference") {

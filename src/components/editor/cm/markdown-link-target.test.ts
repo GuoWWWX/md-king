@@ -3,6 +3,8 @@ import { test } from "node:test";
 import { EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxTree } from "@codemirror/language";
+import { GFM } from "@lezer/markdown";
+import { livePreviewMarkdownLanguage } from "./markdown-language.ts";
 import { markdownLinkTarget } from "./markdown-link-target.ts";
 
 const stateFor = (doc: string) => EditorState.create({ doc, extensions: [markdown()] });
@@ -36,6 +38,13 @@ test("link destinations use Markdown escaping, angle delimiters and autolink nor
   assert.deepEqual(targets(stateFor(String.raw`[空格](<target document.md#L2>) [括号](target\(1\).md) [实体](target&amp;one.md)`)), ['target%20document.md#L2', 'target(1).md', 'target&one.md']);
   assert.deepEqual(targets(stateFor('<https://example.com> <user@example.com>'), 'Autolink'), ['https://example.com', 'mailto:user@example.com']);
   assert.deepEqual(targets(stateFor('![图片](<figure one.png>)'), 'Image'), ['figure%20one.png']);
+});
+test("bare email URL nodes resolve to mailto without changing HTTP destinations", () => {
+  const state = EditorState.create({
+    doc: '联系：590731747@qq.com。备用 User.Name+tag@example.co.uk； https://example.com/user@example.com',
+    extensions: [markdown({ base: livePreviewMarkdownLanguage, extensions: GFM })],
+  });
+  assert.deepEqual(targets(state, "URL"), ['mailto:590731747@qq.com', 'mailto:User.Name+tag@example.co.uk', undefined]);
 });
 test("reference definitions follow Markdown rules and are refreshed after edits", () => {
   let state = stateFor('[动态] [代码定义]\n\n```markdown\n[代码定义]: https://example.com/code\n```');

@@ -945,7 +945,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
         }
 
         if (isInsideOrCrossingMath(ref.from, ref.to, collector.mathRanges)
-          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link" || name === "Autolink" || name === "Image" || name === "LinkReference")) return;
+          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link" || name === "Autolink" || name === "URL" || name === "Image" || name === "LinkReference")) return;
 
         switch (name) {
           case "StrongEmphasis":
@@ -965,6 +965,11 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
             return;
           case "Link":
           case "Autolink":
+            handleLink(collector, ref);
+            return;
+          case "URL":
+            if (insideProtectedInlineSource(state, ref.from)
+              || ref.node.parent?.name === "Image" || ref.node.parent?.name === "LinkReference") return;
             handleLink(collector, ref);
             return;
           case "Image":
