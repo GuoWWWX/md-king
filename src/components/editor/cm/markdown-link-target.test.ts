@@ -31,6 +31,12 @@ test("rejected destinations are literal instead of recognized links or images", 
   assert.deepEqual(targets(state), [undefined]);
   assert.deepEqual(targets(state, "Image"), [undefined]);
 });
+
+test("link destinations use Markdown escaping, angle delimiters and autolink normalization", () => {
+  assert.deepEqual(targets(stateFor(String.raw`[空格](<target document.md#L2>) [括号](target\(1\).md) [实体](target&amp;one.md)`)), ['target%20document.md#L2', 'target(1).md', 'target&one.md']);
+  assert.deepEqual(targets(stateFor('<https://example.com> <user@example.com>'), 'Autolink'), ['https://example.com', 'mailto:user@example.com']);
+  assert.deepEqual(targets(stateFor('![图片](<figure one.png>)'), 'Image'), ['figure%20one.png']);
+});
 test("reference definitions follow Markdown rules and are refreshed after edits", () => {
   let state = stateFor('[动态] [代码定义]\n\n```markdown\n[代码定义]: https://example.com/code\n```');
   assert.deepEqual(targets(state), [undefined, undefined]);

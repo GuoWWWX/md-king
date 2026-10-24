@@ -25,6 +25,5 @@ export function markdownLinkTarget(state: EditorState, node: SyntaxNode): string
   const token = parser.parseInline(state.doc.sliceString(node.from, node.to), env)[0]?.children?.[0];
   const target = token?.type === "link_open" ? token.attrGet("href")
     : token?.type === "image" ? token.attrGet("src") : undefined;
-  // Keep source paths unchanged, but only after the Markdown parser accepts them.
-  return target == null ? undefined : url ? state.doc.sliceString(url.from, url.to).trim() : target;
+  return target ?? undefined;
 }

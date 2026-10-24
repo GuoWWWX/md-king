@@ -22,6 +22,13 @@ test("paragraph alignment applies to whole paragraphs and nested blocks", () => 
   assert.match(html, /<p style="text-align:left">/);
   assert.doesNotMatch(md.render('正文[几个字]{align="center"}末尾'), /<p style=/);
 });
+
+test("inline formatting does not cross blank paragraphs but keeps soft line breaks", () => {
+  for (const gap of ['\n\n', '\r\n \t\r\n', '\\\n\n']) {
+    assert.equal(formattingSpanAt(`[第一段${gap}第二段]{color="#D32F2F"}`, 0), null);
+  }
+  assert.ok(formattingSpanAt('[合法换行\n仍属一段]{color="#D32F2F"}', 0));
+});
 test("table and quote formatting use the same spans", () => {
   const html = md.render('| 项目 |\n| --- |\n| [**红字**]{color="#D32F2F"} |\n\n> [引用]{.underline color="#2563EB"}');
   assert.match(html, /<td><span[^>]*color:#D32F2F[^>]*><strong>红字/);

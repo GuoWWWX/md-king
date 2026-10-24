@@ -945,7 +945,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
         }
 
         if (isInsideOrCrossingMath(ref.from, ref.to, collector.mathRanges)
-          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link" || name === "Image" || name === "LinkReference")) return;
+          && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough" || name === "InlineCode" || name === "Link" || name === "Autolink" || name === "Image" || name === "LinkReference")) return;
 
         switch (name) {
           case "StrongEmphasis":
@@ -964,6 +964,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
             handleTaskMarker(collector, ref);
             return;
           case "Link":
+          case "Autolink":
             handleLink(collector, ref);
             return;
           case "Image":
@@ -1355,11 +1356,6 @@ function imageIsSelected(state: EditorState, from: number, to: number): boolean 
   return !selection.empty && selection.from <= from && selection.to >= to;
 }
 
-function markdownImageAlt(source: string) {
-  const matched = source.match(/^!\[([\s\S]*)\]\([\s\S]*\)$/);
-  return matched?.[1] ?? "";
-}
-
 function buildImageBlocks(state: EditorState, markdownSourcePath: string | undefined, editable: boolean): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -1371,9 +1367,10 @@ function buildImageBlocks(state: EditorState, markdownSourcePath: string | undef
       const source = state.doc.sliceString(ref.from, ref.to);
       if (state.doc.sliceString(line.from, line.to).trim() !== source.trim() || (editable && imageSelectionIsEditing(state, ref.from, ref.to))) return false;
 
-      const url = ref.node.getChild("URL");
-      const src = url ? state.doc.sliceString(url.from, url.to) : "";
+      const src = markdownLinkTarget(state, ref.node);
       if (!src) return false;
+      const marks = childrenOfType(ref.node, "LinkMark");
+      const alt = marks.length >= 2 ? state.doc.sliceString(marks[0].to, marks[1].from) : "";
 
       builder.add(
         line.from,
@@ -1381,7 +1378,7 @@ function buildImageBlocks(state: EditorState, markdownSourcePath: string | undef
         Decoration.replace({
           widget: new MarkdownImageWidget(
             src,
-            markdownImageAlt(source),
+            alt,
             markdownSourcePath,
             line.from,
             line.to,
