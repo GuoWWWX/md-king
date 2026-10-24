@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import {
   Dialog,
   DialogContent,
@@ -112,21 +113,19 @@ export function UpdateDialog() {
             </div>
             <div>
               <DialogTitle className="text-base font-bold text-slate-900 dark:text-zinc-100">
-                发现新版本
-              </DialogTitle>
+                 {t("发现新版本")} </DialogTitle>
               <DialogDescription className="text-xs text-slate-500 dark:text-zinc-400">
-                MD King 有新版本发布，推荐升级以获取最新功能与修复
-              </DialogDescription>
+                 {t("MD King 有新版本发布，推荐升级以获取最新功能与修复")} </DialogDescription>
             </div>
           </div>
 
           <div className="flex items-center gap-2 pt-1">
             <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-zinc-800 dark:text-zinc-300">
-              当前: v{currentVersion}
+               {t("当前: v")}{currentVersion}
             </span>
             <span className="text-xs text-slate-400">→</span>
             <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/80 dark:text-amber-300">
-              最新: {newVersion}
+               {t("最新:")} {newVersion}
             </span>
             {latestRelease.published_at && (
               <span className="ml-auto text-[11px] text-slate-400">
@@ -139,16 +138,16 @@ export function UpdateDialog() {
         {/* 更新日志区域 */}
         <div className="flex min-h-0 flex-col gap-2">
           <div className="shrink-0 text-xs font-semibold text-slate-700 dark:text-zinc-300">
-            {latestRelease.name || "更新内容"}
+            {latestRelease.name || t("更新内容")}
           </div>
           <div
             className="mk-editor-surface flex h-[min(45dvh,360px)] min-h-0 flex-col overflow-hidden rounded-lg"
             role="region"
-            aria-label="版本更新说明"
+            aria-label={t("版本更新说明")}
           >
             <LiveMarkdownEditor
               documentKey={`release-notes:${latestRelease.tag_name}:${latestRelease.body}`}
-              initialContent={latestRelease.body?.trim() || "本次发布包含稳定性增强与问题修复。"}
+              initialContent={latestRelease.body?.trim() || t("本次发布包含稳定性增强与问题修复。")}
               readOnly
               isDark={isDark}
               onDocChanged={() => undefined}
@@ -163,14 +162,13 @@ export function UpdateDialog() {
         <div className="shrink-0 space-y-3 empty:hidden">
           {hasNewerDownload && !isInstalling && (
             <p className="text-xs text-amber-700 dark:text-amber-300">
-              已检测到 {newVersion}。点击“下载新版”后，将清理 {downloadVersion} 的下载缓存并下载新版。
-            </p>
+               {t("已检测到")} {newVersion}{t("。点击“下载新版”后，将清理")} {downloadVersion}  {t("的下载缓存并下载新版。")} </p>
           )}
           {showProgress && (
             <div className="space-y-2 rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-amber-700 dark:text-amber-300">
-                  {!isDownloading ? `已保留 ${downloadVersion} 下载进度` : status === "cancelling" ? "正在取消下载..." : downloadProgress.applyingDelta ? "正在还原并校验安装包..." : downloadProgress.percent >= 100 ? "正在校验安装包..." : `正在下载 ${downloadVersion} ${downloadProgress.isDelta ? "增量包" : "安装包"}...`}
+                  {!isDownloading ? t("已保留 {0} 下载进度", [downloadVersion]) : status === "cancelling" ? t("正在取消下载...") : downloadProgress.applyingDelta ? t("正在还原并校验安装包...") : downloadProgress.percent >= 100 ? t("正在校验安装包...") : t("正在下载 {0} {1}...", [downloadVersion, downloadProgress.isDelta ? "增量包" : "安装包"])}
                 </span>
                 <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-200">
                   {downloadProgress.percent.toFixed(1)}%
@@ -181,7 +179,7 @@ export function UpdateDialog() {
                 <span>
                   {formatBytes(downloadProgress.transferred)} / {formatBytes(downloadProgress.total)}
                 </span>
-                <span>{isDownloading ? `速度: ${formatSpeed(downloadProgress.speedBytesPerSec)}` : "继续下载可从中断处恢复"}</span>
+                <span>{isDownloading ? t("速度: {0}", [formatSpeed(downloadProgress.speedBytesPerSec)]) : t("继续下载可从中断处恢复")}</span>
               </div>
             </div>
           )}
@@ -189,29 +187,29 @@ export function UpdateDialog() {
           {isReady && (
             <div className="flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <span>安装包已通过校验。{errorMessage ? "自动安装未完成：" + errorMessage + "。请重试安装。" : "正在准备安装。"}</span>
+              <span>{t("安装包已通过校验。")}{errorMessage ? t("自动安装未完成：") + errorMessage + t("。请重试安装。") : t("正在准备安装。")}</span>
             </div>
           )}
 
           {isInstalling && (
-            <p className="text-xs text-emerald-700 dark:text-emerald-300">正在安装更新，软件即将关闭并自动重启。</p>
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">{t("正在安装更新，软件即将关闭并自动重启。")}</p>
           )}
 
           {isError && (
             <div className="space-y-1.5 rounded-lg border border-rose-200 bg-rose-50/70 p-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
               <div className="flex items-center gap-1.5 font-semibold">
                 <AlertCircle className="size-4 text-rose-600 dark:text-rose-400" />
-                <span>下载更新遇到问题</span>
+                <span>{t("下载更新遇到问题")}</span>
               </div>
               <p className="text-[11px] text-rose-700/90 dark:text-rose-300/90">
-                {errorMessage || "网络连接中断，请重试或前往浏览器下载"}
+                {errorMessage || t("网络连接中断，请重试或前往浏览器下载")}
               </p>
             </div>
           )}
         </div>
 
         {!isBusy && !isReady && (
-          <p className="shrink-0 text-[11px] text-slate-500 dark:text-zinc-400">立即更新会下载并校验安装包，保存草稿后自动静默升级、重启。Windows 可能要求确认系统权限。</p>
+          <p className="shrink-0 text-[11px] text-slate-500 dark:text-zinc-400">{t("立即更新会下载并校验安装包，保存草稿后自动静默升级、重启。Windows 可能要求确认系统权限。")}</p>
         )}
 
         {/* 底部操作按钮 */}
@@ -225,17 +223,17 @@ export function UpdateDialog() {
               disabled={checking || status === "checking" || status === "cancelling" || isInstalling}
             >
               <RefreshCw className={`size-3.5 ${checking ? "animate-spin" : ""}`} />
-              <span>{checking ? "检测中..." : "检查新版本"}</span>
+              <span>{checking ? t("检测中...") : t("检查新版本")}</span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
               className="h-8 gap-1 px-2 text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200"
               onClick={handleOpenBrowser}
-              title="在浏览器中查看此 Release"
+              title={t("在浏览器中查看此 Release")}
             >
               <ExternalLink className="size-3.5" />
-              <span>Release 主页</span>
+              <span>{t("Release 主页")}</span>
             </Button>
           </div>
 
@@ -248,16 +246,14 @@ export function UpdateDialog() {
                   className="h-8 text-xs text-slate-500 dark:text-zinc-400"
                   onClick={ignoreCurrentRelease}
                 >
-                  忽略此版本
-                </Button>
+                   {t("忽略此版本")} </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-8 text-xs"
                   onClick={() => setDialogOpen(false)}
                 >
-                  稍后
-                </Button>
+                   {t("稍后")} </Button>
                 <Button
                   size="sm"
                   className="h-8 gap-1.5 bg-amber-600 text-xs font-bold text-white hover:bg-amber-700 dark:bg-amber-500 dark:text-zinc-950 dark:hover:bg-amber-400"
@@ -265,7 +261,7 @@ export function UpdateDialog() {
                   disabled={checking || status === "checking"}
                 >
                   <Download className="size-3.5" />
-                  <span>{hasNewerDownload ? "下载新版" : hasPartialDownload ? "继续下载" : "立即更新"}</span>
+                  <span>{hasNewerDownload ? t("下载新版") : hasPartialDownload ? t("继续下载") : t("立即更新")}</span>
                 </Button>
               </>
             )}
@@ -275,7 +271,7 @@ export function UpdateDialog() {
                 {hasNewerDownload && (
                   <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={startDownload} disabled={checking || status === "cancelling"}>
                     <Download className="size-3.5" />
-                    <span>下载新版</span>
+                    <span>{t("下载新版")}</span>
                   </Button>
                 )}
                 <Button
@@ -286,7 +282,7 @@ export function UpdateDialog() {
                   onClick={cancelDownload}
                 >
                   <X className="size-3.5" />
-                  <span>取消下载</span>
+                  <span>{t("取消下载")}</span>
                 </Button>
               </>
             )}
@@ -299,8 +295,7 @@ export function UpdateDialog() {
                   className="h-8 text-xs"
                   onClick={() => setDialogOpen(false)}
                 >
-                  稍后安装
-                </Button>
+                   {t("稍后安装")} </Button>
                 <Button
                   size="sm"
                   className="h-8 gap-1.5 bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400"
@@ -308,7 +303,7 @@ export function UpdateDialog() {
                   disabled={checking}
                 >
                   <Rocket className="size-3.5" />
-                  <span>立即安装升级</span>
+                  <span>{t("立即安装升级")}</span>
                 </Button>
               </>
             )}
@@ -321,8 +316,7 @@ export function UpdateDialog() {
                   className="h-8 text-xs"
                   onClick={handleManualDownload}
                 >
-                  浏览器下载
-                </Button>
+                   {t("浏览器下载")} </Button>
                 <Button
                   size="sm"
                   className="h-8 gap-1.5 bg-amber-600 text-xs font-bold text-white hover:bg-amber-700"
@@ -330,7 +324,7 @@ export function UpdateDialog() {
                   disabled={checking}
                 >
                   <RefreshCw className="size-3.5" />
-                  <span>{hasNewerDownload ? "下载新版" : hasPartialDownload ? "继续下载" : "重试下载"}</span>
+                  <span>{hasNewerDownload ? t("下载新版") : hasPartialDownload ? t("继续下载") : t("重试下载")}</span>
                 </Button>
               </>
             )}

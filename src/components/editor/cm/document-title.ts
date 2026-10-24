@@ -1,3 +1,5 @@
+import { setControlLabel } from "./localized-controls.ts";
+import { t } from "../../../lib/i18n.ts";
 import type { Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { stripSupportedTextExtension } from "@/lib/markdown-files";
@@ -28,7 +30,7 @@ class DocumentTitleWidget extends WidgetType {
     input.readOnly = !this.editable;
     input.spellcheck = false;
     input.autocomplete = "off";
-    input.setAttribute("aria-label", this.editable ? `修改文件名：${editableTitle}` : `文件名：${editableTitle}`);
+    setControlLabel(input, "aria-label", () => this.editable ? t("修改文件名：{0}", [editableTitle]) : t("文件名：{0}", [editableTitle]));
 
     let composing = false;
     let submitting = false;

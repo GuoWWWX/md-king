@@ -22,8 +22,8 @@ pub fn get_app_config() -> AppConfig {
 
 #[tauri::command]
 pub fn save_app_config(app: AppHandle, config: AppConfig) -> Result<AppConfig, String> {
-    sync_context_menu(config.enable_context_menu)?;
-    sync_tray(&app, config.enable_tray)?;
+    sync_context_menu(config.enable_context_menu, &config.language)?;
+    sync_tray(&app, config.enable_tray, &config.language)?;
     sync_quick_paste(&app, &config)?;
     save_config_core(config)
 }

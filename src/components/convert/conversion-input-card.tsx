@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { ClipboardPaste, Files, FileText, FileUp, Undo2, Redo2, Scissors, Copy, Clipboard, CheckSquare, Save, IndentIncrease, IndentDecrease, Link2 } from "lucide-react";
@@ -188,7 +189,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
       const { text } = await readMarkdownFile(file);
       onFileTextLoad(text, file);
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "读取文件失败"));
+      toast.error(userFacingErrorMessage(error, t("读取文件失败")));
     }
   }
 
@@ -219,7 +220,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
 
     const files = Array.from(event.dataTransfer.files);
     if (files.length !== 1) {
-      toast.error("多文件请使用批量导入按钮");
+      toast.error(t("多文件请使用批量导入按钮"));
       return;
     }
     void loadMarkdownFile(files[0]);
@@ -239,7 +240,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      toast.error("复制失败");
+      toast.error(t("复制失败"));
       return false;
     }
   }
@@ -276,7 +277,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
       view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });
       view.focus();
     } catch {
-      toast.error("读取剪贴板失败");
+      toast.error(t("读取剪贴板失败"));
     }
   }
 
@@ -310,8 +311,8 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
       const result = createDocumentReference(view.state.doc.toString(), selection.from, selection.to, kind, referencePath);
       if (result.changes.length) view.dispatch({ changes: result.changes });
       await copyTextToClipboard(result.reference);
-      toast.success(referencePath ? "已复制引用，可粘贴到当前文件或其他文档" : "已复制当前文件引用；跨文件引用请先保存文档");
-    } catch (error) { toast.error(userFacingErrorMessage(error, "复制引用失败")); }
+      toast.success(referencePath ? t("已复制引用，可粘贴到当前文件或其他文档") : t("已复制当前文件引用；跨文件引用请先保存文档"));
+    } catch (error) { toast.error(userFacingErrorMessage(error, t("复制引用失败"))); }
   }
 
   function changeCodeBlockIndent(delta: number) {
@@ -330,7 +331,7 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           没有这层的话桌面端拖文件进来毫无视觉反馈。 */}
       {externalDragging && hasDocument ? (
         <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-[10px] border-2 border-dashed border-blue-500 bg-blue-50/85 dark:border-blue-400 dark:bg-blue-950/70">
-          <span className="text-sm font-bold text-blue-700 dark:text-blue-200">{externalDraggingImage ? "松开以插入图片" : "松开以在新标签中打开"}</span>
+          <span className="text-sm font-bold text-blue-700 dark:text-blue-200">{externalDraggingImage ? t("松开以插入图片") : t("松开以在新标签中打开")}</span>
         </div>
       ) : null}
 
@@ -371,56 +372,52 @@ export const ConversionInputCard = forwardRef<ConversionInputCardHandle, Convers
           <div className="mk-file-cube mb-5 flex size-20 items-center justify-center rounded-[16px] text-white">
             <FileText className="size-10" />
           </div>
-          <h4 className="text-lg font-black text-blue-700">打开文档</h4>
-          <p className="mt-2 max-w-[280px] text-xs leading-5 text-blue-900/55">支持导入或拖放 Markdown、TXT 文件</p>
+          <h4 className="text-lg font-black text-blue-700">{t("打开文档")}</h4>
+          <p className="mt-2 max-w-[280px] text-xs leading-5 text-blue-900/55">{t("支持导入或拖放 Markdown、TXT 文件")}</p>
           <div className="mt-5 flex flex-col gap-2">
             <Button type="button" variant="outline" onClick={() => onNativeFileSelect ? void Promise.resolve(onNativeFileSelect()) : inputRef.current?.click()} disabled={disabled} className={emptyStateActionClass}>
               <FileUp className="size-4" />
-              选择文件
-            </Button>
+               {t("选择文件")} </Button>
             {onBatchSelect ? (
               <Button type="button" variant="outline" className={emptyStateActionClass} onClick={() => void Promise.resolve(onBatchSelect())} disabled={disabled}>
                 <Files className="size-4" />
-                批量导入
-              </Button>
+                 {t("批量导入")} </Button>
             ) : null}
             <Button type="button" variant="outline" className={emptyStateActionClass} onClick={() => void Promise.resolve(onReadClipboard())} disabled={disabled}>
               <ClipboardPaste className="size-4" />
-              粘贴剪贴板
-            </Button>
+               {t("粘贴剪贴板")} </Button>
           </div>
         </div>
       )}
         {docStats ? (
           <div className="absolute bottom-2 right-3 select-none pointer-events-none text-[11px] text-slate-400 dark:text-zinc-500">
-            {docStats.chars.toLocaleString()} 字 · {docStats.lines.toLocaleString()} 行
-          </div>
+            {docStats.chars.toLocaleString()}  {t("字 ·")} {docStats.lines.toLocaleString()}  {t("行")} </div>
         ) : null}
         </section>
       </ContextMenu.Trigger>
 
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 w-fit rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={undoEditor} disabled={!hasDocument}><Undo2 /><span className="flex-1">撤销</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+Z</span></ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={redoEditor} disabled={!hasDocument}><Redo2 /><span className="flex-1">重做</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+Y</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={undoEditor} disabled={!hasDocument}><Undo2 /><span className="flex-1">{t("撤销")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+Z</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={redoEditor} disabled={!hasDocument}><Redo2 /><span className="flex-1">{t("重做")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+Y</span></ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void cutEditorSelection()} disabled={!hasDocument}><Scissors /><span className="flex-1">剪切</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+X</span></ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}><Copy /><span className="flex-1">复制</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+C</span></ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}><Clipboard /><span className="flex-1">粘贴</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+V</span></ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}><CheckSquare /><span className="flex-1">全选</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+A</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void cutEditorSelection()} disabled={!hasDocument}><Scissors /><span className="flex-1">{t("剪切")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+X</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyEditorSelection()} disabled={!hasDocument}><Copy /><span className="flex-1">{t("复制")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+C</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void pasteIntoEditor()}><Clipboard /><span className="flex-1">{t("粘贴")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+V</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={selectAllEditorText} disabled={!hasDocument}><CheckSquare /><span className="flex-1">{t("全选")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+A</span></ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("heading")} disabled={!hasDocument}><Link2 /><span>复制章节引用</span></ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("paragraph")} disabled={!hasDocument || disabled || readingMode}><Link2 /><span>复制段落引用</span></ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("lines")} disabled={!hasDocument || disabled || readingMode}><Link2 /><span>复制行范围引用</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("heading")} disabled={!hasDocument}><Link2 /><span>{t("复制章节引用")}</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("paragraph")} disabled={!hasDocument || disabled || readingMode}><Link2 /><span>{t("复制段落引用")}</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyReference("lines")} disabled={!hasDocument || disabled || readingMode}><Link2 /><span>{t("复制行范围引用")}</span></ContextMenu.Item>
           {codeIndentContext ? (
             <>
               <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-              <ContextMenu.Item className={contextMenuItemClass} onSelect={() => changeCodeBlockIndent(-24)} disabled={!codeIndentContext.canOutdent}><IndentDecrease /><span className="flex-1">减少代码块缩进</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+[</span></ContextMenu.Item>
-              <ContextMenu.Item className={contextMenuItemClass} onSelect={() => changeCodeBlockIndent(24)} disabled={!codeIndentContext.canIndent}><IndentIncrease /><span className="flex-1">增加代码块缩进</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+]</span></ContextMenu.Item>
+              <ContextMenu.Item className={contextMenuItemClass} onSelect={() => changeCodeBlockIndent(-24)} disabled={!codeIndentContext.canOutdent}><IndentDecrease /><span className="flex-1">{t("减少代码块缩进")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+[</span></ContextMenu.Item>
+              <ContextMenu.Item className={contextMenuItemClass} onSelect={() => changeCodeBlockIndent(24)} disabled={!codeIndentContext.canIndent}><IndentIncrease /><span className="flex-1">{t("增加代码块缩进")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+]</span></ContextMenu.Item>
             </>
           ) : null}
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onRequestSave?.()} disabled={!hasDocument || !onRequestSave}><Save /><span className="flex-1">保存</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+S</span></ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onRequestSave?.()} disabled={!hasDocument || !onRequestSave}><Save /><span className="flex-1">{t("保存")}</span><span className="ml-4 text-xs text-slate-400 dark:text-zinc-500">Ctrl+S</span></ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

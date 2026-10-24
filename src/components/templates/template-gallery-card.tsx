@@ -1,3 +1,5 @@
+import { templateLabel } from "@/lib/template-labels";
+import { t } from "@/lib/i18n";
 import { CheckSquare, Edit3, Star, Trash2 } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
@@ -55,7 +57,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
 
       <div className="mk-template-card-preview mb-2.5 h-44 overflow-hidden rounded-[8px] border border-slate-200/80 bg-slate-100/70 text-xs shadow-inner shadow-slate-200/70 dark:border-zinc-700/70 dark:bg-zinc-950/70 dark:shadow-none">
         {template.previewImagePath ? (
-          <img src={template.previewImagePath} alt={`${template.name} 预览`} className="h-full w-full rounded-md bg-white object-contain dark:bg-zinc-950" />
+          <img src={template.previewImagePath} alt={t("{0} 预览", [templateLabel(template)])} className="h-full w-full rounded-md bg-white object-contain dark:bg-zinc-950" />
         ) : (
           <WordPreviewPage
             styleConfig={cardPreviewStyleConfig}
@@ -66,7 +68,7 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
             viewportClassName="mk-template-preview-viewport rounded-[8px] bg-white px-1 py-1 overflow-hidden"
           />
         )}
-        <div className="sr-only">{template.previewImagePath ? "用户模板预览图" : "根据模板样式生成的 Word 缩略预览"}</div>
+        <div className="sr-only">{template.previewImagePath ? t("用户模板预览图") : t("根据模板样式生成的 Word 缩略预览")}</div>
       </div>
 
       <div className="flex items-start justify-between gap-3">
@@ -81,44 +83,43 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
             onPreview(template);
             onToggleSelect(template);
           }}
-          aria-label={`选择 ${template.name}`}
+          aria-label={t("选择 {0}", [templateLabel(template)])}
         >
           {isSelected ? <CheckSquare className="size-4" /> : null}
         </button>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-slate-950 dark:text-zinc-50">{template.name}</h3>
+            <h3 className="truncate text-sm font-semibold text-slate-950 dark:text-zinc-50">{templateLabel(template)}</h3>
             {isCurrent ? <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" /> : null}
           </div>
-          <p className="mt-0.5 line-clamp-1 text-xs leading-4 text-slate-500 dark:text-zinc-400">{template.description ?? "Word/WPS 参考样式模板"}</p>
+          <p className="mt-0.5 line-clamp-1 text-xs leading-4 text-slate-500 dark:text-zinc-400">{template.description ? template.isBuiltIn ? t(template.description) : template.description : t("Word/WPS 参考样式模板")}</p>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {template.isDefault ? <Badge className="rounded-full bg-blue-600 text-white hover:bg-blue-600">默认</Badge> : null}
+          {template.isDefault ? <Badge className="rounded-full bg-blue-600 text-white hover:bg-blue-600">{t("默认")}</Badge> : null}
         </div>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
-        <Badge variant="secondary" className="rounded-full bg-blue-50 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">{category}</Badge>
+        <Badge variant="secondary" className="rounded-full bg-blue-50 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">{template.isBuiltIn || category === "未分组" ? t(category) : category}</Badge>
         {visibleTags.map((tag) => (
           <Badge key={tag} variant="secondary" className="rounded-full bg-white/70 text-slate-500 dark:bg-zinc-800/76 dark:text-zinc-400">{tag}</Badge>
         ))}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <PrimaryActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onUse(template); }}>使用</PrimaryActionButton>
-        <SoftActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); return template.isDefault ? toast.info("当前已经是默认模板") : onSetDefault(template); }}>{template.isDefault ? "已默认" : "设默认"}</SoftActionButton>
+        <PrimaryActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onUse(template); }}>{t("使用")}</PrimaryActionButton>
+        <SoftActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); return template.isDefault ? toast.info(t("当前已经是默认模板")) : onSetDefault(template); }}>{template.isDefault ? t("已默认") : t("设默认")}</SoftActionButton>
       </div>
 
       {template.isBuiltIn ? (
         <SoftActionButton className="mt-1.5 h-8 w-full rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onStyleManager(template); }}>
           <Edit3 className="size-4" />
-          编辑样式
-        </SoftActionButton>
+           {t("编辑样式")} </SoftActionButton>
       ) : (
         <div className="mt-1.5 grid grid-cols-2 gap-2">
-          <SoftActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />模板信息</SoftActionButton>
+          <SoftActionButton className="h-8 rounded-[8px] text-xs" size="sm" onClick={(event) => { event.stopPropagation(); onPreview(template); onEdit(template); }}><Edit3 className="size-4" />{t("模板信息")}</SoftActionButton>
           <Button
             variant="ghost"
             size="sm"
@@ -127,11 +128,10 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
               event.stopPropagation();
               onDelete(template);
             }}
-            title="删除模板"
+            title={t("删除模板")}
           >
             <Trash2 className="size-4" />
-            删除
-          </Button>
+             {t("删除")} </Button>
         </div>
       )}
         </AppSurface>
@@ -139,18 +139,18 @@ export function TemplateGalleryCard({ template, previewMarkdown, previewStyleCon
 
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onPreview(template)}>预览模板</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onUse(template); }}>使用此模板</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onToggleSelect(template)}>选择模板</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSetDefault(template)} disabled={template.isDefault}>设为默认模板</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onPreview(template)}>{t("预览模板")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onUse(template); }}>{t("使用此模板")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onToggleSelect(template)}>{t("选择模板")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSetDefault(template)} disabled={template.isDefault}>{t("设为默认模板")}</ContextMenu.Item>
           <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
           {template.isBuiltIn ? (
-            <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onStyleManager(template); }}>编辑样式</ContextMenu.Item>
+            <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onStyleManager(template); }}>{t("编辑样式")}</ContextMenu.Item>
           ) : (
-            <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onEdit(template); }}>编辑模板信息</ContextMenu.Item>
+            <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onEdit(template); }}>{t("编辑模板信息")}</ContextMenu.Item>
           )}
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onStyleManager(template); }}>打开样式管理器</ContextMenu.Item>
-          <ContextMenu.Item className={cn(contextMenuItemClass, "text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 dark:text-red-300 dark:data-[highlighted]:bg-red-500/12 dark:data-[highlighted]:text-red-200")} onSelect={() => onDelete(template)} disabled={template.isBuiltIn}>删除模板</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => { onPreview(template); onStyleManager(template); }}>{t("打开样式管理器")}</ContextMenu.Item>
+          <ContextMenu.Item className={cn(contextMenuItemClass, "text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 dark:text-red-300 dark:data-[highlighted]:bg-red-500/12 dark:data-[highlighted]:text-red-200")} onSelect={() => onDelete(template)} disabled={template.isBuiltIn}>{t("删除模板")}</ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

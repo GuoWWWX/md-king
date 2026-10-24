@@ -1,3 +1,5 @@
+import { templateLabel } from "@/lib/template-labels";
+import { t } from "@/lib/i18n";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
 import { ArrowRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, ExternalLink, FileText, FolderOpen, Loader2, Maximize2, Minimize2, Trash2, UploadCloud } from "lucide-react";
 import { type DragEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -406,12 +408,12 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       setPanelDragging(false);
       const markdownPaths = payload.paths.filter(isFloatingMarkdownFile);
       if (markdownPaths.length === 0) {
-        showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
+        showFloatingToast(systemWindow, "error", t("仅支持 .md 文件"));
         return;
       }
 
       setCurrentTask(makePathTask(markdownPaths[0]), parentDirectory(markdownPaths[0]));
-      showFloatingToast(systemWindow, "success", markdownPaths.length > 1 ? "一次处理一个文件，已载入第一个 .md 文件" : "已载入 Markdown 文件");
+      showFloatingToast(systemWindow, "success", markdownPaths.length > 1 ? t("一次处理一个文件，已载入第一个 .md 文件") : t("已载入 Markdown 文件"));
       await openSystemPanelFromBall();
     }).then((cleanup) => {
       unlisten = cleanup;
@@ -475,7 +477,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   async function addFiles(files: File[]) {
     const markdownFiles = files.filter((file) => isFloatingMarkdownFile(file.name));
     if (markdownFiles.length === 0) {
-      showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
+      showFloatingToast(systemWindow, "error", t("仅支持 .md 文件"));
       return;
     }
 
@@ -483,10 +485,10 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     try {
       const item = await readMarkdownFile(file);
       setCurrentTask(makeTask(item.name, item.text));
-      showFloatingToast(systemWindow, "success", markdownFiles.length > 1 ? "一次处理一个文件，已载入第一个 .md 文件" : "已载入 Markdown 文件");
+      showFloatingToast(systemWindow, "success", markdownFiles.length > 1 ? t("一次处理一个文件，已载入第一个 .md 文件") : t("已载入 Markdown 文件"));
       if (systemWindow && !open) await openSystemPanelFromBall();
     } catch (error) {
-      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, `读取 ${file.name} 失败`));
+      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, t("读取 {0} 失败", [file.name])));
     }
   }
 
@@ -495,20 +497,20 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       const path = await selectMdFile();
       if (!path) return;
       setCurrentTask(makePathTask(path), parentDirectory(path));
-      showFloatingToast(systemWindow, "success", "已载入 Markdown 文件");
+      showFloatingToast(systemWindow, "success", t("已载入 Markdown 文件"));
     } catch (error) {
-      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, "选择文件失败"));
+      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, t("选择文件失败")));
     }
   }
 
   async function chooseOutputDirectory() {
     try {
-      const path = await selectDirectory("选择导出目录");
+      const path = await selectDirectory(t("选择导出目录"));
       if (!path) return;
       outputDirectoryTouchedRef.current = true;
       setOutputDirectory(path);
     } catch (error) {
-      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, "选择导出目录失败"));
+      showFloatingToast(systemWindow, "error", userFacingErrorMessage(error, t("选择导出目录失败")));
     }
   }
 
@@ -533,7 +535,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       return;
     }
 
-    showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
+    showFloatingToast(systemWindow, "error", t("仅支持 .md 文件"));
   }
 
   useEffect(() => {
@@ -545,8 +547,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       const text = event.clipboardData?.getData("text/plain").trim();
       if (!text) return;
       event.preventDefault();
-      setCurrentTask(makeTask("剪贴板内容.md", text));
-      showFloatingToast(systemWindow, "success", "已载入剪贴板中的 Markdown 内容");
+      setCurrentTask(makeTask(t("剪贴板内容.md"), text));
+      showFloatingToast(systemWindow, "success", t("已载入剪贴板中的 Markdown 内容"));
     }
 
     window.addEventListener("paste", handlePaste);
@@ -566,7 +568,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
   }
 
   async function convertTask(task: FloatingTask) {
-    updateTask(task.id, { status: "running", message: "转换中..." });
+    updateTask(task.id, { status: "running", message: t("转换中...") });
     const outputName = normalizeFloatingOutputName(task.outputName, floatingOutputName(task.inputPath, task.text));
     const input = task.inputPath?.trim() ? task.inputPath : task.text;
     const output = buildOutputPath(outputDirectory, outputName);
@@ -582,7 +584,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
     });
     updateTask(task.id, {
       status: result.ok ? "success" : "failed",
-      message: `${result.message ?? (result.ok ? "转换完成" : "转换失败")}${actionableConversionWarnings(result.warnings).length > 0 ? "（有提示）" : ""}`,
+      message: t("{0}{1}", [result.message ?? (result.ok ? "转换完成" : "转换失败"), actionableConversionWarnings(result.warnings).length > 0 ? "（有提示）" : ""]),
       outputPath: result.ok && !result.simulated ? result.output ?? output : undefined,
     });
     return result;
@@ -594,18 +596,18 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       await action(task.outputPath);
     } catch (error) {
       updateTask(task.id, {
-        message: `${task.message ?? "转换完成"}；${userFacingErrorMessage(error, fallbackMessage)}`,
+        message: t("{0}；{1}", [task.message ?? "转换完成", userFacingErrorMessage(error, fallbackMessage)]),
       });
     }
   }
 
   async function runConvert() {
     if (!currentTask || (currentTask.status !== "pending" && currentTask.status !== "failed")) {
-      showFloatingToast(systemWindow, "info", "当前没有待转换任务");
+      showFloatingToast(systemWindow, "info", t("当前没有待转换任务"));
       return;
     }
     if (!outputDirectory.trim()) {
-      updateTask(currentTask.id, { status: "failed", message: "请选择导出目录" });
+      updateTask(currentTask.id, { status: "failed", message: t("请选择导出目录") });
       return;
     }
 
@@ -615,9 +617,9 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
       const result = await convertTask(currentTask);
       await persistHistory([buildHistoryItem(result)]);
       const warningCount = actionableConversionWarnings(result.warnings).length;
-      showFloatingToast(systemWindow, !result.ok ? "error" : warningCount > 0 ? "info" : "success", !result.ok ? "转换失败" : warningCount > 0 ? `转换完成，${warningCount} 条提示待检查` : "转换完成");
+      showFloatingToast(systemWindow, !result.ok ? "error" : warningCount > 0 ? "info" : "success", !result.ok ? t("转换失败") : warningCount > 0 ? t("转换完成，{0} 条提示待检查", [warningCount]) : t("转换完成"));
     } catch (error) {
-      updateTask(currentTask.id, { status: "failed", message: userFacingErrorMessage(error, "转换失败") });
+      updateTask(currentTask.id, { status: "failed", message: userFacingErrorMessage(error, t("转换失败")) });
     } finally {
       setIsConverting(false);
     }
@@ -651,19 +653,19 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
             <div className="flex min-w-0 items-center gap-2.5">
               <MdKingLogo className="size-8 shrink-0" />
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-950 dark:text-slate-50">转换任务</p>
-                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{tasks.length > 0 ? `${tasks.length} 个转换任务` : "暂无任务"}</p>
+                <p className="text-sm font-bold text-slate-950 dark:text-slate-50">{t("转换任务")}</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{tasks.length > 0 ? t("{0} 个转换任务", [tasks.length]) : t("暂无任务")}</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <TooltipButton
-                tooltip="收起"
+                tooltip={t("收起")}
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 className="text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-white/10"
                 onClick={() => setOpen(false)}
-                aria-label="收起悬浮球面板"
+                aria-label={t("收起悬浮球面板")}
               >
                 <Minimize2 className="size-4" />
               </TooltipButton>
@@ -679,8 +681,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               onDrop={handleDrop}
             >
               <UploadCloud className="mx-auto size-6 text-[var(--app-primary)]" />
-              <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">拖入文件</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">.md 文件或粘贴 Markdown 内容</p>
+              <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("拖入文件")}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t(".md 文件或粘贴 Markdown 内容")}</p>
               {canUseSystemWindow ? (
                 <Button
                   type="button"
@@ -691,26 +693,25 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
                   disabled={isConverting}
                 >
                   <FolderOpen className="size-3.5" />
-                  选择文件
-                </Button>
+                   {t("选择文件")} </Button>
               ) : null}
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <Label className="shrink-0 text-xs text-slate-500 dark:text-slate-400">模板</Label>
+              <Label className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{t("模板")}</Label>
               <Select value={activeTemplateId} onValueChange={(value) => { setSelectedTemplateId(value); setCurrentTemplateId(value); }}>
                 <SelectTrigger className="mk-floating-soft h-8 min-w-0 flex-1 rounded-[6px] bg-white dark:border-slate-700 dark:bg-zinc-900">
-                  <SelectValue placeholder="使用上次模板" />
+                  <SelectValue placeholder={t("使用上次模板")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {templateOptions.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+                  {templateOptions.map((template) => <SelectItem key={template.id} value={template.id}>{templateLabel(template)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto pr-1" aria-live="polite">
               {tasks.length === 0 ? (
-                <div className="mk-floating-empty flex h-full min-h-28 items-center justify-center rounded-[8px] px-5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">暂无转换任务</div>
+                <div className="mk-floating-empty flex h-full min-h-28 items-center justify-center rounded-[8px] px-5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">{t("暂无转换任务")}</div>
               ) : (
                 <div className="space-y-2">
                   {tasks.map((task) => (
@@ -720,32 +721,32 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <p className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100" title={task.name}>{task.name}</p>
-                            <span className={cn("shrink-0 text-[11px]", task.status === "success" ? "text-emerald-600 dark:text-emerald-400" : task.status === "failed" ? "text-red-600 dark:text-red-400" : task.status === "running" ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>{task.status === "success" ? "已生成" : task.status === "failed" ? "失败" : task.status === "running" ? "转换中" : "待转换"}</span>
+                            <span className={cn("shrink-0 text-[11px]", task.status === "success" ? "text-emerald-600 dark:text-emerald-400" : task.status === "failed" ? "text-red-600 dark:text-red-400" : task.status === "running" ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>{task.status === "success" ? t("已生成") : task.status === "failed" ? t("失败") : task.status === "running" ? t("转换中") : t("待转换")}</span>
                           </div>
-                          <p className="mt-0.5 break-all leading-4 text-slate-500 dark:text-slate-400">{task.message ?? task.inputPath ?? "等待转换"}</p>
+                          <p className="mt-0.5 break-all leading-4 text-slate-500 dark:text-slate-400">{task.message ?? task.inputPath ?? t("等待转换")}</p>
                           {task.outputPath ? (
                             <div className="mt-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700/80">
                               <p className="break-all leading-4 text-slate-600 dark:text-slate-300" title={task.outputPath}>{task.outputPath}</p>
                               <div className="mt-1.5 flex items-center gap-1">
                                 <TooltipButton
-                                  tooltip="打开生成的 Word 文件"
+                                  tooltip={t("打开生成的 Word 文件")}
                                   type="button"
                                   variant="ghost"
                                   size="icon-xs"
                                   className="rounded-[5px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10"
-                                  onClick={() => void runOutputAction(task, openOutputPath, "打开文件失败")}
-                                  aria-label="打开生成的 Word 文件"
+                                  onClick={() => void runOutputAction(task, openOutputPath, t("打开文件失败"))}
+                                  aria-label={t("打开生成的 Word 文件")}
                                 >
                                   <ExternalLink className="size-3.5" />
                                 </TooltipButton>
                                 <TooltipButton
-                                  tooltip="资源管理器中打开"
+                                  tooltip={t("资源管理器中打开")}
                                   type="button"
                                   variant="ghost"
                                   size="icon-xs"
                                   className="rounded-[5px] text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10"
-                                  onClick={() => void runOutputAction(task, revealOutputPath, "打开资源管理器失败")}
-                                  aria-label="资源管理器中打开"
+                                  onClick={() => void runOutputAction(task, revealOutputPath, t("打开资源管理器失败"))}
+                                  aria-label={t("资源管理器中打开")}
                                 >
                                   <FolderOpen className="size-3.5" />
                                 </TooltipButton>
@@ -754,14 +755,14 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
                           ) : null}
                         </div>
                         <TooltipButton
-                          tooltip="移除任务"
+                          tooltip={t("移除任务")}
                           type="button"
                           variant="ghost"
                           size="icon-xs"
                           className="rounded-[5px] text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-100"
                           onClick={() => setTasks((current) => current.filter((item) => item.id !== task.id))}
                           disabled={isConverting}
-                          aria-label="移除任务"
+                          aria-label={t("移除任务")}
                         >
                           <Trash2 className="size-3.5" />
                         </TooltipButton>
@@ -774,14 +775,14 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
 
             <div className="grid shrink-0 gap-2">
               <div className="flex items-center gap-2">
-                <Label className="w-14 shrink-0 text-xs text-slate-500 dark:text-slate-400">导出位置</Label>
+                <Label className="w-14 shrink-0 text-xs text-slate-500 dark:text-slate-400">{t("导出位置")}</Label>
                 <div className="relative min-w-0 flex-1">
                   <Input
                     className="h-8 cursor-pointer rounded-[6px] bg-white pr-8 text-xs dark:border-slate-700 dark:bg-zinc-900"
                     value={outputDirectory}
-                    placeholder="选择导出目录"
+                    placeholder={t("选择导出目录")}
                     readOnly
-                    title={outputDirectory || "选择导出目录"}
+                    title={outputDirectory || t("选择导出目录")}
                     onClick={() => void chooseOutputDirectory()}
                   />
                   <TooltipButton
@@ -789,8 +790,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
                     variant="ghost"
                     size="icon-xs"
                     className="absolute right-1 top-1 size-6 rounded-[5px] text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
-                    tooltip="选择导出目录"
-                    aria-label="选择导出目录"
+                    tooltip={t("选择导出目录")}
+                    aria-label={t("选择导出目录")}
                     onClick={() => void chooseOutputDirectory()}
                   >
                     <FolderOpen className="size-3.5" />
@@ -798,12 +799,12 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Label htmlFor="floating-output-name" className="w-14 shrink-0 text-xs text-slate-500 dark:text-slate-400">文件名</Label>
+                <Label htmlFor="floating-output-name" className="w-14 shrink-0 text-xs text-slate-500 dark:text-slate-400">{t("文件名")}</Label>
                 <Input
                   id="floating-output-name"
                   className="h-8 rounded-[6px] bg-white text-xs dark:border-slate-700 dark:bg-zinc-900"
                   value={currentTask?.outputName ?? ""}
-                  placeholder="输出文件名.docx"
+                  placeholder={t("输出文件名.docx")}
                   disabled={!currentTask || isConverting || currentTask.status === "success"}
                   onChange={(event) => currentTask && updateTask(currentTask.id, { outputName: event.target.value })}
                   onBlur={() => currentTask && updateTask(currentTask.id, { outputName: normalizeFloatingOutputName(currentTask.outputName, floatingOutputName(currentTask.inputPath, currentTask.text)) })}
@@ -813,7 +814,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
 
             <Button className="h-9 w-full shrink-0 bg-sky-600 font-semibold text-white shadow-none hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 dark:bg-sky-500 dark:hover:bg-sky-400" onClick={runConvert} disabled={isConverting || !currentTask || currentTask.status === "success" || !outputDirectory.trim() || !currentTask.outputName.trim()}>
               {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-              {isConverting ? "正在转换..." : "开始转换"}
+              {isConverting ? t("正在转换...") : t("开始转换")}
             </Button>
           </div>
         </div>
@@ -848,7 +849,7 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               void addFiles(files);
               return;
             }
-            showFloatingToast(systemWindow, "error", "仅支持 .md 文件");
+            showFloatingToast(systemWindow, "error", t("仅支持 .md 文件"));
           }}
         >
           <TooltipButton
@@ -873,8 +874,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               }
               handleBallPointerDown(event);
             }}
-            tooltip={systemWindow ? "点击展开；拖动移动；可拖入 .md 文件" : "拖动悬浮球；点击打开转换面板"}
-            aria-label="悬浮球转换"
+            tooltip={systemWindow ? t("点击展开；拖动移动；可拖入 .md 文件") : t("拖动悬浮球；点击打开转换面板")}
+            aria-label={t("悬浮球转换")}
           >
             {systemWindow && dockCollapsed && dockSide ? (
               dockSide === "right" ? <ChevronsLeft className="size-3.5 shrink-0" /> : <ChevronsRight className="size-3.5 shrink-0" />
@@ -892,8 +893,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               <TooltipButton
                 type="button"
                 className="flex size-6 items-center justify-center rounded-[8px] bg-slate-950 text-white shadow-sm disabled:opacity-40 dark:bg-white dark:text-slate-950"
-                tooltip="开始转换"
-                aria-label="开始转换"
+                tooltip={t("开始转换")}
+                aria-label={t("开始转换")}
                 onClick={() => void runConvert()}
                 disabled={isConverting || !currentTask || currentTask.status === "success" || !outputDirectory.trim() || !currentTask.outputName.trim()}
               >
@@ -902,8 +903,8 @@ export function FloatingConverter({ systemWindow = false }: FloatingConverterPro
               <TooltipButton
                 type="button"
                 className="flex size-6 items-center justify-center rounded-full text-[var(--app-primary)] hover:bg-[var(--app-primary-soft)]"
-                tooltip="展开设置"
-                aria-label="展开设置"
+                tooltip={t("展开设置")}
+                aria-label={t("展开设置")}
                 onClick={handlePointerOpenPanel}
               >
                 <Maximize2 className="size-3.5" />

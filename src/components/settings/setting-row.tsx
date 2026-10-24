@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
@@ -15,12 +16,12 @@ export function SettingRow({ label, description, checked, badge, disabled = fals
     <div className="flex items-center justify-between gap-3 rounded-[12px] border border-white/70 bg-white/58 px-4 py-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-sm font-medium text-slate-950 dark:text-zinc-50">{label}</p>
+          <p className="truncate text-sm font-medium text-slate-950 dark:text-zinc-50">{t(label)}</p>
           {badge ? <Badge variant="secondary" className="shrink-0 rounded-full bg-blue-50 px-2 py-0 text-[11px] text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">{badge}</Badge> : null}
         </div>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-zinc-400">{description}</p>
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-zinc-400">{t(description)}</p>
       </div>
-      {checked !== undefined ? <Switch className="shrink-0" checked={checked} disabled={disabled} aria-label={label} onCheckedChange={onCheckedChange} /> : null}
+      {checked !== undefined ? <Switch className="shrink-0" checked={checked} disabled={disabled} aria-label={t(label)} onCheckedChange={onCheckedChange} /> : null}
     </div>
   );
 }

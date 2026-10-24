@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { ChevronsDownUp, ChevronsUpDown, FileText, ListTree, type LucideIcon } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { TooltipButton } from "@/components/ui/tooltip";
@@ -207,9 +208,9 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
     <aside
       className={cn("mk-document-side-panel mk-card flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-[5px] border border-slate-200 bg-white shadow-none dark:border-zinc-700 dark:bg-[#202020]", className)}
       style={{ width }}
-      aria-label="文档侧栏"
+      aria-label={t("文档侧栏")}
     >
-      <header className="flex h-9 shrink-0 items-center gap-0.5 border-b border-slate-200 px-1.5 dark:border-zinc-800" role="tablist" aria-label="文档侧栏选项">
+      <header className="flex h-9 shrink-0 items-center gap-0.5 border-b border-slate-200 px-1.5 dark:border-zinc-800" role="tablist" aria-label={t("文档侧栏选项")}>
         {tabOrder.map((tabView) => {
           const def = DRAWER_TAB_DEFS[tabView];
           return (
@@ -217,7 +218,7 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
               key={tabView}
               active={view === tabView}
               icon={def.icon}
-              label={def.label}
+              label={t(def.label)}
               dropPlacement={dropTarget?.tab === tabView ? dropTarget.placement : undefined}
               onClick={() => onViewChange(tabView)}
               onDragStart={() => setDraggedTab(tabView)}
@@ -248,9 +249,9 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
         {view === "outline" && parentLines.length > 0 ? (
           <TooltipButton
             type="button"
-            tooltip={allCollapsed ? "全部展开" : "全部折叠"}
+            tooltip={allCollapsed ? t("全部展开") : t("全部折叠")}
             tooltipSide="bottom"
-            aria-label={allCollapsed ? "全部展开" : "全部折叠"}
+            aria-label={allCollapsed ? t("全部展开") : t("全部折叠")}
             onClick={toggleCollapseAll}
             className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-[6px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
           >
@@ -263,9 +264,9 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
         // 目录自己管滚动和内边距：搜索框要吸在顶部，不能跟着列表一起滚。
         <div className="min-h-0 flex-1 overflow-hidden">
           {!activeTab ? (
-            <EmptyState>打开 Markdown 文档后显示标题目录。</EmptyState>
+            <EmptyState>{t("打开 Markdown 文档后显示标题目录。")}</EmptyState>
           ) : outline.length === 0 ? (
-            <EmptyState>当前文档没有 Markdown 标题。</EmptyState>
+            <EmptyState>{t("当前文档没有 Markdown 标题。")}</EmptyState>
           ) : (
             <DocumentOutlineTree
               outline={outline}
@@ -280,14 +281,14 @@ export function DocumentSideDrawer({ open, view, onViewChange, width, className 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {activeTab ? (
             <dl className="divide-y divide-slate-100 text-sm dark:divide-zinc-800">
-              <InfoRow label="文件名称" value={activeTab.title} />
-              <InfoRow label="文件类型" value={activeTab.kind === "vault" ? "本地 Markdown 文档" : "临时 Markdown 文档"} />
-              <InfoRow label="文件路径" value={activeTab.path ?? "尚未保存到磁盘"} />
-              <InfoRow label="编辑状态" value={activeTab.dirty ? "未保存修改" : "已保存"} />
-              <InfoRow label="正文长度" value={`${activeTab.content.length.toLocaleString()} 个字符`} />
+              <InfoRow label={t("文件名称")} value={activeTab.title} />
+              <InfoRow label={t("文件类型")} value={activeTab.kind === "vault" ? t("本地 Markdown 文档") : t("临时 Markdown 文档")} />
+              <InfoRow label={t("文件路径")} value={activeTab.path ?? t("尚未保存到磁盘")} />
+              <InfoRow label={t("编辑状态")} value={activeTab.dirty ? t("未保存修改") : t("已保存")} />
+              <InfoRow label={t("正文长度")} value={t("{0} 个字符", [activeTab.content.length.toLocaleString()])} />
             </dl>
           ) : (
-            <EmptyState>尚未打开 Markdown 文档。</EmptyState>
+            <EmptyState>{t("尚未打开 Markdown 文档。")}</EmptyState>
           )}
         </div>
       )}
@@ -323,7 +324,7 @@ function DrawerIconButton({
       type="button"
       role="tab"
       aria-selected={active}
-      tooltip={label}
+      tooltip={t(label)}
       tooltipSide="bottom"
       draggable
       className={cn(
@@ -362,7 +363,7 @@ function EmptyState({ children }: { children: ReactNode }) {
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-      <dt className="text-xs text-slate-500 dark:text-zinc-400">{label}</dt>
+      <dt className="text-xs text-slate-500 dark:text-zinc-400">{t(label)}</dt>
       <dd className="break-words text-xs leading-5 text-slate-800 dark:text-zinc-100">{value}</dd>
     </div>
   );

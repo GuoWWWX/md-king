@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, ArrowUpDown, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, ClockArrowDown, ClockArrowUp, FilePlus2, FolderOpen, FolderPlus, GripVertical, Loader2, LocateFixed, RefreshCw, Search, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
@@ -132,7 +133,7 @@ function compareEntries(left: VaultEntry, right: VaultEntry, manualRanks?: Reado
 function loadManualOrder(root?: string): ManualOrder {
   if (!root) return {};
   try {
-    const value = window.localStorage.getItem(`${FILE_TREE_ORDER_KEY_PREFIX}${encodeURIComponent(root)}`);
+    const value = window.localStorage.getItem(t("{0}{1}", [FILE_TREE_ORDER_KEY_PREFIX, encodeURIComponent(root)]));
     if (!value) return {};
     const parsed = JSON.parse(value) as unknown;
     if (!parsed || typeof parsed !== "object") return {};
@@ -147,7 +148,7 @@ function loadManualOrder(root?: string): ManualOrder {
 function persistManualOrder(root: string | undefined, order: ManualOrder) {
   if (!root) return;
   try {
-    window.localStorage.setItem(`${FILE_TREE_ORDER_KEY_PREFIX}${encodeURIComponent(root)}`, JSON.stringify(order));
+    window.localStorage.setItem(t("{0}{1}", [FILE_TREE_ORDER_KEY_PREFIX, encodeURIComponent(root)]), JSON.stringify(order));
   } catch {
     // 无法持久化时仍保留当前会话的排序，不影响文件移动。
   }
@@ -160,7 +161,7 @@ function isFileTreeSortMode(value: string | null): value is FileTreeSortMode {
 function loadFileTreeSortMode(root?: string): FileTreeSortMode {
   if (!root) return "manual";
   try {
-    const value = window.localStorage.getItem(`${FILE_TREE_SORT_KEY_PREFIX}${encodeURIComponent(root)}`);
+    const value = window.localStorage.getItem(t("{0}{1}", [FILE_TREE_SORT_KEY_PREFIX, encodeURIComponent(root)]));
     return isFileTreeSortMode(value) ? value : "manual";
   } catch {
     return "manual";
@@ -170,7 +171,7 @@ function loadFileTreeSortMode(root?: string): FileTreeSortMode {
 function persistFileTreeSortMode(root: string | undefined, mode: FileTreeSortMode) {
   if (!root) return;
   try {
-    window.localStorage.setItem(`${FILE_TREE_SORT_KEY_PREFIX}${encodeURIComponent(root)}`, mode);
+    window.localStorage.setItem(t("{0}{1}", [FILE_TREE_SORT_KEY_PREFIX, encodeURIComponent(root)]), mode);
   } catch {
     // 无法持久化时仍保留当前会话的排序。
   }
@@ -235,7 +236,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     [entries],
   );
   const allDirectoriesExpanded = directoryPaths.length > 0 && directoryPaths.every((path) => expandedDirs.has(path));
-  const sortModeLabel = FILE_TREE_SORT_OPTIONS.find((option) => option.value === sortMode)?.label ?? "自定义顺序";
+  const sortModeLabel = FILE_TREE_SORT_OPTIONS.find((option) => option.value === sortMode)?.label ?? t("自定义顺序");
 
   function replaceSelectedEntries(paths: Iterable<string>) {
     const next = new Set(paths);
@@ -256,7 +257,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
   function remapSelectedEntryPaths(sourcePath: string, targetPath: string, sourceIsDir: boolean) {
     replaceSelectedEntries([...selectedEntryPathsRef.current].map((path) => {
       if (path === sourcePath) return targetPath;
-      if (sourceIsDir && path.startsWith(`${sourcePath}/`)) return `${targetPath}${path.slice(sourcePath.length)}`;
+      if (sourceIsDir && path.startsWith(`${sourcePath}/`)) return t("{0}{1}", [targetPath, path.slice(sourcePath.length)]);
       return path;
     }));
   }
@@ -341,7 +342,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (!projectRoot || openedProjectVaultRef.current === projectRoot) return;
     openedProjectVaultRef.current = projectRoot;
     void loadVault(projectRoot).catch((error) => {
-      const { message } = parseVaultError(error, "打开项目目录失败");
+      const { message } = parseVaultError(error, t("打开项目目录失败"));
       toast.error(message);
     });
   }, [loadVault]);
@@ -357,7 +358,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     );
     if (!root) return;
     void loadVault(root).catch((error) => {
-      const { message } = parseVaultError(error, "恢复上次目录失败");
+      const { message } = parseVaultError(error, t("恢复上次目录失败"));
       toast.error(message);
     });
   }, [appConfig, loadVault]);
@@ -372,7 +373,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     try {
       await loadVault(root);
     } catch (error) {
-      const { message } = parseVaultError(error, "打开目录失败");
+      const { message } = parseVaultError(error, t("打开目录失败"));
       toast.error(message);
     }
   }, [loadVault, vaultRoot]);
@@ -383,7 +384,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       if (!selected) return;
       await requestVaultOpen(selected);
     } catch (error) {
-      const { message } = parseVaultError(error, "选择目录失败");
+      const { message } = parseVaultError(error, t("选择目录失败"));
       toast.error(message);
     }
   }
@@ -394,7 +395,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     try {
       await loadVault(root);
     } catch (error) {
-      const { message } = parseVaultError(error, "打开目录失败");
+      const { message } = parseVaultError(error, t("打开目录失败"));
       throw new Error(message);
     }
   }
@@ -417,7 +418,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       }
       setRecentVaultToRemove(undefined);
     } catch (error) {
-      const { message } = parseVaultError(error, "移除最近目录失败");
+      const { message } = parseVaultError(error, t("移除最近目录失败"));
       throw new Error(message);
     }
   }
@@ -440,7 +441,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       }
     } catch (error) {
       if (showError) {
-        const { message } = parseVaultError(error, "刷新文件树失败");
+        const { message } = parseVaultError(error, t("刷新文件树失败"));
         toast.error(message);
       }
     } finally {
@@ -506,7 +507,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       mergeEntries(listing.entries);
     } catch (error) {
       loadedDirsRef.current.delete(dir);
-      const { message } = parseVaultError(error, "读取子目录失败");
+      const { message } = parseVaultError(error, t("读取子目录失败"));
       toast.error(message);
     }
   }, [mergeEntries, truncated, vaultRoot]);
@@ -556,7 +557,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (!vaultRoot) return;
     const remapPath = (path: string) => {
       if (path === sourcePath) return targetPath;
-      if (sourceIsDir && path.startsWith(`${sourcePath}/`)) return `${targetPath}${path.slice(sourcePath.length)}`;
+      if (sourceIsDir && path.startsWith(`${sourcePath}/`)) return t("{0}{1}", [targetPath, path.slice(sourcePath.length)]);
       return undefined;
     };
     const { tabs, renameTab } = useDocumentTabsStore.getState();
@@ -610,7 +611,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (entry.isDir) {
       loadedDirsRef.current = new Set([...loadedDirsRef.current].map((path) => (
         path === entry.path || path.startsWith(sourcePrefix)
-          ? `${moved.path}${path.slice(entry.path.length)}`
+          ? t("{0}{1}", [moved.path, path.slice(entry.path.length)])
           : path
       )));
     }
@@ -728,7 +729,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       updateEntriesAfterMove(entry, moved, destinationDir);
       if (destinationDir) expandDirs([destinationDir, ...ancestorsOf(destinationDir)]);
     } catch (error) {
-      const { message } = parseVaultError(error, "移动文件失败");
+      const { message } = parseVaultError(error, t("移动文件失败"));
       toast.error(message);
     }
   }
@@ -740,9 +741,9 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       mergeEntries([created]);
       if (createTarget.parentDir) useVaultStore.getState().expandDirs([createTarget.parentDir, ...ancestorsOf(createTarget.parentDir)]);
       if (!created.isDir) onOpenFile(created);
-      toast.success(`已创建 ${created.name}`);
+      toast.success(t("已创建 {0}", [created.name]));
     } catch (error) {
-      const { message } = parseVaultError(error, "创建失败");
+      const { message } = parseVaultError(error, t("创建失败"));
       // 抛回给 Dialog 就地显示，比 toast 更贴近输入框；同时保持对话框不关闭。
       throw new Error(message);
     }
@@ -760,9 +761,9 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       updateManualOrderAfterRename(entry, renamed);
       // 目录改名会连带影响所有后代 path，局部更新算不干净，直接重拉一次。
       await handleRefresh();
-      toast.success(`已重命名为 ${nextName.trim()}`);
+      toast.success(t("已重命名为 {0}", [nextName.trim()]));
     } catch (error) {
-      const { message } = parseVaultError(error, "重命名失败");
+      const { message } = parseVaultError(error, t("重命名失败"));
       toast.error(message);
     }
   }
@@ -779,7 +780,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         deleted += 1;
       } catch (error) {
         if (!firstError) {
-          const { message } = parseVaultError(error, "删除失败");
+          const { message } = parseVaultError(error, t("删除失败"));
           firstError = new Error(message);
         }
       }
@@ -787,7 +788,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
     if (deleted > 0) {
       removeSelectedEntryPaths(deleteTargets);
       await handleRefresh();
-      toast.success(deleted === 1 ? `已删除 ${deleteTargets[0].name}` : `已删除 ${deleted} 项`);
+      toast.success(deleted === 1 ? t("已删除 {0}", [deleteTargets[0].name]) : t("已删除 {0} 项", [deleted]));
     }
     if (firstError) throw firstError;
   }
@@ -811,7 +812,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       await setVaultEntryClipboard(vaultRoot, entriesToCopy.map((entry) => entry.path));
       setClipboardEntry({ entries: entriesToCopy, operation });
     } catch (error) {
-      const { message } = parseVaultError(error, operation === "cut" ? "剪切失败" : "复制失败");
+      const { message } = parseVaultError(error, operation === "cut" ? t("剪切失败") : t("复制失败"));
       toast.error(message);
     }
   }
@@ -824,7 +825,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       systemPaths = await readPathsFromClipboard();
     } catch (error) {
       if (!useVaultStore.getState().clipboardEntry) {
-        const { message } = parseVaultError(error, "无法读取剪贴板");
+        const { message } = parseVaultError(error, t("无法读取剪贴板"));
         toast.error(message);
         return;
       }
@@ -854,7 +855,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             completed.push({ path: copied.path, name: copied.name, isDir: copied.isDir });
           }
         } catch (error) {
-          if (!firstError) firstError = parseVaultError(error, "粘贴失败").message;
+          if (!firstError) firstError = parseVaultError(error, t("粘贴失败")).message;
         }
       }
 
@@ -876,9 +877,9 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
           if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
           return;
         }
-        toast.error("剪贴板中没有可粘贴的图片、TXT 或 Markdown 文档");
+        toast.error(t("剪贴板中没有可粘贴的图片、TXT 或 Markdown 文档"));
       } catch (error) {
-        toast.error(parseVaultError(error, "粘贴图片失败").message);
+        toast.error(parseVaultError(error, t("粘贴图片失败")).message);
       }
       return;
     }
@@ -890,7 +891,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         await copyExternalVaultFile(vaultRoot, sourcePath, targetDir);
         pasted += 1;
       } catch (error) {
-        if (!firstError) firstError = parseVaultError(error, "粘贴失败").message;
+        if (!firstError) firstError = parseVaultError(error, t("粘贴失败")).message;
       }
     }
     if (pasted > 0) {
@@ -898,7 +899,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       if (targetDir) expandDirs([targetDir, ...ancestorsOf(targetDir)]);
     }
     if (pasted < systemPaths.length) {
-      toast.error(firstError || `${systemPaths.length - pasted} 个项目无法粘贴`);
+      toast.error(firstError || t("{0} 个项目无法粘贴", [systemPaths.length - pasted]));
     }
   }
 
@@ -1084,7 +1085,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         await copyTextToClipboard(entry.path);
         setClipboardEntry(undefined);
       } catch {
-        toast.error("复制失败");
+        toast.error(t("复制失败"));
       }
     }
 
@@ -1095,7 +1096,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         await copyTextToClipboard(absolutePath);
         setClipboardEntry(undefined);
       } catch {
-        toast.error("复制失败");
+        toast.error(t("复制失败"));
       }
     }
 
@@ -1105,7 +1106,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         const absolutePath = `${vaultRoot}\\${entry.path.replace(/\//g, "\\")}`;
         await showInExplorer(absolutePath);
       } catch (error) {
-        const { message } = parseVaultError(error, "打开失败");
+        const { message } = parseVaultError(error, t("打开失败"));
         toast.error(message);
       }
     }
@@ -1217,8 +1218,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
-            title="新建文件"
-            aria-label="新建文件"
+            title={t("新建文件")}
+            aria-label={t("新建文件")}
             disabled={!vaultRoot}
             onClick={() => setCreateTarget({ parentDir: "", isDir: false })}
           >
@@ -1228,8 +1229,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
-            title="新建文件夹"
-            aria-label="新建文件夹"
+            title={t("新建文件夹")}
+            aria-label={t("新建文件夹")}
             disabled={!vaultRoot}
             onClick={() => setCreateTarget({ parentDir: "", isDir: true })}
           >
@@ -1239,8 +1240,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
-            title="刷新"
-            aria-label="刷新文件树"
+            title={t("刷新")}
+            aria-label={t("刷新文件树")}
             disabled={!vaultRoot || isLoadingTree}
             onClick={() => void handleRefresh()}
           >
@@ -1252,8 +1253,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
                 variant="ghost"
                 size="icon-sm"
                 className="mk-file-tree-tool"
-                title={`排序：${sortModeLabel}`}
-                aria-label={`文件树排序：${sortModeLabel}`}
+                title={t("排序：{0}", [sortModeLabel])}
+                aria-label={t("文件树排序：{0}", [sortModeLabel])}
                 disabled={!vaultRoot}
               >
                 <ArrowUpDown className="size-3.5" />
@@ -1263,24 +1264,19 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
               <DropdownMenuRadioGroup value={sortMode} onValueChange={handleSortModeChange}>
                 <DropdownMenuRadioItem value="manual">
                   <GripVertical className="size-4 text-slate-500 dark:text-zinc-400" />
-                  自定义顺序
-                </DropdownMenuRadioItem>
+                   {t("自定义顺序")} </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="name-asc">
                   <ArrowDownAZ className="size-4 text-slate-500 dark:text-zinc-400" />
-                  名称 A-Z
-                </DropdownMenuRadioItem>
+                   {t("名称 A-Z")} </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="name-desc">
                   <ArrowUpAZ className="size-4 text-slate-500 dark:text-zinc-400" />
-                  名称 Z-A
-                </DropdownMenuRadioItem>
+                   {t("名称 Z-A")} </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="modified-desc">
                   <ClockArrowDown className="size-4 text-slate-500 dark:text-zinc-400" />
-                  修改时间：最新优先
-                </DropdownMenuRadioItem>
+                   {t("修改时间：最新优先")} </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="modified-asc">
                   <ClockArrowUp className="size-4 text-slate-500 dark:text-zinc-400" />
-                  修改时间：最早优先
-                </DropdownMenuRadioItem>
+                   {t("修改时间：最早优先")} </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1288,8 +1284,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
-            title="定位当前文档"
-            aria-label="在文件树中定位当前文档"
+            title={t("定位当前文档")}
+            aria-label={t("在文件树中定位当前文档")}
             disabled={!vaultRoot || !activeEntryPath}
             onClick={() => {
               if (activeEntryPath) useVaultStore.getState().requestLocatePath(activeEntryPath);
@@ -1302,8 +1298,8 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
             variant="ghost"
             size="icon-sm"
             className="mk-file-tree-tool"
-            title={allDirectoriesExpanded ? "全部收起" : "全部展开"}
-            aria-label={allDirectoriesExpanded ? "全部收起目录" : "全部展开目录"}
+            title={allDirectoriesExpanded ? t("全部收起") : t("全部展开")}
+            aria-label={allDirectoriesExpanded ? t("全部收起目录") : t("全部展开目录")}
             disabled={!vaultRoot || directoryPaths.length === 0}
             onClick={() => {
               if (allDirectoriesExpanded) collapseAllDirs();
@@ -1324,15 +1320,15 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
           <input
             value={treeQuery}
             onChange={(event) => setTreeQuery(event.target.value)}
-            placeholder="搜索文件名"
-            aria-label="搜索文件名"
+            placeholder={t("搜索文件名")}
+            aria-label={t("搜索文件名")}
             disabled={!vaultRoot}
             className="mk-file-tree-search h-7 w-full rounded-[6px] pr-6 pl-7 text-[13px] outline-none disabled:opacity-50"
           />
           {treeQuery ? (
             <button
               type="button"
-              aria-label="清除搜索"
+              aria-label={t("清除搜索")}
               className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-[4px] p-0.5 text-slate-400 transition hover:text-slate-700 dark:text-zinc-500 dark:hover:text-zinc-100"
               onClick={() => setTreeQuery("")}
             >
@@ -1345,7 +1341,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
       {truncated ? (
         <div className="mk-file-tree-notice flex shrink-0 items-start gap-1.5 px-2 py-1.5 text-[11px] leading-4">
           <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-          <span>目录过大，已只加载部分文件。展开文件夹时会按需补充。</span>
+          <span>{t("目录过大，已只加载部分文件。展开文件夹时会按需补充。")}</span>
         </div>
       ) : null}
 
@@ -1354,7 +1350,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
           <div
             ref={treeRef}
             role="tree"
-            aria-label="文件树"
+            aria-label={t("文件树")}
             data-mk-context-menu
             tabIndex={vaultRoot ? 0 : undefined}
             className={cn(
@@ -1445,16 +1441,14 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
           >
         {!vaultRoot ? (
           <p className="px-2 py-6 text-center text-xs leading-5 text-slate-500 dark:text-zinc-400">
-            还没有打开目录。<br />打开一个文件夹即可管理其中的 Markdown 文档。
-          </p>
+             {t("还没有打开目录。")}<br />{t("打开一个文件夹即可管理其中的 Markdown 文档。")} </p>
         ) : isLoadingTree && entries.length === 0 ? (
           <p className="flex items-center justify-center gap-2 px-2 py-6 text-xs text-slate-500 dark:text-zinc-400">
             <Loader2 className="size-3.5 animate-spin" />
-            正在读取目录…
-          </p>
+             {t("正在读取目录…")} </p>
         ) : rows.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs leading-5 text-slate-500 dark:text-zinc-400">
-            {keyword ? `没有匹配「${treeQuery.trim()}」的文件` : "该目录下没有 Markdown 文档或图片"}
+            {keyword ? t("没有匹配「{0}」的文件", [treeQuery.trim()]) : t("该目录下没有 Markdown 文档或图片")}
           </p>
         ) : (
           rows.map(({ entry, depth, expanded }) => (
@@ -1490,28 +1484,28 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
 
         <ContextMenu.Portal>
           <ContextMenu.Content className="z-50 w-fit rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleOpenVault()}><FolderOpen className="size-4" />打开文件夹</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleOpenVault()}><FolderOpen className="size-4" />{t("打开文件夹")}</ContextMenu.Item>
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: false })} disabled={!vaultRoot}><FilePlus2 className="size-4" />新建文件</ContextMenu.Item>
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: true })} disabled={!vaultRoot}><FolderPlus className="size-4" />新建文件夹</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: false })} disabled={!vaultRoot}><FilePlus2 className="size-4" />{t("新建文件")}</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => setCreateTarget({ parentDir: "", isDir: true })} disabled={!vaultRoot}><FolderPlus className="size-4" />{t("新建文件夹")}</ContextMenu.Item>
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void pasteInto("")} disabled={!vaultRoot}><ClipboardPaste className="size-4" />粘贴</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void pasteInto("")} disabled={!vaultRoot}><ClipboardPaste className="size-4" />{t("粘贴")}</ContextMenu.Item>
             <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleRefresh()} disabled={!vaultRoot || isLoadingTree}><RefreshCw className="size-4" />刷新文件树</ContextMenu.Item>
+            <ContextMenu.Item className="relative flex cursor-default select-none items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-normal outline-hidden data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0" onSelect={() => void handleRefresh()} disabled={!vaultRoot || isLoadingTree}><RefreshCw className="size-4" />{t("刷新文件树")}</ContextMenu.Item>
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>
 
       {vaultRoot ? (
         <div className="shrink-0 border-t border-slate-200/80 px-2 py-1 text-[11px] text-slate-400 dark:border-zinc-700 dark:text-zinc-500">
-          {keyword ? `匹配 ${matchCount} 项` : `共 ${entries.filter((entry) => !entry.isDir).length} 个文件`}
+          {keyword ? t("匹配 {0} 项", [matchCount]) : t("共 {0} 个文件", [entries.filter((entry) => !entry.isDir).length])}
         </div>
       ) : null}
 
       <CreateEntryDialog
         open={Boolean(createTarget)}
         isDir={createTarget?.isDir ?? false}
-        parentLabel={createTarget?.parentDir || "仓库根目录"}
+        parentLabel={createTarget?.parentDir || t("仓库根目录")}
         onOpenChange={(open) => { if (!open) setCreateTarget(undefined); }}
         onConfirm={handleCreate}
       />
@@ -1555,7 +1549,7 @@ export function FileTreePanel({ width, onWidthChange, onOpenFile, onOpenImage, c
         size={width}
         min={FILE_TREE_WIDTH_RANGE.min}
         max={FILE_TREE_WIDTH_RANGE.max}
-        ariaLabel="调整文件树宽度"
+        ariaLabel={t("调整文件树宽度")}
         onResize={onWidthChange}
       />
     </div>

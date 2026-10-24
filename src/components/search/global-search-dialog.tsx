@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { FileText, Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,7 +24,7 @@ const defaultSearchOptions: VaultSearchOptions = {
 function pathParent(path: string) {
   const segments = path.split("/");
   segments.pop();
-  return segments.join("/") || "仓库根目录";
+  return segments.join("/") || t("仓库根目录");
 }
 
 function highlightRange(text: string, start: number | null, end: number | null) {
@@ -46,7 +47,7 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
   const requestVersionRef = useRef(0);
   const rootName = useMemo(() => {
     const segments = root?.split(/[\\/]/).filter(Boolean) ?? [];
-    return segments[segments.length - 1] ?? "当前仓库";
+    return segments[segments.length - 1] ?? t("当前仓库");
   }, [root]);
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
         .catch((error) => {
           if (requestVersion !== requestVersionRef.current) return;
           setResponse(undefined);
-          setErrorMessage(parseVaultError(error, "全局搜索失败").message);
+          setErrorMessage(parseVaultError(error, t("全局搜索失败")).message);
         })
         .finally(() => {
           if (requestVersion === requestVersionRef.current) setIsSearching(false);
@@ -104,15 +105,15 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
         <DialogHeader className="flex-row items-center gap-3 border-b border-slate-200 px-4 py-3 dark:border-zinc-700">
           <Search className="size-4 shrink-0 text-slate-500 dark:text-zinc-400" aria-hidden />
           <div className="min-w-0 flex-1">
-            <DialogTitle className="text-sm font-semibold">全局搜索</DialogTitle>
+            <DialogTitle className="text-sm font-semibold">{t("全局搜索")}</DialogTitle>
             <DialogDescription id="mk-global-search-description" className="mt-1 truncate text-xs">
-              {root ? `搜索 ${rootName} 中的文件名和文档内容` : "打开目录后可搜索文件名和文档内容"}
+              {root ? t("搜索 {0} 中的文件名和文档内容", [rootName]) : t("打开目录后可搜索文件名和文档内容")}
             </DialogDescription>
           </div>
           <TooltipButton
-            tooltip="关闭"
+            tooltip={t("关闭")}
             tooltipSide="bottom"
-            aria-label="关闭全局搜索"
+            aria-label={t("关闭全局搜索")}
             size="icon-sm"
             className="shrink-0 text-slate-500 dark:text-zinc-400"
             onClick={() => onOpenChange(false)}
@@ -124,7 +125,7 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
         <div className="border-b border-slate-200 p-3 dark:border-zinc-700">
           <div className="flex h-9 items-center rounded-[4px] border border-border bg-card py-0 pl-2 pr-[3px] transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50">
             {isSearching ? (
-              <Loader2 className="size-4 shrink-0 animate-spin text-slate-400 dark:text-zinc-500" aria-label="正在搜索" />
+              <Loader2 className="size-4 shrink-0 animate-spin text-slate-400 dark:text-zinc-500" aria-label={t("正在搜索")} />
             ) : (
               <Search className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" aria-hidden />
             )}
@@ -132,9 +133,9 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
               autoFocus
               value={query}
               disabled={!root}
-              aria-label="全局搜索关键词"
+              aria-label={t("全局搜索关键词")}
               aria-invalid={Boolean(errorMessage)}
-              placeholder={root ? "搜索文件名或文档内容" : "请先打开目录"}
+              placeholder={root ? t("搜索文件名或文档内容") : t("请先打开目录")}
               className="mk-global-search-input h-[34px] flex-1 rounded-none border-0 bg-transparent px-[7px] py-0 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -142,19 +143,19 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
               }}
             />
             <SearchOptionButton
-              label="区分大小写"
+              label={t("区分大小写")}
               active={options.caseSensitive}
               disabled={!root}
               onClick={() => setOptions((value) => ({ ...value, caseSensitive: !value.caseSensitive }))}
             >Aa</SearchOptionButton>
             <SearchOptionButton
-              label="全词匹配"
+              label={t("全词匹配")}
               active={options.wholeWord}
               disabled={!root}
               onClick={() => setOptions((value) => ({ ...value, wholeWord: !value.wholeWord }))}
-            >词</SearchOptionButton>
+            >{t("词")}</SearchOptionButton>
             <SearchOptionButton
-              label="正则表达式"
+              label={t("正则表达式")}
               active={options.regexp}
               disabled={!root}
               onClick={() => setOptions((value) => ({ ...value, regexp: !value.regexp }))}
@@ -162,15 +163,15 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="全局搜索结果">
+        <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label={t("全局搜索结果")}>
           {!root ? (
-            <SearchEmptyState>请先从左侧文件树打开一个目录。</SearchEmptyState>
+            <SearchEmptyState>{t("请先从左侧文件树打开一个目录。")}</SearchEmptyState>
           ) : !hasQuery ? (
-            <SearchEmptyState>输入关键词后，将同时搜索文件名和 Markdown、TXT 文档内容。</SearchEmptyState>
+            <SearchEmptyState>{t("输入关键词后，将同时搜索文件名和 Markdown、TXT 文档内容。")}</SearchEmptyState>
           ) : errorMessage ? (
             <SearchEmptyState>{errorMessage}</SearchEmptyState>
           ) : !isSearching && response && results.length === 0 ? (
-            <SearchEmptyState>没有找到“{query}”</SearchEmptyState>
+            <SearchEmptyState>{t("没有找到“")}{query}”</SearchEmptyState>
           ) : (
             results.map((result) => (
               <button
@@ -186,7 +187,7 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-sm font-medium text-slate-800 dark:text-zinc-100">{highlightRange(result.name, result.matchStart, result.matchEnd)}</span>
                     <span className="shrink-0 text-[11px] text-slate-400 dark:text-zinc-500">
-                      {result.kind === "fileName" ? "文件名" : `正文 · 第 ${result.line} 行`}
+                      {result.kind === "fileName" ? t("文件名") : t("正文 · 第 {0} 行", [result.line])}
                     </span>
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-slate-400 dark:text-zinc-500">{pathParent(result.path)}</span>
@@ -201,9 +202,9 @@ export function GlobalSearchDialog({ open, root, onOpenChange, onSelect }: Globa
 
         {response && hasQuery ? (
           <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 px-4 py-2 text-[11px] text-slate-400 dark:border-zinc-700 dark:text-zinc-500">
-            <span>{response.results.length} 条结果 · 已扫描 {response.scannedFiles} 个文件</span>
+            <span>{response.results.length}  {t("条结果 · 已扫描")} {response.scannedFiles}  {t("个文件")}</span>
             <span className="truncate text-right">
-              {response.truncated ? "结果较多，仅显示前 200 条" : response.skippedFiles > 0 ? `跳过 ${response.skippedFiles} 个过大或不可读取的文件` : ""}
+              {response.truncated ? t("结果较多，仅显示前 200 条") : response.skippedFiles > 0 ? t("跳过 {0} 个过大或不可读取的文件", [response.skippedFiles]) : ""}
             </span>
           </footer>
         ) : null}
@@ -221,8 +222,8 @@ function SearchOptionButton({ label, active, children, ...props }: {
     <TooltipButton
       {...props}
       type="button"
-      tooltip={label}
-      aria-label={label}
+      tooltip={t(label)}
+      aria-label={t(label)}
       aria-pressed={active}
       size="icon-xs"
       className="mk-global-search-option size-6 shrink-0 font-semibold"

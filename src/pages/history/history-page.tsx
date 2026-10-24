@@ -1,3 +1,5 @@
+import { templateLabel } from "@/lib/template-labels";
+import { t } from "@/lib/i18n";
 import { CheckCircle2, CheckSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock3, FileText, RotateCcw, Search, Trash2, XCircle, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -70,7 +72,7 @@ export function HistoryPage() {
   // 在整个筛选结果里找选中项，而不是只在当前页找：否则翻页会静默把右侧详情
   // 换成新一页的第一条，用户以为自己还在看原来那条记录。
   const selectedRecord = filteredHistory.find((item) => item.id === selectedHistoryId) ?? pagedHistory[0];
-  const selectedTemplateName = selectedRecord ? templates.find((template) => template.id === selectedRecord.templateId)?.name ?? selectedRecord.templateId ?? "未指定模板" : "";
+  const selectedTemplateName = selectedRecord ? templates.find((template) => template.id === selectedRecord.templateId)?.name ?? selectedRecord.templateId ?? t("未指定模板") : "";
   const hasActiveFilters = query.trim() !== "" || status !== "all" || templateId !== "all";
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export function HistoryPage() {
 
   async function handleClearHistory() {
     if (history.length === 0) {
-      toast.info("当前没有可清空的转换历史");
+      toast.info(t("当前没有可清空的转换历史"));
       return;
     }
 
@@ -98,12 +100,12 @@ export function HistoryPage() {
       setHistory(nextHistory);
       setSelectedIds([]);
       setSelectedHistoryId(null);
-      toast.success("转换历史已清空");
+      toast.success(t("转换历史已清空"));
     } catch (error) {
       setHistory([]);
       setSelectedIds([]);
       setSelectedHistoryId(null);
-      toast.error(userFacingErrorMessage(error, "远程清空失败，已清空本地视图"));
+      toast.error(userFacingErrorMessage(error, t("远程清空失败，已清空本地视图")));
     }
   }
 
@@ -126,13 +128,13 @@ export function HistoryPage() {
     try {
       const saved = await saveHistory(nextHistory);
       setHistory(saved);
-      toast.success(`已删除 ${targets.length} 条历史记录`);
+      toast.success(t("已删除 {0} 条历史记录", [targets.length]));
     } catch (error) {
       // 回滚必须连选中态一起恢复，否则记录回来了、勾选和详情却没了。
       setHistory(previousHistory);
       setSelectedIds(previousSelectedIds);
       setSelectedHistoryId(previousSelectedHistoryId);
-      toast.error(userFacingErrorMessage(error, "删除历史记录失败"));
+      toast.error(userFacingErrorMessage(error, t("删除历史记录失败")));
     }
   }
 
@@ -164,8 +166,7 @@ export function HistoryPage() {
         actions={(
           <Button variant="outline" size="sm" className="shrink-0" onClick={resetFilters} disabled={!hasActiveFilters}>
             <RotateCcw className="size-3.5" />
-            重置筛选
-          </Button>
+             {t("重置筛选")} </Button>
         )}
       />
       <div className="mk-history-workspace grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] gap-1 overflow-hidden">
@@ -173,28 +174,27 @@ export function HistoryPage() {
         <div className="grid shrink-0 grid-cols-[minmax(220px,1fr)_112px_154px_auto] gap-2 border-b border-slate-200 px-4 py-2.5 dark:border-zinc-700/70 max-[1180px]:grid-cols-[minmax(180px,1fr)_120px_auto] max-[760px]:grid-cols-1">
           <div className="relative min-w-0 max-[1180px]:col-span-3 max-[760px]:col-span-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-            <Input className="h-9 rounded-[6px] border-slate-200 bg-white pl-9 text-sm dark:border-zinc-700 dark:bg-zinc-950/60" placeholder="搜索文件名或输出路径" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <Input className="h-9 rounded-[6px] border-slate-200 bg-white pl-9 text-sm dark:border-zinc-700 dark:bg-zinc-950/60" placeholder={t("搜索文件名或输出路径")} value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="h-9 w-full rounded-[6px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-9"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="success">成功</SelectItem>
-              <SelectItem value="failed">失败</SelectItem>
-              <SelectItem value="pending">处理中</SelectItem>
+              <SelectItem value="all">{t("全部状态")}</SelectItem>
+              <SelectItem value="success">{t("成功")}</SelectItem>
+              <SelectItem value="failed">{t("失败")}</SelectItem>
+              <SelectItem value="pending">{t("处理中")}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={templateId} onValueChange={setTemplateId}>
             <SelectTrigger className="h-9 w-full rounded-[6px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-9"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部模板</SelectItem>
-              {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+              <SelectItem value="all">{t("全部模板")}</SelectItem>
+              {templates.map((template) => <SelectItem key={template.id} value={template.id}>{templateLabel(template)}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" className="h-9 px-3 text-xs max-[760px]:w-full" onClick={handleClearHistory} disabled={history.length === 0}>
             <Trash2 className="size-3.5" />
-            清空历史
-          </Button>
+             {t("清空历史")} </Button>
         </div>
 
         <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-2 dark:border-zinc-700/70">
@@ -210,12 +210,12 @@ export function HistoryPage() {
               )}
               disabled={filteredHistoryIds.length === 0}
               onClick={toggleCurrentFilterSelection}
-              aria-label="全选当前筛选"
+              aria-label={t("全选当前筛选")}
               aria-pressed={isCurrentFilterAllSelected}
             >
               {isCurrentFilterAllSelected ? <CheckSquare className="size-3" /> : null}
             </button>
-            <span>全选当前筛选</span>
+            <span>{t("全选当前筛选")}</span>
             <span className="tabular-nums text-slate-400 dark:text-zinc-500">{selectedFilteredCount}/{filteredHistory.length}</span>
           </div>
           <Button
@@ -229,7 +229,7 @@ export function HistoryPage() {
             disabled={selectedIds.length === 0}
           >
             <Trash2 className="size-3.5" />
-            删除选中{selectedIds.length > 0 ? ` ${selectedIds.length}` : ""}
+             {t("删除选中")}{selectedIds.length > 0 ? ` ${selectedIds.length}` : ""}
           </Button>
         </div>
 
@@ -239,14 +239,14 @@ export function HistoryPage() {
               <div className="mb-3 flex size-12 items-center justify-center rounded-[10px] bg-blue-50 text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">
                 <Clock3 className="size-6" />
               </div>
-              <h3 className="text-sm font-black text-slate-950 dark:text-zinc-50">暂无转换历史</h3>
-              <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500 dark:text-zinc-400">{hasActiveFilters ? "当前筛选条件下没有记录，可以重置筛选查看全部历史。" : "完成第一次 Markdown 转 DOCX 后，记录会显示在这里。"}</p>
+              <h3 className="text-sm font-black text-slate-950 dark:text-zinc-50">{t("暂无转换历史")}</h3>
+              <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500 dark:text-zinc-400">{hasActiveFilters ? t("当前筛选条件下没有记录，可以重置筛选查看全部历史。") : t("完成第一次 Markdown 转 DOCX 后，记录会显示在这里。")}</p>
             </section>
           ) : (
             <div className="space-y-5">
               {Object.entries(grouped).map(([group, items]) => items.length > 0 ? (
                 <section key={group} className="space-y-2">
-                  <h3 className="text-xs font-black text-blue-700/70 dark:text-blue-300/80">{group}</h3>
+                  <h3 className="text-xs font-black text-blue-700/70 dark:text-blue-300/80">{t(group)}</h3>
                   <div className="grid gap-2">
                     {items.map((item) => (
                       <HistoryRecordCard
@@ -269,7 +269,7 @@ export function HistoryPage() {
 
         <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-zinc-700/70 dark:text-zinc-400">
           <span>
-            {filteredHistory.length === 0 ? "共 0 条" : `显示 ${historyPageStart + 1}-${Math.min(historyPageStart + historyPageSize, filteredHistory.length)}，共 ${filteredHistory.length} 条`}
+            {filteredHistory.length === 0 ? t("共 0 条") : t("显示 {0}-{1}，共 {2} 条", [historyPageStart + 1, Math.min(historyPageStart + historyPageSize, filteredHistory.length), filteredHistory.length])}
           </span>
           <div className="ml-auto flex items-center justify-end gap-2">
             <Select
@@ -279,25 +279,25 @@ export function HistoryPage() {
                 setHistoryPage(1);
               }}
             >
-              <SelectTrigger className="h-7 w-[96px] rounded-[6px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-7" aria-label="每页显示条数">
+              <SelectTrigger className="h-7 w-[96px] rounded-[6px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-7" aria-label={t("每页显示条数")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} 条/页</SelectItem>)}
+                {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size}  {t("条/页")}</SelectItem>)}
               </SelectContent>
             </Select>
             <div className="flex items-center gap-1">
-              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage(1)} disabled={currentHistoryPage === 1} tooltip="第一页" aria-label="第一页">
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage(1)} disabled={currentHistoryPage === 1} tooltip={t("第一页")} aria-label={t("第一页")}>
                 <ChevronsLeft className="size-3.5" />
               </TooltipButton>
-              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.max(1, page - 1))} disabled={currentHistoryPage === 1} tooltip="上一页" aria-label="上一页">
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.max(1, page - 1))} disabled={currentHistoryPage === 1} tooltip={t("上一页")} aria-label={t("上一页")}>
                 <ChevronLeft className="size-3.5" />
               </TooltipButton>
-              <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">第 {currentHistoryPage} / {historyPageCount} 页</span>
-              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))} disabled={currentHistoryPage === historyPageCount} tooltip="下一页" aria-label="下一页">
+              <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">{t("第")} {currentHistoryPage} / {historyPageCount}  {t("页")}</span>
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))} disabled={currentHistoryPage === historyPageCount} tooltip={t("下一页")} aria-label={t("下一页")}>
                 <ChevronRight className="size-3.5" />
               </TooltipButton>
-              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage(historyPageCount)} disabled={currentHistoryPage === historyPageCount} tooltip="最后一页" aria-label="最后一页">
+              <TooltipButton variant="ghost" size="icon-xs" onClick={() => setHistoryPage(historyPageCount)} disabled={currentHistoryPage === historyPageCount} tooltip={t("最后一页")} aria-label={t("最后一页")}>
                 <ChevronsRight className="size-3.5" />
               </TooltipButton>
             </div>
@@ -307,19 +307,19 @@ export function HistoryPage() {
 
       <AppSurface as="aside" padding="none" className="mk-history-detail flex min-h-0 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-zinc-700/70">
-          <h3 className="text-sm font-black text-slate-950 dark:text-zinc-50">统计概览</h3>
-          <span className="text-xs font-semibold text-slate-400 dark:text-zinc-500">当前筛选</span>
+          <h3 className="text-sm font-black text-slate-950 dark:text-zinc-50">{t("统计概览")}</h3>
+          <span className="text-xs font-semibold text-slate-400 dark:text-zinc-500">{t("当前筛选")}</span>
         </div>
         <div className="grid shrink-0 grid-cols-2 border-b border-slate-200 dark:border-zinc-700/70">
-          <StatMetric className="border-b border-r border-slate-200 dark:border-zinc-700/70" icon={CheckCircle2} label="成功" value={String(successCount)} tone="text-emerald-600" />
-          <StatMetric className="border-b border-slate-200 dark:border-zinc-700/70" icon={XCircle} label="失败" value={String(failedCount)} tone="text-red-600" />
-          <StatMetric className="border-r border-slate-200 dark:border-zinc-700/70" icon={Clock3} label="总数" value={String(filteredHistory.length)} tone="text-blue-600" />
-          <StatMetric icon={Clock3} label="处理中" value={String(pendingCount)} tone="text-amber-500" />
+          <StatMetric className="border-b border-r border-slate-200 dark:border-zinc-700/70" icon={CheckCircle2} label={t("成功")} value={String(successCount)} tone="text-emerald-600" />
+          <StatMetric className="border-b border-slate-200 dark:border-zinc-700/70" icon={XCircle} label={t("失败")} value={String(failedCount)} tone="text-red-600" />
+          <StatMetric className="border-r border-slate-200 dark:border-zinc-700/70" icon={Clock3} label={t("总数")} value={String(filteredHistory.length)} tone="text-blue-600" />
+          <StatMetric icon={Clock3} label={t("处理中")} value={String(pendingCount)} tone="text-amber-500" />
         </div>
 
         <section className="flex min-h-0 flex-1 flex-col">
           <div className="shrink-0 border-b border-slate-200 px-4 py-3 dark:border-zinc-700/70">
-            <h3 className="text-sm font-black text-slate-950 dark:text-zinc-50">记录详情</h3>
+            <h3 className="text-sm font-black text-slate-950 dark:text-zinc-50">{t("记录详情")}</h3>
           </div>
           {selectedRecord ? (
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-4">
@@ -332,17 +332,17 @@ export function HistoryPage() {
                   <p className="mt-1 text-xs font-semibold text-blue-700/70 dark:text-blue-300/80">{selectedTemplateName}</p>
                 </div>
               </div>
-              <DetailLine label="输出" value={selectedRecord.outputPath ?? "暂无输出路径"} />
-              <DetailLine label="状态" value={selectedRecord.simulated ? "浏览器预览" : selectedRecord.status === "success" ? "转换成功" : selectedRecord.status === "failed" ? "转换失败" : "处理中"} />
-              <DetailLine label="时间" value={new Date(selectedRecord.createdAt).toLocaleString()} />
-              {selectedRecord.durationMs !== undefined ? <DetailLine label="耗时" value={`${selectedRecord.durationMs} ms`} /> : null}
+              <DetailLine label={t("输出")} value={selectedRecord.outputPath ?? t("暂无输出路径")} />
+              <DetailLine label={t("状态")} value={selectedRecord.simulated ? t("浏览器预览") : selectedRecord.status === "success" ? t("转换成功") : selectedRecord.status === "failed" ? t("转换失败") : t("处理中")} />
+              <DetailLine label={t("时间")} value={new Date(selectedRecord.createdAt).toLocaleString()} />
+              {selectedRecord.durationMs !== undefined ? <DetailLine label={t("耗时")} value={`${selectedRecord.durationMs} ms`} /> : null}
               {selectedRecord.errorMessage ? <p className="mt-3 border-l-2 border-red-500 bg-red-50/70 px-3 py-2 text-xs leading-5 text-red-700 dark:bg-red-500/12 dark:text-red-200">{selectedRecord.errorMessage}</p> : null}
             </div>
           ) : (
             <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center p-6 text-center">
               <FilePreviewIcon />
-              <p className="mt-3 text-sm font-black text-slate-950 dark:text-zinc-50">{filteredHistory.length === 0 ? "暂无记录详情" : "选择一条记录"}</p>
-              <p className="mt-1.5 max-w-[220px] text-xs leading-5 text-slate-500 dark:text-zinc-400">{filteredHistory.length === 0 ? "完成转换后，这里会展示最近记录的输出路径和状态。" : "转换详情、输出路径和错误信息会展示在这里。"}</p>
+              <p className="mt-3 text-sm font-black text-slate-950 dark:text-zinc-50">{filteredHistory.length === 0 ? t("暂无记录详情") : t("选择一条记录")}</p>
+              <p className="mt-1.5 max-w-[220px] text-xs leading-5 text-slate-500 dark:text-zinc-400">{filteredHistory.length === 0 ? t("完成转换后，这里会展示最近记录的输出路径和状态。") : t("转换详情、输出路径和错误信息会展示在这里。")}</p>
             </div>
           )}
         </section>
@@ -356,7 +356,7 @@ function StatMetric({ icon: Icon, label, value, tone, className }: { icon: Lucid
   return (
     <article className={cn("flex min-h-[76px] items-center justify-between gap-2 px-4 py-3", className)}>
       <div>
-        <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400">{label}</p>
+        <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400">{t(label)}</p>
         <p className="mt-1 text-xl font-black text-slate-950 dark:text-zinc-50">{value}</p>
       </div>
       <Icon className={`size-5 shrink-0 ${tone}`} />
@@ -367,7 +367,7 @@ function StatMetric({ icon: Icon, label, value, tone, className }: { icon: Lucid
 function DetailLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[48px_minmax(0,1fr)] gap-3 border-b border-slate-100 py-2.5 dark:border-zinc-800">
-      <p className="pt-0.5 text-[11px] font-bold text-slate-400 dark:text-zinc-500">{label}</p>
+      <p className="pt-0.5 text-[11px] font-bold text-slate-400 dark:text-zinc-500">{t(label)}</p>
       <p className="break-words text-xs font-semibold leading-5 text-slate-700 dark:text-zinc-300">{value}</p>
     </div>
   );

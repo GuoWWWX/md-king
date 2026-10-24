@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Columns2, Copy, Minus, PanelLeft, PanelRight, Search, Square, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
@@ -112,7 +113,7 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
       >
         {onToggleFileTree ? (
           <TitlebarButton
-            label={fileTreeVisible ? "收起文件树" : "展开文件树"}
+            label={fileTreeVisible ? t("收起文件树") : t("展开文件树")}
             onClick={onToggleFileTree}
           >
             {fileTreeVisible ? <PanelStateIcon side="left" /> : <PanelLeft className="size-4" />}
@@ -120,7 +121,7 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         ) : null}
         {onPageZoomChange ? <PageZoomControls percent={pageZoomPercent} onChange={onPageZoomChange} /> : null}
         {onOpenGlobalSearch ? (
-          <TitlebarButton label="全局搜索" onClick={onOpenGlobalSearch}>
+          <TitlebarButton label={t("全局搜索")} onClick={onOpenGlobalSearch}>
             <Search className="size-4" />
           </TitlebarButton>
         ) : null}
@@ -141,7 +142,7 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <>
             <TitlebarButton
-              label={documentDrawerOpen ? "关闭文档侧栏" : "打开文档侧栏"}
+              label={documentDrawerOpen ? t("关闭文档侧栏") : t("打开文档侧栏")}
               onClick={onToggleDocumentDrawer}
             >
               {documentDrawerOpen ? <PanelStateIcon side="right" /> : <PanelRight className="size-4" />}
@@ -151,13 +152,13 @@ export function AppTitlebar({ fileTreeVisible = false, onToggleFileTree, showDoc
         {showDocumentDrawerControl && onToggleDocumentDrawer ? (
           <span className="mx-1 h-4 w-px bg-slate-200 dark:bg-zinc-700" aria-hidden />
         ) : null}
-        <TitlebarButton disabled={!canControlWindow} label="最小化" onClick={() => handleWindowAction("minimize")}>
+        <TitlebarButton disabled={!canControlWindow} label={t("最小化")} onClick={() => handleWindowAction("minimize")}>
           <Minus className="size-3.5" />
         </TitlebarButton>
-        <TitlebarButton disabled={!canControlWindow} label={isMaximized ? "还原窗口" : "最大化"} onClick={() => handleWindowAction("toggleMaximize")}>
+        <TitlebarButton disabled={!canControlWindow} label={isMaximized ? t("还原窗口") : t("最大化")} onClick={() => handleWindowAction("toggleMaximize")}>
           {isMaximized ? <Copy className="size-3" /> : <Square className="size-3" />}
         </TitlebarButton>
-        <TitlebarButton disabled={!canControlWindow} label="关闭" danger onClick={() => handleWindowAction("close")}>
+        <TitlebarButton disabled={!canControlWindow} label={t("关闭")} danger onClick={() => handleWindowAction("close")}>
           <X className="size-3.5" />
         </TitlebarButton>
       </div>
@@ -182,8 +183,8 @@ function PageZoomControls({ percent, onChange }: { percent: number; onChange: (p
   }
 
   return (
-    <div className="flex h-9 items-center gap-0.5 px-0.5" aria-label="页面缩放">
-      <ZoomButton label="缩小页面" disabled={percent <= PAGE_ZOOM_MIN_PERCENT} onClick={() => onChange(percent - PAGE_ZOOM_STEP_PERCENT)}>
+    <div className="flex h-9 items-center gap-0.5 px-0.5" aria-label={t("页面缩放")}>
+      <ZoomButton label={t("缩小页面")} disabled={percent <= PAGE_ZOOM_MIN_PERCENT} onClick={() => onChange(percent - PAGE_ZOOM_STEP_PERCENT)}>
         <ZoomOut className="size-3.5" />
       </ZoomButton>
       <input
@@ -191,7 +192,7 @@ function PageZoomControls({ percent, onChange }: { percent: number; onChange: (p
         inputMode="numeric"
         pattern="[0-9]*"
         value={draft}
-        aria-label="页面缩放百分比"
+        aria-label={t("页面缩放百分比")}
         className="h-6 w-9 rounded-[4px] border border-transparent bg-transparent px-1 text-center tabular-nums text-slate-600 outline-none transition focus:border-transparent focus:ring-0 dark:border-transparent dark:bg-transparent dark:text-zinc-300"
         style={{ fontSize: "11px", lineHeight: 1 }}
         onPointerDown={(event) => event.stopPropagation()}
@@ -205,7 +206,7 @@ function PageZoomControls({ percent, onChange }: { percent: number; onChange: (p
         }}
       />
       <span className="w-3 text-[10px] leading-none text-slate-400 dark:text-zinc-500">%</span>
-      <ZoomButton label="放大页面" disabled={percent >= PAGE_ZOOM_MAX_PERCENT} onClick={() => onChange(percent + PAGE_ZOOM_STEP_PERCENT)}>
+      <ZoomButton label={t("放大页面")} disabled={percent >= PAGE_ZOOM_MAX_PERCENT} onClick={() => onChange(percent + PAGE_ZOOM_STEP_PERCENT)}>
         <ZoomIn className="size-3.5" />
       </ZoomButton>
     </div>
@@ -214,10 +215,10 @@ function PageZoomControls({ percent, onChange }: { percent: number; onChange: (p
 
 function ZoomButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <TooltipAnchor content={label} tooltipSide="bottom">
+    <TooltipAnchor content={t(label)} tooltipSide="bottom">
       <button
         type="button"
-        aria-label={label}
+        aria-label={t(label)}
         disabled={disabled}
         className="flex h-7 w-7 items-center justify-center rounded-[4px] text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500 dark:text-zinc-400 dark:hover:bg-zinc-700/60 dark:hover:text-zinc-100"
         onPointerDown={(event) => event.stopPropagation()}
@@ -243,13 +244,13 @@ function PanelStateIcon({ side }: { side: "left" | "right" }) {
 }
 
 function TitlebarButton({ label, danger = false, disabled = false, onClick, children }: { label: string; danger?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
-  const title = disabled ? `${label}仅在桌面端可用` : label;
+  const title = disabled ? t("{0}仅在桌面端可用", [label]) : label;
 
   return (
     <TooltipAnchor content={title} tooltipSide="bottom">
       <button
         type="button"
-        aria-label={label}
+        aria-label={t(label)}
         disabled={disabled}
         className={cn(
           "mk-titlebar-button relative z-10 flex h-9 w-8 items-center justify-center text-slate-500 transition hover:bg-white/70 hover:text-slate-950 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500",

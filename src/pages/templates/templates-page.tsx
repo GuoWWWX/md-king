@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useEffect, useMemo, useState, type CSSProperties, type WheelEvent } from "react";
 import { CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FilePlus, FolderCog, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
@@ -84,7 +85,7 @@ function GroupManageDialog({
   function handleCreate() {
     const group = toTemplateGroupName(draft);
     if (!group) {
-      toast.error("请先填写分组名称");
+      toast.error(t("请先填写分组名称"));
       return;
     }
     onCreate(group);
@@ -95,37 +96,35 @@ function GroupManageDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-lg">分组管理</DialogTitle>
-          <DialogDescription>统一管理模板分组。系统分组不可删除，自定义分组会排在已有分组后面。</DialogDescription>
+          <DialogTitle className="text-lg">{t("分组管理")}</DialogTitle>
+          <DialogDescription>{t("统一管理模板分组。系统分组不可删除，自定义分组会排在已有分组后面。")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="new-template-group">新增分组</Label>
+            <Label htmlFor="new-template-group">{t("新增分组")}</Label>
             <div className="flex gap-2">
-              <Input id="new-template-group" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="例如：客户方案 / 内部周报" />
+              <Input id="new-template-group" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t("例如：客户方案 / 内部周报")} />
               <PrimaryActionButton onClick={handleCreate}>
                 <Plus className="size-4" />
-                添加
-              </PrimaryActionButton>
+                 {t("添加")} </PrimaryActionButton>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>现有分组</Label>
+            <Label>{t("现有分组")}</Label>
             <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
               {groups.map((group) => {
                 const fixed = isFixedTemplateGroup(group);
                 return (
                   <div key={group} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-800/70">
                     <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-zinc-50">{group}</p>
-                      <p className="text-xs text-slate-500 dark:text-zinc-400">{fixed ? "系统分组，固定保留" : "自定义分组，可删除"}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-zinc-50">{isFixedTemplateGroup(group) ? t(group) : group}</p>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400">{fixed ? t("系统分组，固定保留") : t("自定义分组，可删除")}</p>
                     </div>
                     <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200" disabled={fixed} onClick={() => onDelete(group)}>
                       <Trash2 className="size-4" />
-                      删除
-                    </Button>
+                       {t("删除")} </Button>
                   </div>
                 );
               })}
@@ -134,7 +133,7 @@ function GroupManageDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>完成</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("完成")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -288,7 +287,7 @@ export function TemplatesPage() {
     setPreviewTemplateId(template.id);
     setCurrentTemplateId(template.id);
     setActivePage("convert");
-    toast.success(`已选择「${template.name}」作为本次转换模板`);
+    toast.success(t("已选择「{0}」作为本次转换模板", [template.name]));
   }
 
   async function persistTemplates(nextTemplates: Template[]) {
@@ -299,7 +298,7 @@ export function TemplatesPage() {
 
   async function setDefaultTemplate(template: Template) {
     if (!appConfig) {
-      toast.error("配置正在加载，请稍后再试");
+      toast.error(t("配置正在加载，请稍后再试"));
       return;
     }
     const nextConfig = { ...appConfig, defaultTemplateId: template.id };
@@ -308,9 +307,9 @@ export function TemplatesPage() {
       setAppConfig(savedConfig);
       setPreviewTemplateId(template.id);
       await persistTemplates(templates.map((item) => ({ ...item, isDefault: item.id === template.id })));
-      toast.success(`已将「${template.name}」设为默认模板`);
+      toast.success(t("已将「{0}」设为默认模板", [template.name]));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "保存默认模板失败"));
+      toast.error(userFacingErrorMessage(error, t("保存默认模板失败")));
     }
   }
 
@@ -396,7 +395,7 @@ export function TemplatesPage() {
     const targets = templates.filter((template) => targetIdSet.has(template.id));
     const protectedTargets = targets.filter((template) => template.isBuiltIn);
     if (protectedTargets.length > 0) {
-      toast.error("系统模板不能删除，可以只删除用户创建或导入的模板");
+      toast.error(t("系统模板不能删除，可以只删除用户创建或导入的模板"));
       return;
     }
     if (targets.length === 0) return;
@@ -416,9 +415,9 @@ export function TemplatesPage() {
       }
       setSelectedIds((current) => current.filter((id) => !targetIdSet.has(id)));
       if (previewTemplateId && targetIdSet.has(previewTemplateId)) setPreviewTemplateId(fallbackTemplate?.id);
-      toast.success(`已删除 ${targets.length} 个模板`);
+      toast.success(t("已删除 {0} 个模板", [targets.length]));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "删除模板失败"));
+      toast.error(userFacingErrorMessage(error, t("删除模板失败")));
     }
   }
 
@@ -453,18 +452,18 @@ export function TemplatesPage() {
 
   function handleCreateGroup(group: string) {
     if (groups.includes(group)) {
-      toast.info(`分组「${group}」已存在`);
+      toast.info(t("分组「{0}」已存在", [group]));
       return;
     }
     const nextGroups = [...customGroups, group];
     syncCustomGroups(nextGroups);
     setSelectedGroups([group]);
-    toast.success(`已添加分组「${group}」`);
+    toast.success(t("已添加分组「{0}」", [group]));
   }
 
   async function handleDeleteGroup(group: string) {
     if (isFixedTemplateGroup(group)) {
-      toast.error("系统分组不可删除");
+      toast.error(t("系统分组不可删除"));
       return;
     }
 
@@ -481,9 +480,9 @@ export function TemplatesPage() {
       const nextGroups = customGroups.filter((item) => item !== group);
       syncCustomGroups(nextGroups);
       setSelectedGroups((current) => current.filter((item) => item !== group));
-      toast.success(targets.length > 0 ? `已删除分组「${group}」，相关模板已移到未分组` : `已删除分组「${group}」`);
+      toast.success(targets.length > 0 ? t("已删除分组「{0}」，相关模板已移到未分组", [group]) : t("已删除分组「{0}」", [group]));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "删除模板分组失败"));
+      toast.error(userFacingErrorMessage(error, t("删除模板分组失败")));
     }
   }
 
@@ -504,19 +503,16 @@ export function TemplatesPage() {
             <DropdownMenuTrigger asChild>
               <PrimaryActionButton>
                 <Plus className="size-4" />
-                新建模板
-                <ChevronDown className="size-4" />
+                 {t("新建模板")} <ChevronDown className="size-4" />
               </PrimaryActionButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onSelect={() => openDialog("create")}>
                 <FilePlus className="size-4" />
-                从空白创建
-              </DropdownMenuItem>
+                 {t("从空白创建")} </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => openDialog("import")}>
                 <Upload className="size-4" />
-                从 DOCX 导入
-              </DropdownMenuItem>
+                 {t("从 DOCX 导入")} </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -534,11 +530,11 @@ export function TemplatesPage() {
               <Button variant="outline" className="group h-9 w-[190px] justify-between border-white/70 bg-white/68 px-3 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full">
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                   {selectedGroups.length === 0 ? (
-                    <span className="truncate px-1 text-slate-500 dark:text-zinc-400">全部分组</span>
+                    <span className="truncate px-1 text-slate-500 dark:text-zinc-400">{t("全部分组")}</span>
                   ) : (
                     selectedGroups.slice(0, 2).map((group) => (
                       <span key={group} className="max-w-[70px] truncate rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-200">
-                        {group}
+                        {isFixedTemplateGroup(group) ? t(group) : group}
                       </span>
                     ))
                   )}
@@ -549,7 +545,7 @@ export function TemplatesPage() {
                     className="hidden size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 group-hover:flex"
                     role="button"
                     tabIndex={-1}
-                    aria-label="清空分组筛选"
+                    aria-label={t("清空分组筛选")}
                     onPointerDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -568,8 +564,7 @@ export function TemplatesPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent className="p-2" align="start">
               <DropdownMenuItem className="justify-between text-slate-600 dark:text-zinc-300" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
-                显示全部分组
-                {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600 dark:text-indigo-300">当前</span> : null}
+                 {t("显示全部分组")} {selectedGroups.length === 0 ? <span className="text-xs text-indigo-600 dark:text-indigo-300">{t("当前")}</span> : null}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {filterGroups.map((group) => (
@@ -579,7 +574,7 @@ export function TemplatesPage() {
                   onCheckedChange={() => toggleGroupFilter(group)}
                   onSelect={(event) => event.preventDefault()}
                 >
-                  {group}
+                  {isFixedTemplateGroup(group) ? t(group) : group}
                 </DropdownMenuCheckboxItem>
               ))}
               {selectedGroups.length > 0 ? (
@@ -587,23 +582,20 @@ export function TemplatesPage() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="text-slate-500 dark:text-zinc-400" onSelect={(event) => { event.preventDefault(); clearGroupFilter(); }}>
                     <X className="size-4" />
-                    清空选择
-                  </DropdownMenuItem>
+                     {t("清空选择")} </DropdownMenuItem>
                 </>
               ) : null}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}>
                 <FolderCog className="size-4" />
-                分组管理
-              </DropdownMenuItem>
+                 {t("分组管理")} </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
           <div className="ml-auto flex min-w-0 items-center max-[640px]:ml-0 max-[640px]:w-full">
             <Button variant="outline" className="h-9 min-w-0 border-white/70 bg-white/68 dark:border-zinc-700 dark:bg-zinc-900 max-[640px]:w-full" onClick={() => openStyleManager(highlightedTemplate, "info")} disabled={!highlightedTemplate}>
               <Palette className="size-4" />
-              样式管理器
-            </Button>
+               {t("样式管理器")} </Button>
           </div>
         </div>
 
@@ -621,12 +613,12 @@ export function TemplatesPage() {
                 )}
                 disabled={filteredTemplateIds.length === 0}
                 onClick={toggleCurrentGroupSelection}
-                aria-label="全选当前筛选"
+                aria-label={t("全选当前筛选")}
                 aria-pressed={isCurrentGroupAllSelected}
               >
                 {isCurrentGroupAllSelected ? <CheckSquare className="size-4" /> : null}
               </button>
-              <span>全选当前筛选</span>
+              <span>{t("全选当前筛选")}</span>
               <span className="text-slate-400 dark:text-zinc-500">{selectedFilteredCount}/{filteredTemplates.length}</span>
             </div>
             <Button
@@ -640,17 +632,15 @@ export function TemplatesPage() {
               disabled={selectedIds.length === 0}
             >
               <Trash2 className="size-4" />
-              批量删除
-            </Button>
+               {t("批量删除")} </Button>
           </div>
 
           {filteredTemplates.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-10 text-center text-sm text-slate-500 dark:text-zinc-400">
               <Plus className="mb-3 size-8 text-indigo-500 dark:text-indigo-300" />
-              当前筛选下暂无模板。你可以创建一个自定义模板，或导入已有 DOCX 模板。
-              <div className="mt-4 flex gap-2">
-                <SoftActionButton onClick={() => openDialog("create")}>创建模板</SoftActionButton>
-                <PrimaryActionButton onClick={() => openDialog("import")}>导入模板</PrimaryActionButton>
+               {t("当前筛选下暂无模板。你可以创建一个自定义模板，或导入已有 DOCX 模板。")} <div className="mt-4 flex gap-2">
+                <SoftActionButton onClick={() => openDialog("create")}>{t("创建模板")}</SoftActionButton>
+                <PrimaryActionButton onClick={() => openDialog("import")}>{t("导入模板")}</PrimaryActionButton>
               </div>
           </div>
           ) : (
@@ -679,7 +669,7 @@ export function TemplatesPage() {
 
           <div className="mk-template-list-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-blue-100/70 px-3 py-2 text-xs text-slate-500 dark:border-zinc-700/70 dark:text-zinc-400">
             <span>
-              {filteredTemplates.length === 0 ? "共 0 条" : `显示 ${templatePageStart + 1}-${Math.min(templatePageStart + templatePageSize, filteredTemplates.length)}，共 ${filteredTemplates.length} 条`}
+              {filteredTemplates.length === 0 ? t("共 0 条") : t("显示 {0}-{1}，共 {2} 条", [templatePageStart + 1, Math.min(templatePageStart + templatePageSize, filteredTemplates.length), filteredTemplates.length])}
             </span>
             <div className="ml-auto flex items-center justify-end gap-2">
               <Select
@@ -689,25 +679,25 @@ export function TemplatesPage() {
                   setTemplatePage(1);
                 }}
               >
-                <SelectTrigger className="h-8 w-[104px] rounded-[9px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-8" aria-label="每页显示模板数量">
+                <SelectTrigger className="h-8 w-[104px] rounded-[9px] border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-950/60 data-[size=default]:h-8" aria-label={t("每页显示模板数量")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[12, 24, 48, 96].map((size) => <SelectItem key={size} value={String(size)}>{size} 条/页</SelectItem>)}
+                  {[12, 24, 48, 96].map((size) => <SelectItem key={size} value={String(size)}>{size}  {t("条/页")}</SelectItem>)}
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-1">
-                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage(1)} disabled={currentTemplatePage === 1} tooltip="第一页" aria-label="第一页">
+                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage(1)} disabled={currentTemplatePage === 1} tooltip={t("第一页")} aria-label={t("第一页")}>
                   <ChevronsLeft className="size-3.5" />
                 </TooltipButton>
-                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage((page) => Math.max(1, page - 1))} disabled={currentTemplatePage === 1} tooltip="上一页" aria-label="上一页">
+                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage((page) => Math.max(1, page - 1))} disabled={currentTemplatePage === 1} tooltip={t("上一页")} aria-label={t("上一页")}>
                   <ChevronLeft className="size-3.5" />
                 </TooltipButton>
-                <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">第 {currentTemplatePage} / {templatePageCount} 页</span>
-                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage((page) => Math.min(templatePageCount, page + 1))} disabled={currentTemplatePage === templatePageCount} tooltip="下一页" aria-label="下一页">
+                <span className="min-w-[76px] text-center font-semibold text-slate-700 dark:text-zinc-200">{t("第")} {currentTemplatePage} / {templatePageCount}  {t("页")}</span>
+                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage((page) => Math.min(templatePageCount, page + 1))} disabled={currentTemplatePage === templatePageCount} tooltip={t("下一页")} aria-label={t("下一页")}>
                   <ChevronRight className="size-3.5" />
                 </TooltipButton>
-                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage(templatePageCount)} disabled={currentTemplatePage === templatePageCount} tooltip="最后一页" aria-label="最后一页">
+                <TooltipButton variant="ghost" size="icon-xs" onClick={() => setTemplatePage(templatePageCount)} disabled={currentTemplatePage === templatePageCount} tooltip={t("最后一页")} aria-label={t("最后一页")}>
                   <ChevronsRight className="size-3.5" />
                 </TooltipButton>
               </div>
@@ -723,7 +713,7 @@ export function TemplatesPage() {
         min={templatePreviewMinWidth}
         max={templatePreviewMaxWidth}
         onResize={setTemplatePreviewWidth}
-        ariaLabel="调整模板 Word 预览宽度"
+        ariaLabel={t("调整模板 Word 预览宽度")}
         className="mk-template-side-resizer"
       />
 
@@ -731,8 +721,8 @@ export function TemplatesPage() {
         <AppSurface as="section" padding="none" className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
           <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
-              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{highlightedTemplate?.name ?? "未选择模板"}</p>
+              <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">{t("Word 预览")}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{highlightedTemplate?.name ?? t("未选择模板")}</p>
             </div>
             <WordPreviewToolbar
               zoom={templatePreviewZoom}

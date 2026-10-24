@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { FileText, Loader2, Palette, Save, TriangleAlert, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -57,7 +58,7 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
       if (!selected) return;
       setReferenceDocxPath(selected);
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "选择参考 DOCX 失败"));
+      toast.error(userFacingErrorMessage(error, t("选择参考 DOCX 失败")));
     }
   }
 
@@ -71,7 +72,7 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
       await onSetDefault(template);
     } catch (error) {
       setIsDefault(false);
-      toast.error(userFacingErrorMessage(error, "设为默认模板失败"));
+      toast.error(userFacingErrorMessage(error, t("设为默认模板失败")));
     } finally {
       setIsSaving(false);
     }
@@ -81,12 +82,12 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
     if (!template || !canEditMetadata) return;
     const nextName = name.trim();
     if (!nextName) {
-      toast.error("请填写模板名称");
+      toast.error(t("请填写模板名称"));
       return;
     }
     const nextReferenceDocxPath = referenceDocxPath.trim();
     if (nextReferenceDocxPath && !nextReferenceDocxPath.toLowerCase().endsWith(".docx")) {
-      toast.error("参考 DOCX 路径必须指向 .docx 文件");
+      toast.error(t("参考 DOCX 路径必须指向 .docx 文件"));
       return;
     }
 
@@ -103,10 +104,10 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
     setIsSaving(true);
     try {
       await onSave(nextTemplate);
-      toast.success(`已保存「${nextTemplate.name}」`);
+      toast.success(t("已保存「{0}」", [nextTemplate.name]));
       onOpenChange(false);
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "保存模板失败"));
+      toast.error(userFacingErrorMessage(error, t("保存模板失败")));
     } finally {
       setIsSaving(false);
     }
@@ -119,10 +120,10 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
           <DialogHeader className="border-b border-slate-200 px-4 py-3 dark:border-zinc-800">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <DialogTitle className="truncate text-base font-semibold text-slate-950 dark:text-zinc-50">编辑模板</DialogTitle>
-                <DialogDescription className="mt-1 truncate text-xs text-slate-500 dark:text-zinc-400">{template?.name ?? "未选择模板"}</DialogDescription>
+                <DialogTitle className="truncate text-base font-semibold text-slate-950 dark:text-zinc-50">{t("编辑模板")}</DialogTitle>
+                <DialogDescription className="mt-1 truncate text-xs text-slate-500 dark:text-zinc-400">{template?.name ?? t("未选择模板")}</DialogDescription>
               </div>
-              <Button variant="ghost" size="icon-sm" className="rounded-[8px]" onClick={() => onOpenChange(false)} aria-label="关闭">
+              <Button variant="ghost" size="icon-sm" className="rounded-[8px]" onClick={() => onOpenChange(false)} aria-label={t("关闭")}>
                 <X className="size-4" />
               </Button>
             </div>
@@ -132,64 +133,60 @@ export function TemplateEditDrawer({ open, template, groups, onOpenChange, onSav
             {template?.isBuiltIn ? (
               <div className="flex items-center gap-2 rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/12 dark:text-amber-200">
                 <TriangleAlert className="size-4 shrink-0" />
-                <span className="min-w-0">内置模板信息已锁定，可设为默认或进入样式管理器。</span>
+                <span className="min-w-0">{t("内置模板信息已锁定，可设为默认或进入样式管理器。")}</span>
               </div>
             ) : null}
 
             <section className="space-y-3 rounded-[8px] border border-slate-200 bg-white p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
-              <SectionTitle>模板信息</SectionTitle>
+              <SectionTitle>{t("模板信息")}</SectionTitle>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="模板名称"><Input value={name} onChange={(event) => setName(event.target.value)} disabled={!canEditMetadata || isSaving} /></Field>
-                <Field label="分组">
+                <Field label={t("模板名称")}><Input value={name} onChange={(event) => setName(event.target.value)} disabled={!canEditMetadata || isSaving} /></Field>
+                <Field label={t("分组")}>
                   <Input value={category} list="template-edit-groups" onChange={(event) => setCategory(event.target.value)} disabled={!canEditMetadata || isSaving} />
                   <datalist id="template-edit-groups">
                     {categoryOptions.map((group) => <option key={group} value={group} />)}
                   </datalist>
                 </Field>
               </div>
-              <Field label="标签"><Input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="多个标签用 / 或逗号分隔" disabled={!canEditMetadata || isSaving} /></Field>
-              <Field label="说明"><Textarea className="min-h-20 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} disabled={!canEditMetadata || isSaving} /></Field>
+              <Field label={t("标签")}><Input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder={t("多个标签用 / 或逗号分隔")} disabled={!canEditMetadata || isSaving} /></Field>
+              <Field label={t("说明")}><Textarea className="min-h-20 resize-none" value={t(description)} onChange={(event) => setDescription(event.target.value)} disabled={!canEditMetadata || isSaving} /></Field>
               <div className="flex items-center justify-between gap-3 rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-800/60">
-                <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">默认模板</span>
+                <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">{t("默认模板")}</span>
                 {isDefault ? (
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">当前默认</span>
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/16 dark:text-blue-200">{t("当前默认")}</span>
                 ) : (
                   <Button variant="outline" size="sm" className="h-7 rounded-[8px]" disabled={isSaving} onClick={() => void handleSetDefault()}>
-                    设为默认
-                  </Button>
+                     {t("设为默认")} </Button>
                 )}
               </div>
             </section>
 
             <section className="space-y-3 rounded-[8px] border border-slate-200 bg-white p-3 dark:border-zinc-700/70 dark:bg-zinc-900/72">
-              <SectionTitle>模板文件</SectionTitle>
+              <SectionTitle>{t("模板文件")}</SectionTitle>
               <div className="space-y-2">
-                <Label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-zinc-400"><FileText className="size-3.5" />参考 DOCX</Label>
+                <Label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-zinc-400"><FileText className="size-3.5" />{t("参考 DOCX")}</Label>
                 <div className="flex gap-2">
-                  <Input value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder="选择或填写 .docx 文件路径" disabled={!canEditMetadata || isSaving} />
+                  <Input value={referenceDocxPath} onChange={(event) => setReferenceDocxPath(event.target.value)} placeholder={t("选择或填写 .docx 文件路径")} disabled={!canEditMetadata || isSaving} />
                   <SoftActionButton className="h-8 rounded-[8px]" size="sm" disabled={!canEditMetadata || isSaving} onClick={handleSelectReferenceDocx}>
                     <Upload className="size-4" />
-                    选择
-                  </SoftActionButton>
+                     {t("选择")} </SoftActionButton>
                 </div>
               </div>
               <div className="flex items-center justify-between gap-3 rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-800/60">
-                <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">样式设置</span>
+                <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">{t("样式设置")}</span>
                 <Button size="sm" variant="outline" className="h-7 rounded-[8px]" onClick={() => onOpenStyleManager(template)}>
                   <Palette className="size-4" />
-                  打开
-                </Button>
+                   {t("打开")} </Button>
               </div>
             </section>
 
           </div>
 
           <DialogFooter className="m-0 flex-row justify-end gap-2 rounded-none border-t border-slate-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
-            <SoftActionButton className="h-8 rounded-[8px]" onClick={() => onOpenChange(false)}>取消</SoftActionButton>
+            <SoftActionButton className="h-8 rounded-[8px]" onClick={() => onOpenChange(false)}>{t("取消")}</SoftActionButton>
             <PrimaryActionButton className="h-8 rounded-[8px]" disabled={!canEditMetadata || !hasChanges || isSaving} onClick={() => void handleSave()}>
               {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              保存
-            </PrimaryActionButton>
+               {t("保存")} </PrimaryActionButton>
           </DialogFooter>
         </div>
       </DialogContent>
@@ -202,7 +199,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-500 dark:text-zinc-400">{label}</Label>{children}</div>;
+  return <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-500 dark:text-zinc-400">{t(label)}</Label>{children}</div>;
 }
 
 function normalizeTags(category: string, tagsText: string) {

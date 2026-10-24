@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { type LucideIcon } from "lucide-react";
 import { AppSurface } from "@/components/ui/app-surface";
 
@@ -16,7 +17,7 @@ export function SettingsSection({ title, description, icon: Icon, children }: Se
           {Icon ? <Icon className="size-4 text-blue-600 dark:text-blue-300" /> : null}
           {title}
         </h3>
-        {description ? <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">{description}</p> : null}
+        {description ? <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">{t(description)}</p> : null}
       </div>
       <div className="space-y-3">{children}</div>
     </AppSurface>

@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type WordFontSizeSelectProps = {
@@ -44,23 +45,23 @@ export function WordFontSizeSelect({ value, onChange, className }: WordFontSizeS
         {!hasSelectedValue ? (
           <>
             <SelectGroup>
-              <SelectLabel>当前值</SelectLabel>
+              <SelectLabel>{t("当前值")}</SelectLabel>
               <SelectItem value={selectedValue}>{formatSizeValue(value)}</SelectItem>
             </SelectGroup>
             <SelectSeparator />
           </>
         ) : null}
         <SelectGroup>
-          <SelectLabel>中文字号</SelectLabel>
+          <SelectLabel>{t("中文字号")}</SelectLabel>
           {chineseFontSizeOptions.map((option) => (
-            <SelectItem key={option.label} value={formatSizeValue(option.value)}>
-              {option.label}
+            <SelectItem key={t(option.label)} value={formatSizeValue(option.value)}>
+              {t(option.label)}
             </SelectItem>
           ))}
         </SelectGroup>
         <SelectSeparator />
         <SelectGroup>
-          <SelectLabel>数字字号</SelectLabel>
+          <SelectLabel>{t("数字字号")}</SelectLabel>
           {wordPointSizes
             .filter((size) => !chineseFontSizeOptions.some((option) => option.value === size))
             .map((size) => (

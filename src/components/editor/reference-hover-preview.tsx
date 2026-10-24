@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUpRight } from "lucide-react";
@@ -45,7 +46,7 @@ export function ReferenceHoverPreview({ load, onOpen, revision, isDark }: {
           const value = await callbacks.current.load(target);
           if (request === sequence.current && version === callbacks.current.revision && element.isConnected) setPreview({ target, value });
         } catch (error) {
-          if (request === sequence.current && version === callbacks.current.revision) setPreview({ target, error: error instanceof Error ? error.message : "无法预览引用" });
+          if (request === sequence.current && version === callbacks.current.revision) setPreview({ target, error: error instanceof Error ? error.message : t("无法预览引用") });
         }
       }, 400);
     };
@@ -126,7 +127,7 @@ export function ReferenceHoverPreview({ load, onOpen, revision, isDark }: {
         if (!label) continue;
         void callbacks.current.load(target).then(value => {
           if (!cancelled && element.isConnected) label.textContent = referenceLineLabel(value.range);
-        }).catch(() => { if (!cancelled && element.isConnected) label.textContent = "引用已失效"; });
+        }).catch(() => { if (!cancelled && element.isConnected) label.textContent = t("引用已失效"); });
       }
     };
     const observer = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(scan); });
@@ -139,16 +140,16 @@ export function ReferenceHoverPreview({ load, onOpen, revision, isDark }: {
   const value = preview.value;
   const snippet = value ? stripReferenceMetadata(value.content.slice(value.range.from, value.range.to)).split("\n").slice(0, 30).join("\n") : "";
   return createPortal(
-    <div ref={popup} data-reference-preview role="dialog" aria-label="引用内容预览" className="fixed z-[100] flex max-h-[350px] w-[460px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+    <div ref={popup} data-reference-preview role="dialog" aria-label={t("引用内容预览")} className="fixed z-[100] flex max-h-[350px] w-[460px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 text-xs dark:border-zinc-700">
-        <span className="truncate font-medium">{value?.path.split("/").pop() || "当前文档"}</span>
+        <span className="truncate font-medium">{value?.path.split("/").pop() || t("当前文档")}</span>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="text-muted-foreground">{value ? referenceLineLabel(value.range) : preview.error ? "无法预览" : "加载中…"}</span>
-          <button type="button" aria-label="跳转并选中引用内容" data-tooltip="跳转并选中引用内容" disabled={!value} className="flex size-6 items-center justify-center rounded text-blue-600 hover:bg-slate-100 disabled:opacity-40 dark:text-blue-400 dark:hover:bg-zinc-800" onClick={() => { callbacks.current.onOpen(preview.target); setPreview(undefined); }}><ArrowUpRight className="size-4" /></button>
+          <span className="text-muted-foreground">{value ? referenceLineLabel(value.range) : preview.error ? t("无法预览") : t("加载中…")}</span>
+          <button type="button" aria-label={t("跳转并选中引用内容")} data-tooltip={t("跳转并选中引用内容")} disabled={!value} className="flex size-6 items-center justify-center rounded text-blue-600 hover:bg-slate-100 disabled:opacity-40 dark:text-blue-400 dark:hover:bg-zinc-800" onClick={() => { callbacks.current.onOpen(preview.target); setPreview(undefined); }}><ArrowUpRight className="size-4" /></button>
         </div>
       </div>
       {value ? <div className="min-h-0"><LiveMarkdownEditor documentKey={`${preview.target}:${revision}`} initialContent={snippet} markdownSourcePath={value.absolutePath} readOnly isDark={isDark} onDocChanged={() => {}} /></div>
-        : <p className="px-3 py-4 text-sm text-muted-foreground">{preview.error ?? "正在读取引用内容…"}</p>}
+        : <p className="px-3 py-4 text-sm text-muted-foreground">{preview.error ?? t("正在读取引用内容…")}</p>}
     </div>, document.body,
   );
 }

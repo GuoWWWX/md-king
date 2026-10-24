@@ -1,4 +1,6 @@
-import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, Sparkles, Download, type LucideIcon } from "lucide-react";
+import { t } from "@/lib/i18n";
+import { History, Info, LayoutTemplate, Monitor, Moon, Settings, Sun, Sparkles, Download, RefreshCw, type LucideIcon } from "lucide-react";
+import { LanguageMenu } from "./language-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { handleTauriWindowDrag, handleTauriWindowDoubleClick } from "@/lib/tauri";
@@ -49,16 +51,17 @@ export function ActivityBar({
   const latestRelease = useUpdaterStore((state) => state.latestRelease);
   const downloadProgress = useUpdaterStore((state) => state.downloadProgress);
   const setDialogOpen = useUpdaterStore((state) => state.setDialogOpen);
+  const checkForUpdates = useUpdaterStore((state) => state.checkForUpdates);
 
   return (
     <aside
       data-collapsed="true"
-      aria-label="主导航"
+      aria-label={t("主导航")}
       className="mk-activity-bar flex h-full w-12 shrink-0 select-none flex-col items-center px-1 py-2"
       onPointerDown={handleTauriWindowDrag}
       onDoubleClick={handleTauriWindowDoubleClick}
     >
-      <nav className="flex flex-col items-center gap-1.5" aria-label="页面导航">
+      <nav className="flex flex-col items-center gap-1.5" aria-label={t("页面导航")}>
         {primaryNavigation.map((item) => {
           const Icon = item.icon;
           const isActive = activePage === item.id;
@@ -70,9 +73,9 @@ export function ActivityBar({
                 "mk-nav-collapsed size-10 shrink-0 justify-center rounded-[8px] p-0 transition",
                 isActive ? "mk-nav-active text-white" : "mk-nav-idle",
               )}
-              title={item.label}
+              title={t(item.label)}
               tooltipSide="right"
-              aria-label={item.label}
+              aria-label={t(item.label)}
               aria-current={isActive ? "page" : undefined}
               onClick={() => onNavigate(item.id)}
             >
@@ -87,34 +90,35 @@ export function ActivityBar({
       />
 
       <div className="mk-activity-bar-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-slate-200/80 pt-2 dark:border-zinc-700">
-        {hasUpdate && (
           <Button
             variant="ghost"
-            className="relative size-10 shrink-0 justify-center rounded-[8px] p-0 bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 hover:text-amber-700 dark:bg-amber-400/20 dark:text-amber-300 dark:hover:bg-amber-400/30 transition animate-in fade-in"
-            onClick={() => setDialogOpen(true)}
-            title={status === "downloading" ? `正在下载更新: ${downloadProgress.percent.toFixed(0)}%` : `发现新版本 ${latestRelease?.tag_name} (点击更新)`}
+            className={cn("relative size-10 shrink-0 justify-center rounded-[8px] p-0 transition", hasUpdate ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 hover:text-amber-700 dark:bg-amber-400/20 dark:text-amber-300 dark:hover:bg-amber-400/30" : "mk-nav-idle")}
+            onClick={() => hasUpdate ? setDialogOpen(true) : void checkForUpdates({ silent: false })}
+            disabled={status === "checking"}
+            title={status === "downloading" ? t("正在下载更新: {0}%", [downloadProgress.percent.toFixed(0)]) : hasUpdate ? t("发现新版本 {0} (点击更新)", [latestRelease?.tag_name]) : t("检查新版本")}
             tooltipSide="right"
-            aria-label="软件更新"
+            aria-label={t("软件更新")}
           >
             {status === "downloading" ? (
               <Download className="size-4 animate-bounce" />
-            ) : (
+            ) : hasUpdate ? (
               <Sparkles className="size-4" />
-            )}
-            <span className="absolute top-1.5 right-1.5 flex size-2">
+            ) : <RefreshCw className={cn("size-4", status === "checking" && "animate-spin")} />}
+            {hasUpdate && <span className="absolute top-1.5 right-1.5 flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
               <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
-            </span>
+            </span>}
           </Button>
-        )}
+
+        <LanguageMenu />
 
         <Button
           variant="outline"
           className="mk-theme-cycle-button mk-sidebar-icon-button size-9 shrink-0 justify-center rounded-[8px] px-0"
           onClick={onToggleThemeMode}
-          title={activeTheme.label}
+          title={t(activeTheme.label)}
           tooltipSide="right"
-          aria-label={`切换外观主题，当前：${activeTheme.label}`}
+          aria-label={t("切换外观主题，当前：{0}", [t(activeTheme.label)])}
           disabled={!onToggleThemeMode}
         >
           <ThemeIcon className="size-4" />
@@ -126,9 +130,9 @@ export function ActivityBar({
             "mk-nav-collapsed size-10 shrink-0 justify-center rounded-[8px] p-0 transition",
             activePage === "settings" ? "mk-nav-active text-white" : "mk-nav-idle",
           )}
-          title="设置"
+          title={t("设置")}
           tooltipSide="right"
-          aria-label="设置"
+          aria-label={t("设置")}
           aria-current={activePage === "settings" ? "page" : undefined}
           onClick={() => onNavigate("settings")}
         >

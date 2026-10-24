@@ -1,3 +1,5 @@
+import { setControlLabel } from "./localized-controls.ts";
+import { t } from "../../../lib/i18n.ts";
 import { StateEffect } from "@codemirror/state";
 import { markdownLinkContext } from "./link-interactions";
 import { redo, undo } from "@codemirror/commands";
@@ -166,8 +168,8 @@ export class CopyCodeWidget extends WidgetType {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "mk-cm-copy-code";
-    btn.setAttribute("aria-label", "复制代码");
-    btn.dataset.tooltip = "复制代码";
+    setControlLabel(btn, "aria-label", () => t("复制代码"));
+    setControlLabel(btn, "data-tooltip", () => t("复制代码"));
     btn.innerHTML = COPY_ICON;
 
     // 在 click 之前阻止编辑器移动选区和按钮抢焦点，避免围栏切换到源码态。
@@ -277,7 +279,7 @@ export class TaskCheckboxWidget extends WidgetType {
     checkbox.dataset.checked = String(this.checked);
     checkbox.setAttribute("role", "checkbox");
     checkbox.setAttribute("aria-checked", String(this.checked));
-    checkbox.setAttribute("aria-label", this.checked ? "取消完成状态" : "标记为已完成");
+    setControlLabel(checkbox, "aria-label", () => this.checked ? t("取消完成状态") : t("标记为已完成"));
     checkbox.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -346,7 +348,7 @@ export function refreshLiveMermaidTheme(editorDom: HTMLElement, isDark: boolean)
         if (!canvas.isConnected) return;
         host.dataset.state = "error";
         host.style.minHeight = "";
-        canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
+        canvas.textContent = error instanceof Error ? error.message : t("图表渲染失败");
       });
   });
 }
@@ -394,7 +396,7 @@ export class MermaidWidget extends WidgetType {
         if (!canvas.isConnected) return;
         host.dataset.state = "error";
         host.style.minHeight = "";
-        canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
+        canvas.textContent = error instanceof Error ? error.message : t("图表渲染失败");
       });
 
     return true;
@@ -420,8 +422,8 @@ export class MermaidWidget extends WidgetType {
     const copyButton = document.createElement("button");
     copyButton.type = "button";
     copyButton.className = "mk-cm-mermaid-copy";
-    copyButton.dataset.tooltip = "复制 Mermaid 源码";
-    copyButton.setAttribute("aria-label", "复制 Mermaid 源码");
+    setControlLabel(copyButton, "data-tooltip", () => t("复制 Mermaid 源码"));
+    setControlLabel(copyButton, "aria-label", () => t("复制 Mermaid 源码"));
     copyButton.innerHTML = COPY_ICON;
     const preventSelect = (event: Event) => {
       event.preventDefault();
@@ -446,14 +448,14 @@ export class MermaidWidget extends WidgetType {
     const previewButton = document.createElement("button");
     previewButton.type = "button";
     previewButton.className = "mk-cm-mermaid-expand";
-    previewButton.dataset.tooltip = "放大查看 Mermaid 图";
-    previewButton.setAttribute("aria-label", "放大查看 Mermaid 图");
+    setControlLabel(previewButton, "data-tooltip", () => t("放大查看 Mermaid 图"));
+    setControlLabel(previewButton, "aria-label", () => t("放大查看 Mermaid 图"));
     previewButton.innerHTML = iconMarkup(Expand);
     previewButton.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const svg = host.querySelector(".mk-cm-mermaid-canvas svg")?.outerHTML;
-      if (svg) requestMediaPreview({ src: svgDataUrl(svg), alt: "Mermaid 图表", title: "Mermaid 图表" });
+      if (svg) requestMediaPreview({ src: svgDataUrl(svg), alt: t("Mermaid 图表"), title: t("Mermaid 图表") });
     });
     actions.append(previewButton);
 
@@ -461,8 +463,8 @@ export class MermaidWidget extends WidgetType {
       const sourceButton = document.createElement("button");
       sourceButton.type = "button";
       sourceButton.className = "mk-cm-mermaid-source";
-      sourceButton.dataset.tooltip = "编辑 Mermaid 源码";
-      sourceButton.setAttribute("aria-label", "编辑 Mermaid 源码");
+      setControlLabel(sourceButton, "data-tooltip", () => t("编辑 Mermaid 源码"));
+      setControlLabel(sourceButton, "aria-label", () => t("编辑 Mermaid 源码"));
       sourceButton.innerHTML = iconMarkup(Code2);
       sourceButton.addEventListener("pointerdown", (event) => {
         event.preventDefault();
@@ -494,7 +496,7 @@ export class MermaidWidget extends WidgetType {
         event.stopPropagation();
       }
     });
-    canvas.setAttribute("aria-label", "Mermaid 图表");
+    setControlLabel(canvas, "aria-label", () => t("Mermaid 图表"));
     host.append(canvas);
 
     if (this.caption) {
@@ -519,7 +521,7 @@ export class MermaidWidget extends WidgetType {
     } else {
       host.style.minHeight = "180px";
       host.dataset.state = "loading";
-      canvas.textContent = "正在渲染图表…";
+      setControlLabel(canvas, "textContent", () => t("正在渲染图表…"));
     }
 
     void renderMermaid(this.source, isDark)
@@ -541,7 +543,7 @@ export class MermaidWidget extends WidgetType {
         host.dataset.state = "error";
         host.style.minHeight = "";
         // 语法错误要给出原文，否则用户不知道图为什么画不出来。
-        canvas.textContent = error instanceof Error ? error.message : "图表渲染失败";
+        canvas.textContent = error instanceof Error ? error.message : t("图表渲染失败");
         view.requestMeasure();
       });
 
@@ -618,7 +620,7 @@ export class MarkdownImageWidget extends WidgetType {
 
     const canvas = document.createElement("div");
     canvas.className = "mk-cm-image-canvas";
-    canvas.textContent = "正在加载图片…";
+    setControlLabel(canvas, "textContent", () => t("正在加载图片…"));
     frame.append(canvas);
 
     const widthModeKey = `${this.markdownSourcePath ?? "untitled"}\u0000${this.src}`;
@@ -651,8 +653,8 @@ export class MarkdownImageWidget extends WidgetType {
       const sourceButton = document.createElement("button");
       sourceButton.type = "button";
       sourceButton.className = "mk-cm-image-source";
-      sourceButton.dataset.tooltip = "编辑图片 Markdown";
-      sourceButton.setAttribute("aria-label", "编辑图片 Markdown");
+      setControlLabel(sourceButton, "data-tooltip", () => t("编辑图片 Markdown"));
+      setControlLabel(sourceButton, "aria-label", () => t("编辑图片 Markdown"));
       sourceButton.innerHTML = iconMarkup(Code2);
       sourceButton.addEventListener("click", (event) => {
         event.preventDefault();
@@ -666,8 +668,8 @@ export class MarkdownImageWidget extends WidgetType {
       widthButton.className = "mk-cm-image-width";
       const syncWidthButton = () => {
         const nextLabel = widthMode === "fit" ? "切换为原始宽度" : "切换为适应窗口宽度";
-        widthButton.dataset.tooltip = nextLabel;
-        widthButton.setAttribute("aria-label", nextLabel);
+        setControlLabel(widthButton, "data-tooltip", () => t(nextLabel));
+        setControlLabel(widthButton, "aria-label", () => t(nextLabel));
         widthButton.innerHTML = iconMarkup(widthMode === "fit" ? AlignCenter : AlignJustify);
       };
       syncWidthButton();
@@ -683,7 +685,7 @@ export class MarkdownImageWidget extends WidgetType {
       const continuation = document.createElement("div");
       continuation.className = "mk-cm-image-continuation";
       continuation.setAttribute("role", "button");
-      continuation.setAttribute("aria-label", "在图片后继续输入");
+      setControlLabel(continuation, "aria-label", () => t("在图片后继续输入"));
       continuation.tabIndex = 0;
       continuation.addEventListener("pointerdown", (event) => {
         event.preventDefault();
@@ -701,14 +703,14 @@ export class MarkdownImageWidget extends WidgetType {
     const previewButton = document.createElement("button");
     previewButton.type = "button";
     previewButton.className = "mk-cm-image-expand";
-    previewButton.dataset.tooltip = "放大查看图片";
-    previewButton.setAttribute("aria-label", "放大查看图片");
+    setControlLabel(previewButton, "data-tooltip", () => t("放大查看图片"));
+    setControlLabel(previewButton, "aria-label", () => t("放大查看图片"));
     previewButton.innerHTML = iconMarkup(Maximize2);
     frame.append(previewButton);
 
     void resolvePreviewImageSource(this.src, this.markdownSourcePath)
       .then((resolvedSrc) => {
-        if (!host.isConnected || !resolvedSrc) throw new Error("图片无法预览");
+        if (!host.isConnected || !resolvedSrc) throw new Error(t("图片无法预览"));
         const image = document.createElement("img");
         image.src = resolvedSrc;
         image.alt = this.alt;
@@ -726,7 +728,7 @@ export class MarkdownImageWidget extends WidgetType {
         previewButton.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          requestMediaPreview({ src: resolvedSrc, alt: this.alt, title: this.alt || "图片预览" });
+          requestMediaPreview({ src: resolvedSrc, alt: this.alt, title: this.alt || t("图片预览") });
         });
         canvas.replaceChildren(image);
         delete host.dataset.state;
@@ -735,7 +737,7 @@ export class MarkdownImageWidget extends WidgetType {
       .catch(() => {
         if (!host.isConnected) return;
         host.dataset.state = "error";
-        canvas.textContent = "图片无法预览";
+        setControlLabel(canvas, "textContent", () => t("图片无法预览"));
         previewButton.disabled = true;
         view.requestMeasure();
       });
@@ -815,8 +817,8 @@ export class MarkdownWikilinkWidget extends WidgetType {
     link.dataset.mkWikilinkFrom = String(this.wikilinkFrom);
     if (this.invalid) link.dataset.mkWikilinkInvalid = "true";
     link.setAttribute("role", "link");
-    link.setAttribute("aria-label", this.invalid ? `非 Markdown 文件：${this.target}` : `打开文档：${this.target}`);
-    link.title = this.invalid ? "仅支持 Markdown 文档" : this.target;
+    setControlLabel(link, "aria-label", () => this.invalid ? t("非 Markdown 文件：{0}", [this.target]) : t("打开文档：{0}", [this.target]));
+    link.title = this.invalid ? t("仅支持 Markdown 文档") : this.target;
 
     const icon = document.createElement("span");
     icon.className = `mk-cm-link-icon mk-cm-link-icon--${this.kind}${this.invalid ? " mk-cm-link-icon--invalid" : ""}`;
@@ -896,7 +898,7 @@ export class MarkdownCalloutIconWidget extends WidgetType {
       host.setAttribute("role", "button");
       host.setAttribute("tabindex", "0");
       host.setAttribute("aria-expanded", String(!this.collapsed));
-      host.setAttribute("aria-label", this.collapsed ? "展开引用块" : "收起引用块");
+      setControlLabel(host, "aria-label", () => this.collapsed ? t("展开引用块") : t("收起引用块"));
 
       const toggle = document.createElement("span");
       toggle.className = "mk-cm-callout-fold-icon";
@@ -959,7 +961,7 @@ export class MarkdownFrontmatterWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const host = document.createElement("section");
     host.className = `mk-cm-frontmatter${this.editable ? " mk-cm-frontmatter--editable" : ""}`;
-    host.setAttribute("aria-label", "文档属性");
+    setControlLabel(host, "aria-label", () => t("文档属性"));
     if (this.editable) {
       host.addEventListener("pointerdown", (event) => {
         event.preventDefault();
@@ -974,7 +976,7 @@ export class MarkdownFrontmatterWidget extends WidgetType {
 
     const heading = document.createElement("div");
     heading.className = "mk-cm-frontmatter-heading";
-    heading.textContent = "文档属性";
+    setControlLabel(heading, "textContent", () => t("文档属性"));
     host.append(heading);
 
     const properties = document.createElement("div");
@@ -1533,8 +1535,8 @@ export class TableWidget extends WidgetType {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "mk-table-tool-button";
-      button.dataset.tooltip = label;
-      button.setAttribute("aria-label", label);
+      setControlLabel(button, "data-tooltip", () => t(label));
+      setControlLabel(button, "aria-label", () => t(label));
       button.disabled = disabled;
       button.innerHTML = typeof icon === "string" ? icon : iconMarkup(icon);
       button.addEventListener("pointerdown", (event) => {
@@ -1552,7 +1554,7 @@ export class TableWidget extends WidgetType {
     const toolbar = document.createElement("div");
     toolbar.className = "mk-table-toolbar";
     toolbar.setAttribute("role", "toolbar");
-    toolbar.setAttribute("aria-label", "表格操作");
+    setControlLabel(toolbar, "aria-label", () => t("表格操作"));
 
     const showTableSource = () => {
       const insert = serializeMarkdownTable(draft);
@@ -1630,16 +1632,16 @@ export class TableWidget extends WidgetType {
     toolbarEnd.className = "mk-table-toolbar-end";
     const currentTableWidthMode = () => wrapsContent ? "content" : "window";
     const nextTableWidthMode = () => currentTableWidthMode() === "content" ? "window" : "content";
-    const currentTableWidthModeLabel = () => currentTableWidthMode() === "window" ? "根据窗口调整布局" : "根据内容调整布局";
-    const nextTableWidthModeLabel = () => nextTableWidthMode() === "window" ? "根据窗口调整布局" : "根据内容调整布局";
-    const tableWidthModeTooltip = () => `当前：${currentTableWidthModeLabel()}；点击切换为${nextTableWidthModeLabel()}`;
+    const currentTableWidthModeLabel = () => currentTableWidthMode() === "window" ? t("根据窗口调整布局") : t("根据内容调整布局");
+    const nextTableWidthModeLabel = () => nextTableWidthMode() === "window" ? t("根据窗口调整布局") : t("根据内容调整布局");
+    const tableWidthModeTooltip = () => t("当前：{0}；点击切换为{1}", [currentTableWidthModeLabel(), nextTableWidthModeLabel()]);
     const wrapButton = makeButton(tableWidthModeTooltip(), tableWidthModeIconMarkup(currentTableWidthMode()), () => {
       const nextMode = nextTableWidthMode();
       wrapsContent = nextMode === "content";
       wrapper.classList.toggle("is-wrap", wrapsContent);
       const label = tableWidthModeTooltip();
-      wrapButton.dataset.tooltip = label;
-      wrapButton.setAttribute("aria-label", label);
+      setControlLabel(wrapButton, "data-tooltip", () => t(label));
+      setControlLabel(wrapButton, "aria-label", () => t(label));
       wrapButton.innerHTML = tableWidthModeIconMarkup(currentTableWidthMode());
       view.dispatch({
         effects: setTableWidthModeEffect.of({ scope: "table", tableFrom: this.tableFrom, mode: nextMode }),
@@ -2038,43 +2040,43 @@ export class TableWidget extends WidgetType {
         menu.append(button);
       };
 
-      item("剪切", Scissors, cutSelection);
-      item("复制", Copy, copySelection);
-      item("粘贴", ClipboardPaste, pasteSelection);
+      item(t("剪切"), Scissors, cutSelection);
+      item(t("复制"), Copy, copySelection);
+      item(t("粘贴"), ClipboardPaste, pasteSelection);
       separator();
-      item("选中当前行", Rows3, () => updateSelection({ kind: "row", index: row }));
-      item("选中当前列", Columns3, () => updateSelection({ kind: "column", index: column }));
+      item(t("选中当前行"), Rows3, () => updateSelection({ kind: "row", index: row }));
+      item(t("选中当前列"), Columns3, () => updateSelection({ kind: "column", index: column }));
       separator();
-      item("在上方插入行", ArrowUpToLine, () => dispatchOperation(
+      item(t("在上方插入行"), ArrowUpToLine, () => dispatchOperation(
         { type: "insert-row", index: row, side: "above" },
         { row, column },
       ));
-      item("在下方插入行", ArrowDownToLine, () => dispatchOperation(
+      item(t("在下方插入行"), ArrowDownToLine, () => dispatchOperation(
         { type: "insert-row", index: row, side: "below" },
         { row: row + 1, column },
       ));
-      item("在左侧插入列", ArrowLeftToLine, () => dispatchOperation(
+      item(t("在左侧插入列"), ArrowLeftToLine, () => dispatchOperation(
         { type: "insert-column", index: column, side: "left" },
         { row, column },
       ));
-      item("在右侧插入列", ArrowRightToLine, () => dispatchOperation(
+      item(t("在右侧插入列"), ArrowRightToLine, () => dispatchOperation(
         { type: "insert-column", index: column, side: "right" },
         { row, column: column + 1 },
       ));
       separator();
-      item("向左移动列", ArrowLeft, () => dispatchOperation(
+      item(t("向左移动列"), ArrowLeft, () => dispatchOperation(
         { type: "move-column", index: column, direction: "left" },
         { row, column: column - 1 },
       ), column <= 0);
-      item("向右移动列", ArrowRight, () => dispatchOperation(
+      item(t("向右移动列"), ArrowRight, () => dispatchOperation(
         { type: "move-column", index: column, direction: "right" },
         { row, column: column + 1 },
       ), column >= draft.alignments.length - 1);
-      item("删除当前行", Trash2, () => dispatchOperation(
+      item(t("删除当前行"), Trash2, () => dispatchOperation(
         { type: "delete-row", index: row },
         { row: Math.min(row, draft.rows.length - 2), column },
       ), draft.rows.length <= 1);
-      item("删除当前列", Trash2, () => dispatchOperation(
+      item(t("删除当前列"), Trash2, () => dispatchOperation(
         { type: "delete-column", index: column },
         { row, column: Math.min(column, draft.alignments.length - 2) },
       ), draft.alignments.length <= 1);
@@ -2207,7 +2209,7 @@ export class TableWidget extends WidgetType {
       rendered.dataset.tableRow = String(row);
       rendered.dataset.tableColumn = String(column);
       rendered.tabIndex = 0;
-      rendered.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
+      setControlLabel(rendered, "aria-label", () => t("第 {0} 行，第 {1} 列", [row + 1, column + 1]));
       if (alignment !== "none") {
         rendered.style.textAlign = alignment;
       }
@@ -2218,7 +2220,7 @@ export class TableWidget extends WidgetType {
       input.value = draft.rows[row]?.[column] ?? "";
       input.dataset.tableRow = String(row);
       input.dataset.tableColumn = String(column);
-      input.setAttribute("aria-label", `第 ${row + 1} 行，第 ${column + 1} 列`);
+      setControlLabel(input, "aria-label", () => t("第 {0} 行，第 {1} 列", [row + 1, column + 1]));
       if (alignment !== "none") {
         input.style.textAlign = alignment;
       }
@@ -2337,8 +2339,8 @@ export class TableWidget extends WidgetType {
       const handle = document.createElement("button");
       handle.type = "button";
       handle.className = `mk-table-${kind}-drag-handle`;
-      handle.dataset.tooltip = kind === "column" ? "拖动列" : "拖动行";
-      handle.setAttribute("aria-label", kind === "column" ? `拖动第 ${index + 1} 列` : `拖动第 ${index + 1} 行`);
+      setControlLabel(handle, "data-tooltip", () => kind === "column" ? t("拖动列") : t("拖动行"));
+      setControlLabel(handle, "aria-label", () => kind === "column" ? t("拖动第 {0} 列", [index + 1]) : t("拖动第 {0} 行", [index + 1]));
       handle.innerHTML = iconMarkup(kind === "column" ? GripHorizontal : GripVertical);
       handle.addEventListener("pointerdown", (event) => beginReorderDrag(kind, index, event));
       if (kind === "column") {

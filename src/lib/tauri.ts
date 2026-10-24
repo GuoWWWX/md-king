@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getLanguage, t } from "./i18n.ts";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { resolveBrowserPreviewImage } from "./browser-preview-images.ts";
@@ -19,7 +20,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.1.20",
+  version: "1.2.0",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -39,7 +40,7 @@ const browserAppConfig: AppConfig = {
   quickPasteTemplateId: undefined,
   cliDefaultJson: true,
   logLevel: "info",
-  language: "zh",
+  language: getLanguage(),
   themeMode: "light",
   accentColor: "blue",
   defaultConflictStrategy: "overwrite",
@@ -132,7 +133,7 @@ export async function readClipboardText(): Promise<string> {
     return invoke<string>("read_clipboard_text");
   }
   if (!navigator.clipboard?.readText) {
-    throw new Error("当前环境不支持读取剪贴板，请手动粘贴内容");
+    throw new Error(t("当前环境不支持读取剪贴板，请手动粘贴内容"));
   }
   return navigator.clipboard.readText();
 }
@@ -176,7 +177,7 @@ function markdownSaveFileName(title: string) {
     .replace(/[ .]+$/g, "")
     .slice(0, 120)
     .trim();
-  return `${baseName || "未命名"}.md`;
+  return `${baseName || t("未命名")}.md`;
 }
 
 function ensureMarkdownSaveExtension(path: string) {
@@ -184,9 +185,9 @@ function ensureMarkdownSaveExtension(path: string) {
   return path.replace(/\.(?:markdown|txt)$/i, "") + ".md";
 }
 
-export async function selectDirectory(title = "选择默认输出目录") {
+export async function selectDirectory(title = t("选择默认输出目录")) {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览无法打开目录选择器，请在 Tauri 桌面端使用");
+    throw new Error(t("浏览器预览无法打开目录选择器，请在 Tauri 桌面端使用"));
   }
 
   return normalizeDialogSelection(await open({ directory: true, multiple: false, title }));
@@ -194,7 +195,7 @@ export async function selectDirectory(title = "选择默认输出目录") {
 
 export async function selectMarkdownSavePath(title: string) {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览无法保存到本机路径，请在 Tauri 桌面端使用");
+    throw new Error(t("浏览器预览无法保存到本机路径，请在 Tauri 桌面端使用"));
   }
 
   const fileName = markdownSaveFileName(title);
@@ -206,68 +207,68 @@ export async function selectMarkdownSavePath(title: string) {
   }
 
   const selected = normalizeDialogSelection(await saveDialog({
-    title: "保存 Markdown 文档",
+    title: t("保存 Markdown 文档"),
     defaultPath,
-    filters: [{ name: "Markdown 文档", extensions: ["md"] }],
+    filters: [{ name: t("Markdown 文档"), extensions: ["md"] }],
   }));
   return selected ? ensureMarkdownSaveExtension(selected) : undefined;
 }
 
 export async function selectDocxFile() {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+    throw new Error(t("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用"));
   }
 
   return normalizeDialogSelection(await open({
     directory: false,
     multiple: false,
-    title: "选择 reference.docx 模板文件",
-    filters: [{ name: "Word 文档", extensions: ["docx"] }],
+    title: t("选择 reference.docx 模板文件"),
+    filters: [{ name: t("Word 文档"), extensions: ["docx"] }],
   }));
 }
 
 export async function selectMarkdownFiles() {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+    throw new Error(t("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用"));
   }
 
   return normalizeDialogSelections(await open({
     directory: false,
     multiple: true,
-    title: "选择 Markdown / TXT 文件",
-    filters: [{ name: "Markdown / TXT 文档", extensions: ["md", "markdown", "txt"] }],
+    title: t("选择 Markdown / TXT 文件"),
+    filters: [{ name: t("Markdown / TXT 文档"), extensions: ["md", "markdown", "txt"] }],
   }));
 }
 
 export async function selectMdFile() {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+    throw new Error(t("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用"));
   }
 
   return normalizeDialogSelection(await open({
     directory: false,
     multiple: false,
-    title: "选择 Markdown 文件",
-    filters: [{ name: "Markdown 文档", extensions: ["md"] }],
+    title: t("选择 Markdown 文件"),
+    filters: [{ name: t("Markdown 文档"), extensions: ["md"] }],
   }));
 }
 
 export async function selectMarkdownFile() {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用");
+    throw new Error(t("浏览器预览无法打开文件选择器，请在 Tauri 桌面端使用"));
   }
 
   return normalizeDialogSelection(await open({
     directory: false,
     multiple: false,
-    title: "选择 Markdown / TXT 文件",
-    filters: [{ name: "Markdown / TXT 文档", extensions: ["md", "markdown", "txt"] }],
+    title: t("选择 Markdown / TXT 文件"),
+    filters: [{ name: t("Markdown / TXT 文档"), extensions: ["md", "markdown", "txt"] }],
   }));
 }
 
 export function readMarkdownFileFromPath(path: string) {
   if (!isTauriEnvironment()) {
-    return Promise.reject(new Error("浏览器预览无法读取本机 Markdown/TXT 文件，请在桌面端使用"));
+    return Promise.reject(new Error(t("浏览器预览无法读取本机 Markdown/TXT 文件，请在桌面端使用")));
   }
 
   return invoke<string>("read_markdown_file", { path });
@@ -453,7 +454,7 @@ export function openOutputPath(path: string) {
     return invoke<void>("open_output_path", { path });
   }
 
-  return Promise.reject(new Error("浏览器预览无法打开本机文件，请在 Tauri 桌面端使用"));
+  return Promise.reject(new Error(t("浏览器预览无法打开本机文件，请在 Tauri 桌面端使用")));
 }
 
 export function revealOutputPath(path: string) {
@@ -461,7 +462,7 @@ export function revealOutputPath(path: string) {
     return invoke<void>("reveal_output_path", { path });
   }
 
-  return Promise.reject(new Error("浏览器预览无法打开资源管理器，请在 Tauri 桌面端使用"));
+  return Promise.reject(new Error(t("浏览器预览无法打开资源管理器，请在 Tauri 桌面端使用")));
 }
 
 export function convertMarkdown(request: ConvertRequest) {
@@ -479,7 +480,7 @@ export function convertMarkdown(request: ConvertRequest) {
     warnings: [PREVIEW_WARNING],
     diagnostics: [],
     statistics: { mermaidBlocks: 0, mermaidRendered: 0, mermaidFailed: 0, imageCount: 0, tableCount: 0, multiPageTableCandidateCount: 0, tableWidthRiskIndices: [], imageDetails: [] },
-    message: "浏览器预览完成，未生成实际 DOCX 文件。",
+    message: t("浏览器预览完成，未生成实际 DOCX 文件。"),
   });
 }
 
@@ -649,7 +650,7 @@ export async function fetchLatestRelease(repo?: string): Promise<string> {
     const resp = await fetch(`https://api.github.com/repos/${repoName}/releases/latest`);
     if (resp.status === 404) return "null";
     if (!resp.ok) {
-      throw new Error(`获取 Release 失败: HTTP ${resp.status}`);
+      throw new Error(t("获取 Release 失败: HTTP {0}", [resp.status]));
     }
     return resp.text();
   }
@@ -658,14 +659,14 @@ export async function fetchLatestRelease(repo?: string): Promise<string> {
 
 export async function downloadUpdateInstaller(downloadUrl: string, version: string): Promise<string> {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览模式不支持直接下载安装更新包");
+    throw new Error(t("浏览器预览模式不支持直接下载安装更新包"));
   }
   return invoke<string>("download_update_installer", { downloadUrl, version });
 }
 
 export async function launchUpdateInstaller(installerPath: string, silent = false): Promise<void> {
   if (!isTauriEnvironment()) {
-    throw new Error("浏览器预览模式不支持启动安装程序");
+    throw new Error(t("浏览器预览模式不支持启动安装程序"));
   }
   return invoke<void>("launch_update_installer", { installerPath, silent });
 }

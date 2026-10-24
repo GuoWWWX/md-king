@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
 import { useEffect } from "react";
@@ -66,7 +67,7 @@ export function SystemFloatingWindowManager() {
 
       const floatingWindow = new WebviewWindow(floatingWindowLabel, {
         url: `${url.pathname}${url.search}${url.hash}`,
-        title: "md-king 悬浮球",
+        title: t("md-king 悬浮球"),
         width: floatingWindowClosedWidth,
         height: floatingWindowClosedHeight,
         minWidth: floatingWindowClosedWidth,

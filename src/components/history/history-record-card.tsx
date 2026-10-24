@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { AlertCircle, CheckCircle2, CheckSquare, Clock, Copy, ExternalLink, Trash2 } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
@@ -37,20 +38,20 @@ async function copyText(text?: string) {
 
 async function openFile(path?: string) {
   if (!path) {
-    toast.info("暂无可打开文件");
+    toast.info(t("暂无可打开文件"));
     return;
   }
 
   try {
     await openOutputPath(path);
-    toast.success("已请求系统打开文件");
+    toast.success(t("已请求系统打开文件"));
   } catch (error) {
-    toast.error(userFacingErrorMessage(error, "打开文件失败"));
+    toast.error(userFacingErrorMessage(error, t("打开文件失败")));
   }
 }
 
 export function HistoryRecordCard({ item, templates = [], compact = false, selected = false, checked = false, onSelect, onToggleChecked, onDelete }: HistoryRecordCardProps) {
-  const templateName = templates.find((template) => template.id === item.templateId)?.name ?? item.templateId ?? "未指定模板";
+  const templateName = templates.find((template) => template.id === item.templateId)?.name ?? item.templateId ?? t("未指定模板");
   const isSuccess = item.status === "success";
   const isFailed = item.status === "failed";
   const canOpenOutput = isSuccess && !item.simulated && Boolean(item.outputPath);
@@ -82,7 +83,7 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
               event.stopPropagation();
               onToggleChecked(item);
             }}
-            aria-label={`选择 ${item.inputPath}`}
+            aria-label={t("选择 {0}", [item.inputPath])}
             aria-pressed={checked}
           >
             {checked ? <CheckSquare className="size-4" /> : null}
@@ -93,12 +94,12 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
             {isSuccess ? <CheckCircle2 className="size-4 shrink-0 text-emerald-600" /> : isFailed ? <AlertCircle className="size-4 shrink-0 text-red-600" /> : <Clock className="size-4 shrink-0 text-indigo-600" />}
             <h4 className="min-w-0 truncate text-sm font-semibold text-slate-950 dark:text-zinc-50">{item.inputPath}</h4>
           </div>
-          <TooltipAnchor content={item.outputPath ?? item.errorMessage ?? "等待输出"}>
-            <p className="mt-1 min-w-0 truncate text-sm text-slate-500 dark:text-zinc-400">→ {item.outputPath ?? item.errorMessage ?? "等待输出"}</p>
+          <TooltipAnchor content={item.outputPath ?? item.errorMessage ?? t("等待输出")}>
+            <p className="mt-1 min-w-0 truncate text-sm text-slate-500 dark:text-zinc-400">→ {item.outputPath ?? item.errorMessage ?? t("等待输出")}</p>
           </TooltipAnchor>
         </div>
         <Badge className={item.simulated ? "shrink-0 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/16 dark:text-amber-200 dark:hover:bg-amber-500/16" : isSuccess ? "shrink-0 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/16 dark:text-emerald-200 dark:hover:bg-emerald-500/16" : isFailed ? "shrink-0 rounded-full bg-red-50 text-red-700 hover:bg-red-50 dark:bg-red-500/16 dark:text-red-200 dark:hover:bg-red-500/16" : "shrink-0 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-50 dark:bg-indigo-500/16 dark:text-indigo-200 dark:hover:bg-indigo-500/16"}>
-          {item.simulated ? "预览" : isSuccess ? "成功" : isFailed ? "失败" : "处理中"}
+          {item.simulated ? t("预览") : isSuccess ? t("成功") : isFailed ? t("失败") : t("处理中")}
         </Badge>
       </div>
 
@@ -114,12 +115,10 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
         <div className="mt-4 flex flex-wrap gap-2">
           <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void copyText(item.outputPath); }}>
             <Copy className="size-4" />
-            复制输出路径
-          </SoftActionButton>
-          <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void openFile(item.outputPath); }} disabled={!canOpenOutput} title={item.simulated ? "浏览器预览没有实际 DOCX 文件" : undefined}>
+             {t("复制输出路径")} </SoftActionButton>
+          <SoftActionButton size="sm" onClick={(event) => { event.stopPropagation(); void openFile(item.outputPath); }} disabled={!canOpenOutput} title={item.simulated ? t("浏览器预览没有实际 DOCX 文件") : undefined}>
             <ExternalLink className="size-4" />
-            打开文件
-          </SoftActionButton>
+             {t("打开文件")} </SoftActionButton>
           {onDelete ? (
             <Button
               size="sm"
@@ -129,11 +128,10 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
                 event.stopPropagation();
                 onDelete(item);
               }}
-              title="删除记录"
+              title={t("删除记录")}
             >
               <Trash2 className="size-4" />
-              删除
-            </Button>
+               {t("删除")} </Button>
           ) : null}
         </div>
       ) : null}
@@ -142,14 +140,14 @@ export function HistoryRecordCard({ item, templates = [], compact = false, selec
 
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSelect?.(item)} disabled={!onSelect}>查看记录详情</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.inputPath)} disabled={!item.inputPath}>复制输入路径</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.outputPath)} disabled={!item.outputPath}>复制输出路径</ContextMenu.Item>
-          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void openFile(item.outputPath)} disabled={!canOpenOutput}>打开生成文件</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => onSelect?.(item)} disabled={!onSelect}>{t("查看记录详情")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.inputPath)} disabled={!item.inputPath}>{t("复制输入路径")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void copyText(item.outputPath)} disabled={!item.outputPath}>{t("复制输出路径")}</ContextMenu.Item>
+          <ContextMenu.Item className={contextMenuItemClass} onSelect={() => void openFile(item.outputPath)} disabled={!canOpenOutput}>{t("打开生成文件")}</ContextMenu.Item>
           {onDelete ? (
             <>
               <ContextMenu.Separator className="-mx-1.5 my-1 h-px bg-slate-200 dark:bg-zinc-700" />
-              <ContextMenu.Item className={cn(contextMenuItemClass, "text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 dark:text-red-300 dark:data-[highlighted]:bg-red-500/12 dark:data-[highlighted]:text-red-200")} onSelect={() => onDelete(item)}>删除记录</ContextMenu.Item>
+              <ContextMenu.Item className={cn(contextMenuItemClass, "text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 dark:text-red-300 dark:data-[highlighted]:bg-red-500/12 dark:data-[highlighted]:text-red-200")} onSelect={() => onDelete(item)}>{t("删除记录")}</ContextMenu.Item>
             </>
           ) : null}
         </ContextMenu.Content>

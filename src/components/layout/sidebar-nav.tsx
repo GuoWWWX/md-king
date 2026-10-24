@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Sun, Sparkles, Download, type LucideIcon } from "lucide-react";
 import type { AppStatus, Template, ThemeMode } from "@/types";
 import { PrimaryActionButton } from "@/components/ui/app-surface";
@@ -79,9 +80,9 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PrimaryActionButton className={cn("h-10 overflow-hidden text-sm font-bold whitespace-nowrap", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title="新建转换" tooltipSide="right" aria-label="新建转换">
+      <PrimaryActionButton className={cn("h-10 overflow-hidden text-sm font-bold whitespace-nowrap", centeredWhenCollapsed)} onClick={() => onNavigate("convert")} title={t("新建转换")} tooltipSide="right" aria-label={t("新建转换")}>
         <Plus className="size-4" />
-        <span className={sidebarLabelClass}>新建转换</span>
+        <span className={sidebarLabelClass}>{t("新建转换")}</span>
       </PrimaryActionButton>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-4">
@@ -100,13 +101,13 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
                     isActive ? "mk-nav-active text-white" : "mk-nav-idle",
                   )}
                   variant="ghost"
-                  title={item.label}
+                  title={t(item.label)}
                   tooltipSide="right"
-                  aria-label={item.label}
+                  aria-label={t(item.label)}
                   onClick={() => onNavigate(item.id)}
                 >
                   <Icon className="size-4" />
-                  <span className={sidebarLabelClass}>{item.label}</span>
+                  <span className={sidebarLabelClass}>{t(item.label)}</span>
                 </Button>
               );
             })}
@@ -124,9 +125,9 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
               collapsed ? "mx-auto size-9 justify-center p-0" : "h-9 w-full justify-start gap-2 px-2.5 max-[980px]:mx-auto max-[980px]:size-9 max-[980px]:justify-center max-[980px]:p-0",
             )}
             onClick={() => setDialogOpen(true)}
-            title={updateStatus === "downloading" ? `正在下载更新: ${downloadProgress.percent.toFixed(0)}%` : `发现新版本 ${latestRelease?.tag_name} (点击更新)`}
+            title={updateStatus === "downloading" ? t("正在下载更新: {0}%", [downloadProgress.percent.toFixed(0)]) : t("发现新版本 {0} (点击更新)", [latestRelease?.tag_name])}
             tooltipSide="right"
-            aria-label="软件更新"
+            aria-label={t("软件更新")}
           >
             {updateStatus === "downloading" ? (
               <Download className="size-4 shrink-0 animate-bounce" />
@@ -134,7 +135,7 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
               <Sparkles className="size-4 shrink-0" />
             )}
             <span className={sidebarLabelClass}>
-              {updateStatus === "downloading" ? `下载中 ${downloadProgress.percent.toFixed(0)}%` : `更新 ${latestRelease?.tag_name}`}
+              {updateStatus === "downloading" ? t("下载中 {0}%", [downloadProgress.percent.toFixed(0)]) : t("更新 {0}", [latestRelease?.tag_name])}
             </span>
             <span className="absolute top-1.5 right-1.5 flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
@@ -151,12 +152,12 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
             collapsed ? "mx-auto w-9 px-0" : "w-full gap-2 px-2 max-[980px]:mx-auto max-[980px]:w-9 max-[980px]:px-0",
           )}
           onClick={onToggleCollapsed}
-          title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          title={collapsed ? t("展开侧边栏") : t("收起侧边栏")}
           tooltipSide="right"
-          aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          aria-label={collapsed ? t("展开侧边栏") : t("收起侧边栏")}
         >
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-          <span className={sidebarLabelClass}>{collapsed ? "展开侧栏" : "收起侧栏"}</span>
+          <span className={sidebarLabelClass}>{collapsed ? t("展开侧栏") : t("收起侧栏")}</span>
         </Button>
         <div className={cn("flex items-center overflow-hidden text-xs text-slate-400", collapsed ? "justify-center px-0" : "justify-between px-2 max-[980px]:justify-center")}>
           <button
@@ -166,14 +167,14 @@ function SidebarContent({ navigation, activePage, currentTemplate, appStatus, co
               sidebarLabelClass,
             )}
             onClick={() => void checkForUpdates({ silent: false, currentVer: appStatus?.version })}
-            title="点击检查更新"
+            title={t("点击检查更新")}
           >
             {appStatus ? `${appStatus.name} v${appStatus.version}` : currentTemplate?.name ?? "md-king"}
           </button>
-          <TooltipAnchor content="本地运行" tooltipSide="right">
+          <TooltipAnchor content={t("本地运行")} tooltipSide="right">
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-blue-600" />
-              <span className={cn("text-[11px] font-semibold text-slate-400", sidebarLabelClass)}>本地</span>
+              <span className={cn("text-[11px] font-semibold text-slate-400", sidebarLabelClass)}>{t("本地")}</span>
             </div>
           </TooltipAnchor>
         </div>
@@ -194,9 +195,9 @@ function ThemeModeButton({
   onThemeModeChange?: (mode: ThemeMode) => void;
 }) {
   const modes: Array<{ mode: ThemeMode; label: string; shortLabel: string; icon: LucideIcon }> = [
-    { mode: "light", label: "浅色模式", shortLabel: "浅色", icon: Sun },
-    { mode: "dark", label: "深色模式", shortLabel: "深色", icon: Moon },
-    { mode: "system", label: "跟随系统", shortLabel: "系统", icon: Monitor },
+    { mode: "light", label: t("浅色模式"), shortLabel: t("浅色"), icon: Sun },
+    { mode: "dark", label: t("深色模式"), shortLabel: t("深色"), icon: Moon },
+    { mode: "system", label: t("跟随系统"), shortLabel: t("系统"), icon: Monitor },
   ];
   const activeIndex = Math.max(0, modes.findIndex((item) => item.mode === themeMode));
   const activeMode = modes[activeIndex] ?? modes[0];
@@ -208,9 +209,9 @@ function ThemeModeButton({
         variant="outline"
         className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto h-9 w-9 justify-center rounded-[8px] px-0"
         onClick={onToggleThemeMode}
-        title={activeMode.label}
+        title={t(activeMode.label)}
         tooltipSide="right"
-        aria-label={`切换外观主题，当前：${activeMode.label}`}
+        aria-label={t("切换外观主题，当前：{0}", [t(activeMode.label)])}
         disabled={!onToggleThemeMode}
       >
         <ActiveIcon className="size-4" />
@@ -223,7 +224,7 @@ function ThemeModeButton({
       <div
         className={cn("mk-theme-cycle-button flex h-9 w-full items-center justify-center rounded-[8px] px-3 text-sm font-bold max-[980px]:hidden", !onThemeModeChange && "pointer-events-none opacity-50")}
         role="group"
-        aria-label={`外观主题，当前：${activeMode.label}`}
+        aria-label={t("外观主题，当前：{0}", [t(activeMode.label)])}
       >
         <span className="mk-theme-cycle-track">
           <span className="mk-theme-cycle-thumb" style={{ transform: `translateX(${activeIndex * 28}px)` }} />
@@ -232,8 +233,8 @@ function ThemeModeButton({
               key={mode}
               type="button"
               className={cn("mk-theme-cycle-icon", themeMode === mode && "is-active")}
-              tooltip={label}
-              aria-label={label}
+              tooltip={t(label)}
+              aria-label={t(label)}
               aria-pressed={themeMode === mode}
               onClick={() => onThemeModeChange?.(mode)}
             >
@@ -246,9 +247,9 @@ function ThemeModeButton({
         variant="outline"
         className="mk-theme-cycle-button mk-sidebar-icon-button mx-auto hidden h-9 w-9 justify-center rounded-[8px] px-0 max-[980px]:inline-flex"
         onClick={onToggleThemeMode}
-        title={activeMode.label}
+        title={t(activeMode.label)}
         tooltipSide="right"
-        aria-label={`切换外观主题，当前：${activeMode.label}`}
+        aria-label={t("切换外观主题，当前：{0}", [t(activeMode.label)])}
         disabled={!onToggleThemeMode}
       >
         <ActiveIcon className="size-4" />

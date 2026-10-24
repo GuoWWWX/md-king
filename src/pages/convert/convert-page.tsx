@@ -1,3 +1,5 @@
+import { templateLabel } from "@/lib/template-labels";
+import { t } from "@/lib/i18n";
 import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, FileSearch, FileText, FolderOpen, History, Info, LayoutTemplate, Loader2, MoreHorizontal, PanelsTopLeft, PenLine, Save, Settings, Trash2 } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
@@ -201,8 +203,8 @@ async function restorePersistedDocumentTab(tab: PersistedDocumentTab, vaultRoot:
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
-    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("读取图片失败"));
+    reader.onerror = () => reject(reader.error ?? new Error(t("读取图片失败")));
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error(t("读取图片失败")));
     reader.readAsDataURL(file);
   });
 }
@@ -286,15 +288,15 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
       ? [{ label: stripMarkdownExtension(tab.title), path: "" }]
       : [];
   const canLocate = tab?.kind === "vault" && Boolean(tab.path);
-  const tableWidthScope = tableDisplayContext.tableFrom === null ? "全部表格" : "当前表格";
-  const currentTableWidthModeLabel = tableDisplayContext.widthMode === "window" ? "根据窗口调整布局" : "根据内容调整布局";
+  const tableWidthScope = tableDisplayContext.tableFrom === null ? t("全部表格") : t("当前表格");
+  const currentTableWidthModeLabel = tableDisplayContext.widthMode === "window" ? t("根据窗口调整布局") : t("根据内容调整布局");
   const nextTableWidthMode: TableWidthMode = tableDisplayContext.widthMode === "content" ? "window" : "content";
-  const nextTableWidthModeLabel = nextTableWidthMode === "window" ? "根据窗口调整布局" : "根据内容调整布局";
-  const tableWidthTooltip = `当前：${currentTableWidthModeLabel}；点击切换为${nextTableWidthModeLabel}（${tableWidthScope}）`;
+  const nextTableWidthModeLabel = nextTableWidthMode === "window" ? t("根据窗口调整布局") : t("根据内容调整布局");
+  const tableWidthTooltip = t("当前：{0}；点击切换为{1}（{2}）", [currentTableWidthModeLabel, nextTableWidthModeLabel, tableWidthScope]);
   const tableWidthButtonClass = "size-7 rounded-[4px] border-0 bg-transparent p-0 text-slate-500 shadow-none hover:bg-transparent hover:text-slate-900 active:bg-transparent dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100";
   const previewToggleLabel = previewPaused
-    ? `文档超过 ${inlinePreviewCharacterLimit.toLocaleString()} 字符，已暂停 Word 预览`
-    : previewVisible ? "隐藏 Word 预览" : "显示 Word 预览";
+    ? t("文档超过 {0} 字符，已暂停 Word 预览", [inlinePreviewCharacterLimit.toLocaleString()])
+    : previewVisible ? t("隐藏 Word 预览") : t("显示 Word 预览");
 
   return (
     <div className="flex h-8 shrink-0 min-w-0 items-center gap-1.5 border-b border-slate-200 pl-3 pr-1.5 text-xs dark:border-zinc-800">
@@ -305,23 +307,23 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
             <span key={`${crumb.path}-${index}`} className="flex min-w-0 items-center gap-1">
               {index > 0 ? <ChevronRight className="size-3 shrink-0 text-slate-300 dark:text-zinc-600" /> : null}
               {canLocate ? (
-                <TooltipAnchor content={`在文件树中定位：${crumb.label}`} tooltipSide="bottom">
+                <TooltipAnchor content={t("在文件树中定位：{0}", [t(crumb.label)])} tooltipSide="bottom">
                   <button
                     type="button"
                     className={cn("min-w-0 truncate rounded-[4px] px-0.5 py-0.5 text-left transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}
                     onClick={() => onLocatePath(crumb.path)}
                   >
-                    {crumb.label}
+                    {t(crumb.label)}
                   </button>
                 </TooltipAnchor>
               ) : (
-                <span className={cn("truncate", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}>{crumb.label}</span>
+                <span className={cn("truncate", index === crumbs.length - 1 ? "font-semibold text-slate-700 dark:text-zinc-200" : "text-slate-500 dark:text-zinc-400")}>{t(crumb.label)}</span>
               )}
             </span>
           ))}
         </div>
       ) : (
-        <span className="truncate text-slate-400 dark:text-zinc-500">选择或导入 Markdown 文档</span>
+        <span className="truncate text-slate-400 dark:text-zinc-500">{t("选择或导入 Markdown 文档")}</span>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         {tab ? (
@@ -339,7 +341,7 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
             </TooltipButton>
           </div>
         ) : null}
-        <Button type="button" variant="ghost" size="icon-xs" className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-transparent hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100" title={readingMode ? "编辑模式" : "阅读模式"} aria-label={readingMode ? "编辑模式" : "阅读模式"} aria-pressed={readingMode} onClick={onToggleReadingMode}>
+        <Button type="button" variant="ghost" size="icon-xs" className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-transparent hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100" title={readingMode ? t("编辑模式") : t("阅读模式")} aria-label={readingMode ? t("编辑模式") : t("阅读模式")} aria-pressed={readingMode} onClick={onToggleReadingMode}>
           {readingMode ? <PenLine className="size-3.5" /> : <BookOpen className="size-3.5" />}
         </Button>
         <TooltipButton
@@ -347,8 +349,8 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
           variant="ghost"
           size="icon-xs"
           className="size-7 rounded-[4px] border-0 bg-transparent p-0 text-slate-500 shadow-none hover:bg-transparent hover:text-slate-900 active:bg-transparent dark:text-zinc-400 dark:hover:bg-transparent dark:hover:text-zinc-100"
-          tooltip={`当前：${editorContentWidthModeLabels[contentWidthMode]}；点击切换为${editorContentWidthModeLabels[nextEditorContentWidthMode(contentWidthMode)]}`}
-          aria-label={`当前：${editorContentWidthModeLabels[contentWidthMode]}；点击切换为${editorContentWidthModeLabels[nextEditorContentWidthMode(contentWidthMode)]}`}
+          tooltip={t("当前：{0}；点击切换为{1}", [editorContentWidthModeLabels[contentWidthMode], editorContentWidthModeLabels[nextEditorContentWidthMode(contentWidthMode)]])}
+          aria-label={t("当前：{0}；点击切换为{1}", [editorContentWidthModeLabels[contentWidthMode], editorContentWidthModeLabels[nextEditorContentWidthMode(contentWidthMode)]])}
           onClick={onCycleContentWidthMode}
         >
           <EditorContentWidthIcon mode={contentWidthMode} />
@@ -377,8 +379,8 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
               variant="ghost"
               size="icon-xs"
               className="size-7 rounded-[4px] border-0 bg-transparent p-0 shadow-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              title="更多文档操作"
-              aria-label="更多文档操作"
+              title={t("更多文档操作")}
+              aria-label={t("更多文档操作")}
             >
               <MoreHorizontal className="size-3.5" />
             </Button>
@@ -386,25 +388,22 @@ function DocumentInfoBar({ tab, previewVisible, previewPaused, onTogglePreview, 
           <DropdownMenuContent align="end" className="min-w-44">
             <DropdownMenuItem onSelect={onSave} disabled={!canSave || !tab?.dirty}>
               <Save className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              保存文档
-            </DropdownMenuItem>
+               {t("保存文档")} </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger disabled={!relativePath && !absolutePath}>
                 <Copy className="size-3.5 text-slate-500 dark:text-zinc-400" />
-                复制路径
-              </DropdownMenuSubTrigger>
+                 {t("复制路径")} </DropdownMenuSubTrigger>
               <DropdownMenuPortal>
                 <DropdownMenuSubContent className="min-w-40">
-                  <DropdownMenuItem onSelect={onCopyRelativePath} disabled={!relativePath}>复制相对路径</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={onCopyAbsolutePath} disabled={!absolutePath}>复制绝对路径</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={onCopyRelativePath} disabled={!relativePath}>{t("复制相对路径")}</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={onCopyAbsolutePath} disabled={!absolutePath}>{t("复制绝对路径")}</DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuPortal>
             </DropdownMenuSub>
             <DropdownMenuItem onSelect={onRevealPath} disabled={!tab?.absolutePath}>
               <FolderOpen className="size-3.5 text-slate-500 dark:text-zinc-400" />
-              资源管理器中打开
-            </DropdownMenuItem>
+               {t("资源管理器中打开")} </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -669,14 +668,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           try {
             disk = await readDisk();
           } catch (error) {
-            const firstError = parseVaultError(error, "读取外部修改失败");
+            const firstError = parseVaultError(error, t("读取外部修改失败"));
             if (firstError.code !== "NOT_FOUND") return;
             // git checkout、同步盘和部分编辑器会先删除旧文件再原子替换，短暂缺失不应误报。
             await new Promise((resolve) => window.setTimeout(resolve, 160));
             try {
               disk = await readDisk();
             } catch (retryError) {
-              if (parseVaultError(retryError, "读取外部修改失败").code !== "NOT_FOUND") return;
+              if (parseVaultError(retryError, t("读取外部修改失败")).code !== "NOT_FOUND") return;
               const current = useDocumentTabsStore.getState().tabs.find((tab) => tab.id === snapshotTab.id);
               if (!current || current.kind !== "vault") return;
               queueExternalDocumentChange({
@@ -685,7 +684,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 deleted: true,
               });
               if (useDocumentTabsStore.getState().activeTabId === current.id) {
-                setSaveState("conflict", "文件已被外部删除，请选择保留当前内容或关闭标签。");
+                setSaveState("conflict", t("文件已被外部删除，请选择保留当前内容或关闭标签。"));
               }
               return;
             }
@@ -723,7 +722,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
               deleted: false,
             });
             if (useDocumentTabsStore.getState().activeTabId === current.id) {
-              setSaveState("conflict", "磁盘内容已变化，请选择保留、重载或合并。");
+              setSaveState("conflict", t("磁盘内容已变化，请选择保留、重载或合并。"));
             }
             return;
           }
@@ -801,7 +800,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       detachMissingTab(tab.id);
       dismissExternalDocumentChange(tab.id);
       if (useDocumentTabsStore.getState().activeTabId === tab.id) setSaveState("dirty");
-      toast.info(`已保留为未保存文档：${tab.title}`);
+      toast.info(t("已保留为未保存文档：{0}", [tab.title]));
       return;
     }
 
@@ -821,7 +820,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         setActiveFileModifiedMs(disk.modifiedMs);
         setSaveState("clean");
       }
-      toast.info(`已重载磁盘内容：${tab.title}`);
+      toast.info(t("已重载磁盘内容：{0}", [tab.title]));
     } else if (choice === "merge") {
       const merged = mergedContent ?? tab.content;
       if (merged === disk.content) {
@@ -833,14 +832,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         if (useDocumentTabsStore.getState().activeTabId === tab.id) setSaveState("dirty");
       }
       setActiveFileModifiedMs(disk.modifiedMs);
-      toast.success(`已应用合并结果：${tab.title}`);
+      toast.success(t("已应用合并结果：{0}", [tab.title]));
     } else {
       updateTabDiskVersion(tab.id, diskVersion);
       if (useDocumentTabsStore.getState().activeTabId === tab.id) {
         setActiveFileModifiedMs(disk.modifiedMs);
         setSaveState("dirty");
       }
-      toast.info(`已保留编辑器内容：${tab.title}`);
+      toast.info(t("已保留编辑器内容：{0}", [tab.title]));
     }
     dismissExternalDocumentChange(tab.id);
   }
@@ -866,7 +865,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   function handleTogglePreview() {
     if (previewPausedForLongDocument) {
-      toast.info(`文档超过 ${inlinePreviewCharacterLimit.toLocaleString()} 字符，已暂停 Word 预览`);
+      toast.info(t("文档超过 {0} 字符，已暂停 Word 预览", [inlinePreviewCharacterLimit.toLocaleString()]));
       return;
     }
     if (layoutTooNarrow) {
@@ -885,7 +884,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       openDocuments: state.tabs.filter(tab => tab.kind === "vault").map(tab => ({ path: tab.path!, absolutePath: tab.absolutePath, content: tab.content })),
       availablePaths: useVaultStore.getState().entries.filter(entry => !entry.isDir).map(entry => entry.path),
       readFile: async path => {
-        if (!vaultRoot) throw new Error("跨文件引用请先打开文档仓库");
+        if (!vaultRoot) throw new Error(t("跨文件引用请先打开文档仓库"));
         const file = await readVaultFile(vaultRoot, path);
         return { ...file, absolutePath: vaultAbsolutePath(vaultRoot, file.path) };
       },
@@ -919,7 +918,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         detail: { tabId, line: resolved.range.startLine, selectionFrom: resolved.range.from, selectionTo: resolved.range.to, y: "center" },
       })));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "打开引用失败"));
+      toast.error(userFacingErrorMessage(error, t("打开引用失败")));
     }
   }
 
@@ -936,7 +935,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   function imageImportTarget() {
     if (!vaultRoot || !canSaveVaultTab(activeTab, vaultRoot)) {
-      toast.error("请先打开并保存到当前目录中的 Markdown 文档，再导入图片");
+      toast.error(t("请先打开并保存到当前目录中的 Markdown 文档，再导入图片"));
       return undefined;
     }
     return { root: vaultRoot, tab: activeTab };
@@ -967,10 +966,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       const data = await readFileAsDataUrl(file);
       const imported = await importVaultImageData(target.root, target.tab.path, data, imageFileExtension(file));
       const markdownReference = finishImageImport(target.tab, imported);
-      toast.success(`已导入图片：${imported.entry.name}`);
+      toast.success(t("已导入图片：{0}", [imported.entry.name]));
       return markdownReference;
     } catch (error) {
-      toast.error(parseVaultError(error, "导入图片失败").message);
+      toast.error(parseVaultError(error, t("导入图片失败")).message);
       return undefined;
     }
   }
@@ -985,9 +984,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         if (useDocumentTabsStore.getState().activeTabId === target.tab.id) {
           conversionInputRef.current?.insertText(markdownReference);
         }
-        toast.success(`已导入图片：${imported.entry.name}`);
+        toast.success(t("已导入图片：{0}", [imported.entry.name]));
       } catch (error) {
-        toast.error(parseVaultError(error, "导入图片失败").message);
+        toast.error(parseVaultError(error, t("导入图片失败")).message);
       }
     }
   }
@@ -1014,10 +1013,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         setActiveFileModifiedMs(saved.modifiedMs);
         setSaveState(fullySaved ? "saved" : "dirty");
       }
-      if (!silent && fullySaved) toast.success("文档已保存");
+      if (!silent && fullySaved) toast.success(t("文档已保存"));
       return fullySaved;
     } catch (error) {
-      const { code, message } = parseVaultError(error, "保存文档失败");
+      const { code, message } = parseVaultError(error, t("保存文档失败"));
       if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
       if (code === "CONFLICT") void reconcileOpenDocuments("all");
       toast.error(message);
@@ -1061,10 +1060,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       }
       const fullySaved = !useDocumentTabsStore.getState().tabs.find((item) => item.id === tab.id)?.dirty;
       if (isCurrentTab()) setSaveState(fullySaved ? "saved" : "dirty");
-      if (!silent && fullySaved) toast.success(`文档已保存：${fileName}`);
+      if (!silent && fullySaved) toast.success(t("文档已保存：{0}", [fileName]));
       return fullySaved;
     } catch (error) {
-      const { code, message } = parseVaultError(error, "保存文档失败");
+      const { code, message } = parseVaultError(error, t("保存文档失败"));
       if (isCurrentTab()) setSaveState(code === "CONFLICT" ? "conflict" : "error", message);
       if (code === "CONFLICT") void reconcileOpenDocuments("all");
       toast.error(message);
@@ -1085,7 +1084,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       if (!selectedPath) return false;
       return writeTabToAbsolutePath(tab, selectedPath, true, silent);
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "选择保存路径失败"));
+      toast.error(userFacingErrorMessage(error, t("选择保存路径失败")));
       return false;
     }
   }
@@ -1111,7 +1110,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     }
     if (!root || !tab.path) return false;
     if (saveInFlightRef.current) {
-      toast.info("文档正在保存，请稍后再重命名");
+      toast.info(t("文档正在保存，请稍后再重命名"));
       return false;
     }
 
@@ -1129,10 +1128,10 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         entries: state.entries.map((entry) => entry.path === previousPath ? renamed : entry),
         activeFilePath: state.activeFilePath === previousPath ? renamed.path : state.activeFilePath,
       } : {});
-      toast.success(`已重命名为 ${renamed.name}`);
+      toast.success(t("已重命名为 {0}", [renamed.name]));
       return true;
     } catch (error) {
-      toast.error(parseVaultError(error, "重命名失败").message);
+      toast.error(parseVaultError(error, t("重命名失败")).message);
       return false;
     } finally {
       saveInFlightRef.current = false;
@@ -1151,7 +1150,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       await navigator.clipboard.writeText(path);
     } catch {
-      toast.error("复制路径失败");
+      toast.error(t("复制路径失败"));
     }
   }
 
@@ -1163,7 +1162,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       await showInExplorer(path);
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "无法通过资源管理器打开文档"));
+      toast.error(userFacingErrorMessage(error, t("无法通过资源管理器打开文档")));
     }
   }
   const isDark = (appConfig?.themeMode ?? "light") === "dark"
@@ -1247,7 +1246,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     const editor = document.querySelector<HTMLElement>("[data-mk-editor-drop-target]");
     const bounds = editor?.getBoundingClientRect();
     if (!bounds || x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) {
-      toast.info("请将图片拖到 Markdown 编辑区中");
+      toast.info(t("请将图片拖到 Markdown 编辑区中"));
       return;
     }
     void importImagePaths(imagePaths);
@@ -1278,13 +1277,13 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         if (cancelled) return;
         clearPendingImportPaths();
         openExternalDocument(path, file);
-        toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
+        toast.success(t("已载入文件：{0}", [path.split(/[\\/]/).pop() ?? path]));
       })
       .catch((error) => {
         if (cancelled) return;
         // 读失败也要清掉，否则每次切回本页都会重试并重复弹同一个错误。
         clearPendingImportPaths();
-        toast.error(userFacingErrorMessage(error, "读取启动文件失败"));
+        toast.error(userFacingErrorMessage(error, t("读取启动文件失败")));
       });
 
     return () => {
@@ -1388,9 +1387,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
     if (lastId) {
       const opened = paths.length - failed;
-      toast.success(opened > 1 ? `已打开 ${opened} 个文档` : `已打开：${paths[paths.length - 1].split(/[\/]/).pop()}`);
+      toast.success(opened > 1 ? t("已打开 {0} 个文档", [opened]) : t("已打开：{0}", [paths[paths.length - 1].split(/[\/]/).pop()]));
     }
-    if (failed > 0) toast.error(`${failed} 个文件读取失败`);
+    if (failed > 0) toast.error(t("{0} 个文件读取失败", [failed]));
   }
 
   function confirmCloseDocument(tab: DocumentTab) {
@@ -1454,7 +1453,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     const input = markdown;
     if (!input.trim()) {
       setConvertResult(null);
-      toast.error("请先粘贴 Markdown 内容");
+      toast.error(t("请先粘贴 Markdown 内容"));
       return;
     }
 
@@ -1466,7 +1465,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       const exportInput = normalizeCodeFenceLabels(input);
       const { markdown: preparedInput, failed: mermaidFailed, errors: mermaidErrors } = await inlineMermaidImages(exportInput);
       if (mermaidFailed > 0) {
-        toast.warning(`${mermaidFailed} 张图表未能导出，已保留原始代码块`, {
+        toast.warning(t("{0} 张图表未能导出，已保留原始代码块", [mermaidFailed]), {
           description: mermaidErrors[0],
         });
       }
@@ -1487,13 +1486,13 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       const isCurrentConversion = conversionVersion === conversionVersionRef.current;
       if (isCurrentConversion) setConvertResult(result);
       await persistHistory([buildHistoryItem(result)]);
-      toast[result.ok && !result.simulated ? "success" : result.simulated ? "info" : "error"](result.message ?? (result.ok ? "转换完成" : "转换失败"));
+      toast[result.ok && !result.simulated ? "success" : result.simulated ? "info" : "error"](result.message ?? (result.ok ? t("转换完成") : t("转换失败")));
       const actionableWarnings = actionableConversionWarnings(result.warnings);
       if (result.ok && actionableWarnings.length > 0) {
-        toast.warning("转换完成，但有需要检查的提示", { description: actionableWarnings.join("\n") });
+        toast.warning(t("转换完成，但有需要检查的提示"), { description: actionableWarnings.join("\n") });
       }
     } catch (error) {
-      const message = userFacingErrorMessage(error, "转换调用失败");
+      const message = userFacingErrorMessage(error, t("转换调用失败"));
       const result: ConvertResult = { ok: false, input, templateId, durationMs: 0, warnings: [], diagnostics: [], statistics: { mermaidBlocks: 0, mermaidRendered: 0, mermaidFailed: 0, imageCount: 0, tableCount: 0, multiPageTableCandidateCount: 0, tableWidthRiskIndices: [], imageDetails: [] }, errorCode: "INVOKE_FAILED", message };
       if (conversionVersion === conversionVersionRef.current) setConvertResult(result);
       await persistHistory([buildHistoryItem(result)]);
@@ -1510,7 +1509,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     try {
       paths = await selectMarkdownFiles();
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "选择文件失败"));
+      toast.error(userFacingErrorMessage(error, t("选择文件失败")));
       return;
     }
 
@@ -1540,7 +1539,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   async function runSelectedBatchImport() {
     const paths = batchImportPaths.filter((path) => selectedBatchImportPaths.includes(path));
     if (paths.length === 0) {
-      toast.error("请至少选择一个 Markdown/TXT 文件");
+      toast.error(t("请至少选择一个 Markdown/TXT 文件"));
       return;
     }
 
@@ -1569,9 +1568,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       const failedCount = results.length - successCount;
       const warningCount = results.reduce((total, result) => total + actionableConversionWarnings(result.warnings).length, 0);
       setConvertResult(results.length > 0 ? results[results.length - 1] : null);
-      toast[failedCount > 0 ? "error" : warningCount > 0 ? "warning" : "success"](`批量转换完成：成功 ${successCount} 个，失败 ${failedCount} 个${warningCount > 0 ? `，提示 ${warningCount} 条` : ""}`);
+      toast[failedCount > 0 ? "error" : warningCount > 0 ? "warning" : "success"](t("批量转换完成：成功 {0} 个，失败 {1} 个{2}", [successCount, failedCount, warningCount > 0 ? `，提示 ${warningCount} 条` : ""]));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "批量转换失败"));
+      toast.error(userFacingErrorMessage(error, t("批量转换失败")));
       if (results.length > 0) {
         await persistHistory(results.map(buildHistoryItem));
       }
@@ -1584,7 +1583,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
     // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
     openScratchTab({ title: file.name, content: text });
     setOutputNameEdited(false);
-    toast.success(`已载入文件：${file.name}`);
+    toast.success(t("已载入文件：{0}", [file.name]));
   }
 
   async function handleNativeMarkdownFileLoad() {
@@ -1593,9 +1592,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       if (!path) return;
       const file = await readExternalDocumentFile(path);
       openExternalDocument(path, file);
-      toast.success(`已载入文件：${path.split(/[\\/]/).pop() ?? path}`);
+      toast.success(t("已载入文件：{0}", [path.split(/[\\/]/).pop() ?? path]));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "读取文件失败"));
+      toast.error(userFacingErrorMessage(error, t("读取文件失败")));
     }
   }
 
@@ -1607,12 +1606,12 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
         openScratchTab({ title: file.name, content: text });
         importedNames.push(file.name);
       } catch (error) {
-        toast.error(userFacingErrorMessage(error, `无法读取 ${file.name}`));
+        toast.error(userFacingErrorMessage(error, t("无法读取 {0}", [file.name])));
       }
     }
     if (importedNames.length === 0) return;
     setOutputNameEdited(false);
-    toast.success(importedNames.length === 1 ? `已载入文件：${importedNames[0]}` : `已载入 ${importedNames.length} 个文件`);
+    toast.success(importedNames.length === 1 ? t("已载入文件：{0}", [importedNames[0]]) : t("已载入 {0} 个文件", [importedNames.length]));
   }
 
   function handleImportFileRequest() {
@@ -1627,13 +1626,13 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   async function handleReadClipboard() {
     if (!isTauriEnvironment() && !navigator.clipboard?.readText) {
-      toast.error("当前环境不支持读取剪贴板，请手动粘贴 Markdown 内容");
+      toast.error(t("当前环境不支持读取剪贴板，请手动粘贴 Markdown 内容"));
       return;
     }
     try {
       const text = await readClipboardText();
       // 浏览器的 File 对象拿不到真实磁盘路径，只能作为临时文档打开。
-      openScratchTab({ title: deriveScratchTitle(text, "导入内容"), content: text, dirty: true });
+      openScratchTab({ title: deriveScratchTitle(text, t("导入内容")), content: text, dirty: true });
       setOutputNameEdited(false);
     } catch (error) {
       toast.error(clipboardReadErrorMessage(error));
@@ -1642,7 +1641,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
   async function handleSelectOutputDir() {
     if (!appConfig) {
-      toast.error("设置正在加载，稍后再选择输出目录");
+      toast.error(t("设置正在加载，稍后再选择输出目录"));
       return;
     }
 
@@ -1651,9 +1650,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       if (!selected) return;
       const saved = await saveAppConfig({ ...appConfig, defaultOutputDir: selected });
       setAppConfig(saved);
-      toast.success("已更新输出目录");
+      toast.success(t("已更新输出目录"));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "选择输出目录失败"));
+      toast.error(userFacingErrorMessage(error, t("选择输出目录失败")));
     }
   }
 
@@ -1663,9 +1662,9 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
 
     try {
       await revealOutputPath(path);
-      toast.success("已在资源管理器中定位文件");
+      toast.success(t("已在资源管理器中定位文件"));
     } catch (error) {
-      toast.error(userFacingErrorMessage(error, "打开资源管理器失败"));
+      toast.error(userFacingErrorMessage(error, t("打开资源管理器失败")));
     }
   }
 
@@ -1767,7 +1766,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
   const words = markdown.trim() ? markdown.trim().length : 0;
   const lines = markdown ? markdown.split(/\r?\n/).length : 0;
   const outputName = normalizeOutputName(outputNameDraft);
-  const outputDirLabel = appConfig?.defaultOutputDir?.trim() || "与源 Markdown 同目录";
+  const outputDirLabel = appConfig?.defaultOutputDir?.trim() || t("与源 Markdown 同目录");
   const outputPath = buildOutputPath(appConfig?.defaultOutputDir, outputName);
 
   function scrollToPreviewHeading(id: string) {
@@ -1817,14 +1816,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             ? "failed"
             : "idle";
     const statusLabel = conversionState === "running"
-      ? "转换中"
+      ? t("转换中")
       : conversionState === "success"
-        ? "转换成功"
+        ? t("转换成功")
         : conversionState === "preview"
-          ? "仅预览"
+          ? t("仅预览")
           : conversionState === "failed"
-            ? "转换失败"
-            : "待转换";
+            ? t("转换失败")
+            : t("待转换");
     const statusIcon = conversionState === "running"
       ? <Loader2 className="size-3.5 animate-spin" />
       : conversionState === "failed"
@@ -1851,14 +1850,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
           <div className={cn("flex size-6 shrink-0 items-center justify-center rounded-md", statusIconClass)}>
             {statusIcon}
           </div>
-          <span className="shrink-0 text-blue-950 dark:text-zinc-100">{statusLabel}</span>
-          <span className="shrink-0">{words} 字符</span>
-          <span className="shrink-0">{lines} 行</span>
+          <span className="shrink-0 text-blue-950 dark:text-zinc-100">{t(statusLabel)}</span>
+          <span className="shrink-0">{words}  {t("字符")}</span>
+          <span className="shrink-0">{lines}  {t("行")}</span>
           <TooltipAnchor content={convertResult?.output ?? outputPath}>
             <span className="min-w-0 truncate">{convertResult?.output ?? outputPath}</span>
           </TooltipAnchor>
           {canRevealOutput ? (
-            <TooltipButton variant="ghost" size="icon-xs" className="absolute top-0 right-0 shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} tooltip="资源管理器中打开" aria-label="资源管理器中打开生成的 DOCX">
+            <TooltipButton variant="ghost" size="icon-xs" className="absolute top-0 right-0 shrink-0 text-blue-700 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-200 dark:hover:bg-blue-500/12 dark:hover:text-blue-100" onClick={() => void handleRevealOutput()} tooltip={t("资源管理器中打开")} aria-label={t("资源管理器中打开生成的 DOCX")}>
               <FolderOpen className="size-3.5" />
             </TooltipButton>
           ) : null}
@@ -1870,12 +1869,12 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             setCurrentTemplateId(value);
           }}>
             <SelectTrigger className="mk-convert-control h-10 w-full min-w-0 rounded-[10px] border-slate-200 bg-white text-xs font-bold text-blue-800 shadow-none data-[size=default]:h-10">
-              <SelectValue placeholder="选择模板" />
+              <SelectValue placeholder={t("选择模板")} />
             </SelectTrigger>
             <SelectContent>
               {templateOptions.map((template) => (
                 <SelectItem key={template.id} value={template.id}>
-                  {template.name}
+                  {templateLabel(template)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1900,14 +1899,14 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                   setOutputNameDraft(event.target.value);
                 }}
                 onBlur={(event) => setOutputNameDraft(normalizeOutputName(event.target.value))}
-                aria-label="输出文件名"
+                aria-label={t("输出文件名")}
                 className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-blue-800 shadow-none outline-none placeholder:text-blue-900/35 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent dark:text-zinc-50 dark:placeholder:text-zinc-500"
               />
             </div>
           </TooltipAnchor>
           <PrimaryActionButton className="mk-convert-submit h-10 text-sm font-black max-[760px]:min-w-[116px] max-[640px]:min-w-[104px]" onClick={() => void runConvert()} disabled={isConverting || !markdown.trim()}>
             {isConverting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-            {isConverting ? "转换中" : "开始转换"}
+            {isConverting ? t("转换中") : t("开始转换")}
           </PrimaryActionButton>
         </div>
       </section>
@@ -1941,7 +1940,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       />
       <DocumentTabBar
         className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 dark:border-zinc-700/60 dark:bg-zinc-800/78"
-        onNewDocument={() => { openScratchTab({ title: "未命名", content: "" }); setOutputNameEdited(false); }}
+        onNewDocument={() => { openScratchTab({ title: t("未命名"), content: "" }); setOutputNameEdited(false); }}
         onImportFile={handleImportFileRequest}
         onBatchImport={handleBatchImportRequest}
         onPasteClipboard={handleReadClipboard}
@@ -1970,7 +1969,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             initialTab="styles"
             previewMarkdown={markdown}
             previewMarkdownSourcePath={markdownSourcePath}
-            closeLabel="返回放大预览"
+            closeLabel={t("返回放大预览")}
             onRequestClose={closeExpandedStyleEditor}
           />
         </div>
@@ -2000,7 +1999,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
               className="group flex cursor-col-resize items-center justify-center max-[900px]:hidden"
               onPointerDown={(event) => handlePreviewSidebarResizeStart(event, expandedPreviewRef.current)}
               role="separator"
-              aria-label="调整预览导航宽度"
+              aria-label={t("调整预览导航宽度")}
               aria-orientation="vertical"
             >
               <span className="h-10 w-1 rounded-full bg-slate-300/75 transition group-hover:h-16 group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
@@ -2039,15 +2038,15 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       <Dialog open={batchImportDialogOpen} onOpenChange={(open) => { if (!open) closeBatchImportDialog(); }}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
           <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-12 dark:border-zinc-800">
-            <DialogTitle className="text-lg font-semibold text-slate-950 dark:text-zinc-50">选择要转换的文档</DialogTitle>
-            <DialogDescription className="mt-1 text-xs leading-5">已导入 {batchImportPaths.length} 个 Markdown/TXT 文件。勾选后才会转换为 DOCX，未选文件不会处理。</DialogDescription>
+            <DialogTitle className="text-lg font-semibold text-slate-950 dark:text-zinc-50">{t("选择要转换的文档")}</DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-5">{t("已导入")} {batchImportPaths.length}  {t("个 Markdown/TXT 文件。勾选后才会转换为 DOCX，未选文件不会处理。")}</DialogDescription>
           </DialogHeader>
 
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3 dark:border-zinc-800/80">
-            <span className="text-sm font-medium text-slate-700 dark:text-zinc-200">已选 {selectedBatchImportPaths.length} / {batchImportPaths.length}</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-zinc-200">{t("已选")} {selectedBatchImportPaths.length} / {batchImportPaths.length}</span>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setSelectedBatchImportPaths(batchImportPaths)} disabled={batchImportPaths.length === 0 || selectedBatchImportPaths.length === batchImportPaths.length}>全选</Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setSelectedBatchImportPaths([])} disabled={selectedBatchImportPaths.length === 0}>取消全选</Button>
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setSelectedBatchImportPaths(batchImportPaths)} disabled={batchImportPaths.length === 0 || selectedBatchImportPaths.length === batchImportPaths.length}>{t("全选")}</Button>
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setSelectedBatchImportPaths([])} disabled={selectedBatchImportPaths.length === 0}>{t("取消全选")}</Button>
             </div>
           </div>
 
@@ -2062,7 +2061,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                     checked={checked}
                     onChange={() => toggleBatchImportPath(path)}
                     className="size-4 shrink-0 accent-blue-600"
-                    aria-label={`选择 ${name}`}
+                    aria-label={t("选择 {0}", [name])}
                   />
                   <FileText className="size-4 shrink-0 text-slate-400 dark:text-zinc-500" />
                   <div className="min-w-0 flex-1">
@@ -2071,21 +2070,20 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                       <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{path}</p>
                     </TooltipAnchor>
                   </div>
-                  <TooltipButton variant="ghost" size="icon-xs" className="shrink-0 text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-300" onClick={() => removeBatchImportPath(path)} aria-label={`移除 ${name}`} tooltip="移除">
+                  <TooltipButton variant="ghost" size="icon-xs" className="shrink-0 text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-300" onClick={() => removeBatchImportPath(path)} aria-label={t("移除 {0}", [name])} tooltip={t("移除")}>
                     <Trash2 className="size-3.5" />
                   </TooltipButton>
                 </div>
               );
             })}
-            {batchImportPaths.length === 0 ? <p className="px-5 py-10 text-center text-sm text-slate-500 dark:text-zinc-400">没有待转换的文件</p> : null}
+            {batchImportPaths.length === 0 ? <p className="px-5 py-10 text-center text-sm text-slate-500 dark:text-zinc-400">{t("没有待转换的文件")}</p> : null}
           </div>
 
           <DialogFooter className="m-0 rounded-none border-x-0 border-b-0 px-5 py-3">
-            <Button variant="outline" onClick={closeBatchImportDialog}>取消</Button>
+            <Button variant="outline" onClick={closeBatchImportDialog}>{t("取消")}</Button>
             <PrimaryActionButton onClick={() => void runSelectedBatchImport()} disabled={selectedBatchImportPaths.length === 0}>
               <ArrowRight className="size-4" />
-              转换选中 {selectedBatchImportPaths.length} 项
-            </PrimaryActionButton>
+               {t("转换选中")} {selectedBatchImportPaths.length}  {t("项")} </PrimaryActionButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2102,26 +2100,24 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
       <Dialog open={Boolean(closingDocumentTab)} onOpenChange={(open) => { if (!open) resolveCloseDocument(false); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>关闭未保存的文档</DialogTitle>
+            <DialogTitle>{t("关闭未保存的文档")}</DialogTitle>
             <DialogDescription className="mt-1 text-xs leading-5">
               {canSaveVaultTab(closingDocumentTab, vaultRoot) || canSaveExternalTab(closingDocumentTab)
-                ? `「${closingDocumentTab?.title}」有未保存的改动，是否在关闭前保存？`
-                : `「${closingDocumentTab?.title}」还没有保存到磁盘，关闭后内容会丢失。`}
+                ? t("「{0}」有未保存的改动，是否在关闭前保存？", [closingDocumentTab?.title])
+                : t("「{0}」还没有保存到磁盘，关闭后内容会丢失。", [closingDocumentTab?.title])}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             {closingDocumentTab?.kind === "scratch" ? (
               <Button variant="outline" onClick={() => void saveAndCloseDocument()}>
-                <Save className="size-4" />保存
-              </Button>
+                <Save className="size-4" />{t("保存")} </Button>
             ) : (
-              <Button variant="outline" onClick={() => resolveCloseDocument(false)}>取消</Button>
+              <Button variant="outline" onClick={() => resolveCloseDocument(false)}>{t("取消")}</Button>
             )}
-            <Button variant="destructive" onClick={() => resolveCloseDocument(true)}>不保存并关闭</Button>
+            <Button variant="destructive" onClick={() => resolveCloseDocument(true)}>{t("不保存并关闭")}</Button>
             {canSaveVaultTab(closingDocumentTab, vaultRoot) || canSaveExternalTab(closingDocumentTab) ? (
               <PrimaryActionButton onClick={() => void saveAndCloseDocument()}>
-                <Save className="size-4" />保存并关闭
-              </PrimaryActionButton>
+                <Save className="size-4" />{t("保存并关闭")} </PrimaryActionButton>
             ) : null}
           </DialogFooter>
         </DialogContent>
@@ -2137,7 +2133,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
             {isWorkspacePage ? (
               <WorkspacePageSlot>{workspaceContent}</WorkspacePageSlot>
             ) : isImageTab ? (
-              <ImageDocumentViewer src={activeImageSource} alt={activeTab?.title ?? "图片"} path={activeTab?.path} />
+              <ImageDocumentViewer src={activeImageSource} alt={activeTab?.title ?? t("图片")} path={activeTab?.path} />
             ) : (
               <ConversionInputCard
                 ref={conversionInputRef}
@@ -2180,7 +2176,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                 onPointerDown={(event) => handlePreviewResizeStart(event, false)}
                 style={{ touchAction: "none" }}
                 role="separator"
-                aria-label="调整 Word 预览宽度"
+                aria-label={t("调整 Word 预览宽度")}
               >
                 <span className="pointer-events-none h-16 w-1 rounded-full bg-transparent transition group-hover:bg-slate-300/70 dark:group-hover:bg-zinc-700" />
               </div>
@@ -2204,7 +2200,7 @@ export function ConvertPage({ workspaceContent }: ConvertPageProps) {
                     className="group flex min-h-0 cursor-col-resize items-center justify-center"
                     onPointerDown={(event) => handlePreviewSidebarResizeStart(event, event.currentTarget.parentElement as HTMLDivElement | null)}
                     role="separator"
-                    aria-label="调整预览导航宽度"
+                    aria-label={t("调整预览导航宽度")}
                     aria-orientation="vertical"
                   >
                     <span className="h-10 w-1 rounded-full bg-slate-300/75 transition group-hover:h-16 group-hover:bg-blue-400 dark:bg-zinc-700 dark:group-hover:bg-blue-500" />
@@ -2309,7 +2305,7 @@ function ConvertPreviewPanel({
     try {
       await navigator.clipboard.writeText(markdown);
     } catch {
-      toast.error("复制失败");
+      toast.error(t("复制失败"));
     }
   }
 
@@ -2319,8 +2315,8 @@ function ConvertPreviewPanel({
         <AppSurface as="aside" padding="none" radius="md" data-mk-context-menu className={cn("mk-preview-panel flex min-h-0 flex-col overflow-hidden p-3", className)}>
       <div className="mk-preview-header mb-2.5 flex min-w-0 shrink-0 items-center justify-between gap-2">
         <div className="mk-preview-title min-w-0 flex-1">
-          <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">Word 预览</p>
-          <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : "等待 Markdown 内容"}</p>
+          <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">{t("Word 预览")}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{markdown.trim() ? outputName : t("等待 Markdown 内容")}</p>
         </div>
         <WordPreviewToolbar
           className="mk-preview-toolbar"
@@ -2361,10 +2357,10 @@ function ConvertPreviewPanel({
 
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 min-w-44 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => void copyPreviewMarkdown()} disabled={!markdown.trim()}>复制 Markdown</ContextMenu.Item>
-          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => setZoom(40)} disabled={zoom === 40}>重置预览缩放</ContextMenu.Item>
-          {onOpenAdvancedStyle ? <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onOpenAdvancedStyle}>打开高级样式</ContextMenu.Item> : null}
-          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onToggleExpanded}>{expanded ? "缩小还原预览" : "放大查看预览"}</ContextMenu.Item>
+          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => void copyPreviewMarkdown()} disabled={!markdown.trim()}>{t("复制 Markdown")}</ContextMenu.Item>
+          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={() => setZoom(40)} disabled={zoom === 40}>{t("重置预览缩放")}</ContextMenu.Item>
+          {onOpenAdvancedStyle ? <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onOpenAdvancedStyle}>{t("打开高级样式")}</ContextMenu.Item> : null}
+          <ContextMenu.Item className={previewContextMenuItemClass} onSelect={onToggleExpanded}>{expanded ? t("缩小还原预览") : t("放大查看预览")}</ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
@@ -2422,8 +2418,7 @@ function WordPreviewSidebar({
           onClick={() => onViewChange("pages")}
         >
           <PanelsTopLeft className="size-3" />
-          缩略图
-        </button>
+           {t("缩略图")} </button>
         <button
           type="button"
           className={cn("flex h-7 items-center justify-center gap-1 rounded-[6px] font-semibold transition", activeView === "outline" ? "bg-white text-blue-700 shadow-sm dark:bg-zinc-800 dark:text-blue-200" : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100")}
@@ -2431,22 +2426,21 @@ function WordPreviewSidebar({
           onClick={() => onViewChange("outline")}
         >
           <FileText className="size-3" />
-          目录
-        </button>
+           {t("目录")} </button>
       </div>
 
       {activeView === "pages" ? (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-            <p className="text-xs font-black text-slate-500 dark:text-zinc-400">页面缩略图</p>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount} 页</span>
+            <p className="text-xs font-black text-slate-500 dark:text-zinc-400">{t("页面缩略图")}</p>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{pageCount}  {t("页")}</span>
           </div>
             <div ref={onThumbnailContainerChange} className="grid min-h-0 flex-1 auto-rows-max items-start content-start grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-2 overflow-x-hidden overflow-y-auto pr-1 max-[900px]:max-h-[120px]" />
         </section>
       ) : (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-            <p className="text-xs font-black text-slate-500 dark:text-zinc-400">文档目录</p>
+            <p className="text-xs font-black text-slate-500 dark:text-zinc-400">{t("文档目录")}</p>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-zinc-900 dark:text-zinc-400">{headings.length}</span>
           </div>
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
@@ -2463,7 +2457,7 @@ function WordPreviewSidebar({
                           type="button"
                           className="flex size-4 shrink-0 items-center justify-center rounded-[3px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                           onClick={() => toggleHeading(heading.id)}
-                          aria-label={`${isCollapsed ? "展开" : "折叠"}${heading.text}`}
+                          aria-label={t("{0}{1}", [isCollapsed ? "展开" : "折叠", heading.text])}
                         >
                           {isCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
                         </button>
@@ -2485,8 +2479,7 @@ function WordPreviewSidebar({
               </div>
             ) : (
               <div className="rounded-[10px] border border-dashed border-slate-200 px-3 py-4 text-center text-xs font-semibold leading-5 text-slate-400 dark:border-zinc-800 dark:text-zinc-500">
-                当前 Markdown 没有标题，目录会在识别到 # 标题后显示。
-              </div>
+                 {t("当前 Markdown 没有标题，目录会在识别到 # 标题后显示。")} </div>
             )}
           </div>
         </section>

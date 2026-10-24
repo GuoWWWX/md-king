@@ -54,8 +54,8 @@ pub fn run() {
                 }
             }
             let config = load_config();
-            system::context_menu::sync_context_menu(config.enable_context_menu)?;
-            system::tray::sync_tray(app.handle(), config.enable_tray)?;
+            system::context_menu::sync_context_menu(config.enable_context_menu, &config.language)?;
+            system::tray::sync_tray(app.handle(), config.enable_tray, &config.language)?;
             system::quick_paste::sync_quick_paste(app.handle(), &config)?;
             let startup_args: Vec<String> = std::env::args().skip(1).collect();
             let has_file_argument =

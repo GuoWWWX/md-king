@@ -1,3 +1,6 @@
+import { t } from "@/lib/i18n";
+import { useLanguage } from "@/hooks/use-language";
+import { refreshControlLabels, setControlLabel } from "./cm/localized-controls";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
@@ -136,10 +139,10 @@ function updateSearchResultStatus(view: EditorView, panel: HTMLElement) {
   }
 
   output.textContent = count === 0
-    ? "0 个结果"
+    ? t("0 个结果")
     : current > 0
       ? `${current}/${truncated ? "9999+" : count}`
-      : `${truncated ? "9999+" : count} 个结果`;
+      : t("{0} 个结果", [truncated ? "9999+" : count]);
 
   panel.querySelectorAll<HTMLButtonElement>("button[name='prev'], button[name='next'], button[name='replace'], button[name='replaceAll']")
     .forEach((button) => {
@@ -152,8 +155,8 @@ function setSearchReplaceExpanded(panel: HTMLElement, expanded: boolean, focusRe
   const toggle = panel.querySelector<HTMLButtonElement>("[data-mk-search-replace-toggle]");
   if (toggle) {
     toggle.setAttribute("aria-expanded", String(expanded));
-    toggle.setAttribute("aria-label", expanded ? "收起替换" : "展开替换");
-    toggle.dataset.tooltip = expanded ? "收起替换" : "展开替换";
+    setControlLabel(toggle, "aria-label", () => expanded ? t("收起替换") : t("展开替换"));
+    setControlLabel(toggle, "data-tooltip", () => expanded ? t("收起替换") : t("展开替换"));
     toggle.removeAttribute("title");
     toggle.innerHTML = renderToStaticMarkup(createElement(expanded ? ChevronDown : ChevronRight, { size: 15, strokeWidth: 2 }));
   }
@@ -172,12 +175,17 @@ function prepareSearchPanel(view: EditorView, panel: HTMLElement) {
   const closeButton = panel.querySelector<HTMLButtonElement>("button[name='close']");
   if (!searchInput || !replaceInput || !closeButton) return;
 
+  setControlLabel(searchInput, "placeholder", () => t("查找"));
+  setControlLabel(searchInput, "aria-label", () => t("查找"));
+  setControlLabel(replaceInput, "placeholder", () => t("替换"));
+  setControlLabel(replaceInput, "aria-label", () => t("替换"));
+
   const iconMarkup = (icon: typeof Search) => renderToStaticMarkup(createElement(icon, { size: 15, strokeWidth: 2 }));
   const setIconButton = (button: HTMLButtonElement | null, icon: typeof Search, label: string) => {
     if (!button) return;
     button.dataset.mkSearchIconButton = "";
-    button.setAttribute("aria-label", label);
-    button.dataset.tooltip = label;
+    setControlLabel(button, "aria-label", () => t(label));
+    setControlLabel(button, "data-tooltip", () => t(label));
     button.removeAttribute("title");
     button.innerHTML = iconMarkup(icon);
   };
@@ -212,12 +220,12 @@ function prepareSearchPanel(view: EditorView, panel: HTMLElement) {
     const option = input?.closest<HTMLLabelElement>("label");
     if (!input || !option) return;
     option.dataset.mkSearchOption = key;
-    option.setAttribute("aria-label", label);
-    option.dataset.tooltip = label;
+    setControlLabel(option, "aria-label", () => t(label));
+    setControlLabel(option, "data-tooltip", () => t(label));
     option.removeAttribute("title");
     const optionText = document.createElement("span");
     optionText.dataset.mkSearchOptionText = "";
-    optionText.textContent = text;
+    setControlLabel(optionText, "textContent", () => t(text));
     option.replaceChildren(input, optionText);
     findField.append(option);
   });
@@ -227,8 +235,8 @@ function prepareSearchPanel(view: EditorView, panel: HTMLElement) {
   setIconButton(previousButton, ArrowUp, "上一个");
   setIconButton(nextButton, ArrowDown, "下一个");
   closeButton.dataset.mkSearchIconButton = "";
-  closeButton.setAttribute("aria-label", "关闭查找");
-  closeButton.dataset.tooltip = "关闭查找";
+  setControlLabel(closeButton, "aria-label", () => t("关闭查找"));
+  setControlLabel(closeButton, "data-tooltip", () => t("关闭查找"));
   closeButton.removeAttribute("title");
   closeButton.innerHTML = iconMarkup(X);
 
@@ -251,7 +259,10 @@ function prepareSearchPanel(view: EditorView, panel: HTMLElement) {
   replaceRow.append(replaceIndent, replaceField);
   ["replace", "replaceAll"].forEach((name) => {
     const button = panel.querySelector<HTMLButtonElement>(`button[name='${name}']`);
-    if (button) replaceRow.append(button);
+    if (button) {
+      setControlLabel(button, "textContent", () => t(name === "replace" ? "替换" : "全替换"));
+      replaceRow.append(button);
+    }
   });
 
   panel.replaceChildren(findRow, replaceRow);
@@ -423,10 +434,12 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
   { documentKey, documentId, initialContent, viewState, onViewStateChange, documentTitle, onDocumentTitleChange, markdownSourcePath, readOnly = false, isDark, placeholder, onDocChanged, onDirty, onRequestSave, onImportImage, onOpenLink, openLinksOnClick = false, tableDefaultWidthMode = "content", onTableContextChange, className },
   ref,
 ) {
+  const language = useLanguage();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mermaidThemes = useAppStore((state) => state.appConfig?.mermaidThemes);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
+  const languageCompartment = useRef(new Compartment()).current;
   const cursorCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
   const documentTitleCompartment = useRef(new Compartment()).current;
@@ -748,9 +761,9 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
       }),
       // 换掉原来的 textarea 后无障碍名会丢：contenteditable 自己不带 label，
       // 屏幕阅读器只会读出「编辑框」而不知道这是什么编辑框。
-      EditorView.contentAttributes.of({ "aria-label": "Markdown 输入内容" }),
+      EditorView.contentAttributes.of({ "aria-label": t("Markdown 输入内容") }),
       // CodeMirror 搜索面板使用 state phrase 注入文案，避免用 CSS 伪元素伪造中文按钮文字。
-      EditorState.phrases.of(searchPhrases),
+      languageCompartment.of(EditorState.phrases.of(Object.fromEntries(Object.entries(searchPhrases).map(([key, value]) => [key, t(value)])))),
       themeCompartment.of(markdownEditorTheme(isDark)),
       readOnlyCompartment.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
       EditorView.updateListener.of((update) => {
@@ -866,6 +879,17 @@ export const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkd
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: languageCompartment.reconfigure(EditorState.phrases.of(
+      Object.fromEntries(Object.entries(searchPhrases).map(([key, value]) => [key, t(value)])),
+    )) });
+    refreshControlLabels(view.dom);
+    const panel = view.dom.querySelector<HTMLElement>(".cm-panel.cm-search");
+    if (panel) updateSearchResultStatus(view, panel);
+  }, [language, languageCompartment]);
 
   // 事件处理器由 HMR 更新时，不重建编辑器和 undo 历史，只替换当前实例的命中规则。
   useEffect(() => {

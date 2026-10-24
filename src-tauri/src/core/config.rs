@@ -376,6 +376,24 @@ fn normalize_vault_fields(config: &mut AppConfig) {
 mod tests {
     use super::{default_config, normalize_config, AppConfig, MermaidThemeSettings, MAX_RECENT_VAULTS};
 
+    #[test]
+    fn language_persists_and_legacy_config_defaults_to_chinese() {
+        for language in ["zh", "en"] {
+            let mut config = default_config();
+            config.language = language.into();
+            let saved = serde_json::to_string(&normalize_config(config)).unwrap();
+            let loaded: AppConfig = serde_json::from_str(&saved).unwrap();
+            assert_eq!(loaded.language, language);
+        }
+        let mut legacy = serde_json::to_value(default_config()).unwrap();
+        legacy.as_object_mut().unwrap().remove("language");
+        let loaded: AppConfig = serde_json::from_value(legacy).unwrap();
+        assert_eq!(loaded.language, "zh");
+        let mut invalid = default_config();
+        invalid.language = "unknown".into();
+        assert_eq!(normalize_config(invalid).language, "zh");
+    }
+
     fn config_with(mutate: impl FnOnce(&mut AppConfig)) -> AppConfig {
         let mut config = default_config();
         mutate(&mut config);

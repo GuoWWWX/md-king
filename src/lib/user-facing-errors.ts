@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import type { VaultErrorCode } from "@/types/vault";
 
 const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
@@ -14,7 +15,7 @@ const VAULT_ERROR_CODES: readonly VaultErrorCode[] = [
 
 /// Rust 侧 vault 错误统一为 "CODE|中文提示"。冲突要弹窗、非 UTF-8 要切只读模式，
 /// 光靠一条 toast 分不出这些分支，所以要把 code 单独拆出来给调用方 switch。
-export function parseVaultError(error: unknown, fallback = "操作失败"): { code?: VaultErrorCode; message: string } {
+export function parseVaultError(error: unknown, fallback = t("操作失败")): { code?: VaultErrorCode; message: string } {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const separatorIndex = raw.indexOf("|");
 
@@ -23,7 +24,7 @@ export function parseVaultError(error: unknown, fallback = "操作失败"): { co
     const code = VAULT_ERROR_CODES.find((item) => item === candidate);
     if (code) {
       const message = raw.slice(separatorIndex + 1).trim();
-      return { code, message: message || fallback };
+      return { code, message: t(message || fallback) };
     }
   }
 
@@ -34,13 +35,13 @@ export function userFacingErrorMessage(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const trimmed = message.trim();
 
-  if (!trimmed) return fallback;
-  if (containsChinese(trimmed)) return trimmed;
-  if (isPermissionError(error, trimmed)) return "权限不足，请检查系统或浏览器授权";
-  if (isAbortError(error, trimmed)) return "操作已取消";
-  if (trimmed.toLowerCase().includes("failed to fetch")) return "网络请求失败，请检查连接后重试";
+  if (!trimmed) return t(fallback);
+  if (containsChinese(trimmed)) return t(trimmed);
+  if (isPermissionError(error, trimmed)) return t("权限不足，请检查系统或浏览器授权");
+  if (isAbortError(error, trimmed)) return t("操作已取消");
+  if (trimmed.toLowerCase().includes("failed to fetch")) return t("网络请求失败，请检查连接后重试");
 
-  return fallback;
+  return t(fallback);
 }
 
 function containsChinese(value: string) {

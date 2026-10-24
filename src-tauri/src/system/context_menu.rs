@@ -22,16 +22,16 @@ const BACKGROUND_MENU_PATHS: [&str; 2] = [
 ];
 
 #[cfg(windows)]
-pub fn sync_context_menu(enable: bool) -> Result<(), String> {
+pub fn sync_context_menu(enable: bool, language: &str) -> Result<(), String> {
     if enable {
-        register_context_menu()
+        register_context_menu(language)
     } else {
         unregister_context_menu()
     }
 }
 
 #[cfg(not(windows))]
-pub fn sync_context_menu(_enable: bool) -> Result<(), String> {
+pub fn sync_context_menu(_enable: bool, _language: &str) -> Result<(), String> {
     Ok(())
 }
 
@@ -149,7 +149,7 @@ fn context_output_path(input_path: &Path, default_output_dir: Option<&str>) -> O
 }
 
 #[cfg(windows)]
-fn register_context_menu() -> Result<(), String> {
+fn register_context_menu(language: &str) -> Result<(), String> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
@@ -161,7 +161,7 @@ fn register_context_menu() -> Result<(), String> {
         let (key, _) = hkcu
             .create_subkey(path)
             .map_err(|error| format!("写入右键菜单失败：{error}"))?;
-        key.set_value("", &"用 MD King 转换为 Word")
+        key.set_value("", &if language == "en" { "Convert to Word with MD King" } else { "用 MD King 转换为 Word" })
             .map_err(|error| format!("写入右键菜单名称失败：{error}"))?;
         key.set_value("Icon", &exe)
             .map_err(|error| format!("写入右键菜单图标失败：{error}"))?;
@@ -178,7 +178,7 @@ fn register_context_menu() -> Result<(), String> {
         let (key, _) = hkcu
             .create_subkey(path)
             .map_err(|error| format!("写入桌面右键菜单失败：{error}"))?;
-        key.set_value("", &"打开 MD King")
+        key.set_value("", &if language == "en" { "Open MD King" } else { "打开 MD King" })
             .map_err(|error| format!("写入桌面右键菜单名称失败：{error}"))?;
         key.set_value("Icon", &exe)
             .map_err(|error| format!("写入桌面右键菜单图标失败：{error}"))?;

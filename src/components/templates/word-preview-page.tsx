@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2 } from "lucide-react";
@@ -551,7 +552,7 @@ function CodeLanguageLabel({ label, backgroundColor }: { label: string; backgrou
       className="absolute left-2 top-1 text-[8px] font-bold uppercase tracking-wide"
       style={{ color: syntaxPalette(backgroundColor).comment, opacity: dark ? 0.9 : 0.85 }}
     >
-      {label}
+      {t(label)}
     </span>
   );
 }
@@ -606,8 +607,7 @@ function MermaidBlock({ source, dark, maxHeight, style, className, onSize }: { s
   if (!svg) {
     return (
       <div className={cn("flex items-center justify-center px-3 py-6 text-[0.8em] text-slate-400", className)} style={style}>
-        正在渲染图表…
-      </div>
+         {t("正在渲染图表…")} </div>
     );
   }
 
@@ -615,7 +615,7 @@ function MermaidBlock({ source, dark, maxHeight, style, className, onSize }: { s
     <div className={cn("flex justify-center", className)} style={style}>
       <img
         src={svgDataUrl(svg)}
-        alt="Mermaid 图表"
+        alt={t("Mermaid 图表")}
         className="block h-auto w-auto max-w-full object-contain"
         style={{ maxHeight }}
       />
@@ -1959,25 +1959,25 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
 
 function createFallbackBlocks(imageCaption: string, tableCaption: string): PreviewBlock[] {
   return [
-    { type: "heading", level: 1, text: "文档大标题", anchorId: "heading-1" },
-    { type: "heading", level: 2, text: "一级章节", anchorId: "heading-2" },
-    { type: "heading", level: 3, text: "二级小节", anchorId: "heading-3" },
-    { type: "heading", level: 4, text: "三级条目", anchorId: "heading-4" },
-    { type: "heading", level: 5, text: "四级条目", anchorId: "heading-5" },
-    { type: "heading", level: 6, text: "五级条目", anchorId: "heading-6" },
-    { type: "paragraph", segments: [...textSegments("正文用于预览字号、行距和缩进，"), { text: "inlineCode()", code: true }, ...textSegments(" 展示行内代码。")] },
+    { type: "heading", level: 1, text: t("文档大标题"), anchorId: "heading-1" },
+    { type: "heading", level: 2, text: t("一级章节"), anchorId: "heading-2" },
+    { type: "heading", level: 3, text: t("二级小节"), anchorId: "heading-3" },
+    { type: "heading", level: 4, text: t("三级条目"), anchorId: "heading-4" },
+    { type: "heading", level: 5, text: t("四级条目"), anchorId: "heading-5" },
+    { type: "heading", level: 6, text: t("五级条目"), anchorId: "heading-6" },
+    { type: "paragraph", segments: [...textSegments(t("正文用于预览字号、行距和缩进，")), { text: "inlineCode()", code: true }, ...textSegments(t(" 展示行内代码。"))] },
     { type: "list", items: [
-      { segments: textSegments("一级列表用于观察项目符号、缩进和换行对齐。"), level: 0, ordered: false, index: 1 },
-      { segments: textSegments("二级无序列表使用较长内容展示自动换行效果，换行后可以检查续行是否与符号后的正文文字保持对齐。"), level: 1, ordered: false, index: 1 },
-      { segments: textSegments("三级列表继续缩进。"), level: 2, ordered: false, index: 1 },
-      { segments: textSegments("有序列表第一项使用较长内容检查自动换行，续行可以观察编号、正文文字和当前对齐方式之间的关系。"), level: 0, ordered: true, index: 1 },
-      { segments: textSegments("第二项用于检查编号递增。"), level: 0, ordered: true, index: 2 },
+      { segments: textSegments(t("一级列表用于观察项目符号、缩进和换行对齐。")), level: 0, ordered: false, index: 1 },
+      { segments: textSegments(t("二级无序列表使用较长内容展示自动换行效果，换行后可以检查续行是否与符号后的正文文字保持对齐。")), level: 1, ordered: false, index: 1 },
+      { segments: textSegments(t("三级列表继续缩进。")), level: 2, ordered: false, index: 1 },
+      { segments: textSegments(t("有序列表第一项使用较长内容检查自动换行，续行可以观察编号、正文文字和当前对齐方式之间的关系。")), level: 0, ordered: true, index: 1 },
+      { segments: textSegments(t("第二项用于检查编号递增。")), level: 0, ordered: true, index: 2 },
     ] },
-    { type: "quote", segments: textSegments("引用块用于观察缩进、边框和背景。") },
+    { type: "quote", segments: textSegments(t("引用块用于观察缩进、边框和背景。")) },
     { type: "code", language: "javascript", text: "const docx = convertMarkdown(input);\nsaveAs(docx, \"report.docx\");", indentPt: 0 },
     { type: "image", caption: imageCaption },
     { type: "hr" },
-    { type: "table", caption: tableCaption, header: ["字段", "样式", "备注"].map((cell) => ({ segments: textSegments(cell) })), rows: [["标题", "加粗", "章节层级"], ["正文", "常规", "段落内容"]].map((row) => row.map((cell) => ({ segments: textSegments(cell) }))) },
+    { type: "table", caption: tableCaption, header: [t("字段"), t("样式"), t("备注")].map((cell) => ({ segments: textSegments(cell) })), rows: [[t("标题"), t("加粗"), t("章节层级")], [t("正文"), t("常规"), t("段落内容")]].map((row) => row.map((cell) => ({ segments: textSegments(cell) }))) },
   ];
 }
 
@@ -2044,7 +2044,7 @@ function PreviewImage({
           <path d="M82 132 L170 70 L230 106 L280 82 L420 132 Z" fill="rgba(99,102,241,0.18)" />
           <path d="M0 132 L120 80 L210 132 Z" fill="rgba(15,23,42,0.08)" />
         </svg>
-        <span className="relative rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[10px] font-bold text-slate-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/72 dark:text-zinc-400">图片占位预览</span>
+        <span className="relative rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[10px] font-bold text-slate-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/72 dark:text-zinc-400">{t("图片占位预览")}</span>
       </div>
     );
   }
@@ -2059,8 +2059,8 @@ function PreviewImage({
             variant="ghost"
             size="icon-xs"
             className="absolute right-2 top-2 z-10 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-            tooltip="放大查看图片"
-            aria-label="放大查看图片"
+            tooltip={t("放大查看图片")}
+            aria-label={t("放大查看图片")}
             onClick={() => setPreviewOpen(true)}
           >
             <Maximize2 className="size-3.5" />
@@ -2074,7 +2074,7 @@ function PreviewImage({
   if (inline) return <span className="text-[10px] text-slate-400">{failed ? "图片无法预览" : (alt || "图片加载中")}</span>;
   return (
     <div className={cn("relative flex h-28 items-center justify-center overflow-hidden border border-dashed border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500", className)}>
-      <span>图片无法预览</span>
+      <span>{t("图片无法预览")}</span>
     </div>
   );
 }
@@ -2687,8 +2687,8 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
   const markdownPreview = markdown?.trim() ? parseMarkdownPreview(markdown) : undefined;
   const markdownBlocks = markdownPreview?.blocks ?? [];
   const hasMarkdownPreview = markdownBlocks.length > 0;
-  const fallbackBlocks = createFallbackBlocks("图片样式预览", "表格样式预览");
-  if (selectedStyle?.id === "signature") fallbackBlocks.unshift({ type: "signature", attrs: {}, source: '| 字段 | 内容 | 备注 |\n| --- | --- | --- |\n| 投标人 | 示例公司 | （盖章） |\n| 授权代表 | ____ | （签字） |\n| 日期 | [待补充]{color="#D32F2F"} | |' });
+  const fallbackBlocks = createFallbackBlocks(t("图片样式预览"), t("表格样式预览"));
+  if (selectedStyle?.id === "signature") fallbackBlocks.unshift({ type: "signature", attrs: {}, source: t("| 字段 | 内容 | 备注 |\n| --- | --- | --- |\n| 投标人 | 示例公司 | （盖章） |\n| 授权代表 | ____ | （签字） |\n| 日期 | [待补充]{color=\"#D32F2F\"} | |") });
   let figureNumber = 0;
   let tableNumber = 0;
   const activeBlocks = applyMarkdownFeatureSettings(hasMarkdownPreview ? markdownBlocks : fallbackBlocks, styleConfig?.markdownFeatures ?? defaultMarkdownFeatures)
@@ -2918,7 +2918,7 @@ export function WordPreviewPage({ selectedStyle, styleConfig, zoom = 85, markdow
                 {renderPreviewPage(pageBlocks, pageIndex, true)}
               </div>
               <span className="mt-1 block w-full text-center text-[10px] leading-4 font-black text-slate-500 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-200">{pageIndex + 1}</span>
-              {pageIndex < tocPages.length ? <span className="absolute right-2 top-2 rounded bg-white/90 px-1 py-0.5 text-[8px] font-bold text-slate-500 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-300">目录</span> : null}
+              {pageIndex < tocPages.length ? <span className="absolute right-2 top-2 rounded bg-white/90 px-1 py-0.5 text-[8px] font-bold text-slate-500 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-300">{t("目录")}</span> : null}
             </TooltipButton>
           ))}
         </div>,
