@@ -4939,8 +4939,69 @@ fn is_conventional_unnumbered_heading(text: &str) -> bool {
     )
 }
 
+/// Keep quoted tables recognizable by Pandoc when their source is indented in the editor.
+fn normalize_quoted_tables_for_word(markdown: &str) -> String {
+    let quoted = Regex::new(r"^((?:[ \t]{0,3}>[ ]?)+)[ \t]*(.*)$").expect("valid quote regex");
+    let delimiter = Regex::new(r"^:?-+:?$").expect("valid table delimiter regex");
+    let lines: Vec<&str> = markdown.lines().collect();
+    let mut output: Vec<String> = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        let quote = quoted.captures(line);
+        let content = quote.as_ref().map_or(line, |c| c.get(2).unwrap().as_str());
+        if let Some((marker, length)) = fence {
+            if is_fence_end(content.trim_start(), marker, length) { fence = None; }
+            output.push(line.to_string());
+            index += 1;
+            continue;
+        }
+        if let Some(start) = parse_markdown_fence_start(content.trim_start()) {
+            fence = Some((start.marker, start.length));
+            output.push(line.to_string());
+            index += 1;
+            continue;
+        }
+        let next = lines.get(index + 1).and_then(|line| quoted.captures(line));
+        let is_separator = next.as_ref().is_some_and(|c| {
+            let text = c.get(2).unwrap().as_str().trim();
+            text.contains('|') && text.trim_matches('|').split('|').all(|cell| delimiter.is_match(cell.trim()))
+        });
+        if let (Some(header), Some(separator)) = (quote.as_ref(), next.as_ref().filter(|_| is_separator)) {
+            let prefix = header.get(1).unwrap().as_str().trim_end();
+            let separator_prefix = separator.get(1).unwrap().as_str().trim_end();
+            if content.contains('|') && prefix.chars().filter(|c| *c == '>').count() == separator_prefix.chars().filter(|c| *c == '>').count() {
+                if output.last().and_then(|line| quoted.captures(line)).is_some_and(|previous| {
+                    previous.get(1).unwrap().as_str().chars().filter(|c| *c == '>').count() == prefix.chars().filter(|c| *c == '>').count()
+                        && !previous.get(2).unwrap().as_str().trim().is_empty()
+                }) {
+                    output.push(prefix.to_string());
+                }
+                output.push(format!("{prefix} {}", content.trim_start()));
+                output.push(format!("{prefix} {}", separator.get(2).unwrap().as_str().trim_start()));
+                index += 2;
+                while index < lines.len() {
+                    let Some(row) = quoted.captures(lines[index]) else { break };
+                    if row.get(1).unwrap().as_str().chars().filter(|c| *c == '>').count() != prefix.chars().filter(|c| *c == '>').count()
+                        || !row.get(2).unwrap().as_str().contains('|') { break; }
+                    output.push(format!("{prefix} {}", row.get(2).unwrap().as_str().trim_start()));
+                    index += 1;
+                }
+                continue;
+            }
+        }
+        output.push(line.to_string());
+        index += 1;
+    }
+    let mut result = output.join("\n");
+    if markdown.ends_with('\n') { result.push('\n'); }
+    result
+}
+
 fn preprocess_markdown_for_word(markdown: &str) -> String {
-    let normalized_captions = normalize_adjacent_bold_captions(markdown);
+    let normalized_tables = normalize_quoted_tables_for_word(markdown);
+    let normalized_captions = normalize_adjacent_bold_captions(&normalized_tables);
     let reference_anchor = Regex::new(r#"<!--md-king:range [a-zA-Z0-9-]+:(?:start|end)-->"#)
         .expect("valid reference anchor regex");
     let paragraph_id = Regex::new(r#"(?:^|[ \t])\^[a-zA-Z0-9-]+[ \t]*$"#)
@@ -14210,6 +14271,14 @@ mod tests {
         let widths = table_column_widths_for_xml(&xml, 2, &style);
         assert!(widths[1] >= 12 * 120 + super::px_to_twips(style.cell_padding_x * 2.0));
         assert_eq!(widths.iter().sum::<u32>(), 8400);
+    }
+
+    #[test]
+    fn quoted_tables_remain_tables_after_indentation_without_touching_fenced_code() {
+        let input = "> [!TIP] 标题\n>     | A | B |\n>     | --- | --- |\n>     | 1 | 2 |\n\n> ```text\n>     | A | B |\n>     | --- | --- |\n> ```\n";
+        let output = preprocess_markdown_for_word(input);
+        assert!(output.contains("> [!TIP] 标题\n>\n> | A | B |\n> | --- | --- |\n> | 1 | 2 |"));
+        assert!(output.contains("> ```text\n>     | A | B |\n>     | --- | --- |\n> ```"));
     }
 
     #[test]

@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body { margin: 0; padding: 20px; } #out svg { display: block; max-width: none; }
+</style></head><body><div id="out"></div>
+<script type="module">
+import '/src/index.css';
+import {renderMermaid, mermaidToPngDataUrl} from '/src/lib/mermaid.ts';
+window.fixture = {renderMermaid, mermaidToPngDataUrl};
+</script></body></html>

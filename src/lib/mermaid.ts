@@ -1,5 +1,6 @@
 import { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "./mermaid-config.js";
 import { calculateRasterSize, svgDataUrl } from "./svg-image.ts";
+import { formatMermaidSvgMarkdown, mermaidMarkdownLayout, prepareMermaidMarkdown } from "./mermaid-markdown.ts";
 
 /**
  * Mermaid 渲染服务。
@@ -26,12 +27,17 @@ export function setMermaidThemes(settings?: MermaidThemeSettings) {
   activeThemes = normalizeMermaidThemes(settings);
 }
 
-async function loadMermaid(dark: boolean, selectedTheme: MermaidThemeId) {
+async function loadMermaid(dark: boolean, selectedTheme: MermaidThemeId, source: string) {
   const wanted = dark ? "dark" : "default";
-  const identity = `${wanted}:${selectedTheme}`;
+  const layout = mermaidMarkdownLayout(source);
+  const identity = `${wanted}:${selectedTheme}:${JSON.stringify(layout)}`;
+  const config = mermaidConfig(wanted, selectedTheme);
+  if (layout.ganttBarHeight) config.gantt = { ...config.gantt, barHeight: layout.ganttBarHeight };
+  if (layout.packetRowHeight) config.packet = { ...config.packet, rowHeight: layout.packetRowHeight };
+  if (layout.journeyTaskHeight) config.journey = { ...config.journey, height: layout.journeyTaskHeight };
   if (!mermaidReady) {
     mermaidReady = import("mermaid").then(({ default: mermaid }) => {
-      mermaid.initialize(mermaidConfig(wanted, selectedTheme));
+      mermaid.initialize(config);
       currentTheme = identity;
       return mermaid;
     });
@@ -42,7 +48,7 @@ async function loadMermaid(dark: boolean, selectedTheme: MermaidThemeId) {
     // 主题变了要重新初始化 mermaid 引擎，但保留已有的 svgCache 和 pngCache：
     // cacheKey 同时区分画布深浅和所选主题，保留缓存可让用户来回切换时直接复用，
     // 彻底避免图表高度瞬间坍缩导致页面滚动位置丢失。
-    mermaid.initialize(mermaidConfig(wanted, selectedTheme));
+    mermaid.initialize(config);
     currentTheme = identity;
   }
   return mermaid;
@@ -88,13 +94,14 @@ export async function renderMermaid(source: string, dark: boolean, settings = ac
   if (pending) return pending;
 
   const task = renderQueue.then(async () => {
-    const mermaid = await loadMermaid(dark, selectedTheme);
+    const mermaid = await loadMermaid(dark, selectedTheme, normalized);
     renderSeq += 1;
     // id 必须唯一：mermaid 会用它做 DOM 元素 id 和 SVG 内部的 clip-path 引用，
     // 重复 id 会让同一页里的多张图互相串。
-    const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, normalized);
+    const prepared = prepareMermaidMarkdown(normalized);
+    const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, prepared.source);
     const size = measureSvg(svg);
-    const result = { svg: readableEdgeLabels(svg, size, dark), ...size };
+    const result = { svg: readableEdgeLabels(svg, size, dark, normalized, prepared.replacements), ...size };
     svgCache.set(key, result);
     return result;
   });
@@ -109,7 +116,7 @@ export async function renderMermaid(source: string, dark: boolean, settings = ac
 }
 
 /** 标签背景透明后，要按标签实际落点的底色选字色，而不是对整张图强制白字。 */
-function readableEdgeLabels(svg: string, size: { width: number; height: number }, dark: boolean): string {
+function readableEdgeLabels(svg: string, size: { width: number; height: number }, dark: boolean, source?: string, replacements?: Record<string, string>): string {
   const host = document.createElement("div");
   host.style.cssText = "position:fixed;left:0;top:0;visibility:hidden;pointer-events:none";
   host.innerHTML = svg;
@@ -119,6 +126,14 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
   root.setAttribute("height", String(size.height));
   document.body.append(host);
   try {
+    if (source && /[*_`$]/.test(source)) ensureMermaidContrast(root, dark);
+    const hasSvgMarkdown = source ? formatMermaidSvgMarkdown(root, source, replacements) : false;
+    if (hasSvgMarkdown) {
+      size.width = Math.ceil(root.viewBox.baseVal.width);
+      size.height = Math.ceil(root.viewBox.baseVal.height);
+      root.setAttribute("width", String(size.width));
+      root.setAttribute("height", String(size.height));
+    }
     if (layoutMermaidKanban(root)) {
       size.height = Math.ceil(root.viewBox.baseVal.height);
       root.setAttribute("height", String(size.height));
@@ -246,7 +261,8 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
         let minLeft = Infinity;
         let maxRight = -Infinity;
 
-        for (const el of root.querySelectorAll<SVGGraphicsElement>(".cluster rect, .cluster-label, .node, g.edgeLabel, .edgePaths path, rect.actor, text.actor, .statediagram-state")) {
+        const geometrySelector = ".cluster rect, .cluster-label, .node, g.edgeLabel, .edgePaths path, rect.actor, text.actor, .statediagram-state" + (hasSvgMarkdown ? ", foreignObject" : "");
+        for (const el of root.querySelectorAll<SVGGraphicsElement>(geometrySelector)) {
           const b = el.getBoundingClientRect();
           if (b.width === 0 && b.height === 0) continue;
           const top = b.top - rootBbox.top;

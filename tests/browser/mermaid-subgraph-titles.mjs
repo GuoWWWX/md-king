@@ -6,6 +6,7 @@ const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'
 const base=process.env.TEST_BASE_URL||'http://127.0.0.1:1420';
 const source=await readFile(new URL('../fixtures/conversion/mermaid-cache-patterns.mmd',import.meta.url),'utf8');
 const shared=Buffer.from(await readFile(new URL('../../src/lib/mermaid-config.js',import.meta.url))).toString('base64');
+const markdownRenderer=Buffer.from(await readFile(new URL('../../src-tauri/resources/mermaid/markdown-labels.js',import.meta.url))).toString('base64');
 const rust=await readFile(new URL('../../src-tauri/src/core/mermaid.rs',import.meta.url),'utf8');
 const template=rust.match(/r#"(<!doctype html>[\s\S]*?)"#/)[1];
 const browser=await chromium.launch({channel:'msedge',headless:true});
@@ -17,8 +18,8 @@ try{
  let count=0;
  for(const mode of ['light','dark','export-png','export-svg'])for(const {id:theme} of MERMAID_THEMES){
   if(mode.startsWith('export')){
-   const values={source_json:JSON.stringify(source),script_url:`${base}/src-tauri/resources/mermaid/mermaid.min.js`,renderer_config:shared,themes_json:JSON.stringify({light:theme,dark:theme,diagrams:{}}),html_labels:String(mode!=='export-svg'),node_spacing:'50',rank_spacing:'60'};
-   html=template.replaceAll('{{','{').replaceAll('}}','}').replace(/\{(source_json|script_url|renderer_config|themes_json|html_labels|node_spacing|rank_spacing)\}/g,(_,name)=>values[name]);
+   const values={source_json:JSON.stringify(source),script_url:`${base}/src-tauri/resources/mermaid/mermaid.min.js`,renderer_config:shared,markdown_renderer:markdownRenderer,themes_json:JSON.stringify({light:theme,dark:theme,diagrams:{}}),html_labels:String(mode!=='export-svg'),node_spacing:'50',rank_spacing:'60'};
+   html=template.replaceAll('{{','{').replaceAll('}}','}').replace(/\{(source_json|script_url|renderer_config|markdown_renderer|themes_json|html_labels|node_spacing|rank_spacing)\}/g,(_,name)=>values[name]);
   }else html='<!doctype html><body></body>';
   await page.goto(`${base}/subgraph-title-test`);
   if(mode.startsWith('export')){

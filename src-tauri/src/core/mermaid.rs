@@ -489,7 +489,9 @@ fn render_mermaid_image_once(
                 )
             })?;
         let mut svg_output = None;
-        if prefer_svg {
+        // Office cannot render HTML/MathML inside an SVG foreignObject. Rich
+        // Markdown labels keep their appearance through the existing PNG path.
+        if prefer_svg && !dom.contains("data-rich-labels=\"true\"") {
             if let Some(svg_base64) = extract_html_attribute(&dom, "data-svg-base64") {
                 if let Ok(svg_bytes) = BASE64_STANDARD.decode(svg_base64) {
                     if let Ok(svg) = String::from_utf8(svg_bytes) {
@@ -575,6 +577,7 @@ fn renderer_html(
         .replace('&', "\\u0026");
     let script_url = file_url(mermaid_script);
     let renderer_config = BASE64_STANDARD.encode(include_bytes!("../../../src/lib/mermaid-config.js"));
+    let markdown_renderer = BASE64_STANDARD.encode(include_bytes!("../../resources/mermaid/markdown-labels.js"));
     let themes_json = serde_json::to_string(themes).unwrap_or_else(|_| "{}".to_string())
         .replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026");
     let node_spacing = if compact { 20 } else { 50 };
@@ -592,12 +595,20 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 <script src="{script_url}"></script><script>
 (async()=>{{
   try{{
-    const source=JSON.parse(document.getElementById('source').textContent);
+    const originalSource=JSON.parse(document.getElementById('source').textContent);
+    const {{prepareMermaidMarkdown,formatMermaidSvgMarkdown,mermaidMarkdownLayout}}=await import('data:text/javascript;base64,{markdown_renderer}');
+    const prepared=prepareMermaidMarkdown(originalSource);
+    const source=prepared.source;
     const {{mermaidConfig,layoutMermaidKanban,layoutMermaidLabels,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
     const themes={themes_json};
     const config=mermaidConfig('default',resolveMermaidTheme(source,false,themes));
+    const markdownLayout=mermaidMarkdownLayout(originalSource);
+    if(markdownLayout.ganttBarHeight) config.gantt={{...config.gantt,barHeight:markdownLayout.ganttBarHeight}};
+    if(markdownLayout.packetRowHeight) config.packet={{...config.packet,rowHeight:markdownLayout.packetRowHeight}};
+    if(markdownLayout.journeyTaskHeight) config.journey={{...config.journey,height:markdownLayout.journeyTaskHeight}};
     config.htmlLabels={html_labels};
-    Object.assign(config.flowchart,{{htmlLabels:{html_labels},useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}});
+    if(prepared.hasRichLabels) config.htmlLabels=true;
+    Object.assign(config.flowchart,{{htmlLabels:config.htmlLabels,useMaxWidth:false,nodeSpacing:{node_spacing},rankSpacing:{rank_spacing}}});
     mermaid.initialize(config);
     document.body.dataset.stage='syntax';
     await mermaid.parse(source);
@@ -606,6 +617,9 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     const host=document.getElementById('diagram'); host.innerHTML=rendered.svg;
     const svg=host.querySelector('svg');
     if(!svg) throw new Error('Mermaid 未生成 SVG');
+    if(/[*_`$]/.test(originalSource)) ensureMermaidContrast(svg,false);
+    const formattedSvg=formatMermaidSvgMarkdown(svg,originalSource,prepared.replacements);
+    document.body.dataset.richLabels=String(prepared.hasRichLabels||formattedSvg);
     layoutMermaidKanban(svg);
     let view=svg.viewBox&&svg.viewBox.baseVal;
     let width=view&&view.width>0?view.width:svg.getBoundingClientRect().width;

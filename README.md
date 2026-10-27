@@ -122,6 +122,19 @@ Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。
 - 应用内更新提示、下载进度、取消与失败重试。
 - 简体中文与 English 界面；从左侧状态栏的语言按钮即时切换，选择会保留到下次启动。其上方是更新入口，下方是主题按钮。
 
+### Mermaid 标签中的 Markdown
+
+各类 Mermaid 图表的文本标签支持加粗、斜体、行内代码、公式和有序／无序列表，包括流程图节点、连线、子图标题以及时序图消息等。仍需遵循各图表本身的标签语法；用 `<br/>` 在标签内换行。例如：
+
+````markdown
+```mermaid
+flowchart LR
+  A["**检查** *结果* `status` $x^2$<br/>- 第一项<br/>- 第二项"] -->|"**通过**"| B["1. 保存<br/>2. 完成"]
+```
+````
+
+时序图消息可以写成 ``A->>B: **请求** `id` $x^2$<br/>- 第一项<br/>- 第二项``；象限图的点名称包含格式符号时应使用引号。公式支持 `$...$` 和 Mermaid 原生的 `$$...$$`，也可使用 Mermaid 原生的“引号包反引号”Markdown 标签语法。明确设置 `htmlLabels: false` 时保留 Mermaid 原生行为，完整格式支持可能受限。Word/WPS 使用 PNG 保留这些格式；CLI 选择 SVG 时，包含此类标签的图会自动回退为 PNG。
+
 ## 应用内自动更新
 
 主界面首次启动后 3 秒检查新版本；从托盘恢复或再次启动已有进程时主动检查，持续运行期间每 4 小时检查一次。也可以在“关于”页手动检查。
@@ -197,7 +210,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.2.1_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.2.2_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 

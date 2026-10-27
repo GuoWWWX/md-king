@@ -10,6 +10,91 @@ export interface MarkdownTable {
   columnWeights?: number[];
 }
 
+/** Strip blockquote markers for parsing and restore them when the table is edited. */
+export function splitQuotedTableSource(source: string): { tableSource: string; quotePrefix: string } {
+  const lines = source.split("\n");
+  const quoteMarker = lines[0]?.match(/^((?:[ \t]{0,3}>[ ]?)+)/)?.[1] ?? "";
+  const indentation = quoteMarker ? lines[0].slice(quoteMarker.length).match(/^[ \t]*/)?.[0] ?? "" : "";
+  const quotePrefix = quoteMarker + indentation;
+  if (!quotePrefix) return { tableSource: source, quotePrefix: "" };
+  return {
+    tableSource: lines.map(line => line.replace(/^((?:[ \t]{0,3}>[ \t]?)+)/, "")).join("\n"),
+    quotePrefix,
+  };
+}
+
+export function serializeQuotedTable(table: MarkdownTable, quotePrefix: string): string {
+  const source = serializeMarkdownTable(table);
+  return quotePrefix ? source.split("\n").map(line => quotePrefix + line).join("\n") : source;
+}
+
+/** Match the editor's four-space / 32px indentation, preserving literal tabs. */
+export function quotedTableIndentWidth(quotePrefix: string): number {
+  let whitespace = quotePrefix.slice(quotePrefix.lastIndexOf(">") + 1);
+  if (whitespace.startsWith(" ")) whitespace = whitespace.slice(1);
+  let columns = 0;
+  for (const char of whitespace) columns = char === "\t" ? columns + 4 - columns % 4 : columns + 1;
+  return Math.min(columns, 24) * 8;
+}
+
+/** Indent each source line after its quote markers, without rewriting table cells. */
+export function indentQuotedTableSource(source: string, decrease: boolean): string {
+  return source.split("\n").map(line => {
+    const { quotePrefix } = splitQuotedTableSource(line);
+    if (!quotePrefix) return line;
+    const marker = quotePrefix.match(/^([\s\S]*>)( ?)([ \t]*)$/);
+    if (!marker) return line;
+    const indentation = decrease ? marker[3].replace(/(?: {1,4}|\t)$/, "") : `${marker[3]}    `;
+    return marker[1] + marker[2] + indentation + line.slice(quotePrefix.length);
+  }).join("\n");
+}
+
+/** Normalize quoted table indentation only in the temporary Word-preview input. */
+export function normalizeQuotedTablesForPreview(markdown: string): string {
+  const lines = markdown.split("\n");
+  const output: string[] = [];
+  let fence: { marker: string; length: number } | undefined;
+  const quotedLine = (line: string) => {
+    const { tableSource, quotePrefix } = splitQuotedTableSource(line);
+    return quotePrefix ? { prefix: quotePrefix.trimEnd(), content: tableSource.trimStart() } : undefined;
+  };
+  const sameDepth = (a: string, b: string) => (a.match(/>/g)?.length ?? 0) === (b.match(/>/g)?.length ?? 0);
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const quote = quotedLine(line);
+    const content = (quote?.content ?? line).trimStart();
+    const fenceMatch = content.match(/^(`{3,}|~{3,})/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence.marker && fenceMatch[1].length >= fence.length && !content.slice(fenceMatch[1].length).trim()) fence = undefined;
+      output.push(line);
+      continue;
+    }
+    if (fenceMatch) {
+      fence = { marker: fenceMatch[1][0], length: fenceMatch[1].length };
+      output.push(line);
+      continue;
+    }
+    const separator = index + 1 < lines.length ? quotedLine(lines[index + 1]) : undefined;
+    if (quote && separator && sameDepth(quote.prefix, separator.prefix)
+      && quote.content.includes("|") && separator.content.includes("|")
+      && parseMarkdownTable(`${quote.content}\n${separator.content}`)) {
+      const previous = output.length ? quotedLine(output[output.length - 1]) : undefined;
+      if (previous && sameDepth(previous.prefix, quote.prefix) && previous.content.trim()) output.push(quote.prefix);
+      output.push(`${quote.prefix} ${quote.content}`, `${quote.prefix} ${separator.content}`);
+      index++;
+      while (index + 1 < lines.length) {
+        const row = quotedLine(lines[index + 1]);
+        if (!row || !sameDepth(row.prefix, quote.prefix) || !row.content.includes("|")) break;
+        output.push(`${quote.prefix} ${row.content}`);
+        index++;
+      }
+      continue;
+    }
+    output.push(line);
+  }
+  return output.join("\n");
+}
+
 export type TableOperation =
   | { type: "insert-column"; index: number; side: "left" | "right" }
   | { type: "delete-column"; index: number }

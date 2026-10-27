@@ -41,15 +41,16 @@ const sequence = `sequenceDiagram
 
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:1420';
 const shared = Buffer.from(await readFile('src/lib/mermaid-config.js')).toString('base64');
+const markdownRenderer = Buffer.from(await readFile('src-tauri/resources/mermaid/markdown-labels.js')).toString('base64');
 // Exercise the actual Rust export page, including Office text normalization.
 const rust = await readFile('src-tauri/src/core/mermaid.rs', 'utf8');
 const template = rust.match(/r#"(<!doctype html>[\s\S]*?)"#/)[1];
 function exportPage(source, theme, svg) {
   const values = { source_json: JSON.stringify(source), script_url: `${base}/src-tauri/resources/mermaid/mermaid.min.js`,
-    renderer_config: shared, themes_json: JSON.stringify({ light: theme, dark: theme, diagrams: {} }),
+    renderer_config: shared, markdown_renderer: markdownRenderer, themes_json: JSON.stringify({ light: theme, dark: theme, diagrams: {} }),
     html_labels: String(!svg), node_spacing: '50', rank_spacing: '60' };
   return template.replaceAll('{{', '{').replaceAll('}}', '}')
-    .replace(/\{(source_json|script_url|renderer_config|themes_json|html_labels|node_spacing|rank_spacing)\}/g, (_, name) => values[name]);
+    .replace(/\{(source_json|script_url|renderer_config|markdown_renderer|themes_json|html_labels|node_spacing|rank_spacing)\}/g, (_, name) => values[name]);
 }
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {

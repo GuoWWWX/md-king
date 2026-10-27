@@ -47,9 +47,11 @@ import {
   applyTableOperation,
   clearTableSelection,
   pasteTableTsv,
+  quotedTableIndentWidth,
   reorderTableColumn,
   reorderTableRow,
   serializeMarkdownTable,
+  serializeQuotedTable,
   tableOperationFocus,
   tableCellPointerSelection,
   tableSelectionBounds,
@@ -1030,6 +1032,8 @@ export class TableWidget extends WidgetType {
     private readonly selectedFromToolbar: boolean,
     private readonly editable: boolean,
     private readonly markdownSourcePath?: string,
+    private readonly quotePrefix = "",
+    private readonly quoteClasses = "",
   ) {
     super();
   }
@@ -1058,6 +1062,8 @@ export class TableWidget extends WidgetType {
       && other.widthMode === this.widthMode
       && other.selectedFromToolbar === this.selectedFromToolbar
       && other.markdownSourcePath === this.markdownSourcePath
+      && other.quotePrefix === this.quotePrefix
+      && other.quoteClasses === this.quoteClasses
       && other.editable === this.editable;
   }
 
@@ -1080,6 +1086,12 @@ export class TableWidget extends WidgetType {
     return content;
   }
 
+  private applyQuoteStyle(container: HTMLElement): void {
+    if (!this.quoteClasses) return;
+    container.classList.add(...this.quoteClasses.split(" "), "mk-cm-quote-table");
+    container.style.setProperty("--mk-quote-table-indent", `${quotedTableIndentWidth(this.quotePrefix)}px`);
+  }
+
   private applyDocumentSelectedRows(dom: HTMLElement): void {
     const selectedRows = new Set(this.documentSelectedRows);
     dom.querySelectorAll<HTMLElement>("th[data-table-row], td[data-table-row]").forEach((element) => {
@@ -1095,6 +1107,7 @@ export class TableWidget extends WidgetType {
     wrapper.tabIndex = 0;
     wrapper.classList.toggle("is-wrap", this.widthMode === "content");
     const container = measuredBlockWidget(wrapper, "table");
+    this.applyQuoteStyle(container);
 
     const tableScroll = document.createElement("div");
     tableScroll.className = "mk-cm-table-scroll";
@@ -1315,6 +1328,7 @@ export class TableWidget extends WidgetType {
     wrapper.dataset.tableFrom = String(this.tableFrom);
     wrapper.tabIndex = 0;
     const container = measuredBlockWidget(wrapper, "table");
+    this.applyQuoteStyle(container);
     wrapper.addEventListener("pointerdown", (event) => event.stopPropagation());
     const announceTableContext = () => {
       (view.dom.parentElement ?? view.dom).dispatchEvent(new CustomEvent(tableContextChangeEvent, {
@@ -1414,7 +1428,7 @@ export class TableWidget extends WidgetType {
         }
         return;
       }
-      const insert = serializeMarkdownTable(draft);
+      const insert = serializeQuotedTable(draft, this.quotePrefix);
       dirty = false;
       if (insert !== this.source) view.dispatch({ changes: { from: this.tableFrom, to: this.tableTo, insert } });
       else if (previous) {
@@ -1525,7 +1539,7 @@ export class TableWidget extends WidgetType {
 
     const dispatchOperation = (operation: TableOperation, focus: { row: number; column: number }) => {
       const next = applyTableOperation(draft, operation);
-      const insert = serializeMarkdownTable(next);
+      const insert = serializeQuotedTable(next, this.quotePrefix);
       view.dispatch({ changes: { from: this.tableFrom, to: this.tableTo, insert } });
       const nextFocus = tableOperationFocus(draft, operation, focus);
       focusCell(nextFocus.row, nextFocus.column);
@@ -1557,7 +1571,7 @@ export class TableWidget extends WidgetType {
     setControlLabel(toolbar, "aria-label", () => t("表格操作"));
 
     const showTableSource = () => {
-      const insert = serializeMarkdownTable(draft);
+      const insert = serializeQuotedTable(draft, this.quotePrefix);
       view.dispatch({
         changes: dirty && insert !== this.source
           ? { from: this.tableFrom, to: this.tableTo, insert }
@@ -1771,7 +1785,7 @@ export class TableWidget extends WidgetType {
       : tableSelectionToTsv(draft, selected());
     const removeWholeTable = () => {
       view.dispatch({
-        changes: { from: this.tableFrom, to: this.tableTo, insert: "" },
+        changes: { from: this.tableFrom, to: this.tableTo, insert: this.quotePrefix.trimEnd() },
         selection: { anchor: this.tableFrom },
         scrollIntoView: true,
       });
@@ -1782,7 +1796,7 @@ export class TableWidget extends WidgetType {
       dirty = false;
       if (nextSelection) selection = nextSelection;
       view.dispatch({
-        changes: { from: this.tableFrom, to: this.tableTo, insert: serializeMarkdownTable(next) },
+        changes: { from: this.tableFrom, to: this.tableTo, insert: serializeQuotedTable(next, this.quotePrefix) },
       });
       const origin = nextSelection ? tableSelectionBounds(next, nextSelection) : null;
       if (origin) focusCell(origin.top, origin.left);

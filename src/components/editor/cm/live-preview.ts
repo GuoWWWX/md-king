@@ -25,7 +25,7 @@ import {
   splitMarkdownQuotePrefix,
 } from "./source-indent";
 import { selectedMarkdownTableRows, selectionIntersectsRange, selectionOnLineNumber, selectionOnLines, selectionTouchesOnSameLine, cursorOnLines } from "./selection-utils";
-import { parseMarkdownTable } from "./markdown-table";
+import { indentQuotedTableSource, parseMarkdownTable, splitQuotedTableSource } from "./markdown-table";
 import { formattingBlocks } from "../../../lib/markdown-formatting.ts";
 import { markdownLinkTarget } from "./markdown-link-target.ts";
 import { editorImageContext } from "./editor-images";
@@ -1410,6 +1410,42 @@ export function markdownImageBlockExtension(markdownSourcePath?: string, editabl
   return field;
 }
 
+/** Find regular tables and indented quoted tables that Lezer keeps in a paragraph. */
+function markdownTableRanges(state: EditorState, tree = syntaxTree(state)): Array<{ from: number; to: number; quote: SyntaxNode | null }> {
+  const ranges: Array<{ from: number; to: number; quote: SyntaxNode | null }> = [];
+  tree.iterate({
+    enter(ref) {
+      if (ref.name !== "Table" && ref.name !== "Paragraph") return undefined;
+      let quote = ref.node.parent;
+      while (quote && quote.name !== "Blockquote") quote = quote.parent;
+      if (ref.name === "Table") {
+        ranges.push({ from: ref.from, to: ref.to, quote });
+        return false;
+      }
+      if (!quote) return false;
+      const first = state.doc.lineAt(ref.from).number;
+      const last = state.doc.lineAt(Math.max(ref.from, ref.to - 1)).number;
+      for (let number = first; number < last; number++) {
+        const header = state.doc.line(number);
+        const separator = state.doc.line(number + 1);
+        if (!header.text.includes("|") || !separator.text.includes("|")) continue;
+        const { tableSource, quotePrefix } = splitQuotedTableSource(`${header.text}\n${separator.text}`);
+        if (!quotePrefix || !/^\s*>/.test(separator.text) || !parseMarkdownTable(tableSource)) continue;
+        let end = number + 1;
+        while (end < last) {
+          const next = state.doc.line(end + 1);
+          if (!/^\s*>/.test(next.text) || !next.text.includes("|")) break;
+          end++;
+        }
+        ranges.push({ from: header.from, to: state.doc.line(end).to, quote });
+        number = end;
+      }
+      return false;
+    },
+  });
+  return ranges.sort((left, right) => left.from - right.from);
+}
+
 function buildTableBlocks(
   state: EditorState,
   sourceTableFrom: number | null,
@@ -1422,42 +1458,52 @@ function buildTableBlocks(
   const builder = new RangeSetBuilder<Decoration>();
   const signatureBlocks = formattingBlocks(state.doc.toString()).filter(block => block.attrs.signature);
 
-  tree.iterate({
-    enter: (ref) => {
-      if (ref.name !== "Table") return undefined;
+  for (const range of markdownTableRanges(state, tree)) {
+    const { first, last } = markdownTableBlockLines(state, range.from, range.to);
+    if (signatureBlocks.some(block => first.number > block.firstLine && first.number < block.lastLine)) continue;
 
-      if (signatureBlocks.some(block => state.doc.lineAt(ref.from).number > block.firstLine && state.doc.lineAt(ref.from).number < block.lastLine)) return false;
+    // 只有 Widget 内的专用按钮能进入源码态；普通 selection 变化不再拆掉整张表。
+    if (sourceTableFrom !== null && sourceTableFrom >= first.from && sourceTableFrom <= last.to) continue;
 
-      const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
+    const source = state.doc.sliceString(first.from, last.to);
+    const { tableSource, quotePrefix } = splitQuotedTableSource(source);
+    const table = parseMarkdownTable(tableSource);
+    if (!table) continue;
 
-      // 只有 Widget 内的专用按钮能进入源码态；普通 selection 变化不再拆掉整张表。
-      if (sourceTableFrom !== null && sourceTableFrom >= first.from && sourceTableFrom <= last.to) return false;
+    let quoteClasses = "";
+    if (quotePrefix) {
+      const block = range.quote;
+      const quoteFirst = state.doc.lineAt(block?.from ?? first.from);
+      const quoteLast = state.doc.lineAt(Math.max(quoteFirst.from, Math.min(state.doc.length, (block?.to ?? last.to) - 1)));
+      const prefix = quoteFirst.text.match(/^\s*>[ \t]?/)?.[0] ?? "";
+      const callout = parseMarkdownCalloutHeader(quoteFirst.text.slice(prefix.length));
+      if (callout?.fold && isCalloutCollapsed(state, quoteFirst.from, callout.fold)) continue;
+      quoteClasses = callout
+        ? `mk-cm-quote-line mk-cm-callout-line mk-cm-callout-line--${callout.tone}${last.number === quoteLast.number ? " mk-cm-callout-last" : ""}`
+        : "mk-cm-quote-line";
+    }
 
-      const source = state.doc.sliceString(first.from, last.to);
-      const table = parseMarkdownTable(source);
-      if (!table) return false;
-
-      builder.add(
-        first.from,
-        last.to,
-        Decoration.replace({
-          widget: new TableWidget(
-            table,
-            source,
-            first.from,
-            last.to,
-            tableWidthModeFor(displaySettings, first.from),
-            documentSelectedTableRows.get(first.from) ?? [],
-            editable && selectedFromToolbarTableFrom === first.from,
-            editable,
-            state.facet(editorImageContext).sourcePath,
-          ),
-          block: true,
-        }),
-      );
-      return false;
-    },
-  });
+    builder.add(
+      first.from,
+      last.to,
+      Decoration.replace({
+        widget: new TableWidget(
+          table,
+          source,
+          first.from,
+          last.to,
+          tableWidthModeFor(displaySettings, first.from),
+          documentSelectedTableRows.get(first.from) ?? [],
+          editable && selectedFromToolbarTableFrom === first.from,
+          editable,
+          state.facet(editorImageContext).sourcePath,
+          quotePrefix,
+          quoteClasses,
+        ),
+        block: true,
+      }),
+    );
+  }
 
   return builder.finish();
 }
@@ -1466,15 +1512,11 @@ function documentSelectedTableRows(state: EditorState): ReadonlyMap<number, read
   const selected = new Map<number, readonly number[]>();
   if (state.selection.ranges.every((range) => range.empty)) return selected;
 
-  syntaxTree(state).iterate({
-    enter: (ref) => {
-      if (ref.name !== "Table") return undefined;
-      const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
-      const rows = selectedMarkdownTableRows(state, first.from, last.to);
-      if (rows.length > 0) selected.set(first.from, rows);
-      return false;
-    },
-  });
+  for (const range of markdownTableRanges(state)) {
+    const { first, last } = markdownTableBlockLines(state, range.from, range.to);
+    const rows = selectedMarkdownTableRows(state, first.from, last.to);
+    if (rows.length > 0) selected.set(first.from, rows);
+  }
 
   return selected;
 }
@@ -1502,22 +1544,17 @@ interface TableBlockState {
 }
 
 function selectionInsideSourceTable(state: EditorState, sourceTableFrom: number): boolean {
-  let inside = false;
-  syntaxTree(state).iterate({
-    enter: (ref) => {
-      if (ref.name !== "Table") return undefined;
-      const { first, last } = markdownTableBlockLines(state, ref.from, ref.to);
-      if (sourceTableFrom < first.from || sourceTableFrom > last.to) return false;
-      const selection = state.selection.main;
-      // 表格源码整体被选中时必须继续保留源码态；但折叠光标恰好落在
-      // 表格末尾已经属于下一处插入点，不能让粘贴后的表格永久停在源码态。
-      inside = selection.empty
-        ? selection.head >= first.from && selection.head <= last.to
-        : selection.from <= last.to && selection.to > first.from;
-      return false;
-    },
-  });
-  return inside;
+  for (const range of markdownTableRanges(state)) {
+    const { first, last } = markdownTableBlockLines(state, range.from, range.to);
+    if (sourceTableFrom < first.from || sourceTableFrom > last.to) continue;
+    const selection = state.selection.main;
+    // 表格源码整体被选中时必须继续保留源码态；但折叠光标恰好落在
+    // 表格末尾已经属于下一处插入点，不能让粘贴后的表格永久停在源码态。
+    return selection.empty
+      ? selection.head >= first.from && selection.head <= last.to
+      : selection.from <= last.to && selection.to > first.from;
+  }
+  return false;
 }
 
 /** GFM 表格的块级装饰，和 Mermaid 一样用 StateField 而不是 ViewPlugin。 */
@@ -1540,6 +1577,7 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
   update: (value, tr) => {
     const parserTree = syntaxTree(tr.state);
     const parserChanged = parserTree !== value.parserTree;
+    const calloutFoldChanged = tr.effects.some(effect => effect.is(setCalloutCollapsedEffect) || effect.is(resetCalloutCollapsedEffect));
     const readOnly = tr.state.readOnly;
     let sourceTableFrom = value.sourceTableFrom;
     let displaySettings = tr.docChanged
@@ -1575,6 +1613,7 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
       && sourceTableFrom === value.sourceTableFrom
       && displaySettings === value.displaySettings
       && !parserChanged
+      && !calloutFoldChanged
       && !selectionChanged
       && selectedFromToolbarTableFrom === value.selectedFromToolbarTableFrom
       && tr.state.facet(editorImageContext) === tr.startState.facet(editorImageContext)
@@ -1591,6 +1630,25 @@ export const tableBlockExtension = StateField.define<TableBlockState>({
   },
   provide: (self) => EditorView.decorations.from(self, (value) => value.decorations),
 });
+
+/** Tab in a quoted table's source moves the table inside the quote, not its > markers. */
+export function adjustQuotedTableSourceIndent(view: EditorView, decrease: boolean): boolean {
+  if (view.state.readOnly) return false;
+  const sourceFrom = view.state.field(tableBlockExtension, false)?.sourceTableFrom;
+  if (sourceFrom == null) return false;
+  const range = markdownTableRanges(view.state).find(item => {
+    const { first, last } = markdownTableBlockLines(view.state, item.from, item.to);
+    return sourceFrom >= first.from && sourceFrom <= last.to;
+  });
+  if (!range?.quote) return false;
+  const { first, last } = markdownTableBlockLines(view.state, range.from, range.to);
+  const selection = view.state.selection.main;
+  if (selection.from < first.from || selection.to > last.to) return false;
+  const source = view.state.doc.sliceString(first.from, last.to);
+  const indented = indentQuotedTableSource(source, decrease);
+  if (source !== indented) view.dispatch({ changes: { from: first.from, to: last.to, insert: indented } });
+  return true;
+}
 
 /**
  * CodeMirror 会在空闲时间逐步扩展语法树。表格是 StateField，不能像内联预览那样

@@ -7,13 +7,18 @@ import { GFM } from "@lezer/markdown";
 import {
   applyTableOperation,
   clearTableSelection,
+  indentQuotedTableSource,
+  normalizeQuotedTablesForPreview,
   parseMarkdownTable,
   parseMarkdownTableRow,
   parseTableTsv,
   pasteTableTsv,
+  quotedTableIndentWidth,
   reorderTableColumn,
   reorderTableRow,
   serializeMarkdownTable,
+  serializeQuotedTable,
+  splitQuotedTableSource,
   tableSelectionBounds,
   tableCellPointerSelection,
   tableSelectionCoversWholeTable,
@@ -21,6 +26,41 @@ import {
   tableOperationFocus,
   type MarkdownTable,
 } from "./markdown-table.ts";
+
+test("引用中的表格解析并写回时保留引用层级", () => {
+  for (const prefix of ["> ", ">   ", "> > "]) {
+    const source = ["| A | B |", "| :--- | ---: |", "| 1 | 2 |"].map(line => prefix + line).join("\n");
+    const split = splitQuotedTableSource(source);
+    const table = parseMarkdownTable(split.tableSource);
+    assert.ok(table);
+    assert.equal(split.quotePrefix, prefix);
+    assert.equal(serializeQuotedTable(table, split.quotePrefix), source);
+    assert.equal(serializeQuotedTable(applyTableOperation(table, { type: "insert-row", index: 1, side: "below" }), prefix).split("\n").every(line => line.startsWith(prefix)), true);
+  }
+  assert.deepEqual(splitQuotedTableSource("| A | B |\n| --- | --- |"), { tableSource: "| A | B |\n| --- | --- |", quotePrefix: "" });
+});
+
+test("引用表格的空格和 Tab 使用与正文一致的视觉缩进", () => {
+  assert.equal(quotedTableIndentWidth("> "), 0);
+  assert.equal(quotedTableIndentWidth(">     "), 32);
+  assert.equal(quotedTableIndentWidth("> \t"), 32);
+  assert.equal(quotedTableIndentWidth("> > \t "), 40);
+});
+
+test("Tab 在引用标记之后缩进表格，保留原始单元格内容", () => {
+  const source = '> | A  | B |\n> |---|---|\n> | 1 | 2 |';
+  const indented = indentQuotedTableSource(source, false);
+  assert.equal(indented, '>     | A  | B |\n>     |---|---|\n>     | 1 | 2 |');
+  assert.equal(indentQuotedTableSource(indented, true), source);
+  assert.equal(indentQuotedTableSource('> \t| A | B |', true), '> | A | B |');
+});
+
+test("Word 预览保留引用内缩进表格，并跳过代码围栏", () => {
+  const source = '> [!TIP] 标题\n>     | A | B |\n>     | --- | --- |\n>     | 1 | 2 |\n\n> ```text\n>     | A | B |\n>     | --- | --- |\n> ```';
+  const normalized = normalizeQuotedTablesForPreview(source);
+  assert.ok(normalized.includes('> [!TIP] 标题\n>\n> | A | B |\n> | --- | --- |\n> | 1 | 2 |'));
+  assert.ok(normalized.includes('> ```text\n>     | A | B |\n>     | --- | --- |\n> ```'));
+});
 
 test("解析转义管道、代码 span、空单元格和可选首尾管道", () => {
   assert.deepEqual(parseMarkdownTableRow(" | a\\|b | `x\\|y` |  |"), ["a|b", "`x|y`", ""]);

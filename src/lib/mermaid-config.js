@@ -13,6 +13,19 @@ const MERMAID_THEME_CSS = `
   text-align: center;
 }
 .nodeLabel p { margin: 0; }
+.nodeLabel ul, .nodeLabel ol, .edgeLabel ul, .edgeLabel ol {
+  margin: 0;
+  padding-left: 1.5em;
+  text-align: left;
+}
+.nodeLabel ul, .edgeLabel ul { list-style: disc outside; }
+.nodeLabel ol, .edgeLabel ol { list-style: decimal outside; }
+.nodeLabel code, .edgeLabel code { font-family: Consolas, monospace; }
+[data-mk-markdown-label] p { margin: 0; }
+[data-mk-markdown-label] ul, [data-mk-markdown-label] ol { margin: 0; padding-left: 1.5em; text-align: left; }
+[data-mk-markdown-label] ul { list-style: disc outside; }
+[data-mk-markdown-label] ol { list-style: decimal outside; }
+[data-mk-markdown-label] code { font-family: Consolas, monospace; }
 .cluster-label { padding-bottom: 8px; }
 .cluster-label .nodeLabel { max-width: 480px; font-weight: 600; line-height: 1.35; }
 /* 类图方法与属性列表：单行完整舒展展现，不限宽度、不折行，左对齐展示代码签名 */
@@ -224,20 +237,25 @@ function styleMermaidEdgeLabels(root, dark) {
     const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
     const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#222222" : "#f5f5f5";
     const background = `rgb(${rgb.map((channel) => Math.round(channel)).join(", ")})`;
+    // A multiline list needs a solid backing: text shadows alone cannot hide
+    // a connector passing through the whitespace between list items.
+    if (label.querySelector("[data-mk-markdown-label] ul, [data-mk-markdown-label] ol")) {
+      label.querySelector("foreignObject > div")?.style.setProperty("background-color", background, "important");
+    }
     // 内联到文字本身，SVG 单独展示和 PNG 栅格化时也能保留，不依赖页面 CSS。
-    for (const element of [label, ...label.querySelectorAll("div,span,p,text,tspan")]) {
+    for (const element of [label, ...label.querySelectorAll("div,span,p,strong,em,code,li,math,text,tspan")]) {
       element.style.setProperty("color", color, "important");
       if (element.matches("text,tspan")) {
         element.style.setProperty("fill", color, "important");
         element.style.setProperty("stroke", background, "important");
         element.style.setProperty("stroke-width", "3px", "important");
         element.style.setProperty("paint-order", "stroke", "important");
-      } else if (element.matches("div,span,p")) {
+      } else if (element.matches("div,span,p,strong,em,code,li,math")) {
         element.style.setProperty("white-space", "normal", "important");
         element.style.setProperty("overflow-wrap", "anywhere", "important");
         element.style.setProperty("word-break", "break-word", "important");
         element.style.setProperty("line-height", "1.35", "important");
-        element.style.setProperty("text-align", "center", "important");
+        if (element.matches("div,span,p")) element.style.setProperty("text-align", "center", "important");
         // foreignObject 文本没有 SVG stroke，用同色文字描边擦掉连线。
         element.style.setProperty("text-shadow", `1.5px 0 ${background}, -1.5px 0 ${background}, 0 1.5px ${background}, 0 -1.5px ${background}`, "important");
       }

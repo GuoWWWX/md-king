@@ -9,7 +9,7 @@ import "katex/dist/katex.min.css";
 import { AppSurface } from "@/components/ui/app-surface";
 import { MarkdownCalloutIcon } from "@/components/markdown-callout-icon";
 import { codeBlockIndentPtFromInfo } from "@/components/editor/cm/code-block-indent";
-import { parseMarkdownTable, type TableAlignment } from "@/components/editor/cm/markdown-table";
+import { normalizeQuotedTablesForPreview, parseMarkdownTable, splitQuotedTableSource, type TableAlignment } from "@/components/editor/cm/markdown-table";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { MediaPreviewDialog } from "@/components/media/image-viewer";
 import { createDefaultStyleDraft, defaultMarkdownFeatures, defaultMarkdownRules, listMarkerOptions } from "@/lib/style-manager-data";
@@ -78,7 +78,8 @@ type PreviewBlock =
   | { type: "heading"; level: HeadingLevel; text: string; align?: TextAttributes["align"]; number?: string; anchorId?: string; isDocumentTitle?: boolean; unnumbered?: boolean }
   | { type: "toc"; entries: Array<{ level: HeadingLevel; text: string; number?: string; anchorId?: string; page?: number }> }
   | { type: "paragraph"; segments: PreviewTextSegment[]; align?: "left" | "center" | "right"; metadata?: "author" | "date"; continuedFromPrevious?: boolean; continuesNext?: boolean }
-  | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
+  | { type: "quote"; segments: PreviewTextSegment[]; callout?: { type: string; tone: MarkdownCalloutTone; title: string }; continuesNext?: boolean }
+  | { type: "quote-content"; content: PreviewBlock; callout?: { type: string; tone: MarkdownCalloutTone; title: string } }
   | { type: "code"; text: string; language?: string; indentPt: number; caption?: string; continuedFromPrevious?: boolean; continuesNext?: boolean }
   | { type: "math"; text: string }
   | { type: "hr"; text?: string }
@@ -1272,9 +1273,22 @@ function collectListItems(tokens: ReturnType<typeof markdownParser.parse>, index
   return { items, nextIndex: index };
 }
 
+function quotedPreviewTable(source: string): Extract<PreviewBlock, { type: "table" }> | undefined {
+  const table = parseMarkdownTable(splitQuotedTableSource(source).tableSource);
+  if (!table) return undefined;
+  const weights = table.columnWeights;
+  const total = weights?.reduce((sum, weight) => sum + weight, 0) ?? 0;
+  const distinct = weights && weights.length > 0 && !weights.every(weight => weight === weights[0]);
+  const [header, ...rows] = table.rows.map(row => row.map((cell, index) => ({
+    segments: inlineSegmentsFromMarkdown(cell),
+    alignment: paragraphFormatting(cell)?.align ?? table.alignments[index] ?? "none",
+  })));
+  return { type: "table", header, rows, columnWidthPercentages: distinct && total > 0 ? weights.map(weight => weight / total * 100) : undefined };
+}
+
 function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metadata?: MarkdownFrontmatter } {
   const frontmatter = splitYamlFrontmatter(stripReferenceMetadata(markdown));
-  const extractedCaptions = extractExplicitImageCaptions(frontmatter.markdown);
+  const extractedCaptions = extractExplicitImageCaptions(normalizeQuotedTablesForPreview(frontmatter.markdown));
   const previewMarkdown = separateMarkdownCallouts(normalizeAdjacentBoldTableCaptions(extractedCaptions.markdown));
   const tokens = markdownParser.parse(previewMarkdown, {});
   const markdownLines = previewMarkdown.replace(/\r\n?/g, "\n").split("\n");
@@ -1376,17 +1390,51 @@ function parseMarkdownPreview(markdown: string): { blocks: PreviewBlock[]; metad
     }
 
     if (token.type === "blockquote_open") {
-      const parts: PreviewTextSegment[][] = [];
+      const parts: Array<{ text: PreviewTextSegment[][] } | { content: PreviewBlock }> = [];
+      let text: PreviewTextSegment[][] = [];
+      const flushText = () => { if (text.length) parts.push({ text }); text = []; };
+      let depth = 1;
       index += 1;
-      while (index < tokens.length && tokens[index].type !== "blockquote_close") {
-        if (tokens[index].type === "inline") {
-          parts.push(inlineSegmentsFromToken(tokens[index]));
-        } else if (tokens[index].type === "fence" || tokens[index].type === "code_block") {
-          parts.push(textSegments(tokens[index].content));
+      while (index < tokens.length && depth > 0) {
+        const child = tokens[index];
+        if (child.type === "blockquote_open") { depth++; index++; continue; }
+        if (child.type === "blockquote_close") { depth--; if (depth === 0) break; index++; continue; }
+        if (child.type === "table_open" && child.map) {
+          const table = quotedPreviewTable(markdownLines.slice(child.map[0], child.map[1]).join("\n"));
+          if (table) {
+            flushText();
+            parts.push({ content: table });
+            while (index < tokens.length && tokens[index].type !== "table_close") index++;
+            index++;
+            continue;
+          }
         }
-        index += 1;
+        if (child.type === "fence" || child.type === "code_block") {
+          flushText();
+          const language = child.type === "fence" ? normalizeCodeLanguage(child.info) : undefined;
+          const indentPt = child.type === "fence" ? codeBlockIndentPtFromInfo(child.info) : 0;
+          parts.push({ content: language && mathFenceLanguages.has(language)
+            ? { type: "math", text: child.content.trim() }
+            : { type: "code", text: child.content.trimEnd(), language, indentPt } });
+        } else if (child.type === "inline") text.push(inlineSegmentsFromToken(child));
+        index++;
       }
-      blocks.push(calloutQuote(parts) ?? { type: "quote", segments: joinTextSegmentGroups(parts, "\n") });
+      flushText();
+      if (!parts.some(part => "content" in part)) {
+        const groups = parts.flatMap(part => "text" in part ? part.text : []);
+        blocks.push(calloutQuote(groups) ?? { type: "quote", segments: joinTextSegmentGroups(groups, "\n") });
+        continue;
+      }
+      const firstText = parts[0] && "text" in parts[0] ? parts.shift() : undefined;
+      const introGroups = firstText && "text" in firstText ? firstText.text : [];
+      const intro: Extract<PreviewBlock, { type: "quote" }> = calloutQuote(introGroups) ?? { type: "quote", segments: joinTextSegmentGroups(introGroups, "\n") };
+      if (intro.callout || intro.segments.length) blocks.push({ ...intro, continuesNext: parts.length > 0 });
+      for (const part of parts) {
+        const content: PreviewBlock = "text" in part
+          ? { type: "paragraph", segments: joinTextSegmentGroups(part.text, "\n") }
+          : part.content;
+        blocks.push({ type: "quote-content", content, callout: intro.callout });
+      }
       continue;
     }
 
@@ -1595,6 +1643,9 @@ function renderInlineText(segments: PreviewTextSegment[], inlineCodeDraft: Style
 }
 
 function resolveTableBlockColumnWidths(block: PreviewBlock, tableDraft: StyleDraft, contentWidth: number): PreviewBlock {
+  if (block.type === "quote-content") {
+    return { ...block, content: resolveTableBlockColumnWidths(block.content, tableDraft, Math.max(1, contentWidth - 24)) };
+  }
   if (block.type !== "table" || block.columnWidthPercentages) return block;
   const contentWidths = estimateTableColumnWidths(block, tableDraft, contentWidth);
   const outerWidths = contentWidths.map((width) => width + Math.max(0, tableDraft.cellPaddingX) * 2);
@@ -1645,7 +1696,8 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
       after: block.continuesNext ? 0 : ptToPx(draft.afterSpacing),
     };
   }
-  if (block.type === "quote") return { before: ptToPx(drafts.quote.beforeSpacing), after: ptToPx(drafts.quote.afterSpacing) };
+  if (block.type === "quote") return { before: ptToPx(drafts.quote.beforeSpacing), after: block.continuesNext ? 0 : ptToPx(drafts.quote.afterSpacing) };
+  if (block.type === "quote-content") return { before: 0, after: 0 };
   if (block.type === "code") return {
     before: block.continuedFromPrevious ? 0 : ptToPx(drafts.code.beforeSpacing),
     after: block.continuesNext ? 0 : ptToPx(drafts.code.afterSpacing),
@@ -1668,7 +1720,12 @@ function estimateBlockVerticalMargins(block: PreviewBlock, drafts: Record<string
   return { before: 0, after: 0 };
 }
 
-function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>) {
+function quoteContentSafety(content: PreviewBlock): number {
+  return (content.type === "table" && content.rows.length > 8)
+    || (content.type === "code" && !isMermaidLanguage(content.language) && content.text.split("\n").length > 8) ? 48 : 0;
+}
+
+function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDraft>, tableDraft: StyleDraft, contentWidth: number, mermaidSizes?: Readonly<Record<string, PreviewMermaidSize>>, pageContentHeight?: number, imageSizes?: Readonly<Record<string, PreviewImageSize>>): number {
   if (block.type === "signature") {
     const draft = drafts.signature ?? createDefaultStyleDraft("signature");
     return ptToPx(draft.beforeSpacing + draft.afterSpacing + signatureRows(block.source).length * (draft.fontSize * 2 + draft.signatureRowSpacing));
@@ -1691,7 +1748,14 @@ function estimateBlockHeight(block: PreviewBlock, drafts: Record<string, StyleDr
   }
 
   if (block.type === "quote") {
-    return ptToPx(drafts.quote.beforeSpacing + drafts.quote.afterSpacing) + 16 + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth - 24, drafts.quote)) * resolveLineHeightPx(drafts.quote);
+    return ptToPx(drafts.quote.beforeSpacing + (block.continuesNext ? 0 : drafts.quote.afterSpacing)) + 16 + estimateTextLines(plainText(block.segments), estimateCharsPerLine(contentWidth - 24, drafts.quote)) * resolveLineHeightPx(drafts.quote);
+  }
+
+  if (block.type === "quote-content") {
+    if (block.content.type === "paragraph") {
+      return 8 + estimateTextLines(plainText(block.content.segments), estimateCharsPerLine(contentWidth - 24, drafts.quote)) * resolveLineHeightPx(drafts.quote);
+    }
+    return 8 + quoteContentSafety(block.content) + estimateBlockHeight(block.content, drafts, tableDraft, Math.max(1, contentWidth - 24), mermaidSizes, pageContentHeight === undefined ? undefined : Math.max(1, pageContentHeight - 8), imageSizes);
   }
 
   if (block.type === "code") {
@@ -1796,6 +1860,8 @@ function splitLargeBlocks(blocks: PreviewBlock[], pageContentHeight: number, dra
       return splitTextByLength(plainText(block.segments), estimateCharsPerLine(contentWidth - 24, drafts.quote) * 20).map((text) => ({ ...block, segments: textSegments(text) }));
     }
 
+    if (block.type === "quote-content") return [block];
+
     if (block.type === "code") {
       // Mermaid 以及普通代码块都交给 paginateBlocks 按实际剩余高度拆分。
       // 这里按固定“字符数 x 24”预切会把最后一行提前切到下一页，
@@ -1857,6 +1923,10 @@ function paginateBlocks(blocks: PreviewBlock[], pageContentHeight: number, draft
   };
 
   const splitToFit = (block: PreviewBlock, availableHeight: number): PreviewBlockSplit<PreviewBlock> | undefined => {
+    if (block.type === "quote-content") {
+      const split = splitToFit(block.content, availableHeight - 8 - quoteContentSafety(block.content));
+      return split ? { head: { ...block, content: split.head }, tail: { ...block, content: split.tail } } : undefined;
+    }
     if (block.type === "list" && block.items.length > 1) {
       let splitIndex = 0;
       for (let index = 1; index < block.items.length; index += 1) {
@@ -1983,6 +2053,10 @@ function createFallbackBlocks(imageCaption: string, tableCaption: string): Previ
 
 function applyMarkdownFeatureSettings(blocks: PreviewBlock[], features: MarkdownFeatureSettings): PreviewBlock[] {
   return blocks.map((block) => {
+    if (block.type === "quote-content") {
+      const content = applyMarkdownFeatureSettings([block.content], features)[0];
+      return content && (features.quoteBlock ? { ...block, content } : content);
+    }
     if (block.type === "quote" && !features.quoteBlock) return { type: "paragraph", segments: block.segments };
     if (block.type === "code" && !features.codeBlock) return { type: "paragraph", segments: textSegments(block.text) };
     if (block.type === "hr" && !features.horizontalRule) return undefined;
@@ -2229,13 +2303,37 @@ function renderMarkdownBlocks({
       return;
     }
 
+    if (block.type === "quote-content") {
+      const content = block.content.type === "paragraph"
+        ? <div className="mk-word-callout-body">{renderInlineText(block.content.segments, inlineCodeDraft, inlineCodeEnabled, `q-inner-${index}`, selectedStyle, onOpenLink)}</div>
+        : renderMarkdownBlocks({
+          blocks: [block.content], drafts, selectedStyle, tableStyle, inlineCodeDraft, inlineCodeEnabled,
+          markdownSourcePath, onOpenLink, onMermaidSize, onImageSize, pageContentHeight: Math.max(1, pageContentHeight - 8), previewDark, renderAsThumbnail,
+        });
+      rendered.push(
+        <blockquote
+          key={index}
+          className={block.callout ? cn("mk-word-callout", `mk-word-callout--${block.callout.tone}`) : undefined}
+          style={{
+            ...textStyle(drafts.quote), fontStyle: "normal", textIndent: 0, marginTop: 0, marginBottom: 0,
+            padding: "4px 12px", border: 0,
+            ...(block.callout ? {} : {
+              borderLeft: `${Math.max(1, drafts.quote.quoteBorderWidth || 4)}px solid ${drafts.quote.quoteBorderColor || "#94A3B8"}`,
+              backgroundColor: drafts.quote.backgroundColor === "transparent" ? "#F8FAFC" : drafts.quote.backgroundColor,
+            }),
+          }}
+        >{content}</blockquote>,
+      );
+      return;
+    }
+
     if (block.type === "quote") {
       if (block.callout) {
         rendered.push(
           <blockquote
             key={index}
             className={cn("mk-word-callout", `mk-word-callout--${block.callout.tone}`, selectedRing(selectedStyle, "quote"))}
-            style={{ ...textStyle(drafts.quote), fontStyle: "normal", textIndent: 0, padding: "9px 12px", border: 0 }}
+            style={{ ...textStyle(drafts.quote), fontStyle: "normal", textIndent: 0, padding: "9px 12px", border: 0, ...(block.continuesNext ? { marginBottom: 0 } : {}) }}
           >
             <div className="mk-word-callout-title">
               <MarkdownCalloutIcon type={block.callout.type} tone={block.callout.tone} className="size-[1.05em] shrink-0" />
@@ -2261,6 +2359,7 @@ function renderMarkdownBlocks({
             borderLeft: `${Math.max(1, drafts.quote.quoteBorderWidth || 4)}px solid ${drafts.quote.quoteBorderColor || "#94A3B8"}`,
             backgroundColor: drafts.quote.backgroundColor === "transparent" ? "#F8FAFC" : drafts.quote.backgroundColor,
             padding: "8px 12px",
+            ...(block.continuesNext ? { marginBottom: 0 } : {}),
           }}
         >
           {renderInlineText(block.segments, inlineCodeDraft, inlineCodeEnabled, `q-${index}`, selectedStyle, onOpenLink)}

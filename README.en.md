@@ -131,6 +131,19 @@ The CLI supports conversion, diagnostics, and DOCX template import/replacement. 
 - Chinese and English interfaces with immediate switching and persistent selection.
 - Update notifications, download progress, cancellation, resuming, and retries.
 
+### Markdown inside Mermaid labels
+
+Text labels across Mermaid diagram types support bold, italic, inline code, math, and ordered or unordered lists, including flowchart nodes, edges, subgraph titles, and sequence messages. Follow each diagram's own label syntax and use `<br/>` for line breaks:
+
+````markdown
+```mermaid
+flowchart LR
+  A["**Check** *result* `status` $x^2$<br/>- First item<br/>- Second item"] -->|"**Pass**"| B["1. Save<br/>2. Finish"]
+```
+````
+
+For example, a sequence message can be written as ``A->>B: **Request** `id` $x^2$<br/>- First<br/>- Second``; quote quadrant point names containing formatting symbols. Math accepts `$...$` and Mermaid's native `$$...$$`, and Mermaid's quoted-backtick Markdown labels are also supported. An explicit `htmlLabels: false` retains Mermaid's native behavior, which may limit rich formatting. Word/WPS exports use PNG for these labels; the CLI falls back to PNG for such diagrams when SVG is requested.
+
 ## Automatic updates
 
 The app checks for updates three seconds after startup, when restored from the tray, when an existing instance is launched again, and every four hours while running. You can also check manually from the left activity bar or About.

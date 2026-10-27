@@ -1829,6 +1829,12 @@ select {
     padding: 4px 0;
   }
 
+  /* 与引用内代码卡片保持相同的左侧沟槽，避免覆盖可编辑的 >。 */
+  .mk-cm-block-widget-spacing--table.mk-cm-quote-table {
+    padding-left: calc(32px + var(--mk-quote-table-indent, 0px)) !important;
+    padding-right: 32px !important;
+  }
+
   .mk-cm-math-inline {
     display: inline-flex;
     align-items: center;
@@ -2677,6 +2683,19 @@ select {
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
+  }
+
+  /* 代码末行同时是引用末行时，保留外层的底边、圆角和留白。 */
+  .cm-line.mk-cm-callout-line.mk-cm-callout-last:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    border-radius: 0 0 5px 5px;
+    box-shadow:
+      inset 3px 0 0 var(--mk-callout-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--mk-callout-accent) 38%, transparent);
+  }
+
+  .cm-line.mk-cm-callout-line.mk-cm-callout-last:is(.mk-cm-code-last, .mk-cm-code-fence-last)::after {
+    bottom: 7px;
   }
 
   .cm-line.mk-cm-quote-code-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
@@ -4026,6 +4045,13 @@ select {
     box-shadow:
       inset 3px 0 0 var(--mk-callout-accent),
       inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;
+  }
+
+  .dark .cm-line.mk-cm-callout-line.mk-cm-callout-last:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {
+    box-shadow:
+      inset 3px 0 0 var(--mk-callout-accent),
+      inset -1px 0 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--mk-callout-accent) 48%, transparent) !important;
   }
 
   .dark .cm-line.mk-cm-quote-code-line:is(.mk-cm-code-line, .mk-cm-code-raw, .mk-cm-code-fence) {

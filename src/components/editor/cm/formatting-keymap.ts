@@ -2,6 +2,7 @@ import { indentLess, indentMore } from "@codemirror/commands";
 import { indentUnit, syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView, KeyBinding } from "@codemirror/view";
+import { adjustQuotedTableSourceIndent } from "./live-preview";
 import {
   codeBlockIndentPtFromInfo,
   normalizeCodeBlockIndentPt,
@@ -102,12 +103,14 @@ export const markdownIndentUnit = indentUnit.of("    ");
 /// 语言自身的自动缩进叠加——Enter 后 Java 已经缩进了四格，再补四格就成了八格。
 function insertIndent(view: EditorView): boolean {
   if (view.state.readOnly) return false;
+  if (adjustQuotedTableSourceIndent(view, false)) return true;
   if (adjustSelectedCodeBlockIndent(view, 24)) return true;
   return indentMore(view);
 }
 
 function removeIndent(view: EditorView): boolean {
   if (view.state.readOnly) return false;
+  if (adjustQuotedTableSourceIndent(view, true)) return true;
   if (adjustSelectedCodeBlockIndent(view, -24)) return true;
   return indentLess(view);
 }
