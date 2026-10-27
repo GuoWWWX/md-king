@@ -10,7 +10,7 @@
 
 1. 将修复合入 `develop`，通过 CI 后同步至 `main`。发版时两条远端分支指向同一提交。`develop` 保存该提交通过检查的前端产物；`main` 校验并复用这些产物，避免再次执行相同构建和测试。
 2. 同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的版本，并更新浏览器预览 / 更新状态的版本默认值。
-3. 等待 `main` CI 成功后推送 `vX.Y.Z` 标签。`main` 已构建并保存 EXE/MSI，Release 工作流优先取回同一提交的安装包，校验后继续生成差分、签名和发布。手动运行工作流时输入已存在的版本标签。
+3. 在 `.github/release-notes/vX.Y.Z.md` 编写中英文更新说明并提交，列出用户可感知的功能和修复；客户端更新弹窗会直接显示此内容。等待 `main` CI 成功后推送 `vX.Y.Z` 标签。`main` 已构建并保存 EXE/MSI，Release 工作流优先取回同一提交的安装包，校验后继续生成差分、签名和发布。手动运行工作流时输入已存在的版本标签。
 4. 确认 Release 包含 EXE、MSI、`update-manifest.json`、`update-manifest.sig`、`SHA256SUMS.txt`，并检查工作流成功状态。工作流还会尝试为上一稳定版本生成差分包；只有可精确还原且节省至少 10% 时才发布 `.patch`，否则保留完整包更新。
 
 EXE/MSI 安装包只上传到 GitHub Releases，不提交到 Git 源码仓库。构建缓存和发布输出位于已忽略的 `src-tauri/target/`。内置 Pandoc 的 `src-tauri/resources/pandoc/windows/pandoc.exe` 是构建所需资源，通过 Git LFS 管理，应继续保留。

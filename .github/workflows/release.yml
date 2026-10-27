@@ -55,6 +55,19 @@ jobs:
           if (!$env:UPDATE_SIGNING_PRIVATE_KEY) { throw "Missing UPDATE_SIGNING_PRIVATE_KEY repository secret" }
           "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Validate release notes
+        if: inputs.verify_only != true
+        shell: pwsh
+        run: |
+          $notes = ".github/release-notes/v${{ steps.version.outputs.version }}.md"
+          if (!(Test-Path -LiteralPath $notes)) { throw "Missing release notes: $notes" }
+          $content = Get-Content -LiteralPath $notes -Raw -Encoding utf8
+          $sections = $content -split '(?m)^## English\s*$'
+          if ($sections.Count -ne 2 -or $sections[0] -notmatch '(?m)^## 简体中文\s*$' -or
+              $sections[0] -notmatch '(?m)^- \S' -or $sections[1] -notmatch '(?m)^- \S') {
+            throw "Release notes must include Chinese and English change summaries"
+          }
+
       - name: Find validated installers for this exact commit
         id: reuse
         shell: pwsh
@@ -170,7 +183,7 @@ jobs:
             src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
             ${{ steps.delta.outputs.asset }}
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          body_path: .github/release-notes/v${{ steps.version.outputs.version }}.md
           draft: false
           prerelease: false
         env:
