@@ -20,7 +20,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.2.4",
+  version: "1.2.5",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",

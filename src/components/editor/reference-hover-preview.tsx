@@ -138,7 +138,7 @@ export function ReferenceHoverPreview({ load, onOpen, revision, isDark }: {
 
   if (!preview) return null;
   const value = preview.value;
-  const snippet = value ? stripReferenceMetadata(value.content.slice(value.range.from, value.range.to)).split("\n").slice(0, 30).join("\n") : "";
+  const snippet = value ? stripReferenceMetadata(value.content.slice(value.range.from, value.range.to)) : "";
   return createPortal(
     <div ref={popup} data-reference-preview role="dialog" aria-label={t("引用内容预览")} className="fixed z-[100] flex max-h-[350px] w-[460px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 text-xs dark:border-zinc-700">
