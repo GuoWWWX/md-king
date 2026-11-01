@@ -8,10 +8,12 @@ import { useVaultStore } from "./vault-store.ts";
 import { createDocumentSession, documentSessionStorageKey } from "../lib/document-session.ts";
 import {
   fetchLatestRelease,
+  getUpdateDownloadPlan,
   downloadUpdateInstaller,
   launchUpdateInstaller,
   cancelUpdateDownload,
   type DownloadProgressPayload,
+  type UpdateDownloadPlan,
 } from "../lib/tauri.ts";
 
 export type GitHubReleaseAsset = {
@@ -49,12 +51,16 @@ export interface UpdaterState {
   downloadVersion: string | null;
   errorMessage: string | null;
   downloadProgress: DownloadProgress;
+  downloadPlan: (UpdateDownloadPlan & { version: string }) | null;
+  downloadPlanChecking: boolean;
+  downloadPlanFailed: boolean;
   installerPath: string | null;
   dialogOpen: boolean;
   ignoredVersions: string[];
 
   setCurrentVersion: (version: string) => void;
   checkForUpdates: (options?: { silent?: boolean; currentVer?: string }) => Promise<boolean>;
+  prepareDownloadPlan: () => Promise<void>;
   startDownload: () => Promise<void>;
   cancelDownload: () => Promise<void>;
   installAndRelaunch: (silent?: boolean) => Promise<void>;
@@ -84,9 +90,11 @@ export function compareSemver(v1: string, v2: string): number {
 const DEFAULT_REPO = "GuoWWWX/md-king";
 let versionCheck: Promise<boolean> | null = null;
 let activeDownload: Promise<void> | null = null;
+let downloadPlanRequest = 0;
+let activePlan: { version: string; promise: Promise<void> } | null = null;
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
-  currentVersion: "1.2.3",
+  currentVersion: "1.2.4",
   latestRelease: null,
   hasUpdate: false,
   status: "idle",
@@ -99,6 +107,9 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     total: 0,
     speedBytesPerSec: 0,
   },
+  downloadPlan: null,
+  downloadPlanChecking: false,
+  downloadPlanFailed: false,
   installerPath: null,
   dialogOpen: false,
   ignoredVersions: [],
@@ -164,6 +175,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
             set({ dialogOpen: true });
             toast.success(t("最新可下载版本：{0}", [latestVer]));
           }
+          if (get().status === "available") void get().prepareDownloadPlan();
           return true;
         }
 
@@ -196,6 +208,38 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     }
   },
 
+  prepareDownloadPlan: async () => {
+    const release = get().latestRelease;
+    if (!release) return;
+    if (activePlan?.version === release.tag_name) return activePlan.promise;
+    const asset = release.assets.find((item) => item.name === `md-king_${release.tag_name.replace(/^v/, "")}_x64-setup.exe`);
+    const request = ++downloadPlanRequest;
+    set({ downloadPlan: null, downloadPlanChecking: true, downloadPlanFailed: false });
+    const task = (async () => {
+      try {
+        if (!asset) throw new Error("missing installer");
+        const plan = await getUpdateDownloadPlan(asset.browser_download_url, release.tag_name);
+        if (request === downloadPlanRequest && get().latestRelease?.tag_name === release.tag_name) {
+          const { downloadVersion, status } = get();
+          const superseded = downloadVersion && compareSemver(release.tag_name, downloadVersion) > 0
+            && !["downloading", "cancelling", "installing"].includes(status);
+          set({
+            downloadPlan: { ...plan, version: release.tag_name }, downloadPlanChecking: false,
+            ...(superseded ? { downloadVersion: null, downloadProgress: { percent: 0, transferred: 0, total: 0, speedBytesPerSec: 0 } } : {}),
+          });
+        }
+      } catch {
+        if (request === downloadPlanRequest && get().latestRelease?.tag_name === release.tag_name) {
+          set({ downloadPlanChecking: false, downloadPlanFailed: true });
+        }
+      }
+    })();
+    activePlan = { version: release.tag_name, promise: task };
+    try { await task; } finally {
+      if (activePlan?.promise === task) activePlan = null;
+    }
+  },
+
   startDownload: async () => {
     const { latestRelease, status, checking, downloadVersion } = get();
     if (!latestRelease || checking || ["checking", "cancelling", "installing"].includes(status)) return;
@@ -218,6 +262,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       return;
     }
 
+    const plan = get().downloadPlan?.version === latestRelease.tag_name ? get().downloadPlan : null;
     set({
       status: "downloading",
       errorMessage: null,
@@ -226,8 +271,9 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       downloadProgress: downloadVersion === latestRelease.tag_name ? { ...get().downloadProgress, speedBytesPerSec: 0, applyingDelta: false } : {
         percent: 0,
         transferred: 0,
-        total: setupAsset.size,
+        total: plan?.size ?? 0,
         speedBytesPerSec: 0,
+        isDelta: plan?.isDelta ?? false,
       },
     });
 
@@ -245,7 +291,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
             downloadProgress: {
               percent: Math.min(100, Math.max(0, payload.percent)),
               transferred: payload.transferred,
-              total: payload.total || setupAsset.size,
+              total: payload.total,
               speedBytesPerSec: payload.speed_bytes_per_sec,
               isDelta: payload.is_delta ?? false,
               applyingDelta: payload.applying_delta ?? false,
@@ -270,7 +316,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
           return;
         }
 
-        const downloadedTotal = get().downloadProgress.total || setupAsset.size;
+        const downloadedTotal = get().downloadProgress.total;
         set({
           status: "ready_to_install",
           installerPath,
@@ -310,10 +356,10 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     set({ status: "cancelling" });
     try {
       await cancelUpdateDownload();
-      toast.info(t("正在取消更新下载"));
+      toast.info(t("正在暂停更新下载"));
     } catch (error) {
       set({ status: "downloading" });
-      toast.error(t("取消下载失败: {0}", [String(error)]));
+      toast.error(t("暂停下载失败: {0}", [String(error)]));
     }
   },
 

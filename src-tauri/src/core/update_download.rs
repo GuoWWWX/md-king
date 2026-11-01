@@ -47,6 +47,50 @@ fn remove_partial(path: &Path) -> Result<(), String> {
     }
 }
 
+fn clear_cached_files(cache: &Path) -> Result<(), String> {
+    // Keep the manifest until the other files are gone so failed cleanup can be retried.
+    for name in ["update.patch", "installer.exe", "manifest.json"] {
+        remove_partial(&cache.join(name))?;
+    }
+    Ok(())
+}
+
+fn cache_manifest(cache: &Path) -> Option<UpdateManifest> {
+    fs::read(cache.join("manifest.json")).ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
+pub(crate) fn clear_completed_download(cache: &Path, base: &Path, current_version: &str) -> Result<bool, String> {
+    let Some(manifest) = cache_manifest(cache) else { return Ok(false) };
+    if manifest.asset.ends_with(".patch")
+        || manifest.version.trim_start_matches('v') != current_version.trim_start_matches('v')
+        || verify_installer(base, &manifest).is_err()
+    {
+        return Ok(false);
+    }
+    clear_cached_files(cache)?;
+    Ok(true)
+}
+
+fn version_parts(version: &str) -> Option<[u64; 3]> {
+    let mut parts = version.trim_start_matches('v').split('.');
+    let result = [parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?];
+    parts.next().is_none().then_some(result)
+}
+
+// The new target version must come from a verified manifest. Never remove the
+// installed version's cached installer: it may be the base for a delta update.
+pub(crate) fn clear_superseded_download(cache: &Path, current_version: &str, target_version: &str) -> Result<bool, String> {
+    let Some(manifest) = cache_manifest(cache) else { return Ok(false) };
+    let Some((current, pending, target)) = version_parts(current_version)
+        .zip(version_parts(&manifest.version))
+        .zip(version_parts(target_version))
+        .map(|((current, pending), target)| (current, pending, target)) else { return Ok(false) };
+    if !(current < pending && pending < target) { return Ok(false); }
+    clear_cached_files(cache)?;
+    Ok(true)
+}
+
 pub fn download_installer(
     url: &str,
     cache: &Path,
@@ -402,5 +446,54 @@ mod tests {
             |_| {}
         )
         .is_ok());
+    }
+
+    #[test]
+    fn installed_update_removes_checkpoint_only_after_matching_base_is_present() {
+        let cache = Cache::new();
+        let manifest = manifest();
+        let installer = cache.partial(&manifest, b"abcdef");
+        fs::write(cache.0.join("update.patch"), b"stale").unwrap();
+        let base = cache.0.join("base.exe");
+        fs::write(&base, b"wrong!").unwrap();
+        assert!(!clear_completed_download(&cache.0, &base, "1.1.17").unwrap());
+        assert!(installer.exists());
+        fs::write(&base, b"abcdef").unwrap();
+        assert!(!clear_completed_download(&cache.0, &base, "1.1.16").unwrap());
+        assert!(clear_completed_download(&cache.0, &base, "1.1.17").unwrap());
+        assert_eq!(fs::read(base).unwrap(), b"abcdef");
+        for file in ["installer.exe", "update.patch", "manifest.json"] {
+            assert!(!cache.0.join(file).exists(), "{file} remains");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn completed_checkpoint_cleanup_can_retry_while_installer_is_running() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let cache = Cache::new();
+        let manifest = manifest();
+        let installer = cache.partial(&manifest, b"abcdef");
+        let base = cache.0.join("base.exe");
+        fs::write(&base, b"abcdef").unwrap();
+        let lock = OpenOptions::new().read(true).share_mode(1).open(installer).unwrap();
+        assert!(clear_completed_download(&cache.0, &base, "1.1.17").is_err());
+        assert!(cache.0.join("manifest.json").exists());
+        drop(lock);
+        assert!(clear_completed_download(&cache.0, &base, "1.1.17").unwrap());
+    }
+
+    #[test]
+    fn a_signed_newer_target_discards_only_superseded_partial_progress() {
+        let cache = Cache::new();
+        let pending = manifest();
+        let installer = cache.partial(&pending, b"abc");
+        assert!(!clear_superseded_download(&cache.0, "1.1.17", "1.1.18").unwrap());
+        assert!(installer.exists(), "current installer can be a delta base");
+        assert!(!clear_superseded_download(&cache.0, "1.1.16", "1.1.17").unwrap());
+        assert!(!clear_superseded_download(&cache.0, "1.1.16", "1.1.16").unwrap());
+        assert!(clear_superseded_download(&cache.0, "1.1.16", "1.1.18").unwrap());
+        assert!(!installer.exists());
+        assert!(!cache.0.join("manifest.json").exists());
     }
 }

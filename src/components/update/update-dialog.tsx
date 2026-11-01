@@ -1,4 +1,5 @@
 import { t } from "@/lib/i18n";
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -46,17 +47,25 @@ export function UpdateDialog() {
     checking,
     downloadVersion,
     downloadProgress,
+    downloadPlan,
+    downloadPlanChecking,
+    downloadPlanFailed,
     errorMessage,
     startDownload,
     cancelDownload,
     installAndRelaunch,
     ignoreCurrentRelease,
     checkForUpdates,
+    prepareDownloadPlan,
   } = useUpdaterStore();
 
   const themeMode = useAppStore((state) => state.appConfig?.themeMode ?? "light");
   const isDark = themeMode === "dark"
     || (themeMode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+  useEffect(() => {
+    if (dialogOpen && latestRelease) void prepareDownloadPlan();
+  }, [dialogOpen, latestRelease?.tag_name, prepareDownloadPlan]);
 
   if (!latestRelease) return null;
 
@@ -67,8 +76,10 @@ export function UpdateDialog() {
   const isReady = status === "ready_to_install";
   const isError = status === "error";
   const hasNewerDownload = downloadVersion !== null && compareSemver(newVersion, downloadVersion) > 0;
-  const hasPartialDownload = downloadVersion === newVersion && downloadProgress.transferred > 0;
   const showProgress = isDownloading || (!isReady && !isInstalling && downloadVersion !== null && downloadProgress.transferred > 0);
+  const currentPlan = downloadPlan?.version === newVersion ? downloadPlan : null;
+  const hasPartialDownload = (downloadVersion === newVersion && downloadProgress.transferred > 0)
+    || !!(currentPlan && currentPlan.remaining > 0 && currentPlan.remaining < currentPlan.size);
 
   async function handleReleaseNotesLink(target: string) {
     if (!latestRelease) return;
@@ -160,6 +171,19 @@ export function UpdateDialog() {
 
         {/* 状态与进度反馈区 */}
         <div className="shrink-0 space-y-3 empty:hidden">
+          {!isBusy && !isReady && !showProgress && (
+            <p className="text-xs text-slate-600 dark:text-zinc-300" aria-live="polite">
+              {downloadPlanChecking || (!currentPlan && !downloadPlanFailed)
+                ? t("正在计算更新下载大小...")
+                : downloadPlanFailed
+                  ? t("暂时无法预估下载大小，下载时会重新校验。")
+                  : currentPlan?.remaining === 0
+                    ? t("更新包已缓存，预计无需下载。")
+                    : t("预计下载：{0}（{1}）", [formatBytes(currentPlan!.remaining), currentPlan!.isDelta ? t("增量包") : t("完整安装包")])}
+              {currentPlan && currentPlan.remaining > 0 && currentPlan.remaining < currentPlan.size
+                ? t("，总大小 {0}", [formatBytes(currentPlan.size)]) : null}
+            </p>
+          )}
           {hasNewerDownload && !isInstalling && (
             <p className="text-xs text-amber-700 dark:text-amber-300">
                {t("已检测到")} {newVersion}{t("。点击“下载新版”后，将清理")} {downloadVersion}  {t("的下载缓存并下载新版。")} </p>
@@ -168,7 +192,7 @@ export function UpdateDialog() {
             <div className="space-y-2 rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-amber-700 dark:text-amber-300">
-                  {!isDownloading ? t("已保留 {0} 下载进度", [downloadVersion]) : status === "cancelling" ? t("正在取消下载...") : downloadProgress.applyingDelta ? t("正在还原并校验安装包...") : downloadProgress.percent >= 100 ? t("正在校验安装包...") : t("正在下载 {0} {1}...", [downloadVersion, downloadProgress.isDelta ? "增量包" : "安装包"])}
+                  {!isDownloading ? t("已保留 {0} 下载进度", [downloadVersion]) : status === "cancelling" ? t("正在暂停下载...") : !downloadProgress.total ? t("正在准备更新...") : downloadProgress.applyingDelta ? t("正在还原并校验安装包...") : downloadProgress.percent >= 100 ? t("正在校验安装包...") : t("正在下载 {0} {1}...", [downloadVersion, downloadProgress.isDelta ? t("增量包") : t("安装包")])}
                 </span>
                 <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-200">
                   {downloadProgress.percent.toFixed(1)}%
@@ -177,7 +201,7 @@ export function UpdateDialog() {
               <Progress value={downloadProgress.percent} className="h-2 bg-amber-200/50 dark:bg-zinc-800" />
               <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
                 <span>
-                  {formatBytes(downloadProgress.transferred)} / {formatBytes(downloadProgress.total)}
+                  {downloadProgress.total ? `${formatBytes(downloadProgress.transferred)} / ${formatBytes(downloadProgress.total)}` : "--"}
                 </span>
                 <span>{isDownloading ? t("速度: {0}", [formatSpeed(downloadProgress.speedBytesPerSec)]) : t("继续下载可从中断处恢复")}</span>
               </div>
@@ -258,7 +282,7 @@ export function UpdateDialog() {
                   size="sm"
                   className="h-8 gap-1.5 bg-amber-600 text-xs font-bold text-white hover:bg-amber-700 dark:bg-amber-500 dark:text-zinc-950 dark:hover:bg-amber-400"
                   onClick={startDownload}
-                  disabled={checking || status === "checking"}
+                  disabled={checking || status === "checking" || downloadPlanChecking || (!currentPlan && !downloadPlanFailed)}
                 >
                   <Download className="size-3.5" />
                   <span>{hasNewerDownload ? t("下载新版") : hasPartialDownload ? t("继续下载") : t("立即更新")}</span>
@@ -282,7 +306,7 @@ export function UpdateDialog() {
                   onClick={cancelDownload}
                 >
                   <X className="size-3.5" />
-                  <span>{t("取消下载")}</span>
+                  <span>{t("暂停下载")}</span>
                 </Button>
               </>
             )}

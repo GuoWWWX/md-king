@@ -20,7 +20,7 @@ use commands::{
     remove_recent_vault, rename_vault_entry, reset_template_style_config, reveal_output_path,
     save_app_config, save_history, save_template_style_config, save_templates, search_vault,
     set_vault_entry_clipboard, show_in_explorer, write_temp_image, write_vault_file,
-    cancel_update_download, download_update_installer, fetch_latest_release, launch_update_installer,
+    cancel_update_download, download_update_installer, fetch_latest_release, get_update_download_plan, launch_update_installer,
 };
 use core::config::load_config;
 use tauri::Manager;
@@ -40,6 +40,7 @@ pub fn run() {
         .manage(system::startup_files::PendingOpenFiles::default())
         .manage(system::vault_watcher::VaultWatcherState::default())
         .setup(|app| {
+            commands::cleanup_completed_update(app.package_info().version.to_string());
             if let Err(error) = system::file_association::release_legacy_file_associations() {
                 eprintln!("Failed to release legacy file associations: {error}");
             }
@@ -136,6 +137,7 @@ pub fn run() {
             cancel_update_download,
             download_update_installer,
             fetch_latest_release,
+            get_update_download_plan,
             launch_update_installer
         ])
         .run(tauri::generate_context!())

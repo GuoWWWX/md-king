@@ -34,7 +34,7 @@ beforeEach(() => {
   useDocumentTabsStore.setState({ tabs: [], activeTabId: undefined });
   useUpdaterStore.setState({
     currentVersion: "1.1.9", status: "available", installerPath: null, errorMessage: null, hasUpdate: true,
-    checking: false, downloadVersion: null, ignoredVersions: [],
+    checking: false, downloadVersion: null, ignoredVersions: [], downloadPlan: null, downloadPlanChecking: false, downloadPlanFailed: false,
     downloadProgress: { percent: 0, transferred: 0, total: 0, speedBytesPerSec: 0 },
     latestRelease: {
       tag_name: "v1.1.10", name: "Release", body: "", published_at: "", html_url: "",
@@ -112,14 +112,15 @@ test("compareSemver 正确对比主次补丁版本", () => {
 
 test("启动或重新打开时静默检查会显示新版本提示，不自动弹窗或安装", async () => {
   const release = useUpdaterStore.getState().latestRelease;
-  invokeCommand = async () => JSON.stringify(release);
+  invokeCommand = async (command) => command === "fetch_latest_release" ? JSON.stringify(release) : { size: 3, remaining: 3, isDelta: false };
   useUpdaterStore.setState({ currentVersion: "1.1.9", status: "idle", hasUpdate: false, latestRelease: null, dialogOpen: false, ignoredVersions: [] });
   assert.equal(await useUpdaterStore.getState().checkForUpdates({ silent: true }), true);
   assert.equal(useUpdaterStore.getState().hasUpdate, true);
   assert.equal(useUpdaterStore.getState().status, "available");
   assert.equal(useUpdaterStore.getState().latestRelease?.tag_name, "v1.1.10");
   assert.equal(useUpdaterStore.getState().dialogOpen, false);
-  assert.deepEqual(commands, ["fetch_latest_release"]);
+  assert.deepEqual(commands, ["fetch_latest_release", "get_update_download_plan"]);
+  assert.ok(!commands.includes("download_update_installer"));
 });
 
 test("重新打开窗口检查更新时，不打断正在检查、下载或安装的任务", async () => {
@@ -272,4 +273,78 @@ test("增量下载与还原阶段使用真实传输大小，完成后不显示�
   assert.equal(useUpdaterStore.getState().downloadProgress.total, 1);
   assert.equal(useUpdaterStore.getState().downloadProgress.transferred, 1);
   assert.equal(useUpdaterStore.getState().downloadProgress.applyingDelta, false);
+});
+
+test("下载前采用后端校验过的增量大小，并在传输事件到达前显示该大小", async () => {
+  invokeCommand = async command => {
+    if (command === "get_update_download_plan") return { size: 2, remaining: 2, isDelta: true };
+    if (command === "download_update_installer") {
+      assert.equal(useUpdaterStore.getState().downloadProgress.total, 2);
+      assert.equal(useUpdaterStore.getState().downloadProgress.isDelta, true);
+      return "C:/temp/reconstructed.exe";
+    }
+    return 1;
+  };
+  await useUpdaterStore.getState().prepareDownloadPlan();
+  assert.deepEqual(useUpdaterStore.getState().downloadPlan, { version: "v1.1.10", size: 2, remaining: 2, isDelta: true });
+  await useUpdaterStore.getState().startDownload();
+});
+
+test("新版本出现后，旧版本延迟返回的预估不能覆盖新版预估", async () => {
+  let finishOld!: (value: unknown) => void;
+  let calls = 0;
+  invokeCommand = async command => {
+    if (command === "get_update_download_plan") {
+      calls++;
+      if (calls === 1) return new Promise(resolve => { finishOld = resolve; });
+      return { size: 4, remaining: 3, isDelta: false };
+    }
+    return 1;
+  };
+  const old = useUpdaterStore.getState().prepareDownloadPlan();
+  useUpdaterStore.setState({ latestRelease: newerRelease() });
+  await useUpdaterStore.getState().prepareDownloadPlan();
+  finishOld({ size: 2, remaining: 2, isDelta: true });
+  await old;
+  assert.deepEqual(useUpdaterStore.getState().downloadPlan, { version: "v1.1.11", size: 4, remaining: 3, isDelta: false });
+});
+
+test("后台检查和打开弹窗同时预估时，同一版本只校验一次", async () => {
+  let finish!: (value: unknown) => void;
+  invokeCommand = async command => command === "get_update_download_plan"
+    ? new Promise(resolve => { finish = resolve; }) : 1;
+  const first = useUpdaterStore.getState().prepareDownloadPlan();
+  const second = useUpdaterStore.getState().prepareDownloadPlan();
+  assert.equal(commands.filter(command => command === "get_update_download_plan").length, 1);
+  finish({ size: 2, remaining: 1, isDelta: true });
+  await Promise.all([first, second]);
+  assert.equal(useUpdaterStore.getState().downloadPlan?.remaining, 1);
+});
+
+test("暂停旧版后发现新版，预估完成后不再显示已清理的旧进度", async () => {
+  useUpdaterStore.setState({
+    latestRelease: newerRelease(), downloadVersion: "v1.1.10",
+    downloadProgress: { percent: 50, transferred: 2, total: 4, speedBytesPerSec: 0 },
+  });
+  invokeCommand = async command => command === "get_update_download_plan"
+    ? { size: 6, remaining: 6, isDelta: false } : 1;
+  await useUpdaterStore.getState().prepareDownloadPlan();
+  assert.equal(useUpdaterStore.getState().downloadVersion, null);
+  assert.equal(useUpdaterStore.getState().downloadProgress.transferred, 0);
+  assert.equal(useUpdaterStore.getState().downloadPlan?.version, "v1.1.11");
+});
+
+test("预估暂不可用时不把未验证的完整包大小当作实际下载大小", async () => {
+  invokeCommand = async command => {
+    if (command === "get_update_download_plan") throw new Error("network failure");
+    if (command === "download_update_installer") {
+      assert.equal(useUpdaterStore.getState().downloadProgress.total, 0);
+      throw new Error("network failure");
+    }
+    return 1;
+  };
+  await useUpdaterStore.getState().prepareDownloadPlan();
+  assert.equal(useUpdaterStore.getState().downloadPlanFailed, true);
+  await useUpdaterStore.getState().startDownload();
+  assert.equal(useUpdaterStore.getState().status, "error");
 });

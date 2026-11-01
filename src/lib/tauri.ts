@@ -20,7 +20,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.2.3",
+  version: "1.2.4",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -628,6 +628,17 @@ export type DownloadProgressPayload = {
   is_delta?: boolean;
   applying_delta?: boolean;
 };
+
+export type UpdateDownloadPlan = {
+  size: number;
+  remaining: number;
+  isDelta: boolean;
+};
+
+export async function getUpdateDownloadPlan(downloadUrl: string, version: string): Promise<UpdateDownloadPlan> {
+  if (!isTauriEnvironment()) throw new Error(t("浏览器预览模式不支持直接下载安装更新包"));
+  return invoke<UpdateDownloadPlan>("get_update_download_plan", { downloadUrl, version });
+}
 
 export async function fetchLatestRelease(repo?: string): Promise<string> {
   if (!isTauriEnvironment()) {

@@ -1,5 +1,6 @@
 use crate::core::update::{installer_arguments, release_directory, verify_installer, verify_manifest, UpdateManifest};
-use crate::core::update_delta::download_with_delta;
+use crate::core::update_delta::{download_with_delta, plan_download, UpdateDownloadPlan};
+use crate::core::update_download::{clear_completed_download, clear_superseded_download};
 use crate::storage::paths::app_data_dir;
 use crate::system::update_http;
 use std::fs::OpenOptions;
@@ -12,6 +13,22 @@ use tauri::{AppHandle, Emitter};
 static CANCEL_DOWNLOAD: AtomicBool = AtomicBool::new(false);
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 static VERIFIED_INSTALLER: Mutex<Option<(PathBuf, UpdateManifest)>> = Mutex::new(None);
+static UPDATE_CACHE: Mutex<()> = Mutex::new(());
+
+pub(crate) fn cleanup_completed_update(current_version: String) {
+    std::thread::spawn(move || {
+        // The installer can still be exiting when it starts the updated app.
+        for _ in 0..10 {
+            std::thread::sleep(Duration::from_millis(500));
+            let Ok(_cache) = UPDATE_CACHE.try_lock() else { continue };
+            let Ok(data_dir) = app_data_dir() else { return };
+            match clear_completed_download(&data_dir.join("update-download"), &data_dir.join("update-base/installer.exe"), &current_version) {
+                Ok(_) => return,
+                Err(error) => eprintln!("Could not clean completed update cache: {error}"),
+            }
+        }
+    });
+}
 
 struct DownloadGuard;
 impl Drop for DownloadGuard {
@@ -51,6 +68,26 @@ fn fetch_update_metadata(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+fn fetch_verified_manifest(version: &str, download_url: &str) -> Result<UpdateManifest, String> {
+    let directory = release_directory(version)?;
+    let manifest_bytes = fetch_update_metadata(&format!("{directory}/update-manifest.json"))?;
+    let signature_bytes = fetch_update_metadata(&format!("{directory}/update-manifest.sig"))?;
+    let signature = std::str::from_utf8(&signature_bytes).map_err(|_| "更新签名格式无效。")?;
+    verify_manifest(&manifest_bytes, signature, version, download_url)
+}
+
+#[tauri::command]
+pub async fn get_update_download_plan(app: AppHandle, download_url: String, version: String) -> Result<UpdateDownloadPlan, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = fetch_verified_manifest(&version, &download_url)?;
+        let data_dir = app_data_dir().map_err(|e| e.to_string())?;
+        let _cache = UPDATE_CACHE.try_lock().map_err(|_| "更新下载进行中，暂时无法预估。")?;
+        clear_superseded_download(&data_dir.join("update-download"), &app.package_info().version.to_string(), &manifest.version)?;
+        Ok(plan_download(&data_dir.join("update-download"), &data_dir.join("update-base/installer.exe"),
+            &app.package_info().version.to_string(), &manifest))
+    }).await.map_err(|e| format!("更新信息任务调度失败: {e}"))?
+}
+
 #[tauri::command]
 pub async fn download_update_installer(app: AppHandle, download_url: String, version: String) -> Result<String, String> {
     if DOWNLOADING.swap(true, Ordering::SeqCst) { return Err("已有更新正在下载。".into()); }
@@ -58,12 +95,9 @@ pub async fn download_update_installer(app: AppHandle, download_url: String, ver
     CANCEL_DOWNLOAD.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        let directory = release_directory(&version)?;
-        let manifest_bytes = fetch_update_metadata(&format!("{directory}/update-manifest.json"))?;
-        let signature_bytes = fetch_update_metadata(&format!("{directory}/update-manifest.sig"))?;
-        let signature = std::str::from_utf8(&signature_bytes).map_err(|_| "更新签名格式无效。")?;
-        let manifest = verify_manifest(&manifest_bytes, signature, &version, &download_url)?;
+        let manifest = fetch_verified_manifest(&version, &download_url)?;
         let data_dir = app_data_dir().map_err(|e| e.to_string())?;
+        let _cache = UPDATE_CACHE.lock().map_err(|e| e.to_string())?;
         let cache = data_dir.join("update-download");
         let base = data_dir.join("update-base").join("installer.exe");
         // Starting a download invalidates the previous launch permission; detection alone does not.

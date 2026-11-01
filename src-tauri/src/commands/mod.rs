@@ -18,8 +18,9 @@ pub use template_commands::{
 };
 pub use update_commands::{
     cancel_update_download, download_update_installer, fetch_latest_release,
-    launch_update_installer,
+    get_update_download_plan, launch_update_installer,
 };
+pub(crate) use update_commands::cleanup_completed_update;
 pub use vault_commands::{
     copy_external_vault_file, copy_text_to_clipboard, copy_vault_entry, create_vault_entry,
     delete_vault_entry, import_vault_image_data, import_vault_image_from_path, list_vault_entries,

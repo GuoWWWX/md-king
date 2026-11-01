@@ -287,7 +287,7 @@ export const FileTreeNode = memo(function FileTreeNode({ entry, depth, expanded,
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className="mk-file-tree-more shrink-0 opacity-0 transition group-hover/node:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
+                className="mk-file-tree-more w-0 overflow-hidden opacity-0 transition-[width,opacity] group-hover/node:w-6 group-hover/node:opacity-100 focus-visible:w-6 focus-visible:opacity-100 aria-expanded:w-6 aria-expanded:opacity-100"
                 aria-label={t("{0} 的操作菜单", [entry.name])}
                 onPointerDown={() => onPrepareContextMenu?.(entry)}
                 onClick={(event) => event.stopPropagation()}
