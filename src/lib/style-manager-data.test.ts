@@ -3,6 +3,19 @@ import test from "node:test";
 
 import { createDefaultTemplateStyleConfig, defaultPageSettings, mergeTemplateStyleConfig } from "./style-manager-data.ts";
 
+test("简历模板默认无目录、页眉页脚和表格边框，且允许用户修改", () => {
+  const config = createDefaultTemplateStyleConfig("resume");
+  assert.equal(config.pageSettings.paperSize, "A4");
+  assert.equal(config.pageSettings.tocEnabled, false);
+  assert.equal(config.pageSettings.headerEnabled, false);
+  assert.equal(config.pageSettings.footerEnabled, false);
+  assert.equal(config.styles["heading-1"].autoNumbering, false);
+  assert.equal(config.styles.table.borderStyle, "none");
+  assert.equal(config.styles.table.firstColumnWidth, 77);
+  config.styles.normal.fontSize = 11;
+  assert.equal(mergeTemplateStyleConfig("resume", config).styles.normal.fontSize, 11);
+});
+
 test("图片和表格题注默认五号加粗居中且不首行缩进", () => {
   const config = createDefaultTemplateStyleConfig("default-report");
   for (const id of ["caption", "table-caption"]) {

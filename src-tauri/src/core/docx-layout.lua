@@ -121,6 +121,8 @@ function Inlines(content)
     elseif tag == '</u>' and #stack > 1 then
       local inner = table.remove(stack)
       stack[#stack]:insert(pandoc.Underline(inner))
+    elseif tag == '<br>' or tag == '<br/>' then
+      stack[#stack]:insert(pandoc.LineBreak())
     else stack[#stack]:insert(item) end
   end
   while #stack > 1 do

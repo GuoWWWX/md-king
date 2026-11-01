@@ -20,7 +20,7 @@ const browserPreviewOutputDir = "C:\\Users\\<当前用户>\\Documents\\MD King";
 
 const browserAppStatus: AppStatus = {
   name: "md-king",
-  version: "1.2.1",
+  version: "1.2.3",
   description: "Markdown 转 Word 桌面工具",
   tauriVersion: "browser-preview",
   platform: "browser-preview",
@@ -86,6 +86,18 @@ const builtInTemplates: Template[] = [
     referenceDocxPath: "",
     previewImagePath: undefined,
     tags: ["系统", "内置"],
+    isBuiltIn: true,
+    isDefault: false,
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "resume",
+    name: "简洁简历模板",
+    description: "适合制作简洁的单栏简历，可在表格中放置证件照。",
+    referenceDocxPath: "",
+    previewImagePath: undefined,
+    tags: ["系统", "内置", "简历"],
     isBuiltIn: true,
     isDefault: false,
     createdAt: "",

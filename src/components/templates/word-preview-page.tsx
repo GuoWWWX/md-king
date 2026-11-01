@@ -25,6 +25,7 @@ import { svgDataUrl } from "@/lib/svg-image";
 import { parseMarkdownCalloutHeader, separateMarkdownCallouts, type MarkdownCalloutTone } from "@/lib/markdown-callout";
 import { splitYamlFrontmatter, type MarkdownFrontmatter } from "@/lib/markdown-frontmatter";
 import { extractExplicitImageCaptions } from "@/lib/markdown-image-caption";
+import { imageLengthPixels, markdownImageSizePlugin } from "@/lib/markdown-image-size";
 import { formatCaptionText } from "@/lib/caption-numbering";
 import { normalizeAdjacentBoldTableCaptions } from "@/lib/markdown-block-caption";
 import { parseHorizontalRuleText } from "@/lib/horizontal-rule-text";
@@ -91,7 +92,7 @@ type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type PreviewTextSegment = {
   color?: string;
   text: string;
-  image?: { src: string; alt: string };
+  image?: { src: string; alt: string; width?: string; height?: string };
   code?: boolean;
   math?: boolean;
   bold?: boolean;
@@ -188,14 +189,18 @@ function backslashMathPlugin(md: MarkdownIt) {
   });
 }
 
-const markdownParser = new MarkdownIt({ html: false, linkify: true, typographer: false })
-  .use(markdownFormattingPlugin)
-  .use(markdownInlineHtmlPlugin)
-  .use(obsidianWikilinkPlugin)
-  .use(relaxedStrongPlugin)
-  .use(relaxedEmphasisPlugin)
-  .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
-  .use(backslashMathPlugin);
+function createMarkdownPreviewParser() {
+  return new MarkdownIt({ html: false, linkify: true, typographer: false })
+    .use(markdownFormattingPlugin)
+    .use(markdownInlineHtmlPlugin)
+    .use(obsidianWikilinkPlugin)
+    .use(relaxedStrongPlugin)
+    .use(relaxedEmphasisPlugin)
+    .use(katexPlugin, { throwOnError: false, enableBareBlocks: true })
+    .use(backslashMathPlugin);
+}
+const markdownParser = createMarkdownPreviewParser();
+const tableMarkdownParser = createMarkdownPreviewParser().use(markdownImageSizePlugin);
 // 与 Rust 端 is_math_fence_language 保持一致，避免预览与导出对 ```math 的判定不同。
 const mathFenceLanguages = new Set(["math", "latex", "tex", "formula", "equation", "公式"]);
 const PT_TO_PX = 4 / 3;
@@ -790,7 +795,9 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined, preserv
       case "image": {
         const alt = plainText(inlineSegmentsFromToken(child));
         const src = markdownTokenAttribute(child, "src");
-        segments.push(preserveImages && src ? { text: alt, image: { src, alt } } : { ...currentMarks(), text: alt });
+        const width = markdownTokenAttribute(child, "width");
+        const height = markdownTokenAttribute(child, "height");
+        segments.push(preserveImages && src ? { text: alt, image: { src, alt, width, height } } : { ...currentMarks(), text: alt });
         break;
       }
       default:
@@ -808,7 +815,7 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined, preserv
 }
 
 function inlineSegmentsFromMarkdown(source: string): PreviewTextSegment[] {
-  return inlineSegmentsFromToken(markdownParser.parseInline(source, {})[0], true);
+  return inlineSegmentsFromToken(tableMarkdownParser.parseInline(source, {})[0], true);
 }
 
 function markdownTokenAttribute(token: MarkdownInlineToken, name: string) {
@@ -1668,7 +1675,14 @@ function estimateTableRowHeight(row: PreviewTableCell[], isHeader: boolean, tabl
   const imageHeight = Math.max(0, ...row.map((cell, column) => cell.segments.reduce((height, segment) => {
     if (!segment.image) return height;
     const size = imageSizes?.[segment.image.src];
-    return height + (size ? Math.min(160, size.height, (columnContentWidths[column] ?? 160) * size.height / size.width) : 160) + 8;
+    const explicitWidth = imageLengthPixels(segment.image.width);
+    const explicitHeight = imageLengthPixels(segment.image.height);
+    const width = explicitWidth ?? (explicitHeight && size ? explicitHeight * size.width / size.height : size?.width);
+    const imageHeight = explicitHeight ?? (explicitWidth && size ? explicitWidth * size.height / size.width : size?.height);
+    if (width && imageHeight) {
+      return height + Math.min(160, imageHeight, (columnContentWidths[column] ?? width) * imageHeight / width) + 8;
+    }
+    return height + 168;
   }, 0)));
   return Math.max(tableDraft.minRowHeight, imageHeight + contentLines * ptToPx(fontSize) * lineHeight + tableDraft.cellPaddingY * 2);
 }
@@ -2067,6 +2081,8 @@ function applyMarkdownFeatureSettings(blocks: PreviewBlock[], features: Markdown
 function PreviewImage({
   src,
   alt,
+  width,
+  height,
   markdownSourcePath,
   className,
   onSize,
@@ -2074,6 +2090,8 @@ function PreviewImage({
 }: {
   src?: string;
   alt?: string;
+  width?: string;
+  height?: string;
   markdownSourcePath?: string;
   className?: string;
   onSize?: (src: string, size: PreviewImageSize) => void;
@@ -2128,7 +2146,7 @@ function PreviewImage({
     return (
       <>
         <Container className={cn("group relative", inline && "inline-block max-w-full align-middle my-1", className)}>
-          <img src={resolvedSrc} alt={alt ?? ""} className={inline ? "inline-block h-auto w-auto max-w-full max-h-[160px] object-contain" : "block h-auto w-full max-h-[520px] object-contain"} onLoad={(event) => onSize?.(src, { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setFailed(true)} />
+          <img src={resolvedSrc} alt={alt ?? ""} className={inline ? "inline-block h-auto w-auto max-w-full max-h-[160px] object-contain" : "block h-auto w-full max-h-[520px] object-contain"} style={{ width, height }} onLoad={(event) => onSize?.(src, { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setFailed(true)} />
           <TooltipButton
             variant="ghost"
             size="icon-xs"
@@ -2577,7 +2595,7 @@ function renderMarkdownBlocks({
         for (const segment of cell.segments) {
           if (!segment.image) { text.push(segment); continue; }
           flushText();
-          content.push(<PreviewImage key={`${key}-${content.length}`} src={segment.image.src} alt={segment.image.alt} markdownSourcePath={markdownSourcePath} onSize={onImageSize} inline />);
+          content.push(<PreviewImage key={`${key}-${content.length}`} src={segment.image.src} alt={segment.image.alt} width={segment.image.width} height={segment.image.height} markdownSourcePath={markdownSourcePath} onSize={onImageSize} inline />);
         }
         flushText();
         return content;
@@ -2602,6 +2620,7 @@ function renderMarkdownBlocks({
                     key={cellIndex}
                     style={{
                       ...tableStyle.headerStyle,
+                      ...(cell.segments.some((segment) => segment.text.includes("\n")) ? { whiteSpace: "pre-wrap" } : {}),
                       ...(cell.alignment && cell.alignment !== "none" ? { textAlign: cell.alignment } : {}),
                     }}
                   >
@@ -2620,6 +2639,7 @@ function renderMarkdownBlocks({
                     className="break-words"
                     style={{
                       ...tableStyle.bodyCellStyle,
+                      ...(cell.segments.some((segment) => segment.text.includes("\n")) ? { whiteSpace: "pre-wrap" } : {}),
                       backgroundColor: tableStyle.rowStripe && ((block.bodyRowOffset ?? 0) + rowIndex) % 2 === 1 ? "#F8FAFC" : tableStyle.bodyCellStyle.backgroundColor,
                       ...(cell.alignment && cell.alignment !== "none" ? { textAlign: cell.alignment } : {}),
                     }}

@@ -131,6 +131,10 @@ The CLI supports conversion, diagnostics, and DOCX template import/replacement. 
 - Chinese and English interfaces with immediate switching and persistent selection.
 - Update notifications, download progress, cancellation, resuming, and retries.
 
+### Creating a resume
+
+Choose **Clean resume template** in Templates and select **Copy resume example**. Paste it into a Markdown document and replace the placeholder details and photo path. The template uses a single-column A4 layout without a table of contents or page numbers. The photo in the right-hand table cell uses `![](portrait.jpg){width=2.5cm height=3.5cm}` for a common one-inch portrait. In the photo cell, select `![](portrait.jpg)` and paste an image while retaining the size attributes, or edit the path directly. Use a 5:7 portrait and a path relative to the Markdown file; remove the image if it is not needed. Check the exported DOCX in Word/WPS.
+
 ### Markdown inside Mermaid labels
 
 Text labels across Mermaid diagram types support bold, italic, inline code, math, and ordered or unordered lists, including flowchart nodes, edges, subgraph titles, and sequence messages. Follow each diagram's own label syntax and use `<br/>` for line breaks:

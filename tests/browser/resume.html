@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Resume template preview</title></head>
+<body>
+<main id="preview" style="width:1000px;height:1300px"></main>
+<script type="module">
+import '/src/index.css';
+import {createElement} from 'react';
+import {createRoot} from 'react-dom/client';
+import {TooltipProvider} from '/src/components/ui/tooltip.tsx';
+import {WordPreviewPage} from '/src/components/templates/word-preview-page.tsx';
+import {mergeTemplateStyleConfig} from '/src/lib/style-manager-data.ts';
+import {resumeSampleMarkdown} from '/src/lib/resume-sample.ts';
+const markdown=resumeSampleMarkdown(true);
+createRoot(document.getElementById('preview')).render(createElement(TooltipProvider,null,
+  createElement(WordPreviewPage,{styleConfig:mergeTemplateStyleConfig('resume'),markdown,zoom:100,paginate:true,showHeader:false})));
+</script>
+</body></html>

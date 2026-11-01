@@ -457,7 +457,7 @@ export class MermaidWidget extends WidgetType {
       event.preventDefault();
       event.stopPropagation();
       const svg = host.querySelector(".mk-cm-mermaid-canvas svg")?.outerHTML;
-      if (svg) requestMediaPreview({ src: svgDataUrl(svg), alt: t("Mermaid 图表"), title: t("Mermaid 图表") });
+      if (svg) requestMediaPreview({ src: svgDataUrl(svg), svg, alt: t("Mermaid 图表"), title: t("Mermaid 图表") });
     });
     actions.append(previewButton);
 

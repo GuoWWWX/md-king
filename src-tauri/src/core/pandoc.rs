@@ -454,6 +454,27 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn exports_html_breaks_in_table_cells_without_changing_code() {
+        use std::io::Read;
+        let directory = std::env::temp_dir().join(format!("md-king-pandoc-table-breaks-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let input = directory.join("breaks.md");
+        let output = directory.join("breaks.docx");
+        std::fs::write(&input, "| First<br>Second<br />Third | `literal<br>text` |\n| --- | --- |\n").unwrap();
+        let pandoc = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/pandoc/windows/pandoc.exe");
+        let result = super::run_resolved_pandoc_to_docx(&pandoc, &input, &output, None, &PandocDocumentOptions::default()).unwrap();
+        assert!(result.success, "{}", result.stderr);
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&output).unwrap()).unwrap();
+        let mut xml = String::new();
+        archive.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+        assert_eq!(xml.matches("<w:br").count(), 2, "{xml}");
+        assert!(xml.contains("literal&lt;br&gt;text"), "{xml}");
+        drop(archive);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn builds_resource_path_argument_from_document_options() {
         let args = pandoc_document_option_args(&PandocDocumentOptions {
             toc: false,

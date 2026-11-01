@@ -8,6 +8,13 @@ use crate::storage::paths::template_styles_path;
 
 pub type TemplateStyleConfig = Value;
 
+fn built_in_style_config(template_id: &str) -> Option<TemplateStyleConfig> {
+    if template_id != "resume" {
+        return None;
+    }
+    serde_json::from_str(include_str!("../../../src/lib/resume-template.json")).ok()
+}
+
 /// 缓存只是读取加速层，不是权威数据源：权威在磁盘文件上。
 /// 所有写入都必须先重新读盘再合并（见 mutate_template_style_configs），
 /// 否则另一个进程写入的配置会被本进程的陈旧快照整份覆盖掉。
@@ -98,7 +105,8 @@ pub fn get_template_style_config(
         .map_err(|_| "模板样式缓存读取失败。".to_string())?;
     Ok(guard
         .as_ref()
-        .and_then(|configs| configs.get(template_id.trim()).cloned()))
+        .and_then(|configs| configs.get(template_id.trim()).cloned())
+        .or_else(|| built_in_style_config(template_id.trim())))
 }
 
 pub fn get_template_style_configs(
@@ -113,7 +121,7 @@ pub fn get_template_style_configs(
     let guard = template_style_configs_cache()
         .read()
         .map_err(|_| "模板样式缓存读取失败。".to_string())?;
-    Ok(guard
+    let mut result: HashMap<String, TemplateStyleConfig> = guard
         .as_ref()
         .map(|configs| {
             configs
@@ -122,7 +130,15 @@ pub fn get_template_style_configs(
                 .map(|(id, config)| (id.clone(), config.clone()))
                 .collect()
         })
-        .unwrap_or_default())
+        .unwrap_or_default();
+    for id in requested {
+        if !result.contains_key(&id) {
+            if let Some(config) = built_in_style_config(&id) {
+                result.insert(id, config);
+            }
+        }
+    }
+    Ok(result)
 }
 
 pub fn save_template_style_config(

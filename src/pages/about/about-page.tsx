@@ -31,7 +31,7 @@ const markdownGuideItems: MarkdownGuideItem[] = [
 
 export function AboutPage() {
   const { appConfig, appStatus, pandocStatus } = useAppStore();
-  const appVersion = appStatus?.version ?? "1.2.0";
+  const appVersion = appStatus?.version ?? "1.2.3";
   const hasUpdate = useUpdaterStore((state) => state.hasUpdate);
   const updateStatus = useUpdaterStore((state) => state.status);
   const checkForUpdates = useUpdaterStore((state) => state.checkForUpdates);

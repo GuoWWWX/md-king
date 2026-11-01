@@ -16,6 +16,7 @@ import { relaxedEmphasisPlugin } from "../../../lib/relaxed-emphasis.ts";
 import { markdownInlineHtmlPlugin, splitMarkdownInlineHtml, type MarkdownInlineHtmlTag } from "../../../lib/markdown-inline-html.ts";
 import { stripReferenceMetadata } from "../../../lib/document-references.ts";
 import { markdownFormattingPlugin, paragraphFormatting } from "../../../lib/markdown-formatting.ts";
+import { markdownImageSizePlugin } from "../../../lib/markdown-image-size.ts";
 
 type TableInlineElementTag =
   | "strong" | "em" | "s" | "u" | "mark" | "sub" | "sup" | "small" | "kbd" | "code"
@@ -28,7 +29,7 @@ export type TableInlineNode =
   | { type: "code"; value: string }
   | { type: "math"; value: string; source: string }
   | { type: "break" }
-  | { type: "image"; src: string; alt: string; title?: string }
+  | { type: "image"; src: string; alt: string; title?: string; width?: string; height?: string }
   | { type: "void"; tag: "hr" | "wbr" }
   | {
     type: "element";
@@ -63,6 +64,7 @@ function tableInlineMathPlugin(md: MarkdownIt) {
 }
 
 const parser = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  .use(markdownImageSizePlugin)
   .use(markdownFormattingPlugin)
   .use(markdownInlineHtmlPlugin)
   .use(tableInlineMathPlugin)
@@ -185,8 +187,10 @@ export function parseTableInlineMarkdown(source: string): TableInlineNode[] {
     if (token.type === "image") {
       const src = token.attrGet("src") ?? "";
       const title = token.attrGet("title") ?? undefined;
+      const width = token.attrGet("width") ?? undefined;
+      const height = token.attrGet("height") ?? undefined;
       if (src && parser.validateLink(src)) {
-        target().push({ type: "image", src, alt: token.content, ...(title ? { title } : {}) });
+        target().push({ type: "image", src, alt: token.content, ...(title ? { title } : {}), ...(width ? { width } : {}), ...(height ? { height } : {}) });
       }
       else appendText(target(), token.content);
       continue;
@@ -314,6 +318,8 @@ function appendNodes(parent: HTMLElement, nodes: readonly TableInlineNode[], ima
       image.alt = node.alt;
       image.loading = "lazy";
       if (node.title) image.title = node.title;
+      if (node.width) image.style.width = node.width;
+      if (node.height) image.style.height = node.height;
       if (images) {
         image.addEventListener("load", images.onLoad);
         void images.resolveSource(node.src).then(source => {

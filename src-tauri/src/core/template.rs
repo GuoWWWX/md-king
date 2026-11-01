@@ -91,6 +91,18 @@ pub fn built_in_templates() -> Vec<Template> {
             created_at: "".to_string(),
             updated_at: "".to_string(),
         },
+        Template {
+            id: "resume".to_string(),
+            name: "简洁简历模板".to_string(),
+            description: Some("适合制作简洁的单栏简历，可在表格中放置证件照。".to_string()),
+            reference_docx_path: built_in_template_path_string("resume"),
+            preview_image_path: None,
+            tags: vec!["系统".to_string(), "内置".to_string(), "简历".to_string()],
+            is_built_in: true,
+            is_default: false,
+            created_at: "".to_string(),
+            updated_at: "".to_string(),
+        },
     ]
 }
 

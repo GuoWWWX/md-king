@@ -1,0 +1,25 @@
+<!doctype html>
+<html class="dark">
+<head><meta charset="utf-8"><title>Mermaid preview regression</title></head>
+<body>
+<main id="editor" style="width:740px;height:650px;margin:16px auto"></main>
+<script type="module">
+import '/src/index.css';
+import { createElement, createRef, Fragment } from 'react';
+import { createRoot } from 'react-dom/client';
+import { LiveMarkdownEditor } from '/src/components/editor/live-markdown-editor.tsx';
+import { MediaPreviewDialogHost, requestMediaPreview } from '/src/components/media/image-viewer.tsx';
+const ref = createRef();
+createRoot(document.querySelector('#editor')).render(createElement(Fragment, null,
+  createElement(LiveMarkdownEditor, { ref, documentKey: 'mermaid-preview', initialContent: '', isDark: true, onDocChanged() {} }),
+  createElement(MediaPreviewDialogHost),
+));
+window.fixture = {
+  get view() { return ref.current?.getView(); },
+  openImage() {
+    requestMediaPreview({ src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5X0AAAAASUVORK5CYII=', alt: '普通图片' });
+  },
+};
+</script>
+</body>
+</html>

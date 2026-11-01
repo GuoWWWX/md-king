@@ -1391,7 +1391,9 @@ fn validate_export_structure(
             ));
         }
     }
-    let page_start_section = if page_number_starts_at_document(page_settings) {
+    let page_start_section = if !page_settings.footer_enabled || page_settings.footer_page_number_format.trim() == "none" {
+        None
+    } else if page_number_starts_at_document(page_settings) {
         sections.first()
     } else {
         sections.get(front_section_count(&xml, &section))
@@ -2671,7 +2673,7 @@ fn resolve_template(runtime: ConvertRuntime<'_>, request: &ConvertRequest) -> Te
 
 fn built_in_reference_docx_path(runtime: ConvertRuntime<'_>, template_id: &str) -> Option<PathBuf> {
     let resource_path = match template_id {
-        "default-report" | "official-document" | "technical-spec" => {
+        "default-report" | "official-document" | "technical-spec" | "resume" => {
             "templates/default-report/reference.docx"
         }
         _ => return None,
@@ -2758,6 +2760,12 @@ fn resolve_heading_numbering_mode(
     let requested = requested_heading_numbering_mode(request);
     if requested != HeadingNumberingMode::Auto {
         return (requested, None);
+    }
+
+    if request.template_id.as_deref().map(str::trim) == Some("resume")
+        && heading_numbering_config(request).is_some_and(|config| config.formats.iter().all(Option::is_none))
+    {
+        return (HeadingNumberingMode::Source, None);
     }
 
     let mappings = heading_mappings_for_request(request);
@@ -4158,7 +4166,7 @@ fn heading_mappings_from_value(config: &Value) -> [HeadingTarget; 6] {
 fn is_built_in_template_id(template_id: &str) -> bool {
     matches!(
         template_id.trim(),
-        "default-report" | "official-document" | "technical-spec"
+        "default-report" | "official-document" | "technical-spec" | "resume"
     )
 }
 
@@ -10916,8 +10924,18 @@ fn cell_borders_xml(style: &str, width: f64, color: &str) -> String {
 
 fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyleConfig) -> String {
     let cell_style = table_cell_style(style, is_header);
-    let alignment = word_horizontal_align(&cell_style.horizontal_align);
+    let has_image = cell_xml.contains("<w:drawing");
+    let explicit_image_alignment = has_image.then(|| {
+        Regex::new(r#"<w:jc\b[^>]*\bw:val="(left|center|right|both)""#)
+            .expect("valid image alignment regex")
+            .captures(cell_xml)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str())
+    }).flatten();
+    let alignment = explicit_image_alignment.unwrap_or_else(|| word_horizontal_align(&cell_style.horizontal_align));
     let line = exact_line_height_twips(cell_style.font_size, cell_style.line_height);
+    // Exact line heights clip inline drawings even when their dimensions are correct.
+    let line_rule = if has_image { "atLeast" } else { "exact" };
     let paragraph_properties =
         Regex::new(r#"(?s)<w:pPr>(.*?)</w:pPr>"#).expect("valid paragraph property regex");
     let output = paragraph_properties
@@ -10925,13 +10943,13 @@ fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyl
             let removable = Regex::new(r#"<w:(?:jc|ind|spacing)\b[^>]*/>"#)
                 .expect("valid paragraph cleanup regex");
             let inner = removable.replace_all(&captures[1], "");
-            table_paragraph_properties_xml(&inner, alignment, line)
+            table_paragraph_properties_xml(&inner, alignment, line, line_rule)
         })
         .to_string();
     let self_closing_properties =
         Regex::new(r#"<w:pPr\s*/>"#).expect("valid self closing paragraph property regex");
     let output = self_closing_properties
-        .replace_all(&output, table_paragraph_properties_xml("", alignment, line))
+        .replace_all(&output, table_paragraph_properties_xml("", alignment, line, line_rule))
         .to_string();
 
     if output.contains("<w:pPr") {
@@ -10944,15 +10962,15 @@ fn normalize_table_paragraphs(cell_xml: &str, is_header: bool, style: &TableStyl
             format!(
                 "{}{}",
                 &captures[0],
-                table_paragraph_properties_xml("", alignment, line)
+                table_paragraph_properties_xml("", alignment, line, line_rule)
             )
         })
         .to_string()
 }
 
-fn table_paragraph_properties_xml(inner: &str, alignment: &str, line: u32) -> String {
+fn table_paragraph_properties_xml(inner: &str, alignment: &str, line: u32, line_rule: &str) -> String {
     format!(
-        r#"<w:pPr>{inner}<w:spacing w:before="0" w:after="0" w:beforeAutospacing="0" w:afterAutospacing="0" w:line="{line}" w:lineRule="exact" /><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{alignment}" /></w:pPr>"#
+        r#"<w:pPr>{inner}<w:spacing w:before="0" w:after="0" w:beforeAutospacing="0" w:afterAutospacing="0" w:line="{line}" w:lineRule="{line_rule}" /><w:ind w:left="0" w:right="0" w:firstLine="0" /><w:jc w:val="{alignment}" /></w:pPr>"#
     )
 }
 
@@ -11224,7 +11242,7 @@ mod tests {
         normalize_ordered_list_numbering_xml,
         normalize_emoji_runs, normalize_image_drawings,
         normalize_front_section_page_settings,
-        normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields,
+        normalize_template_style_xml, normalize_template_styles_xml, normalize_toc_fields, normalize_table_paragraphs,
         office_field_update_script,
         mark_ordered_list_num_ids, ordered_list_num_ids_from_numbering_xml,
         page_content_height_twips, page_content_width_twips, page_settings_config_from_value,
@@ -12333,6 +12351,18 @@ mod tests {
         assert!(!body.contains(r#"<wp:extent cx="2000000""#));
         let repeated = normalize_document_images(&output, None, None, None);
         assert_eq!(repeated.split("</w:tbl>").next(), Some(table));
+    }
+
+    #[test]
+    fn table_images_have_room_to_render_and_keep_explicit_alignment() {
+        let style = default_table_style_config(None);
+        let image_cell = r#"<w:tc><w:p><w:pPr><w:jc w:val="right" /></w:pPr><w:r><w:drawing /></w:r></w:p></w:tc>"#;
+        let text_cell = r#"<w:tc><w:p><w:pPr></w:pPr><w:r><w:t>Text</w:t></w:r></w:p></w:tc>"#;
+        let image = normalize_table_paragraphs(image_cell, true, &style);
+        let text = normalize_table_paragraphs(text_cell, true, &style);
+        assert!(image.contains(r#"w:lineRule="atLeast""#));
+        assert!(image.contains(r#"<w:jc w:val="right" />"#));
+        assert!(text.contains(r#"w:lineRule="exact""#));
     }
 
     #[test]
@@ -13957,6 +13987,28 @@ mod tests {
                 .iter()
                 .all(|item| item.code != "BODY_PAGE_START_MISMATCH")
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn does_not_require_a_page_number_start_when_page_numbers_are_disabled() {
+        let directory = std::env::temp_dir().join(format!("md-king-no-page-numbers-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("document.docx");
+        let mut writer = ZipWriter::new(fs::File::create(&path).unwrap());
+        writer.start_file("word/document.xml", SimpleFileOptions::default()).unwrap();
+        writer.write_all(b"<w:document><w:body><w:sectPr></w:sectPr></w:body></w:document>").unwrap();
+        writer.finish().unwrap();
+
+        let mut settings = default_page_settings_config();
+        settings.toc_enabled = false;
+        settings.footer_enabled = false;
+        assert!(validate_export_structure(&path, Some(&settings), false).iter().all(|d| d.code != "BODY_PAGE_START_MISMATCH"));
+        settings.footer_enabled = true;
+        settings.footer_page_number_format = "none".to_string();
+        assert!(validate_export_structure(&path, Some(&settings), false).iter().all(|d| d.code != "BODY_PAGE_START_MISMATCH"));
+        settings.footer_page_number_format = "page".to_string();
+        assert!(validate_export_structure(&path, Some(&settings), false).iter().any(|d| d.code == "BODY_PAGE_START_MISMATCH"));
         fs::remove_dir_all(directory).unwrap();
     }
 

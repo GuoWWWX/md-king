@@ -13,6 +13,7 @@ const mediaPreviewRequestEvent = "md-king:open-media-preview";
 
 type MediaPreviewRequest = {
   src: string;
+  svg?: string;
   alt?: string;
   title?: string;
 };
@@ -36,8 +37,31 @@ import { getPanBounds } from "./image-pan-bounds.ts";
 
 export { getPanBounds };
 
+function SelectableMermaidSvg({ svg }: { svg: string }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    // 隔离原图的 SVG ID 和样式，避免放大窗口与编辑器里的图表互相影响。
+    const root = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    root.innerHTML = `<style>
+      :host, svg, text, tspan, foreignObject, foreignObject * { user-select: text; }
+      svg { display: block; width: 100% !important; height: 100% !important; max-width: none !important; }
+      text, tspan, foreignObject { cursor: text; }
+    </style>${svg}`;
+  }, [svg]);
+
+  return <div ref={hostRef} className="mk-mermaid-preview absolute inset-0 select-text" />;
+}
+
+function isSvgTextEvent(event: Event) {
+  return event.composedPath().some((node) => node instanceof Element && node.matches("text, tspan, foreignObject"));
+}
+
 export function ImageViewer({
   src,
+  svg,
   alt,
   className,
   paper = false,
@@ -47,6 +71,7 @@ export function ImageViewer({
   onPanChange,
 }: {
   src: string;
+  svg?: string;
   alt?: string;
   className?: string;
   paper?: boolean;
@@ -229,6 +254,7 @@ export function ImageViewer({
   // 鼠标左键按下开始平移拖拽（仅当内容超出视口时激活拖拽能力）
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
+    if (svg && isSvgTextEvent(event.nativeEvent)) return;
     const { canScrollX, canScrollY } = getPanBounds(imageWidth, imageHeight, viewport.width, viewport.height);
     if (!canScrollX && !canScrollY) return;
 
@@ -268,7 +294,8 @@ export function ImageViewer({
     }
   }
 
-  function handleDoubleClick() {
+  function handleDoubleClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (svg && isSvgTextEvent(event.nativeEvent)) return;
     updateZoom(1);
     updatePan({ x: 0, y: 0 });
   }
@@ -299,14 +326,17 @@ export function ImageViewer({
           willChange: isDragging ? "transform" : "auto",
         }}
       >
-        <img
-          src={src}
-          alt={alt ?? ""}
-          draggable={false}
-          className="block max-w-none shrink-0 object-contain pointer-events-none"
-          style={{ width: imageWidth, height: imageHeight }}
-          onLoad={(event) => setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-        />
+        <div className="relative shrink-0">
+          <img
+            src={src}
+            alt={alt ?? ""}
+            draggable={false}
+            className={cn("block max-w-none object-contain pointer-events-none", svg && "invisible")}
+            style={{ width: imageWidth, height: imageHeight }}
+            onLoad={(event) => setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+          />
+          {svg ? <SelectableMermaidSvg svg={svg} /> : null}
+        </div>
       </div>
     </div>
   );
@@ -333,12 +363,14 @@ export function MediaPreviewDialog({
   open,
   onOpenChange,
   src,
+  svg,
   alt,
   title,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   src?: string;
+  svg?: string;
   alt?: string;
   title?: string;
 }) {
@@ -434,6 +466,7 @@ export function MediaPreviewDialog({
         {src ? (
           <ImageViewer
             src={src}
+            svg={svg}
             alt={alt}
             className="flex-1"
             zoom={zoom}

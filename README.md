@@ -82,6 +82,10 @@ Markdown 内容导出为 DOCX，支持标题编号、表格、图表和题注。
 
 ![Markdown 转 Word 后的 DOCX 文档页](docs/images/feature-word-preview.png)
 
+### 制作简历
+
+在模板中心选择“简洁简历模板”，点击“复制简历示例”，粘贴到 Markdown 文档后替换个人信息与照片路径。模板使用 A4 页面、无目录和页码的单栏布局；不需要照片时可删去示例表格中的图片。照片放在表格右侧，使用 `![](个人照片.jpg){width=2.5cm height=3.5cm}` 设置常见一寸照片尺寸。可在照片单元格中选中 `![](个人照片.jpg)` 并粘贴图片，保留后面的尺寸属性；也可直接修改照片路径。建议使用宽高比为 5:7 的证件照；图片路径相对于 Markdown 文件。导出 DOCX 后请在 Word/WPS 中核对版面。
+
 <details>
 <summary>查看更多截图：大纲、深色模式、设置与更新</summary>
 
@@ -210,7 +214,7 @@ pnpm test:msvc
 scripts\cargo-msvc.bat tauri-build
 ```
 
-- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.2.2_x64-setup.exe`。
+- NSIS 安装包：`src-tauri/target/release/bundle/nsis/md-king_1.2.3_x64-setup.exe`。
 - MSI 安装包：`src-tauri/target/release/bundle/msi/`。
 - 当前维护者本机安装路径：`G:\md-king\md-king.exe`；其他用户的升级目录取自当前正在运行的可执行文件，无需修改源码。
 

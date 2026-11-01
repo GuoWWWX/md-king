@@ -27,8 +27,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { mergeTemplateStyleConfig } from "@/lib/style-manager-data";
+import { resumeSampleMarkdown } from "@/lib/resume-sample";
+import { copyTextToClipboard } from "@/lib/vault";
 import { getTemplateStyleConfig, getTemplateStyleConfigs, importTemplate, listTemplates, saveAppConfig, saveTemplates } from "@/lib/tauri";
 import { getTemplateCategory, getTemplateGroups, isFixedTemplateGroup, loadCustomTemplateGroups, saveCustomTemplateGroups, toTemplateGroupName } from "@/lib/template-categories";
+import { templateLabel } from "@/lib/template-labels";
 import { userFacingErrorMessage } from "@/lib/user-facing-errors";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
@@ -287,7 +290,7 @@ export function TemplatesPage() {
     setPreviewTemplateId(template.id);
     setCurrentTemplateId(template.id);
     setActivePage("convert");
-    toast.success(t("已选择「{0}」作为本次转换模板", [template.name]));
+    toast.success(t("已选择「{0}」作为本次转换模板", [templateLabel(template)]));
   }
 
   async function persistTemplates(nextTemplates: Template[]) {
@@ -307,7 +310,7 @@ export function TemplatesPage() {
       setAppConfig(savedConfig);
       setPreviewTemplateId(template.id);
       await persistTemplates(templates.map((item) => ({ ...item, isDefault: item.id === template.id })));
-      toast.success(t("已将「{0}」设为默认模板", [template.name]));
+      toast.success(t("已将「{0}」设为默认模板", [templateLabel(template)]));
     } catch (error) {
       toast.error(userFacingErrorMessage(error, t("保存默认模板失败")));
     }
@@ -650,6 +653,7 @@ export function TemplatesPage() {
               <TemplateGalleryCard
                 key={template.id}
                 template={template}
+                previewMarkdown={template.id === "resume" ? resumeSampleMarkdown(true) : undefined}
                 previewStyleConfig={cardPreviewStyleConfigs[template.id]}
                 isCurrent={currentTemplateId === template.id}
                 isPreviewed={highlightedTemplate?.id === template.id}
@@ -722,7 +726,7 @@ export function TemplatesPage() {
           <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-slate-950 dark:text-zinc-50">{t("Word 预览")}</p>
-              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{highlightedTemplate?.name ?? t("未选择模板")}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{highlightedTemplate ? templateLabel(highlightedTemplate) : t("未选择模板")}</p>
             </div>
             <WordPreviewToolbar
               zoom={templatePreviewZoom}
@@ -735,9 +739,18 @@ export function TemplatesPage() {
               onOpenAdvancedStyle={() => openStyleManager(highlightedTemplate, "styles")}
             />
           </div>
+          {highlightedTemplate?.id === "resume" ? (
+            <SoftActionButton className="mb-2 self-start" onClick={() => {
+              void copyTextToClipboard(resumeSampleMarkdown()).then(
+                () => toast.success(t("已复制简历示例，请替换个人信息和照片路径")),
+                () => toast.error(t("复制失败")),
+              );
+            }}>{t("复制简历示例")}</SoftActionButton>
+          ) : null}
           <div className="min-h-0 flex-1" onWheel={handleTemplatePreviewWheel}>
             <WordPreviewPage
               styleConfig={previewStyleConfig}
+              markdown={highlightedTemplate?.id === "resume" ? resumeSampleMarkdown(true) : undefined}
               zoom={templatePreviewZoom}
               paginate
               showHeader={false}

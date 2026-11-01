@@ -612,6 +612,11 @@ function calloutAtLine(state: EditorState, lineFrom: number) {
   return parseMarkdownCalloutHeader(line.text.slice(prefix?.[0].length ?? 0));
 }
 
+function isLastExplicitQuoteLine(state: EditorState, lineNumber: number, blockLastLineNumber: number): boolean {
+  // Markdown 允许没有 > 的续行，解析器会将其计入 Blockquote，但编辑器将其显示为普通正文。
+  return lineNumber >= blockLastLineNumber || !/^\s*>/.test(state.doc.line(lineNumber + 1).text);
+}
+
 function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): void {
   const state = collector.state;
   const line = state.doc.lineAt(ref.from);
@@ -623,7 +628,7 @@ function handleQuoteMark(collector: DecorationCollector, ref: SyntaxNodeRef): vo
   const firstContentStart = firstLine.from + (firstPrefix?.[0].length ?? 0);
   const callout = parseMarkdownCalloutHeader(state.doc.sliceString(firstContentStart, firstLine.to));
   const isFirstLine = line.number === firstLine.number;
-  const isLastLine = line.number === lastLine.number;
+  const isLastLine = isLastExplicitQuoteLine(state, line.number, lastLine.number);
   const collapsed = callout?.fold
     ? isCalloutCollapsed(state, firstLine.from, callout.fold)
     : false;
@@ -1479,7 +1484,7 @@ function buildTableBlocks(
       const callout = parseMarkdownCalloutHeader(quoteFirst.text.slice(prefix.length));
       if (callout?.fold && isCalloutCollapsed(state, quoteFirst.from, callout.fold)) continue;
       quoteClasses = callout
-        ? `mk-cm-quote-line mk-cm-callout-line mk-cm-callout-line--${callout.tone}${last.number === quoteLast.number ? " mk-cm-callout-last" : ""}`
+        ? `mk-cm-quote-line mk-cm-callout-line mk-cm-callout-line--${callout.tone}${isLastExplicitQuoteLine(state, last.number, quoteLast.number) ? " mk-cm-callout-last" : ""}`
         : "mk-cm-quote-line";
     }
 

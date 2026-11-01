@@ -1,6 +1,7 @@
 import type { BorderStyleMode, CaptionPosition, CodeBlockPresetKey, ImageWidthMode, ListLevelType, ListMarkerStyle, ListNumberingMode, ListWrapMode, MarkdownFeatureSettings, MarkdownRulesSettings, PageSettingsDraft, StyleDraft, StyleGroupKey, StyleNode, TablePresetKey, TemplateStyleConfig } from "@/types/style-manager";
 
 import { defaultSignatureSettings } from "./markdown-formatting.ts";
+import resumeTemplate from "./resume-template.json" with { type: "json" };
 
 export const styleGroupLabels: Record<StyleGroupKey, string> = {
   basic: "基础样式",
@@ -512,7 +513,7 @@ export const defaultMarkdownRules: MarkdownRulesSettings = {
   },
 };
 
-const builtInTemplateIds = new Set(["default-report", "official-document", "technical-spec"]);
+const builtInTemplateIds = new Set(["default-report", "official-document", "technical-spec", "resume"]);
 
 const builtInMarkdownRules: MarkdownRulesSettings = {
   headingMappings: {
@@ -842,6 +843,12 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
     styles.table = { ...styles.table, tablePreset: "grid", tableLayout: "fixed", rowStripe: false, borderColor: "#64748B", headerBackgroundColor: "#F1F5F9", headerBorderColor: "#64748B", bodyBorderColor: "#64748B" };
   }
 
+  if (templateId === "resume") {
+    for (const [styleId, overrides] of Object.entries(resumeTemplate.styles)) {
+      styles[styleId] = { ...styles[styleId], ...overrides as Partial<StyleDraft> };
+    }
+  }
+
   // body-text 不在 styleNodes 中（UI 不单独编辑），必须从 normal 派生出完整草稿，
   // 否则导出侧读到残缺对象会静默回退到 Rust 硬编码默认值。
   styles["body-text"] = { ...styles.normal, styleId: "body-text" };
@@ -857,7 +864,7 @@ export function createDefaultTemplateStyleConfig(templateId: string): TemplateSt
   return {
     templateId,
     styles,
-    pageSettings: defaultPageSettings,
+    pageSettings: templateId === "resume" ? { ...defaultPageSettings, ...resumeTemplate.pageSettings as Partial<PageSettingsDraft> } : defaultPageSettings,
     markdownFeatures: defaultMarkdownFeatures,
     markdownRules: builtInTemplateIds.has(templateId) ? builtInMarkdownRules : defaultMarkdownRules,
     updatedAt: new Date().toISOString(),

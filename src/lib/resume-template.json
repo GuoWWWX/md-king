@@ -1,0 +1,17 @@
+{
+  "templateId": "resume",
+  "styles": {
+    "title": { "chineseFont": "微软雅黑", "latinFont": "Arial", "fontSize": 22, "fontWeight": "700", "color": "#17365D", "align": "left", "beforeSpacing": 0, "afterSpacing": 4, "firstLineIndent": 0 },
+    "heading-1": { "chineseFont": "微软雅黑", "latinFont": "Arial", "fontSize": 12, "fontWeight": "700", "color": "#245A81", "align": "left", "beforeSpacing": 9, "afterSpacing": 3, "firstLineIndent": 0, "autoNumbering": false, "numberFormat": "无编号" },
+    "heading-2": { "chineseFont": "微软雅黑", "latinFont": "Arial", "fontSize": 11, "fontWeight": "700", "color": "#17365D", "align": "left", "beforeSpacing": 5, "afterSpacing": 2, "firstLineIndent": 0, "autoNumbering": false, "numberFormat": "无编号" },
+    "heading-3": { "autoNumbering": false, "numberFormat": "无编号" },
+    "heading-4": { "autoNumbering": false, "numberFormat": "无编号" },
+    "heading-5": { "autoNumbering": false, "numberFormat": "无编号" },
+    "heading-6": { "autoNumbering": false, "numberFormat": "无编号" },
+    "normal": { "chineseFont": "微软雅黑", "latinFont": "Arial", "fontSize": 10.5, "fontWeight": "400", "color": "#273444", "lineHeight": "1.25", "firstLineIndent": 0, "beforeSpacing": 0, "afterSpacing": 3, "align": "left" },
+    "image": { "imageWidthMode": "original", "imageAlign": "right" },
+    "table": { "tableLayout": "fixed", "fitToPageWidth": true, "columnWidthMode": "custom", "firstColumnWidth": 77, "secondColumnWidth": 23, "thirdColumnWidth": 0, "cellPaddingX": 0, "cellPaddingY": 2, "minRowHeight": 0, "rowStripe": false, "repeatHeaderOnEachPage": false, "borderStyle": "none", "borderWidth": 0, "borderTopWidth": 0, "borderRightWidth": 0, "borderBottomWidth": 0, "borderLeftWidth": 0, "showInnerVerticalBorder": false, "showInnerHorizontalBorder": false, "headerBorderWidth": 0, "bodyBorderWidth": 0, "headerBold": false, "headerAlign": "left", "headerVerticalAlign": "middle", "headerBackgroundColor": "#FFFFFF", "headerFontSize": 10.5, "headerLineHeight": "1.25", "bodyAlign": "left", "bodyVerticalAlign": "middle", "bodyBackgroundColor": "#FFFFFF", "bodyFontSize": 10.5, "bodyLineHeight": "1.25", "chineseFont": "微软雅黑", "latinFont": "Arial", "color": "#273444" }
+  },
+  "pageSettings": { "paperSize": "A4", "orientation": "portrait", "marginTop": 1.6, "marginBottom": 1.6, "marginLeft": 1.8, "marginRight": 1.8, "headerEnabled": false, "footerEnabled": false, "tocEnabled": false },
+  "markdownRules": { "headingMappings": { "heading-1": "title", "heading-2": "heading-1", "heading-3": "heading-2", "heading-4": "heading-3", "heading-5": "heading-4", "heading-6": "heading-5" } }
+}

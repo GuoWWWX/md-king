@@ -2973,10 +2973,6 @@ select {
     white-space: nowrap;
   }
 
-  .mk-cm-table-wrapper.is-wrap .mk-cm-table-scroll {
-    overflow-x: hidden;
-  }
-
   .mk-cm-table-wrapper.is-wrap {
     width: fit-content;
   }
@@ -2990,7 +2986,8 @@ select {
   .mk-cm-table-wrapper.is-wrap .mk-cm-table th,
   .mk-cm-table-wrapper.is-wrap .mk-cm-table td,
   .mk-cm-table-wrapper.is-wrap .mk-cm-table-cell {
-    min-width: 0;
+    /* 内容模式需要覆盖列权重设置的行内最小宽度。 */
+    min-width: 0 !important;
     white-space: normal;
   }
 

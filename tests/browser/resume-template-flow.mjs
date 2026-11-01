@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try {
+ const page=await browser.newPage({viewport:{width:1500,height:1000}}), errors=[];
+ page.on('pageerror',error=>errors.push(error.message));
+ await page.addInitScript(()=>{Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedResume=text;}}});});
+ await page.goto(process.env.TEST_BASE_URL||'http://127.0.0.1:1420');
+ await page.getByRole('button',{name:'模板中心',exact:true}).click();
+ const card=page.locator('article').filter({hasText:'简洁简历模板'});
+ await card.waitFor();
+ await card.click();
+ await page.getByRole('button',{name:'复制简历示例'}).click();
+ const copied=await page.evaluate(()=>window.copiedResume);
+ assert.match(copied,/个人照片\.jpg\)\{width=2\.5cm height=3\.5cm\}/);
+ assert.match(copied,/工作经历/);
+ const preview=page.locator('.mk-template-side-preview');
+ await preview.locator('img').first().waitFor();
+ assert.ok(await preview.getByText('工作经历',{exact:true}).count());
+ await page.getByRole('button',{name:'语言 / Language'}).click();
+ await page.getByRole('menuitemradio',{name:'English'}).click();
+ await page.getByRole('button',{name:'Copy resume example'}).waitFor();
+ assert.ok(await page.locator('article').filter({hasText:'Clean resume template'}).count());
+ assert.ok(await preview.getByText('Experience',{exact:true}).count());
+ await page.getByRole('button',{name:'Copy resume example'}).click();
+ assert.match(await page.evaluate(()=>window.copiedResume),/portrait\.jpg\)\{width=2\.5cm height=3\.5cm\}/);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: resume template is discoverable, previews the example, and copies editable Markdown.');
+} finally {await browser.close();}
