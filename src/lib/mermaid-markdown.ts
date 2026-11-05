@@ -43,6 +43,17 @@ function hasRichTokens(tokens: ReturnType<MarkdownIt["parse"]>): boolean {
   return tokens.some((token) => richTokenTypes.has(token.type) || Boolean(token.children && hasRichTokens(token.children)));
 }
 
+function parseLabelMarkdown(parser: MarkdownIt, text: string, env: Record<string, unknown> = {}) {
+  const tokens = parser.parse(text, env);
+  // A single numbered step labels the node itself. Treat it as ordinary text;
+  // actual multi-item lists still use Markdown indentation and numbering.
+  if (tokens[0]?.type === "ordered_list_open"
+    && tokens.filter((token) => token.type === "list_item_open").length === 1) {
+    return parser.parse(text.replace(/^(\s*\d+)([.)])(?=[ \t])/, "$1\\$2"), env);
+  }
+  return tokens;
+}
+
 function explicitSvgLabels(source: string) {
   const frontmatter = source.match(/^\s*---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] ?? "";
   const directives = [...source.matchAll(/^[ \t]*%%\{[\s\S]*?\}%%/gm)].map((match) => match[0]).join("\n");
@@ -144,7 +155,7 @@ export function prepareMermaidMarkdown(source: string, noteWidths?: number[]): {
     let sequence = 0;
     const prepared = source.replace(/^(\s*(?:service|group)\s+[\w.-]+\s*\([^\r\n)]*\)\s*\[)("?)([^"\]\r\n]*)(\2\])/gm,
       (whole, prefix: string, quote: string, label: string, suffix: string) => {
-        const tokens = markdown.parse(label.replace(/<br\s*\/?>/gi, "\n"), {});
+        const tokens = parseLabelMarkdown(markdown, label.replace(/<br\s*\/?>/gi, "\n"));
         if (!hasRichTokens(tokens)) return whole;
         let marker: string;
         do { marker = `MKMD${sequence++}X`; } while (source.includes(marker));
@@ -212,7 +223,7 @@ export function prepareMermaidMarkdown(source: string, noteWidths?: number[]): {
         return "\n";
       },
     );
-    const tokens = labelContext ? markdown.parse(text, {}) : [];
+    const tokens = labelContext ? parseLabelMarkdown(markdown, text) : [];
     if (labelContext && (nativeMarkdown || hasRichTokens(tokens))) {
       const html = markdown.renderer.render(tokens, markdown.options, {})
         .trim().replace(/\n/g, "").replace(/"/g, "#quot;");
@@ -291,12 +302,12 @@ export function formatMermaidSvgMarkdown(root: SVGSVGElement, source: string, re
       : spans.length ? spans.map(preserveSvgFormatting).join(" ") : text.textContent ?? "");
     for (const [marker, original] of Object.entries(replacements)) content = content.split(marker).join(original);
     content = content.replace(/<br\s*\/?>/gi, "\n");
-    const tokens = svgMarkdown.parse(content, env);
-    if (!hasRichTokens(tokens)) continue;
     // A single numbered message such as "1. Acquire lock" is common in
     // sequence diagrams; it is not intended as a one-item Markdown list.
     const explicitListLines = source.split(/<br\s*\/?>/i).slice(1);
     const isExplicitListLine = explicitListLines.some((line) => line.trimStart().startsWith(content.trim()));
+    const tokens = isExplicitListLine ? svgMarkdown.parse(content, env) : parseLabelMarkdown(svgMarkdown, content, env);
+    if (!hasRichTokens(tokens)) continue;
     if (!content.includes("\n") && !isExplicitListLine
       && tokens.some((token) => token.type === "ordered_list_open" || token.type === "bullet_list_open")) continue;
 
@@ -373,7 +384,7 @@ export function formatMermaidSvgMarkdown(root: SVGSVGElement, source: string, re
         if (tag === "p" || tag === "div") return `${text}\n`;
         return text;
       }).join("");
-      const tokens = svgMarkdown.parse(asMarkdown(label).replace(/<br\s*\/?>/gi, "\n"), env);
+      const tokens = parseLabelMarkdown(svgMarkdown, asMarkdown(label).replace(/<br\s*\/?>/gi, "\n"), env);
       if (!hasRichTokens(tokens)) continue;
       label.innerHTML = svgMarkdown.renderer.render(tokens, svgMarkdown.options, env);
       label.setAttribute("data-mk-markdown-label", "");

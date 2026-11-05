@@ -2,7 +2,7 @@
 const MERMAID_FONT_FAMILY = "Microsoft YaHei, Segoe UI Emoji, sans-serif";
 const MERMAID_FONT_SIZE = 14;
 const MERMAID_EDGE_LABEL_FONT_SIZE = 12;
-const MERMAID_LABEL_WRAP_WIDTH = 240;
+const MERMAID_LABEL_WRAP_WIDTH = 480;
 const MERMAID_EDGE_LABEL_WRAP_WIDTH = 720;
 const MERMAID_THEME_CSS = `
 .nodeLabel {

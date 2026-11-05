@@ -2,6 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mermaidMarkdownLayout, prepareMermaidMarkdown } from "./mermaid-markdown.ts";
 
+test("单个编号步骤保留原文，不能当成有序列表增加缩进", () => {
+  for (const label of ['3. 内存空间零值初始化\\n(默认清零，保证成员变量不赋初值即可用)', '4. 设置对象头 (Object Header)', '5. **执行构造方法**\\n(程序员编写的字段赋值与构造函数逻辑)']) {
+    const source = `flowchart TD\nA["${label}"]`;
+    const result = prepareMermaidMarkdown(source);
+    assert.ok(!result.source.includes('<ol'));
+    assert.ok(!result.source.includes('<li>'));
+    assert.ok(result.source.includes(label.slice(0, 3)));
+    if (label.includes('**')) assert.ok(result.source.includes('<strong>执行构造方法</strong>'));
+    else assert.equal(result.source, source);
+  }
+});
+
 test("流程图标签支持 Markdown 格式、列表和公式", () => {
   const source = 'flowchart LR\nsubgraph g["**标题**"]\nA["**粗体** *斜体* `代码` $x^2$<br/>- 第一项<br/>- 第二项"] -->|"**连线** `id`"| B["1. 第一项<br/>2. 第二项"]\nend';
   const result = prepareMermaidMarkdown(source);
