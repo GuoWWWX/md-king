@@ -1,7 +1,9 @@
 // Shared by the editor and the headless Word/quick-paste renderer.
 const MERMAID_FONT_FAMILY = "Microsoft YaHei, Segoe UI Emoji, sans-serif";
 const MERMAID_FONT_SIZE = 14;
+const MERMAID_EDGE_LABEL_FONT_SIZE = 12;
 const MERMAID_LABEL_WRAP_WIDTH = 240;
+const MERMAID_EDGE_LABEL_WRAP_WIDTH = 720;
 const MERMAID_THEME_CSS = `
 .nodeLabel {
   display: inline-block;
@@ -50,7 +52,16 @@ g.classGroup .classTitle .nodeLabel,
 .classTitleText {
   text-align: center !important;
 }
-/* 连线标签只显示文字，不绘制 Mermaid 默认的背景块。 */
+/* 同时覆盖标签内的显式字号，确保实际文字比节点稍小。 */
+.edgeLabel, .edgeLabel .label, .edgeLabel .nodeLabel,
+.edgeLabel p, .edgeLabel li, .edgeLabel code,
+.edgeLabel text, .edgeLabel tspan { font-size: ${MERMAID_EDGE_LABEL_FONT_SIZE}px !important; }
+.edgeLabels foreignObject > div.labelBkg,
+.edgeLabel foreignObject > div {
+  max-width: ${MERMAID_EDGE_LABEL_WRAP_WIDTH}px !important;
+  padding: 0;
+  border: none !important;
+}
 .edgeLabel,
 .edgeLabel *,
 .edgeLabel p,
@@ -221,7 +232,7 @@ function styleMermaidEdgeLabels(root, dark) {
     if (!bounds.width || !bounds.height) continue;
     const x = bounds.x + bounds.width / 2;
     const y = bounds.y + bounds.height / 2;
-    let rgb = dark ? [24, 24, 27] : [255, 255, 255];
+    let rgb = dark ? [32, 33, 36] : [255, 255, 255];
     for (const cluster of clusters) {
       const b = cluster.bounds;
       if (x < b.left || x > b.right || y < b.top || y > b.bottom) continue;
@@ -236,28 +247,17 @@ function styleMermaidEdgeLabels(root, dark) {
     });
     const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
     const color = (luminance + 0.05) / 0.066 > 1.05 / (luminance + 0.05) ? "#222222" : "#f5f5f5";
-    const background = `rgb(${rgb.map((channel) => Math.round(channel)).join(", ")})`;
-    // A multiline list needs a solid backing: text shadows alone cannot hide
-    // a connector passing through the whitespace between list items.
-    if (label.querySelector("[data-mk-markdown-label] ul, [data-mk-markdown-label] ol")) {
-      label.querySelector("foreignObject > div")?.style.setProperty("background-color", background, "important");
-    }
     // 内联到文字本身，SVG 单独展示和 PNG 栅格化时也能保留，不依赖页面 CSS。
     for (const element of [label, ...label.querySelectorAll("div,span,p,strong,em,code,li,math,text,tspan")]) {
       element.style.setProperty("color", color, "important");
       if (element.matches("text,tspan")) {
         element.style.setProperty("fill", color, "important");
-        element.style.setProperty("stroke", background, "important");
-        element.style.setProperty("stroke-width", "3px", "important");
-        element.style.setProperty("paint-order", "stroke", "important");
       } else if (element.matches("div,span,p,strong,em,code,li,math")) {
         element.style.setProperty("white-space", "normal", "important");
         element.style.setProperty("overflow-wrap", "anywhere", "important");
         element.style.setProperty("word-break", "break-word", "important");
         element.style.setProperty("line-height", "1.35", "important");
         if (element.matches("div,span,p")) element.style.setProperty("text-align", "center", "important");
-        // foreignObject 文本没有 SVG stroke，用同色文字描边擦掉连线。
-        element.style.setProperty("text-shadow", `1.5px 0 ${background}, -1.5px 0 ${background}, 0 1.5px ${background}, 0 -1.5px ${background}`, "important");
       }
     }
 
@@ -333,40 +333,90 @@ function layoutMermaidClusterTitles(root) {
 function layoutMermaidLabels(root) {
   layoutMermaidClusterTitles(root);
   const gap = 8;
-  const overlaps = (a, b) => a.left < b.right + gap && a.right > b.left - gap
-    && a.top < b.bottom + gap && a.bottom > b.top - gap;
-  const nodes = [...root.querySelectorAll('.node, .cluster-label')].map(node => node.getBoundingClientRect());
-  const placed = [];
-  for (const label of root.querySelectorAll('g.edgeLabel')) {
-    const box = label.getBoundingClientRect();
-    if (!box.width || !box.height) continue;
-    const obstacles = [...nodes, ...placed];
-    const collisions = obstacles.filter(obstacle => overlaps(box, obstacle));
-    if (collisions.length) {
-      const xs = [0, ...collisions.flatMap(obstacle => [obstacle.left - gap - 1 - box.right, obstacle.right + gap + 1 - box.left])];
-      const ys = [0, ...collisions.flatMap(obstacle => [obstacle.top - gap - 1 - box.bottom, obstacle.bottom + gap + 1 - box.top])];
-      const candidates = xs.flatMap(dx => ys.map(dy => [dx, dy])).sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
-      const container = [...root.querySelectorAll('.cluster > rect')].map(rect => rect.getBoundingClientRect())
-        .filter(rect => box.left >= rect.left && box.right <= rect.right && box.top >= rect.top && box.bottom <= rect.bottom)
-        .sort((a, b) => a.width * a.height - b.width * b.height)[0] ?? root.getBoundingClientRect();
-      for (const [dx, dy] of candidates) {
-        const moved = { left: box.left + dx, right: box.right + dx, top: box.top + dy, bottom: box.bottom + dy };
-        if (moved.left < container.left || moved.right > container.right || moved.top < container.top || moved.bottom > container.bottom) continue;
-        if (obstacles.some(obstacle => overlaps(moved, obstacle))) continue;
-        const inverse = label.parentElement.getScreenCTM().inverse();
-        const delta = new DOMPoint(dx, dy).matrixTransform(inverse);
-        const origin = new DOMPoint(0, 0).matrixTransform(inverse);
-        const matrix = label.transform.baseVal.consolidate()?.matrix ?? new DOMMatrix();
-        matrix.e += delta.x - origin.x;
-        matrix.f += delta.y - origin.y;
-        label.setAttribute('transform', `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`);
-        break;
+  const textRows = label => {
+    const rows = [];
+    for (const foreign of label.querySelectorAll('foreignObject')) {
+      const walker = document.createTreeWalker(foreign, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (!walker.currentNode.textContent.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(walker.currentNode);
+        rows.push(...range.getClientRects());
       }
     }
-    placed.push(label.getBoundingClientRect());
+    for (const text of label.querySelectorAll('text')) {
+      const spans = text.querySelectorAll('tspan.row');
+      rows.push(...(spans.length ? [...spans] : [text]).map(row => row.getBoundingClientRect()));
+    }
+    return rows.filter(row => row.width && row.height);
+  };
+  for (const label of root.querySelectorAll('g.edgeLabel')) {
+    // Align the actual glyphs with their connector, independently of empty
+    // wrapper margins. Only vertical branches need an upward elbow offset.
+    {
+      const matrix = label.transform.baseVal.consolidate()?.matrix ?? new DOMMatrix();
+      if (!label.hasAttribute('data-mk-edge-anchor')) {
+        let anchor = new DOMPoint(matrix.e, matrix.f);
+        let rise = 0;
+        const id = label.querySelector('g.label[data-id]')?.getAttribute('data-id');
+        const path = [...root.querySelectorAll('path.flowchart-link[data-id]')].find(path => path.getAttribute('data-id') === id);
+        const parentMatrix = label.parentElement.getScreenCTM();
+        if (path && parentMatrix && path.getScreenCTM()) {
+          const origin = anchor.matrixTransform(parentMatrix), length = path.getTotalLength();
+          const start = path.getPointAtLength(0), next = path.getPointAtLength(Math.min(12, length));
+          if (Math.abs(next.y - start.y) > Math.abs(next.x - start.x)) rise = 24;
+          let nearest = origin, distance = Infinity;
+          for (let i = 0; i <= 160; i++) {
+            const point = path.getPointAtLength(length * i / 160).matrixTransform(path.getScreenCTM());
+            const delta = Math.hypot(point.x - origin.x, point.y - origin.y);
+            if (delta < distance) { nearest = point; distance = delta; }
+          }
+          anchor = nearest.matrixTransform(parentMatrix.inverse());
+        } else continue;
+        label.setAttribute('data-mk-edge-anchor', `${anchor.x} ${anchor.y}`);
+        label.setAttribute('data-mk-edge-rise', String(rise));
+      }
+      const [anchorX, anchorY] = label.getAttribute('data-mk-edge-anchor').split(' ').map(Number);
+      const rise = Number(label.getAttribute('data-mk-edge-rise'));
+      const rows = textRows(label), inverse = label.parentElement.getScreenCTM()?.inverse();
+      if (rows.length && inverse) {
+        const x = (Math.min(...rows.map(row => row.left)) + Math.max(...rows.map(row => row.right))) / 2;
+        const bottom = Math.max(...rows.map(row => row.bottom));
+        const y = (Math.min(...rows.map(row => row.top)) + bottom) / 2;
+        const center = new DOMPoint(x, y).matrixTransform(inverse);
+        const offset = rise || Math.abs(new DOMPoint(x, bottom).matrixTransform(inverse).y - center.y) + 4;
+        const dx = anchorX - center.x, dy = anchorY - center.y - offset;
+        if (Math.abs(dx) > 0.01) matrix.e += dx;
+        if (Math.abs(dy) > 0.01) matrix.f += dy;
+      } else { matrix.e = anchorX; matrix.f = anchorY - (rise || 12); }
+      label.setAttribute('transform', `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`);
+      label.setAttribute('data-mk-edge-raised', '');
+    }
   }
-  for (const rect of root.querySelectorAll('g[data-et="note"] > rect.note')) {
-    const texts = [...rect.parentElement.querySelectorAll('.noteText')];
+  // Sequence messages use separate SVG text rows before their horizontal line.
+  // Keep all rows together and leave a small, consistent gap above the line.
+  for (const line of root.querySelectorAll('line[data-et="message"]')) {
+    const texts = [];
+    let previous = line.previousElementSibling;
+    while (previous?.matches('text.messageText, foreignObject[data-mk-rich-processed]')) {
+      texts.push(previous); previous = previous.previousElementSibling;
+    }
+    const parentMatrix = line.parentElement.getScreenCTM();
+    if (!texts.length || !parentMatrix) continue;
+    const bottom = Math.max(...texts.map(text => text.getBoundingClientRect().bottom));
+    const dy = line.getBoundingClientRect().top - 3 * Math.abs(parentMatrix.d) - bottom;
+    const inverse = parentMatrix.inverse();
+    const offset = new DOMPoint(0, dy).matrixTransform(inverse).y - new DOMPoint(0, 0).matrixTransform(inverse).y;
+    if (Math.abs(offset) < 0.01) continue;
+    for (const text of texts) {
+      const matrix = text.transform.baseVal.consolidate()?.matrix ?? new DOMMatrix();
+      matrix.f += offset;
+      text.setAttribute('transform', `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`);
+    }
+  }
+  const notes = [...root.querySelectorAll('g[data-et="note"] > rect.note')];
+  for (const rect of notes) {
+    const texts = [...rect.parentElement.querySelectorAll('.noteText, foreignObject[data-mk-rich-processed]')];
     if (!texts.length) continue;
     const bounds = texts.map(text => text.getBBox());
     const x = Number(rect.getAttribute('x')), y = Number(rect.getAttribute('y'));
@@ -376,6 +426,29 @@ function layoutMermaidLabels(root) {
     const bottom = Math.max(y + Number(rect.getAttribute('height')), ...bounds.map(box => box.y + box.height + gap));
     rect.setAttribute('x', String(left)); rect.setAttribute('y', String(top));
     rect.setAttribute('width', String(right - left)); rect.setAttribute('height', String(bottom - top));
+  }
+  // Notes and labels placed outside a narrow branch can extend the original
+  // bounds. Include them in the SVG canvas instead of clipping their text.
+  const boundedLabels = [...notes, ...root.querySelectorAll('g.edgeLabel')];
+  if (boundedLabels.length && root.viewBox?.baseVal.width && root.getCTM()) {
+    const view = root.viewBox.baseVal;
+    let left = view.x, top = view.y, right = view.x + view.width, bottom = view.y + view.height;
+    const inverse = root.getCTM().inverse();
+    for (const rect of boundedLabels) {
+      const matrix = rect.getCTM();
+      if (!matrix) continue;
+      const transform = inverse.multiply(matrix), box = rect.getBBox();
+      const corners = [new DOMPoint(box.x, box.y), new DOMPoint(box.x + box.width, box.y),
+        new DOMPoint(box.x, box.y + box.height), new DOMPoint(box.x + box.width, box.y + box.height)]
+        .map(point => point.matrixTransform(transform));
+      left = Math.min(left, ...corners.map(point => point.x - gap));
+      top = Math.min(top, ...corners.map(point => point.y - gap));
+      right = Math.max(right, ...corners.map(point => point.x + gap));
+      bottom = Math.max(bottom, ...corners.map(point => point.y + gap));
+    }
+    if (left !== view.x || top !== view.y || right !== view.x + view.width || bottom !== view.y + view.height) {
+      root.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
+    }
   }
 }
 

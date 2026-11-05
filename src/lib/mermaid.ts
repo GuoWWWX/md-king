@@ -1,6 +1,6 @@
 import { mermaidConfig, layoutMermaidKanban, styleMermaidEdgeLabels, ensureMermaidContrast, normalizeMermaidThemes, resolveMermaidTheme, type MermaidThemeId, type MermaidThemeSettings } from "./mermaid-config.js";
 import { calculateRasterSize, svgDataUrl } from "./svg-image.ts";
-import { formatMermaidSvgMarkdown, mermaidMarkdownLayout, prepareMermaidMarkdown } from "./mermaid-markdown.ts";
+import { formatMermaidSvgMarkdown, mermaidMarkdownLayout, renderMermaidMarkdown } from "./mermaid-markdown.ts";
 
 /**
  * Mermaid 渲染服务。
@@ -95,11 +95,9 @@ export async function renderMermaid(source: string, dark: boolean, settings = ac
 
   const task = renderQueue.then(async () => {
     const mermaid = await loadMermaid(dark, selectedTheme, normalized);
-    renderSeq += 1;
     // id 必须唯一：mermaid 会用它做 DOM 元素 id 和 SVG 内部的 clip-path 引用，
     // 重复 id 会让同一页里的多张图互相串。
-    const prepared = prepareMermaidMarkdown(normalized);
-    const { svg } = await mermaid.render(`mk-mermaid-${renderSeq}`, prepared.source);
+    const { svg, prepared } = await renderMermaidMarkdown(normalized, source => mermaid.render(`mk-mermaid-${++renderSeq}`, source));
     const size = measureSvg(svg);
     const result = { svg: readableEdgeLabels(svg, size, dark, normalized, prepared.replacements), ...size };
     svgCache.set(key, result);
@@ -139,6 +137,13 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
       root.setAttribute("height", String(size.height));
     }
     styleMermaidEdgeLabels(root, dark);
+    const labelView = root.viewBox.baseVal;
+    if (labelView.width > 0 && labelView.height > 0 && (labelView.width !== size.width || labelView.height !== size.height)) {
+      size.width = Math.ceil(labelView.width);
+      size.height = Math.ceil(labelView.height);
+      root.setAttribute("width", String(size.width));
+      root.setAttribute("height", String(size.height));
+    }
 
     // 嵌套子图防遮挡与标题避让：使用相对于 SVG 的绝对屏幕全局几何坐标，精准判定父子包含关系
     const rootBbox = root.getBoundingClientRect();
@@ -206,29 +211,6 @@ function readableEdgeLabels(svg: string, size: { width: number; height: number }
             if (childLabelMatch) {
               topChild.label.setAttribute("transform", `translate(${childLabelMatch[1]}, ${parseFloat(childLabelMatch[2]) + downShift * 0.7})`);
             }
-          }
-        }
-      }
-    }
-
-    // 卡片标题与连线文字防重叠避让：检测 cluster-label 与 edgeLabel 是否发生空间撞车
-    for (const cluster of clusterData) {
-      if (!cluster.label) continue;
-      const clusterBbox = cluster.label.getBoundingClientRect();
-      if (!clusterBbox.width || !clusterBbox.height) continue;
-
-      for (const edge of root.querySelectorAll<SVGGElement>("g.edgeLabel")) {
-        const edgeBbox = edge.getBoundingClientRect();
-        if (!edgeBbox.width || !edgeBbox.height) continue;
-
-        const xOverlap = Math.max(0, Math.min(clusterBbox.right, edgeBbox.right) - Math.max(clusterBbox.left, edgeBbox.left));
-        const yOverlap = Math.max(0, Math.min(clusterBbox.bottom, edgeBbox.bottom) - Math.max(clusterBbox.top, edgeBbox.top));
-
-        if (xOverlap > 10 && yOverlap > 0) {
-          const edgeMatch = edge.getAttribute("transform")?.match(/translate\(([^,]+),\s*([^)]+)\)/);
-          if (edgeMatch) {
-            const shiftY = yOverlap + 14;
-            edge.setAttribute("transform", `translate(${edgeMatch[1]}, ${parseFloat(edgeMatch[2]) - shiftY})`);
           }
         }
       }

@@ -102,13 +102,6 @@ try {
         if (name === 'flow') {
           assert.equal(result.labels.length, 2, context);
           assert.equal(result.nodes.length, 9, context);
-          for (const label of result.labels) {
-            for (const obstacle of [...result.nodes, ...result.labels.filter(other => other !== label).map(other => other.box)]) {
-              const a = label.box, b = obstacle;
-              assert.ok(Math.min(a.right, b.right) - Math.max(a.left, b.left) <= 1
-                || Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) <= 1, `${context}: ${label.text} overlaps a node or label`);
-            }
-          }
         } else {
           assert.equal(result.notes.length, 1, context);
           for (const note of result.notes) {

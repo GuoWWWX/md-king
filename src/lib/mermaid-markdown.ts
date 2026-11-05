@@ -49,9 +49,94 @@ function explicitSvgLabels(source: string) {
   return /["']?htmlLabels["']?\s*:\s*false\b/i.test(frontmatter + directives);
 }
 
+// Sequence notes are laid out before SVG labels are drawn. Break long notes
+// here so Mermaid reserves the height for every line and later messages move.
+function wrapSequenceNotes(source: string, noteWidths: number[] = []): string {
+  let limit = 40; // Roughly 280 px at the diagram's 14 px font size.
+  let noteIndex = 0;
+  type Piece = { text: string; marks: string[]; atomic?: boolean };
+  const graphemes = (value: string) => value.match(/(?:\\.|#(?:\d+|x[\da-f]+);|&[\w#]+;|\p{Regional_Indicator}{2}|\P{Mark}\p{Mark}*(?:\u200d\P{Mark}\p{Mark}*)*)/giu) ?? [];
+  const width = (value: string) => graphemes(value).reduce((sum, part) => {
+    const code = part.codePointAt(0) ?? 0;
+    return sum + (code >= 0x2e80 || /\p{Extended_Pictographic}/u.test(part) ? 2 : 1);
+  }, 0);
+
+  const wrapLine = (line: string) => {
+    const tokens = svgMarkdown.parseInline(line, {})[0]?.children ?? [];
+    const rich = hasRichTokens(tokens);
+    if (width(line) <= limit) return line;
+    const pieces: Piece[] = [];
+    if (!rich) {
+      for (const text of graphemes(line)) pieces.push({ text, marks: [] });
+    } else {
+      const marks: string[] = [];
+      for (const token of tokens) {
+        if (["strong_open", "em_open", "s_open"].includes(token.type)) marks.push(token.markup);
+        else if (["strong_close", "em_close", "s_close"].includes(token.type)) marks.pop();
+        else if (token.type === "text") {
+          for (const text of graphemes(token.content)) pieces.push({ text, marks: [...marks] });
+        } else if (token.type === "code_inline") {
+          for (const text of graphemes(token.content)) pieces.push({ text, marks: [...marks, token.markup] });
+        } else if (token.type === "mermaid_math") {
+          pieces.push({ text: `$${token.content}$`, marks: [...marks], atomic: true });
+        } else return line; // Preserve constructs we cannot split without changing their meaning.
+      }
+    }
+    const lines: Piece[][] = [];
+    let pending: Piece[] = [];
+    let size = 0;
+    for (const piece of pieces) {
+      const next = width(piece.text);
+      if (pending.length && size + next > limit) {
+        // Prefer a recent word boundary for Latin text, but do not waste most
+        // of the line when the sentence has only distant spaces.
+        let wordBreak = pending.length - 1;
+        while (wordBreak >= 0 && !/\s/.test(pending[wordBreak].text)) wordBreak--;
+        const split = wordBreak >= 0 && wordBreak >= pending.length / 2 ? wordBreak + 1 : pending.length;
+        lines.push(pending.slice(0, split));
+        pending = pending.slice(split);
+        size = pending.reduce((total, item) => total + width(item.text), 0);
+      }
+      pending.push(piece);
+      size += next;
+    }
+    if (pending.length) lines.push(pending);
+    if (lines.length <= 1) return line;
+
+    return lines.map(items => {
+      const styled = items.some(item => item.marks.length || item.atomic);
+      let result = "", active: string[] = [];
+      for (const item of items) {
+        if (active.join("\0") !== item.marks.join("\0")) {
+          result += [...active].reverse().join("");
+          active = item.marks;
+          result += active.join("");
+        }
+        const inCode = active.some(mark => mark.startsWith("`"));
+        result += styled && !inCode && !item.atomic ? item.text.replace(/[\\`*_~$]/g, "\\$&") : item.text;
+      }
+      return result + [...active].reverse().join("");
+    }).join("<br/>");
+  };
+
+  return source.replace(/^([ \t]*note\s+(?:over|left\s+of|right\s+of)\s+[^:\r\n]+:\s*)([^\r\n]*)/gim,
+    (whole, prefix: string, label: string) => {
+      const available = noteWidths[noteIndex++];
+      // Spanning notes can use the actual distance between the participants.
+      // Keep the compact default for notes over one participant or beside it.
+      limit = /\bover\s+[^:]+,/i.test(prefix) && Number.isFinite(available)
+        ? Math.max(40, Math.floor((available - 24) / 7)) : 40;
+      // Explicit Mermaid wrap/nowrap is a user choice; do not rewrite it.
+      if (/^(?:no)?wrap\s*:/i.test(label)) return whole;
+      const wrapped = label.split(/(<br\s*\/?>)/gi).map(part => /^<br/i.test(part) ? part : wrapLine(part)).join("");
+      return prefix + wrapped;
+    });
+}
+
 /** Prepare only quoted diagram labels; comments, directives and other diagram syntax stay intact. */
-export function prepareMermaidMarkdown(source: string): { source: string; hasRichLabels: boolean; replacements?: Record<string, string> } {
+export function prepareMermaidMarkdown(source: string, noteWidths?: number[]): { source: string; hasRichLabels: boolean; replacements?: Record<string, string> } {
   const type = mermaidDiagramType(source);
+  if (type === "sequence") return { source: wrapSequenceNotes(source, noteWidths), hasRichLabels: false };
   if (type === "architecture" && !explicitSvgLabels(source)) {
     // The architecture renderer drops code tokens and rejects multiline
     // Markdown. Keep the original label behind a marker until SVG rendering.
@@ -116,7 +201,17 @@ export function prepareMermaidMarkdown(source: string): { source: string; hasRic
     );
     const raw = source.slice(quote + 1, end);
     const nativeMarkdown = raw.startsWith("`") && raw.endsWith("`");
-    const text = (nativeMarkdown ? raw.slice(1, -1) : raw).replace(/<br\s*\/?>/gi, "\n");
+    // Mermaid also accepts escaped newlines in labels. Expand them before Markdown
+    // parsing so Mermaid measures the final list height during layout. Keep
+    // escaped backslashes, code spans and LaTeX commands literal.
+    const text = (nativeMarkdown ? raw.slice(1, -1) : raw).replace(
+      /(`+)(?!`)([\s\S]*?)\1(?!`)|(?<!\\)(\${1,2})(?!\$|\s)((?:\\[^\r\n]|[^$\\\r\n])+?)\3(?!\$)|(\\+)n|<[bB][rR]\s*\/?>/g,
+      (match, ticks: string | undefined, _code: string | undefined, math: string | undefined, _formula: string | undefined, slashes: string | undefined) => {
+        if (ticks || math) return match;
+        if (slashes) return slashes.length % 2 ? `${slashes.slice(0, -1)}\n` : match;
+        return "\n";
+      },
+    );
     const tokens = labelContext ? markdown.parse(text, {}) : [];
     if (labelContext && (nativeMarkdown || hasRichTokens(tokens))) {
       const html = markdown.renderer.render(tokens, markdown.options, {})
@@ -131,6 +226,23 @@ export function prepareMermaidMarkdown(source: string): { source: string; hasRic
     position = end + 1;
   }
   return { source: result + source.slice(position), hasRichLabels };
+}
+
+/** Fit spanning sequence notes after Mermaid has measured participant positions. */
+export async function renderMermaidMarkdown(source: string, render: (source: string) => Promise<{ svg: string }>) {
+  let prepared = prepareMermaidMarkdown(source);
+  let rendered = await render(prepared.source);
+  if (mermaidDiagramType(source) === "sequence" && /^[ \t]*note\s+over\s+[^:\r\n]+,/im.test(source)) {
+    const root = new DOMParser().parseFromString(rendered.svg, "image/svg+xml");
+    const widths = Array.from(root.querySelectorAll('g[data-et="note"] > rect.note'))
+      .map(rect => Number(rect.getAttribute("width")));
+    const fitted = prepareMermaidMarkdown(source, widths);
+    if (fitted.source !== prepared.source) {
+      prepared = fitted;
+      rendered = await render(prepared.source);
+    }
+  }
+  return { svg: rendered.svg, prepared };
 }
 
 /** Reserve enough vertical space in fixed-height chart rows for multiline labels. */

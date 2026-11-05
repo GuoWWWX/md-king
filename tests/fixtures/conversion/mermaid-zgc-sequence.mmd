@@ -1,0 +1,14 @@
+sequenceDiagram
+    autonumber
+    participant App as 业务线程 (代码执行 user.name)
+    participant LB as ZGC 读屏障 (Load Barrier)
+    participant FWD as 转发表 (Forwarding Table)
+    participant NewObj as 新内存地址 (已复制完成的对象)
+
+    App->>LB: 1. 尝试通过引用指针访问 User 对象
+    Note over LB: 检查指针染色位: 发现包含未更新的旧地址标记!
+    LB->>FWD: 2. 触发读屏障慢路径，查询转发表
+    FWD-->>LB: 3. 获取该对象搬迁后的新物理地址
+    LB->>App: 4. 顺手将业务栈上的引用指针原地修改为新地址【指针自愈!】
+    LB->>NewObj: 5. 从容返回新对象的数据给业务代码
+    Note over App,NewObj: 下一次该线程或其他线程再访问时，指针已经是健康的，直接零开销直达！

@@ -1,0 +1,40 @@
+flowchart TB
+    subgraph 操作系统物理内存["物理机 / 容器物理内存 (Native Memory)"]
+        subgraph JVM进程空间["JVM 进程内存空间"]
+            subgraph 线程共享区["【线程共享区】（生命周期 = JVM 进程，需重点监控）"]
+                subgraph 堆内存["堆内存 Heap（GC 主战场，-Xms / -Xmx）"]
+                    subgraph 新生代["新生代 Young Gen (-Xmn, 默认占堆 1/3)"]
+                        Eden["Eden 区 (8份)\n新对象诞生地\n含 TLAB 线程独享分配槽"]
+                        S0["Survivor S0 / From (1份)\n存活幸存者"]
+                        S1["Survivor S1 / To (1份)\n复制算法中转站"]
+                    end
+                    Old["老年代 Old Gen (-XX:NewRatio, 默认占堆 2/3)\n长寿对象、大对象、高并发大缓存"]
+                end
+            end
+
+            subgraph 线程私有区["【线程私有区】（每个线程各有一套，生命周期 = 线程）"]
+                subgraph 线程A["线程工作栈 (Thread A)"]
+                    StackA["Java 虚拟机栈 (-Xss 默认 1MB)\n栈帧: [局部变量表 | 操作数栈 | 动态链接 | 返回地址]"]
+                    PCA["程序计数器 (PC Register)\n记录当前字节码行号"]
+                    NativeA["本地方法栈 (Native Stack)\n执行 native C/C++ 方法"]
+                end
+            end
+        end
+
+        subgraph 堆外本地内存["堆外本地内存 (Off-Heap / Native Memory)"]
+            Metaspace["元空间 Metaspace (-XX:MetaspaceSize)\n类元数据、方法字节码、运行时常量池"]
+            DirectMem["直接内存 Direct Memory (-XX:MaxDirectMemorySize)\nDirectByteBuffer / Netty 零拷贝缓冲区"]
+            JITCode["CodeCache (JIT 编译缓存)\n存放即时编译生成的高性能机器码"]
+        end
+    end
+
+    Eden -->|"Minor GC: 未达阈值且 To 区有空闲"| S0
+    S0 <-->|"轮换复制 (年龄+1)"| S1
+    Eden & S0 & S1 -->|"达到年龄阈值 / 动态超标 / To区溢出担保"| Old
+
+    classDef shared fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef private fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+    classDef offheap fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    class 堆内存,新生代,Old,Eden,S0,S1 shared;
+    class 线程A,StackA,PCA,NativeA private;
+    class Metaspace,DirectMem,JITCode offheap;

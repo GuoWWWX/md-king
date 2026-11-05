@@ -12,27 +12,44 @@ try {
     await page.goto(`${process.env.TEST_BASE_URL || 'http://127.0.0.1:1420'}/tests/browser/mermaid-edge-labels.html?theme=${theme}`);
     await page.waitForFunction(() => window.png);
     const styles = await page.evaluate(() => {
-      // Check the actual text elements too: a transparent labelBkg parent does
-      // not cancel the flowchart renderer's backgrounds on span.edgeLabel/p.
       const labels = [...document.querySelectorAll('.edgeLabel p')];
-      const painted = [...document.querySelectorAll('.edgeLabel, .edgeLabel *')].filter((node) => {
-        const style = getComputedStyle(node);
-        return style.backgroundColor !== 'rgba(0, 0, 0, 0)' || style.backgroundImage !== 'none'
-          || (node.tagName === 'rect' && !['none', 'rgba(0, 0, 0, 0)'].includes(style.fill));
-      }).map((node) => ({ tag: node.tagName, class: node.getAttribute('class'), background: getComputedStyle(node).backgroundColor }));
-      return { text: labels.map((node) => node.textContent), painted,
-        colors: labels.map((node) => {
-          const box=node.getBoundingClientRect(),x=box.left+box.width/2,y=box.top+box.height/2;
-          const cluster=[...document.querySelectorAll('.cluster > rect')].find(rect=>{const b=rect.getBoundingClientRect();return x>b.left&&x<b.right&&y>b.top&&y<b.bottom;});
-          return {text:getComputedStyle(node).color,background:cluster?getComputedStyle(cluster).fill:getComputedStyle(document.body).backgroundColor};
-        }),
-        shadows: labels.map((node) => ({ text: getComputedStyle(node).textShadow, stroke: getComputedStyle(node).webkitTextStrokeColor })) };
+      const cards = [...document.querySelectorAll('g.edgeLabel foreignObject > div')];
+      return { text: labels.map((node) => node.textContent), cards: cards.map((card) => {
+        const style = getComputedStyle(card);
+        const label = card.querySelector('p');
+        const group = card.closest('g.edgeLabel');
+        const id = group.querySelector('g.label[data-id]')?.getAttribute('data-id');
+        const path = [...document.querySelectorAll('path.flowchart-link[data-id]')].find(item => item.getAttribute('data-id') === id);
+        const box = card.getBoundingClientRect();
+        let backdrop = getComputedStyle(document.body).backgroundColor;
+        for (const rect of document.querySelectorAll('.cluster > rect')) {
+          const b = rect.getBoundingClientRect();
+          if (box.left + box.width / 2 >= b.left && box.left + box.width / 2 <= b.right
+            && box.top + box.height / 2 >= b.top && box.top + box.height / 2 <= b.bottom) backdrop = getComputedStyle(rect).fill;
+        }
+        let nearLine = false;
+        if (path) {
+          const matrix = path.getScreenCTM(), length = path.getTotalLength();
+          for (let i = 0; i <= 500; i++) {
+            const point = path.getPointAtLength(length * i / 500).matrixTransform(matrix);
+            if (point.x >= box.left - 24 && point.x <= box.right + 24 && point.y >= box.top - 24 && point.y <= box.bottom + 24) nearLine = true;
+          }
+        }
+        return { background: style.backgroundColor, border: style.borderTopWidth,
+          borderStyle: style.borderTopStyle, borderColor: style.borderTopColor,
+          text: getComputedStyle(label).color, fontSize: getComputedStyle(label).fontSize,
+          nodeFont: getComputedStyle(document.querySelector('.node .nodeLabel p')).fontSize, backdrop, nearLine };
+      }) };
     });
     assert.equal(styles.text.length, 4, 'the exact ThreadLocal sample must have four relationship labels');
-    assert.deepEqual(styles.painted, [], `${theme}: relationship labels must not paint any rectangular background`);
-    assert.ok(styles.shadows.every(({ text }) => !text.includes('rgb(39, 39, 42)')), 'labels must not have the old black text shadow');
-    assert.ok(styles.colors.every(({text,background})=>contrastRatio(text,background)>=4.5),
-      `${theme}: all labels must contrast with their actual cluster or canvas: ${JSON.stringify(styles.colors)}`);
+    assert.equal(styles.cards.length, 4, `${theme}: every relationship label must render`);
+    assert.ok(styles.cards.every(({ background, border, fontSize, nodeFont }) =>
+      background === 'rgba(0, 0, 0, 0)' && parseFloat(border) === 0
+      && parseFloat(fontSize) === 12 && parseFloat(fontSize) < parseFloat(nodeFont)),
+    `${theme}: labels must be transparent, borderless and smaller than nodes: ${JSON.stringify(styles.cards)}`);
+    assert.ok(styles.cards.every(({text,backdrop})=>contrastRatio(text,backdrop)>=4.5),
+      `${theme}: all labels must contrast with the diagram: ${JSON.stringify(styles.cards)}`);
+    assert.ok(styles.cards.every(({nearLine}) => nearLine), `${theme}: each card must stay beside its own line: ${JSON.stringify(styles.cards)}`);
     await page.locator('#out').screenshot({ path: `.codex/mermaid-edge-labels-${theme}.png` });
     // The same CSS must survive serialization/rasterization for preview/export.
     const darkPixels = await page.evaluate(async () => {
@@ -56,7 +73,40 @@ try {
     });
     assert.ok(darkPixels.every((count) => count > 30), `all four labels must have visible text on the white PNG canvas: ${darkPixels}`);
   }
-  console.log('PASS: ThreadLocal flowchart labels have no background in light/dark rendering.');
+  const samples = [
+    `flowchart LR
+      subgraph H["新生代"]
+        Eden["Eden 区"] -->|"划分专属工位"| T1["TLAB 1 (专供线程1无锁分配)"]
+        Eden -->|"划分专属工位"| T2["TLAB 2 (专供线程2无锁分配)"]
+        Eden -->|"划分专属工位"| T3["TLAB 3 (专供线程3无锁分配)"]
+      end`,
+    `flowchart TD
+      Eden["Eden 区"] -->|"条件1: 年龄达到阈值 (Age >= 15)"| Old["直接晋升【老年代】"]
+      S0["Survivor S0"] -->|"条件2: 动态年龄判定 (累积 > 50%)"| Old
+      S1["Survivor S1"] -->|"条件3: 幸存区放不下 (分配担保溢出)"| Old
+      S1 -->|"都不满足 (正常幸存且放得下)"| To["整齐复制到【Survivor To 区】"]`,
+  ];
+  for (const dark of [false, true]) for (const source of samples) {
+    const result = await page.evaluate(async ({source, dark}) => {
+      const {renderMermaid} = await import('/src/lib/mermaid.ts');
+      document.querySelector('#out').innerHTML = (await renderMermaid(source, dark)).svg;
+      const root = document.querySelector('#out svg');
+      const labels = [...root.querySelectorAll('g.edgeLabel')];
+      return {
+        edgeFonts: labels.map(label => parseFloat(getComputedStyle(label.querySelector('p')).fontSize)),
+        nodeFonts: [...root.querySelectorAll('.node .nodeLabel p')].map(node => parseFloat(getComputedStyle(node).fontSize)),
+        opaqueBlocks: labels.flatMap(label => [...label.querySelectorAll('div,span,p')])
+          .filter(node => getComputedStyle(node).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
+        visibleRects: labels.flatMap(label => [...label.querySelectorAll('rect')])
+          .filter(rect => !['none', 'rgba(0, 0, 0, 0)'].includes(getComputedStyle(rect).fill) || getComputedStyle(rect).stroke !== 'none').length,
+      };
+    }, {source, dark});
+    assert.equal(result.opaqueBlocks, 0, 'label backgrounds must not hide neighboring connectors');
+    assert.equal(result.visibleRects, 0, 'native SVG label rectangles must be invisible');
+    assert.ok(result.edgeFonts.length >= 3 && result.edgeFonts.every(font => font === 12 && result.nodeFonts.every(nodeFont => nodeFont > font)),
+      `TLAB and GC labels must actually be smaller than nodes: ${JSON.stringify(result)}`);
+  }
+  console.log('PASS: ThreadLocal, TLAB and GC labels are transparent, borderless and smaller than node text.');
 } finally {
   await browser.close();
 }

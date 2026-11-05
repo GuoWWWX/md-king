@@ -596,8 +596,8 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
 (async()=>{{
   try{{
     const originalSource=JSON.parse(document.getElementById('source').textContent);
-    const {{prepareMermaidMarkdown,formatMermaidSvgMarkdown,mermaidMarkdownLayout}}=await import('data:text/javascript;base64,{markdown_renderer}');
-    const prepared=prepareMermaidMarkdown(originalSource);
+    const {{prepareMermaidMarkdown,renderMermaidMarkdown,formatMermaidSvgMarkdown,mermaidMarkdownLayout}}=await import('data:text/javascript;base64,{markdown_renderer}');
+    let prepared=prepareMermaidMarkdown(originalSource);
     const source=prepared.source;
     const {{mermaidConfig,layoutMermaidKanban,layoutMermaidLabels,styleMermaidEdgeLabels,ensureMermaidContrast,resolveMermaidTheme}}=await import('data:text/javascript;base64,{renderer_config}');
     const themes={themes_json};
@@ -613,7 +613,8 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     document.body.dataset.stage='syntax';
     await mermaid.parse(source);
     document.body.dataset.stage='layout';
-    const rendered=await mermaid.render('mdking-mermaid',source);
+    const rendered=await renderMermaidMarkdown(originalSource,value=>mermaid.render('mdking-mermaid',value));
+    prepared=rendered.prepared;
     const host=document.getElementById('diagram'); host.innerHTML=rendered.svg;
     const svg=host.querySelector('svg');
     if(!svg) throw new Error('Mermaid 未生成 SVG');
@@ -631,6 +632,12 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     // 不能污染随后用于 PNG 截图的 Mermaid 原生 DOM，否则多行文字会贴到
     // 节点上边缘。先保留原生副本，序列化完成后再放回页面截图。
     styleMermaidEdgeLabels(svg,false);
+    view=svg.viewBox&&svg.viewBox.baseVal;
+    if(view&&view.width>0&&view.height>0){{
+      width=Math.ceil(view.width); height=Math.ceil(view.height);
+      svg.setAttribute('width',String(width)); svg.setAttribute('height',String(height));
+      svg.style.width=width+'px'; svg.style.height=height+'px';
+    }}
     ensureMermaidContrast(svg,false);
     const pngSvg=svg.cloneNode(true);
     const officeSvgProperties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linecap','stroke-linejoin','opacity','color','font-family','font-size','font-weight','font-style','text-anchor','dominant-baseline'];
@@ -663,6 +670,8 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
     const normalizeOfficeTextRows=text=>{{
       const rows=Array.from(text.children).filter(child=>child.tagName.toLowerCase()==='tspan'&&child.classList.contains('row'));
       if(rows.length===0) return;
+      const originalBounds=text.getBBox();
+      const originalCenter=originalBounds.y+originalBounds.height/2;
       const fontSize=parseFloat(getComputedStyle(text).fontSize)||16;
       const lineHeight=fontSize*1.25;
       const baseline=fontSize*0.35;
@@ -674,12 +683,19 @@ html,body{{margin:0;padding:0;overflow:hidden;background:#fff;width:max-content;
         row.setAttribute('y',String((index-(rows.length-1)/2)*lineHeight+baseline));
         row.removeAttribute('dy');
       }});
+      // Flat, absolute baselines are required by Office, but the label's
+      // visual center must remain where Mermaid placed it inside the node.
+      const normalizedBounds=text.getBBox();
+      const offset=originalCenter-normalizedBounds.y-normalizedBounds.height/2;
+      for(const row of rows) row.setAttribute('y',String(Number(row.getAttribute('y'))+offset));
     }};
     for(const text of svg.querySelectorAll('text')) normalizeOfficeTextRows(text);
     layoutMermaidLabels(svg);
     // Word text-row normalization changes the bounds of multiline headings.
     layoutMermaidKanban(svg);
     // Inlining theme rules can override the earlier contrast repair with SVG attributes.
+    svg.setAttribute('width',String(Math.ceil(svg.viewBox.baseVal.width)));
+    svg.setAttribute('height',String(Math.ceil(svg.viewBox.baseVal.height)));
     ensureMermaidContrast(svg,false);
     for(const element of svg.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse,text,tspan')){{
       const computed=getComputedStyle(element);

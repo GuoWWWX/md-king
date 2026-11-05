@@ -12,14 +12,15 @@ try {
       .filter((node) => node.querySelector(".labelBkg"))
       .map((node) => {
         const label = node.querySelector(".labelBkg");
-        return { color: getComputedStyle(label).color, background: getComputedStyle(label).backgroundColor, shadow: getComputedStyle(label).textShadow };
+        const style = getComputedStyle(label);
+        return { color: style.color, background: style.backgroundColor, border: style.borderTopWidth };
       }),
     nodeFill: getComputedStyle(document.querySelector('.node[id*="classId-"] .outer-path path')).fill,
     nodeText: getComputedStyle(document.querySelector('.node[id*="classId-"] .nodeLabel')).color,
     background: getComputedStyle(document.body).backgroundColor,
   }));
   if (result.labels.length !== 5) throw new Error(`expected 5 edge labels, got ${result.labels.length}`);
-  if (result.labels.some(({ color, background, shadow }) => contrastRatio(color, result.background) < 4.5 || background !== "rgba(0, 0, 0, 0)" || shadow.includes("rgb(39, 39, 42)"))) {
+  if (result.labels.some(({ color, background, border }) => background !== "rgba(0, 0, 0, 0)" || contrastRatio(color, result.background) < 4.5 || parseFloat(border) !== 0)) {
     throw new Error(`dark edge-label styles are not applied: ${JSON.stringify(result.labels)}`);
   }
   if (contrastRatio(result.nodeFill, result.nodeText) < 4.5) throw new Error(`unreadable class node: ${JSON.stringify(result)}`);

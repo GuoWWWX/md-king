@@ -19,6 +19,34 @@ test("兼容 Mermaid 原生 Markdown 字符串和内部代码反引号", () => {
   assert.match(result.source, /<ul>/);
 });
 
+test("反斜杠换行的列表在布局前识别，并保留代码中的字面换行符", () => {
+  const tick = String.fromCharCode(96);
+  const source = 'flowchart TD\nA -->|"说明\\n1. 示例 ' + tick + '\\n' + tick + '\\n2. 继续"| B';
+  const result = prepareMermaidMarkdown(source);
+  assert.equal(result.hasRichLabels, true);
+  assert.match(result.source, /<ol>/);
+  assert.ok(result.source.includes('<code>\\n</code>'));
+  assert.match(result.source, /<li>继续<\/li>/);
+});
+
+test("反斜杠换行不能破坏公式中的 LaTeX 命令", () => {
+  const source = 'flowchart TD\nA -->|"公式 $\\nu$\\n1. 计算 $x^2$\\n2. 完成"| B';
+  const result = prepareMermaidMarkdown(source);
+  assert.equal(result.hasRichLabels, true);
+  assert.ok(result.source.includes('$$\\nu$$'));
+  assert.ok(result.source.includes('$$x^2$$'));
+  assert.match(result.source, /<ol>/);
+});
+
+test("普通标签和转义后的字面反斜杠保持原意", () => {
+  const ordinary = 'flowchart TD\nA["普通\\n换行"]';
+  assert.deepEqual(prepareMermaidMarkdown(ordinary), { source: ordinary, hasRichLabels: false });
+  const escaped = 'flowchart TD\nA["**加粗** 字面 \\\\n"]';
+  const result = prepareMermaidMarkdown(escaped);
+  assert.ok(result.source.includes('字面 \\n'));
+  assert.ok(!result.source.includes('<br>'));
+});
+
 test("普通标签、注释、样式和链接配置保持原样", () => {
   const source = 'flowchart LR\n%% A["**注释**"]\nA["普通 3 * 4"] --> B["金额 $5"]\nclick A "https://example.com/**"\nclassDef a fill:#123';
   assert.deepEqual(prepareMermaidMarkdown(source), { source, hasRichLabels: false });
@@ -82,6 +110,37 @@ test("架构图保留行内代码和多行列表直到 SVG 标签完成排版", 
 test("没有适配的图表类型保持原样", () => {
   const source = 'sequenceDiagram\nA->>B: **消息** $x^2$';
   assert.deepEqual(prepareMermaidMarkdown(source), { source, hasRichLabels: false });
+});
+
+test("时序图长注释在布局前换行，保留原文和已有换行", () => {
+  const content = '使用浏览器完成授权，安全返回会话结果'.repeat(4);
+  const source = `sequenceDiagram\nA->>B: 普通消息\nNote over A,B: 短说明<br/>${content}`;
+  const result = prepareMermaidMarkdown(source);
+  assert.ok(result.source.includes('Note over A,B: 短说明<br/>'));
+  assert.ok(result.source.split('<br/>').length > 2);
+  assert.equal(result.source.split('<br/>').join(''), source.split('<br/>').join(''));
+  assert.equal(result.hasRichLabels, false);
+});
+
+test("跨参与者的注释使用实测色带宽度，单参与者注释保持紧凑", () => {
+  const content = '下一次该线程或其他线程再访问时，指针已经是健康的，直接零开销直达！';
+  const source = `sequenceDiagram\nNote over A: ${content}\nNote over A,D: ${content}`;
+  const compact = prepareMermaidMarkdown(source).source.split('\n');
+  const fitted = prepareMermaidMarkdown(source, [1100, 1100]).source.split('\n');
+  assert.equal(fitted[1], compact[1]);
+  assert.ok(compact[2].includes('<br/>'));
+  assert.equal(fitted[2], `Note over A,D: ${content}`);
+});
+
+test("时序图注释换行保留组合格式、代码、公式和显式换行配置", () => {
+  const content = '授权完成并安全返回结果'.repeat(5);
+  const source = `sequenceDiagram\nNote over A,B: **${content}** \`token\` $x^2$\nNote over A: nowrap: ${content}`;
+  const result = prepareMermaidMarkdown(source);
+  const [, bold, nowrap] = result.source.split('\n');
+  assert.match(bold, /\*\*<br\/>\*\*/);
+  assert.ok(bold.includes('`token`'));
+  assert.ok(bold.includes('$x^2$'));
+  assert.equal(nowrap, `Note over A: nowrap: ${content}`);
 });
 
 test("固定高度图表为单独使用列表的标签预留空间", () => {

@@ -94,7 +94,7 @@ let downloadPlanRequest = 0;
 let activePlan: { version: string; promise: Promise<void> } | null = null;
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
-  currentVersion: "1.2.5",
+  currentVersion: "1.2.6",
   latestRelease: null,
   hasUpdate: false,
   status: "idle",
