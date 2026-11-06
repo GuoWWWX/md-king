@@ -2,7 +2,7 @@ import MarkdownIt from "markdown-it";
 import { parseMarkdownTable } from "../components/editor/cm/markdown-table.ts";
 
 export type TextAlignment = "left" | "center" | "right";
-export type TextAttributes = { color?: string; align?: TextAlignment; underline?: boolean; signature?: boolean };
+export type TextAttributes = { color?: string; align?: TextAlignment; underline?: boolean; signature?: boolean; verticalAlign?: "sub" | "sup" };
 export type SignatureSettings = {
   signatureInheritText: boolean;
   signatureLineWidth: number; signatureLineColor: string; signatureLineThickness: number;
@@ -19,10 +19,11 @@ export const defaultSignatureSettings: SignatureSettings = {
 
 export function parseTextAttributes(source: string): TextAttributes | null {
   const attrs: TextAttributes = {};
-  const rest = source.replace(/\.(underline|signature)\b|\b(color|align)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s}]+))/g, (_, cls: string, key: string, a: string, b: string, c: string) => {
+  const rest = source.replace(/\.(underline|signature|sub|sup)\b|\b(color|align)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s}]+))/g, (_, cls: string, key: string, a: string, b: string, c: string) => {
     const value = a ?? b ?? c;
     if (cls === "underline") attrs.underline = true;
     else if (cls === "signature") attrs.signature = true;
+    else if (cls === "sub" || cls === "sup") attrs.verticalAlign = cls;
     else if (key === "color" && /^#[0-9a-f]{6}$/i.test(value)) attrs.color = value.toUpperCase();
     else if (key === "align" && /^(left|center|right)$/.test(value)) attrs.align = value as TextAlignment;
     else return "INVALID";
@@ -58,7 +59,11 @@ export function formattingSpanAt(source: string, from: number) {
 }
 
 export function formattingCss(attrs: TextAttributes): string {
-  return [attrs.color && `color:${attrs.color};--mk-explicit-color:${attrs.color}`, attrs.underline && "text-decoration-line:underline"].filter(Boolean).join(";");
+  return [
+    attrs.color && `color:${attrs.color};--mk-explicit-color:${attrs.color}`,
+    attrs.underline && "text-decoration-line:underline",
+    attrs.verticalAlign && `vertical-align:${attrs.verticalAlign === "sub" ? "sub" : "super"};font-size:0.75em`,
+  ].filter(Boolean).join(";");
 }
 
 export function paragraphFormatting(source: string): TextAttributes | null {

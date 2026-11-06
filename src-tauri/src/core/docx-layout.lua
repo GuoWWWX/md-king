@@ -110,27 +110,40 @@ local function apply_span(span, inherited_color, inherited_underline)
   end
   return span
 end
-function Span(span) return apply_span(span) end
+local inline_formats = { u = pandoc.Underline, sub = pandoc.Subscript, sup = pandoc.Superscript }
+
+function Span(span)
+  local position
+  for _, class in ipairs(span.classes) do
+    if class == 'sub' or class == 'sup' then position = class end
+  end
+  span = apply_span(span)
+  if position then span.content = pandoc.List { inline_formats[position](span.content) } end
+  return span
+end
 
 function Inlines(content)
-  local stack = { pandoc.List() }
+  local stack = { { content = pandoc.List() } }
   for _, item in ipairs(content) do
     local tag = item.t == 'RawInline' and item.format == 'html' and item.text:lower():gsub('%s+', '') or ''
-    if tag == '<u>' then
-      stack[#stack + 1] = pandoc.List()
-    elseif tag == '</u>' and #stack > 1 then
+    local closing, name = tag:match('^<(/?)(%a+)>$')
+    local format = inline_formats[name]
+    local current = stack[#stack]
+    if format and closing == '' then
+      stack[#stack + 1] = { name = name, opening = item, content = pandoc.List() }
+    elseif format and closing == '/' and current.name == name then
       local inner = table.remove(stack)
-      stack[#stack]:insert(pandoc.Underline(inner))
+      stack[#stack].content:insert(format(inner.content))
     elseif tag == '<br>' or tag == '<br/>' then
-      stack[#stack]:insert(pandoc.LineBreak())
-    else stack[#stack]:insert(item) end
+      current.content:insert(pandoc.LineBreak())
+    else current.content:insert(item) end
   end
   while #stack > 1 do
     local inner = table.remove(stack)
-    stack[#stack]:insert(pandoc.RawInline('html', '<u>'))
-    stack[#stack]:extend(inner)
+    stack[#stack].content:insert(inner.opening)
+    stack[#stack].content:extend(inner.content)
   end
-  return stack[1]
+  return stack[1].content
 end
 
 function Para(para)

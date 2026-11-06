@@ -115,7 +115,7 @@ type MarkdownInlineToken = {
   info?: string;
   markup?: string;
   attrs?: Array<[string, string]> | null;
-  meta?: { mkWikilinkTarget?: string; color?: string; underline?: boolean } | null;
+  meta?: (TextAttributes & { mkWikilinkTarget?: string }) | null;
   children?: MarkdownInlineToken[] | null;
 };
 
@@ -662,22 +662,26 @@ function inlineSegmentsFromToken(token: MarkdownInlineToken | undefined, preserv
     keyboard: 0,
   };
   const linkStack: Array<{ target: string; auto: boolean; wikilinkTarget?: string; html?: boolean }> = [];
-  const formatStack: Array<{ color?: string; underline?: boolean }> = [];
+  const formatStack: TextAttributes[] = [];
 
-  const currentMarks = (): Omit<PreviewTextSegment, "text"> => ({
-    color: [...formatStack].reverse().find(item => item.color)?.color,
-    bold: marks.bold > 0 || undefined,
-    italic: marks.italic > 0 || undefined,
-    strike: marks.strike > 0 || undefined,
-    underline: marks.underline > 0 || formatStack.some(item => item.underline) || undefined,
-    highlight: marks.highlight > 0 || undefined,
-    subscript: marks.subscript > 0 || undefined,
-    superscript: marks.superscript > 0 || undefined,
-    small: marks.small > 0 || undefined,
-    code: marks.code > 0 || undefined,
-    keyboard: marks.keyboard > 0 || undefined,
-    link: linkStack[linkStack.length - 1]?.target || undefined,
-  });
+  const currentMarks = (): Omit<PreviewTextSegment, "text"> => {
+    const formats = [...formatStack].reverse();
+    const verticalAlign = formats.find(item => item.verticalAlign)?.verticalAlign;
+    return {
+      color: formats.find(item => item.color)?.color,
+      bold: marks.bold > 0 || undefined,
+      italic: marks.italic > 0 || undefined,
+      strike: marks.strike > 0 || undefined,
+      underline: marks.underline > 0 || formatStack.some(item => item.underline) || undefined,
+      highlight: marks.highlight > 0 || undefined,
+      subscript: (verticalAlign ? verticalAlign === "sub" : marks.subscript > 0) || undefined,
+      superscript: (verticalAlign ? verticalAlign === "sup" : marks.superscript > 0) || undefined,
+      small: marks.small > 0 || undefined,
+      code: marks.code > 0 || undefined,
+      keyboard: marks.keyboard > 0 || undefined,
+      link: linkStack[linkStack.length - 1]?.target || undefined,
+    };
+  };
 
   const appendBreak = () => {
     const previous = segments[segments.length - 1];

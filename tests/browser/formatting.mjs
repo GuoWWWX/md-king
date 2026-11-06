@@ -30,6 +30,24 @@ try {
    assert.equal(await note.evaluate(e=>getComputedStyle(e).color),'rgb(211, 47, 47)');
    assert.equal(await page.locator(`${region} .mk-signature`).evaluate(e=>getComputedStyle(e).justifyContent),'flex-end');
    assert.equal(await page.locator(region).getByText('表格红字',{exact:true}).evaluate(e=>getComputedStyle(e).color),'rgb(211, 47, 47)');
+   for(const [text,verticalAlign] of [['正文下标','sub'],['引用上标','super'],['表格下标','sub']]) {
+    const label=page.locator(region).getByText(text,{exact:true});
+    const style=await label.evaluate(e=>{
+     const selector='[style*="vertical-align"]';
+     const formatted=e.closest(selector)||e.querySelector(selector)||e;
+     const computed=getComputedStyle(formatted);
+     return { verticalAlign:computed.verticalAlign, color:computed.color,
+      inheritedColor:getComputedStyle(e.closest('.cm-line,p,blockquote')||e).color,
+      link:!!e.closest('a,.mk-cm-link') };
+    });
+    assert.equal(style.verticalAlign,verticalAlign,`${region}: ${text}`);
+    assert.equal(style.color,text==='表格下标'?'rgb(37, 99, 235)':style.inheritedColor,`${region}: ${text} color`);
+    assert.equal(style.link,false,`${region}: ${text} is ordinary text`);
+   }
+   assert.equal(await page.locator(region).getByText('第 1 ~ 6 月',{exact:true}).count(),1);
+   const content=await page.locator(region).textContent();
+   assert.ok(content.includes('[源码转义]{.sub}'),`${region}: escaped brackets render literally`);
+   assert.ok(content.includes('[源码示例]{.sup}'),`${region}: inline code renders literally`);
   }
  }
  await page.evaluate(()=>window.fixture.render(false));
@@ -38,6 +56,13 @@ try {
  const editing=page.locator('#editor .cm-line').filter({hasText:'普通居中'});
  assert.equal(await editing.locator('.mk-cm-link').count(),0);
  assert.equal(await editing.evaluate(e=>getComputedStyle(e).textAlign),'center');
+ await page.evaluate(()=>{
+  const view=window.fixture.ref.current.getView();
+  const from=view.state.doc.toString().indexOf('[正文下标]{.sub}');
+  view.dispatch({selection:{anchor:from+1}});
+ });
+ const sourceLine=page.locator('#editor .cm-line').filter({hasText:'正文下标'});
+ assert.ok((await sourceLine.textContent()).includes('[正文下标]{.sub}'));
  assert.ok(await page.evaluate(()=>window.fixture.ref.current.getValue()===window.fixture.source));
  assert.equal(await page.getByRole('toolbar',{name:'文字格式'}).count(),0);
  assert.deepEqual(errors,[]);

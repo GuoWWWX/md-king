@@ -10,8 +10,9 @@ use tauri::{AppHandle, Manager};
 use crate::core::config::load_config;
 
 const BUNDLED_PANDOC_RESOURCE_PATH: &str = "pandoc/windows/pandoc.exe";
+// Keep range tildes and carets in ordinary text. Use explicit markup for scripts.
 const PANDOC_MARKDOWN_INPUT_FORMAT: &str =
-    "markdown-smart+hard_line_breaks+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe";
+    "markdown-smart-subscript-superscript+hard_line_breaks+tex_math_dollars+tex_math_single_backslash+wikilinks_title_after_pipe";
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -451,6 +452,46 @@ mod tests {
         std::fs::remove_file(input).unwrap();
         std::fs::remove_file(output).unwrap();
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn preserves_range_tildes_and_carets_with_explicit_subscripts_and_superscripts() {
+        use std::io::Read;
+        let directory = std::env::temp_dir().join(format!("md-king-pandoc-ranges-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let input = directory.join("ranges.md");
+        let output = directory.join("ranges.docx");
+        std::fs::write(
+            &input,
+            "**第一阶段（第1~6月）**：准备工作。\n**第二阶段（第7~24月）**：开展研究。\n\n范围 G01~G11 和 S01~S10，算力 16~32 TOPS。普通文本 x^2+y^2。\n\nH<sub>2</sub>O，m[3]{.sup .underline color=\"#2563EB\"}，<u>下划线</u>，~~删除~~，$x_2$，$x^2$。\n\n| 第 1 \\~ 6 月 | H[4]{.sub}O |\n| --- | --- |\n\n\\[源码转义]{.sub} 和 `[源码示例]{.sup}`。",
+        ).unwrap();
+        let pandoc = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/pandoc/windows/pandoc.exe");
+        let result = super::run_resolved_pandoc_to_docx(&pandoc, &input, &output, None, &PandocDocumentOptions::default()).unwrap();
+        assert!(result.success, "{}", result.stderr);
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&output).unwrap()).unwrap();
+        let mut xml = String::new();
+        archive.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+        let text = regex::Regex::new(r"(?s)<w:t\b[^>]*>(.*?)</w:t>").unwrap()
+            .captures_iter(&xml).map(|capture| capture[1].to_owned()).collect::<String>();
+        for range in ["第1~6月", "第7~24月", "G01~G11", "S01~S10", "16~32 TOPS", "第 1 ~ 6 月"] {
+            assert!(text.contains(range), "missing range {range}");
+        }
+        assert!(text.contains("[源码转义]{.sub}") && text.contains("[源码示例]{.sup}"));
+        assert!(text.contains("x^2+y^2"));
+        assert_eq!(xml.matches("w:val=\"subscript\"").count(), 2);
+        assert_eq!(xml.matches("w:val=\"superscript\"").count(), 1);
+        for digit in ["2", "4"] {
+            let pattern = format!(r#"w:val="subscript"[^>]*/>\s*</w:rPr>\s*<w:t[^>]*>{digit}</w:t>"#);
+            assert!(regex::Regex::new(&pattern).unwrap().is_match(&xml));
+        }
+        let runs = regex::Regex::new(r"(?s)<w:r\b[^>]*>.*?</w:r>").unwrap();
+        let superscript = runs.find_iter(&xml).map(|run| run.as_str())
+            .find(|run| run.contains(">3</w:t>") && run.contains("w:val=\"superscript\"")).unwrap();
+        assert!(superscript.contains("MDKingFmt2563EB") && superscript.contains("<w:u "));
+        assert!(xml.contains("<w:u ") && xml.contains("<w:strike") && xml.contains("<m:sSub>") && xml.contains("<m:sSup>"));
+        drop(archive);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
